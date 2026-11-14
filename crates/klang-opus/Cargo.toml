@@ -1,0 +1,13 @@
+[package]
+name = "klang-opus"
+version.workspace = true
+edition.workspace = true
+description = "Opus encoding (libopus 1.5, built with the C compiler – no CMake; in the browser compiled to WebAssembly with clang) and the Ogg container for export"
+license = "MIT AND BSD-3-Clause"
+build = "build.rs"
+links = "opus"
+
+[dependencies]
+
+[build-dependencies]
+cc = "1"

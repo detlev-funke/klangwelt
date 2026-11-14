@@ -1,0 +1,65 @@
+# Build the browser version and publish it on GitHub Pages:
+# https://devfunke.github.io/klangwelt/
+#
+# One-time setup: on GitHub, under Settings → Pages → Build and deployment,
+# choose "GitHub Actions" as the source. After that this runs on every push
+# to main (or by hand under Actions → "Run workflow").
+name: Browser version on GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust with the wasm32-unknown-unknown target
+        run: rustup target add wasm32-unknown-unknown
+
+      # libopus is compiled to WebAssembly with clang (see crates/klang-opus/build.rs)
+      - name: clang and llvm-ar for libopus
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm
+          echo "CC_wasm32_unknown_unknown=clang" >> "$GITHUB_ENV"
+          echo "AR_wasm32_unknown_unknown=llvm-ar" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Build the browser version
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build:web
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ui/dist-web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

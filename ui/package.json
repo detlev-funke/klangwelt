@@ -1,0 +1,23 @@
+{
+  "name": "klangwelt-ui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Klangwelt user interface: TypeScript without runtime dependencies",
+  "scripts": {
+    "build": "tsc -p . && node scripts/copy-static.mjs",
+    "watch": "node scripts/copy-static.mjs && tsc -p . --watch",
+    "serve": "node scripts/serve.mjs",
+    "check": "tsc -p . --noEmit",
+    "test:unit": "npm run build && node --test \"../tests/unit/*.test.mjs\"",
+    "test": "npm run test:unit && npm run build:web && npm run test:web",
+    "build:web": "npm run build && node scripts/build-web.mjs",
+    "serve:web": "node scripts/serve.mjs --web",
+    "test:web": "node --test --test-concurrency=1 \"../tests/web/*.test.mjs\"",
+    "mcp:web": "node scripts/web-mcp.mjs",
+    "licenses": "node scripts/third-party-licenses.mjs --target=wasm32-unknown-unknown"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}

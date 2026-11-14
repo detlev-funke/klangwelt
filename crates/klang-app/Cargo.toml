@@ -1,0 +1,22 @@
+[package]
+name = "klang-app"
+description = "Klangwelt core without a platform: state, all UI commands, projects, export – shared by desktop (Tauri) and browser (WebAssembly)"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[features]
+default = ["opus"]
+# Opus export via libopus (C) – desktop and browser (compiled to WebAssembly with clang there).
+opus = ["dep:klang-opus"]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+klang-core = { workspace = true }
+klang-dsp = { workspace = true }
+klang-music = { workspace = true }
+klang-engine = { workspace = true }
+klang-opus = { workspace = true, optional = true }
+klang-mcp = { workspace = true }
+zip = { workspace = true }

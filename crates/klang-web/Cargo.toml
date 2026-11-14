@@ -1,0 +1,15 @@
+[package]
+name = "klang-web"
+description = "Klangwelt in the browser: the shared core as WebAssembly (runs in a web worker) – counterpart of the Tauri shell"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+klang-app = { workspace = true, features = ["opus"] }
+klang-engine = { workspace = true }
+klang-mcp = { workspace = true }
+serde_json = { workspace = true }

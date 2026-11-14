@@ -1,0 +1,55 @@
+//! Klangwelt-Musikbibliothek (symbolische Musik).
+//!
+//! * [`score`]    – eigenes Partiturmodell + MusicXML/MXL-Leser
+//! * [`kern`]     – Humdrum-**kern-Leser (KernScores)
+//! * [`dcml`]     – DCML-Notentabellen mit Akkordanalyse von Fachleuten
+//! * [`melody`]   – Melodielinien und transpositions-/tempo-invariante Merkmale
+//! * [`index`]    – n-Gramm-Index für die Melodiesuche („Summ mal was“)
+//! * [`theory`]   – Tonarten, Bereinigung aufgenommener Noten
+//! * [`analysis`] – Stimmfunktionen, Kadenzen, Stimmung (Heuristik, Stufe 1)
+
+pub mod analysis;
+pub mod chordstats;
+pub mod counterpoint;
+pub mod dcml;
+pub mod diskindex;
+pub mod facets;
+pub mod fetch;
+pub mod fugue;
+pub mod harmony;
+pub mod index;
+pub mod kern;
+pub mod library;
+pub mod melody;
+pub mod pdmx;
+pub mod score;
+pub mod theory;
+
+use std::fmt;
+
+#[derive(Debug)]
+pub enum MusicError {
+    Io(std::io::Error),
+    Xml(String),
+    Zip(String),
+    Unsupported(String),
+}
+
+impl fmt::Display for MusicError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MusicError::Io(e) => write!(f, "Dateifehler: {e}"),
+            MusicError::Xml(e) => write!(f, "XML-Fehler: {e}"),
+            MusicError::Zip(e) => write!(f, "MXL-Archivfehler: {e}"),
+            MusicError::Unsupported(e) => write!(f, "Nicht unterstützt: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for MusicError {}
+
+impl From<std::io::Error> for MusicError {
+    fn from(e: std::io::Error) -> Self {
+        MusicError::Io(e)
+    }
+}

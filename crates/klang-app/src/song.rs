@@ -1,0 +1,811 @@
+//! Song-Vorlagen: ein ganzes Stück aus Abschnitten (Intro, Aufbau, Break,
+//! Höhepunkt, Outro …) und Rollen (Fläche, Arpeggio, Bass, Lead, Kick, Hi-Hats,
+//! Clap, Percussion, Übergänge). Je Abschnitt und Rolle eine Stufe: 0 aus,
+//! 1 sparsam, 2 voll. Daraus entstehen Spuren mit einem Clip je Abschnitt –
+//! jede melodische Rolle eine Spur, alle Trommeln zusammen eine Schlagzeug-Spur.
+//!
+//! Die Art eines Abschnitts formt ihn: Ein Aufbau wird über seine Länge lauter
+//! und heller (Helligkeit der Noten öffnet den Filter) und endet mit einem
+//! Snare-Wirbel, ein Outro klingt aus. Alles ist deterministisch – dieselbe
+//! Vorlage ergibt dieselben Noten.
+
+use crate::rhythm;
+use crate::sound;
+use crate::state::{lock, AppState, CmdResult, Snapshot};
+use klang_core::{Clip, ClipSource, Command, Id, Instrument, InstrumentKind, Note, ProjectPatch, Track, TrackKind, TrackView};
+use klang_dsp::drums;
+use klang_music::harmony as kh;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+
+const BEATS_PER_BAR: f64 = 4.0;
+pub const MAX_BARS: u32 = 400;
+
+/// Rolle einer Zeile im Song-Aufbau.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum Role {
+    Pad,
+    Arp,
+    Bass,
+    Lead,
+    Kick,
+    Hats,
+    Clap,
+    Perc,
+    Fx,
+}
+
+impl Role {
+    pub fn is_drum(self) -> bool {
+        matches!(self, Role::Kick | Role::Hats | Role::Clap | Role::Perc | Role::Fx)
+    }
+}
+
+/// Art eines Abschnitts.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum SectionKind {
+    Intro,
+    #[default]
+    Teil,
+    Aufbau,
+    Break,
+    Hoehepunkt,
+    Outro,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Layer {
+    pub key: String,
+    pub name: String,
+    pub role: Role,
+    /// Instrument (Standard: Synth für Fläche/Arpeggio/Lead, Bass, Schlagzeug)
+    #[serde(default)]
+    pub kind: Option<InstrumentKind>,
+    /// Startpunkt im Charakter-Feld
+    #[serde(default)]
+    pub sound: Option<String>,
+    /// Verlaufsvorlage (Synth)
+    #[serde(default)]
+    pub verlauf: Option<String>,
+    /// Startpunkt im Raum-Feld
+    #[serde(default)]
+    pub raum: Option<String>,
+    /// Lautstärke der Spur in dB
+    #[serde(default)]
+    pub gain_db: f32,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Section {
+    pub name: String,
+    pub bars: u32,
+    #[serde(default)]
+    pub kind: SectionKind,
+    /// Stufe je Rolle (Schlüssel der Zeile): 0 aus, 1 sparsam, 2 voll
+    #[serde(default)]
+    pub levels: BTreeMap<String, u8>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SongPlan {
+    /// Kennung der Vorlage, aus der der Plan stammt
+    #[serde(default)]
+    pub template: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    pub tempo: f64,
+    /// Tonart, z. B. „a-Moll“
+    pub key: String,
+    /// Akkorde (Symbole mit deutschen Tonnamen oder Stufen), reihum
+    pub chords: Vec<String>,
+    /// Takte je Akkord
+    pub chord_bars: u32,
+    /// Klang des Schlagzeugs (Startpunkt im Charakter-Feld)
+    #[serde(default)]
+    pub drums: Option<String>,
+    /// Swing der Trommeln in Prozent
+    #[serde(default)]
+    pub swing: f64,
+    pub layers: Vec<Layer>,
+    pub sections: Vec<Section>,
+}
+
+impl SongPlan {
+    pub fn total_bars(&self) -> u32 {
+        self.sections.iter().map(|s| s.bars).sum()
+    }
+
+    /// Prüft den Plan; liefert Tonart und Akkorde.
+    pub fn check(&self) -> Result<(klang_music::theory::Key, Vec<kh::Chord>), String> {
+        let key = kh::parse_key(&self.key).ok_or_else(|| format!("Tonart „{}“ nicht verstanden – z. B. „a-Moll“, „C-Dur“", self.key))?;
+        if self.chords.is_empty() {
+            return Err("Mindestens ein Akkord".into());
+        }
+        let chords = self
+            .chords
+            .iter()
+            .map(|c| kh::parse_chord(c, &key).ok_or_else(|| format!("Akkord „{c}“ nicht verstanden – z. B. a, F, C, G7 oder Stufen wie i, VI, III, VII")))
+            .collect::<Result<Vec<_>, _>>()?;
+        if !(40.0..=220.0).contains(&self.tempo) {
+            return Err(format!("Tempo {} – erlaubt 40–220 BPM", self.tempo));
+        }
+        if self.sections.is_empty() {
+            return Err("Mindestens ein Abschnitt".into());
+        }
+        if self.sections.iter().any(|s| s.bars == 0 || s.bars > 64) {
+            return Err("Abschnitte haben 1–64 Takte".into());
+        }
+        if self.total_bars() > MAX_BARS {
+            return Err(format!("Höchstens {MAX_BARS} Takte"));
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for l in &self.layers {
+            if !seen.insert(l.key.as_str()) {
+                return Err(format!("Rolle „{}“ doppelt", l.key));
+            }
+        }
+        for s in &self.sections {
+            for k in s.levels.keys() {
+                if !self.layers.iter().any(|l| &l.key == k) {
+                    return Err(format!("Abschnitt „{}“: unbekannte Rolle „{k}“", s.name));
+                }
+            }
+        }
+        Ok((key, chords))
+    }
+}
+
+// ---------------------------------------------------------------- Vorlagen
+
+#[allow(clippy::too_many_arguments)]
+fn layer(key: &str, name: &str, role: Role, kind: Option<InstrumentKind>, sound: Option<&str>, verlauf: Option<&str>, raum: Option<&str>, gain_db: f32) -> Layer {
+    Layer {
+        key: key.into(),
+        name: name.into(),
+        role,
+        kind,
+        sound: sound.map(Into::into),
+        verlauf: verlauf.map(Into::into),
+        raum: raum.map(Into::into),
+        gain_db,
+    }
+}
+
+fn section(name: &str, bars: u32, kind: SectionKind, levels: &[(&str, u8)]) -> Section {
+    Section { name: name.into(), bars, kind, levels: levels.iter().map(|(k, v)| (k.to_string(), *v)).collect() }
+}
+
+fn drum_layers() -> Vec<Layer> {
+    vec![
+        layer("kick", "Kick", Role::Kick, None, None, None, None, 0.0),
+        layer("hats", "Hi-Hats", Role::Hats, None, None, None, None, 0.0),
+        layer("clap", "Clap", Role::Clap, None, None, None, None, 0.0),
+        layer("perc", "Percussion", Role::Perc, None, None, None, None, 0.0),
+        layer("fx", "Übergänge", Role::Fx, None, None, None, None, 0.0),
+    ]
+}
+
+use SectionKind::*;
+
+/// Die mitgelieferten Vorlagen.
+pub fn templates() -> Vec<SongPlan> {
+    let synth = Some(InstrumentKind::Synth);
+    let bass = Some(InstrumentKind::Bass);
+    let pluck = Some(InstrumentKind::Pluck);
+    vec![
+        SongPlan {
+            template: "trance".into(),
+            name: "Trance".into(),
+            description: "Erst nur Flächen, dann Arpeggio und Kick, Schritt für Schritt Bass, Hi-Hats und Clap – Break mit Lead, Steigerung mit Snare-Wirbel, zwei Höhepunkte, Ausklang.".into(),
+            tempo: 138.0,
+            key: "a-Moll".into(),
+            chords: vec!["a".into(), "F".into(), "C".into(), "G".into()],
+            chord_bars: 2,
+            drums: Some("Techno".into()),
+            swing: 0.0,
+            layers: [
+                vec![
+                    layer("pad", "Fläche", Role::Pad, synth, Some("Ozean"), Some("Anschwellen"), Some("Saal"), -9.0),
+                    layer("arp", "Arpeggio", Role::Arp, synth, Some("Glas"), Some("Stich"), Some("Bühne"), -11.0),
+                    layer("bass", "Bass", Role::Bass, bass, Some("Pluck-Bass"), None, None, -5.0),
+                    layer("lead", "Lead", Role::Lead, synth, Some("Streicher"), Some("Aufblühen"), Some("Saal"), -9.0),
+                ],
+                drum_layers(),
+            ]
+            .concat(),
+            sections: vec![
+                section("Intro", 16, Intro, &[("pad", 1)]),
+                section("Thema", 16, Teil, &[("pad", 2), ("arp", 1), ("kick", 1)]),
+                section("Aufbau", 16, Aufbau, &[("pad", 2), ("arp", 2), ("bass", 1), ("kick", 1), ("hats", 1), ("fx", 1)]),
+                section("Break", 16, Break, &[("pad", 2), ("lead", 1)]),
+                section("Steigerung", 8, Aufbau, &[("arp", 2), ("lead", 1), ("kick", 1), ("hats", 1), ("clap", 1), ("fx", 2)]),
+                section("Höhepunkt", 16, Hoehepunkt, &[("pad", 2), ("arp", 2), ("bass", 2), ("lead", 2), ("kick", 2), ("hats", 2), ("clap", 2), ("fx", 1)]),
+                section("Höhepunkt 2", 16, Hoehepunkt, &[("pad", 2), ("arp", 2), ("bass", 2), ("lead", 2), ("kick", 2), ("hats", 2), ("clap", 2), ("perc", 1)]),
+                section("Outro", 16, Outro, &[("pad", 1), ("arp", 1), ("kick", 1), ("hats", 1)]),
+            ],
+        },
+        SongPlan {
+            template: "ambient".into(),
+            name: "Ambient".into(),
+            description: "Weite Flächen, ein schwebendes Arpeggio, später ein leiser Puls und ein sanfter Beat – mit stillen Momenten dazwischen.".into(),
+            tempo: 84.0,
+            key: "e-Moll".into(),
+            chords: vec!["e".into(), "C".into(), "G".into(), "D".into()],
+            chord_bars: 4,
+            drums: Some("Lo-Fi".into()),
+            swing: 0.0,
+            layers: [
+                vec![
+                    layer("pad", "Fläche", Role::Pad, synth, Some("Nebel"), Some("Atmen"), Some("Kirche"), -8.0),
+                    layer("arp", "Glitzern", Role::Arp, pluck, Some("Kristall"), None, Some("Saal"), -12.0),
+                    layer("bass", "Bass", Role::Bass, bass, Some("Sub-Bass"), None, None, -7.0),
+                    layer("lead", "Chor", Role::Lead, synth, Some("Chor"), Some("Aufblühen"), Some("Kirche"), -10.0),
+                ],
+                drum_layers(),
+            ]
+            .concat(),
+            sections: vec![
+                section("Morgen", 8, Intro, &[("pad", 1)]),
+                section("Weite", 16, Teil, &[("pad", 2), ("arp", 1)]),
+                section("Puls", 16, Aufbau, &[("pad", 2), ("arp", 1), ("bass", 1), ("perc", 1)]),
+                section("Herz", 16, Hoehepunkt, &[("pad", 2), ("arp", 2), ("bass", 1), ("lead", 1), ("kick", 1), ("hats", 1), ("perc", 1)]),
+                section("Stille", 8, Break, &[("pad", 1), ("lead", 1)]),
+                section("Herz 2", 16, Hoehepunkt, &[("pad", 2), ("arp", 2), ("bass", 2), ("lead", 2), ("kick", 1), ("hats", 2), ("perc", 1)]),
+                section("Ausklang", 16, Outro, &[("pad", 1), ("arp", 1)]),
+            ],
+        },
+        SongPlan {
+            template: "deep-house".into(),
+            name: "Deep House".into(),
+            description: "Beginnt mit Kick und Hi-Hats, der Groove wächst mit Clap und Bass, dann kommen die Akkorde – Break, Drop, Ausklang.".into(),
+            tempo: 122.0,
+            key: "c-Moll".into(),
+            chords: vec!["c".into(), "As".into(), "Es".into(), "B".into()],
+            chord_bars: 2,
+            drums: Some("House".into()),
+            swing: 0.0,
+            layers: [
+                vec![
+                    layer("pad", "Akkorde", Role::Pad, synth, Some("Wärme"), Some("Pulsieren"), Some("Bühne"), -10.0),
+                    layer("arp", "Stabs", Role::Arp, pluck, Some("Warm"), None, Some("Studio"), -12.0),
+                    layer("bass", "Bass", Role::Bass, bass, Some("Finger"), None, None, -4.0),
+                    layer("lead", "Melodie", Role::Lead, synth, Some("Glas"), Some("Glocke"), Some("Saal"), -11.0),
+                ],
+                drum_layers(),
+            ]
+            .concat(),
+            sections: vec![
+                section("Intro", 16, Intro, &[("kick", 1), ("hats", 1)]),
+                section("Groove", 16, Teil, &[("kick", 2), ("hats", 2), ("clap", 1), ("bass", 1), ("perc", 1)]),
+                section("Akkorde", 16, Aufbau, &[("pad", 1), ("bass", 1), ("kick", 2), ("hats", 2), ("clap", 1), ("perc", 1), ("fx", 1)]),
+                section("Break", 8, Break, &[("pad", 2), ("lead", 1)]),
+                section("Drop", 16, Hoehepunkt, &[("pad", 2), ("arp", 1), ("bass", 2), ("lead", 2), ("kick", 2), ("hats", 2), ("clap", 2), ("perc", 2), ("fx", 1)]),
+                section("Outro", 16, Outro, &[("kick", 1), ("hats", 1), ("perc", 1)]),
+            ],
+        },
+        SongPlan {
+            template: "synthwave".into(),
+            name: "Synthwave".into(),
+            description: "Achtziger-Flächen und ein pulsierendes Arpeggio, Strophe und Refrain im Wechsel mit kräftiger Snare.".into(),
+            tempo: 104.0,
+            key: "f-Moll".into(),
+            chords: vec!["f".into(), "Des".into(), "As".into(), "Es".into()],
+            chord_bars: 2,
+            drums: Some("Rock".into()),
+            swing: 0.0,
+            layers: [
+                vec![
+                    layer("pad", "Fläche", Role::Pad, synth, Some("Wärme"), Some("Anschwellen"), Some("Saal"), -9.0),
+                    layer("arp", "Arpeggio", Role::Arp, synth, Some("Puls"), Some("Gate"), Some("Bühne"), -12.0),
+                    layer("bass", "Bass", Role::Bass, bass, Some("Pluck-Bass"), None, None, -5.0),
+                    layer("lead", "Lead", Role::Lead, synth, Some("Streicher"), Some("Aufblühen"), Some("Saal"), -9.0),
+                ],
+                drum_layers(),
+            ]
+            .concat(),
+            sections: vec![
+                section("Intro", 8, Intro, &[("pad", 1), ("arp", 1)]),
+                section("Strophe", 16, Teil, &[("pad", 1), ("arp", 2), ("bass", 1), ("kick", 1), ("hats", 1), ("clap", 1)]),
+                section("Refrain", 16, Hoehepunkt, &[("pad", 2), ("arp", 2), ("bass", 2), ("lead", 2), ("kick", 2), ("hats", 2), ("clap", 2), ("fx", 1)]),
+                section("Strophe 2", 16, Teil, &[("pad", 1), ("arp", 2), ("bass", 1), ("kick", 1), ("hats", 1), ("clap", 1), ("perc", 1)]),
+                section("Überleitung", 8, Aufbau, &[("pad", 2), ("arp", 2), ("lead", 1), ("kick", 1), ("fx", 2)]),
+                section("Refrain 2", 16, Hoehepunkt, &[("pad", 2), ("arp", 2), ("bass", 2), ("lead", 2), ("kick", 2), ("hats", 2), ("clap", 2), ("perc", 1), ("fx", 1)]),
+                section("Outro", 8, Outro, &[("pad", 1), ("arp", 1)]),
+            ],
+        },
+        SongPlan {
+            template: "lofi".into(),
+            name: "Lo-Fi".into(),
+            description: "Warme Akkorde und gedämpfte Zupfer, ein verschleppter Beat mit Swing – entspannt zum Weiterbauen.".into(),
+            tempo: 82.0,
+            key: "F-Dur".into(),
+            chords: vec!["F".into(), "e".into(), "d".into(), "C".into()],
+            chord_bars: 1,
+            drums: Some("Lo-Fi".into()),
+            swing: 35.0,
+            layers: [
+                vec![
+                    layer("pad", "Akkorde", Role::Pad, synth, Some("Wärme"), Some("Atmen"), Some("Studio"), -9.0),
+                    layer("arp", "Zupfer", Role::Arp, pluck, Some("Gedämpft"), None, Some("Studio"), -11.0),
+                    layer("bass", "Bass", Role::Bass, bass, Some("Finger"), None, None, -5.0),
+                    layer("lead", "Melodie", Role::Lead, pluck, Some("Warm"), None, Some("Bühne"), -10.0),
+                ],
+                drum_layers(),
+            ]
+            .concat(),
+            sections: vec![
+                section("Intro", 4, Intro, &[("pad", 1), ("arp", 1)]),
+                section("Teil A", 8, Teil, &[("pad", 2), ("arp", 1), ("bass", 1), ("kick", 1), ("hats", 1), ("clap", 1)]),
+                section("Teil B", 8, Hoehepunkt, &[("pad", 2), ("arp", 2), ("bass", 2), ("lead", 1), ("kick", 2), ("hats", 2), ("clap", 2), ("perc", 1)]),
+                section("Pause", 4, Break, &[("pad", 1), ("lead", 1)]),
+                section("Teil B 2", 8, Hoehepunkt, &[("pad", 2), ("arp", 2), ("bass", 2), ("lead", 2), ("kick", 2), ("hats", 2), ("clap", 2), ("perc", 1)]),
+                section("Outro", 4, Outro, &[("pad", 1), ("arp", 1)]),
+            ],
+        },
+    ]
+}
+
+pub fn template(id: &str) -> Result<SongPlan, String> {
+    let all = templates();
+    let want = id.trim().to_lowercase();
+    all.iter()
+        .find(|t| t.template == want || t.name.to_lowercase() == want)
+        .cloned()
+        .ok_or_else(|| format!("Keine Song-Vorlage „{id}“ (vorhanden: {})", all.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().join(", ")))
+}
+
+// ---------------------------------------------------------------- Noten
+
+/// Lautstärke- und Helligkeitsverlauf eines Abschnitts an Stelle `t` (0…1).
+fn shape(kind: SectionKind, t: f64) -> (f64, f32) {
+    match kind {
+        Aufbau => (0.55 + 0.45 * t, (-0.7 + 1.1 * t) as f32),
+        Outro => (1.0 - 0.45 * t, (0.2 - 0.9 * t) as f32),
+        Intro => (0.75 + 0.2 * t, (-0.4 + 0.4 * t) as f32),
+        Break => (0.85, -0.2),
+        Hoehepunkt => (1.0, 0.25),
+        Teil => (0.92, 0.0),
+    }
+}
+
+fn vel(v: f64) -> u8 {
+    v.round().clamp(1.0, 127.0) as u8
+}
+
+/// Akkordtöne nahe `center`, aufsteigend (Grundton, Terz, Quinte …).
+fn voiced(chord: &kh::Chord, center: i32) -> Vec<u8> {
+    let mut out: Vec<u8> = chord
+        .pcs()
+        .iter()
+        .map(|&pc| {
+            let mut m = center - 6 + ((pc as i32 - (center - 6)).rem_euclid(12));
+            if m < center - 6 {
+                m += 12;
+            }
+            m.clamp(0, 127) as u8
+        })
+        .collect();
+    out.sort_unstable();
+    out
+}
+
+struct Ctx<'a> {
+    chords: &'a [kh::Chord],
+    chord_bars: u32,
+}
+
+impl Ctx<'_> {
+    fn chord_at(&self, bar: u32) -> &kh::Chord {
+        &self.chords[((bar / self.chord_bars.max(1)) as usize) % self.chords.len()]
+    }
+}
+
+fn note(pitch: u8, start: f64, len: f64, velocity: u8, brightness: f32) -> Note {
+    Note { pitch, start_beats: start, length_beats: len, velocity, brightness: brightness.clamp(-1.0, 1.0), ..Default::default() }
+}
+
+/// Noten einer melodischen Rolle in einem Abschnitt (relativ zum Abschnittsanfang).
+fn melodic(role: Role, level: u8, sec: &Section, first_bar: u32, ctx: &Ctx) -> Vec<Note> {
+    let mut out = Vec::new();
+    let bars = sec.bars;
+    let total = bars as f64 * BEATS_PER_BAR;
+    for b in 0..bars {
+        let chord = ctx.chord_at(first_bar + b);
+        let bar0 = b as f64 * BEATS_PER_BAR;
+        let at = |beat: f64| shape(sec.kind, (bar0 + beat) / total);
+        match role {
+            Role::Pad => {
+                // ein Akkord je Akkordwechsel, gehalten; voll mit tiefem Grundton dazu
+                let span = ctx.chord_bars.max(1);
+                if (first_bar + b) % span != 0 && b != 0 {
+                    continue;
+                }
+                let left = span - ((first_bar + b) % span);
+                let len = (left.min(bars - b)) as f64 * BEATS_PER_BAR - 0.05;
+                let (d, br) = at(0.0);
+                let base = if level >= 2 { 82.0 } else { 64.0 };
+                for p in voiced(chord, 62) {
+                    out.push(note(p, bar0, len, vel(base * d), br));
+                }
+                if level >= 2 {
+                    out.push(note(voiced(chord, 50)[0], bar0, len, vel(base * 0.85 * d), br));
+                }
+            }
+            Role::Arp => {
+                let tones = voiced(chord, 62);
+                let mut seq: Vec<u8> = tones.clone();
+                seq.push(tones[0] + 12);
+                if level >= 2 {
+                    seq.extend(tones.iter().skip(1).map(|t| t + 12));
+                    let down: Vec<u8> = seq.iter().rev().skip(1).take(seq.len().saturating_sub(2)).copied().collect();
+                    seq.extend(down);
+                }
+                let step = if level >= 2 { 0.25 } else { 0.5 };
+                let n = (BEATS_PER_BAR / step) as usize;
+                for i in 0..n {
+                    let beat = i as f64 * step;
+                    let (d, br) = at(beat);
+                    let accent = if (beat.fract()).abs() < 1e-9 { 1.0 } else { 0.85 };
+                    out.push(note(seq[i % seq.len()], bar0 + beat, step * 0.9, vel(82.0 * d * accent), br));
+                }
+            }
+            Role::Bass => {
+                let root = {
+                    let pc = chord.bass_pc() as i32;
+                    let mut m = 36 + pc;
+                    if m > 43 {
+                        m -= 12;
+                    }
+                    m as u8
+                };
+                // sparsam: Achtel auf dem „und“; voll: rollende Sechzehntel (der Schlag bleibt der Kick)
+                let hits: Vec<(f64, f64)> = if level >= 2 {
+                    (0..4).flat_map(|q| [0.25, 0.5, 0.75].map(move |o| (q as f64 + o, 0.2))).collect()
+                } else {
+                    (0..4).map(|q| (q as f64 + 0.5, 0.42)).collect()
+                };
+                for (beat, len) in hits {
+                    let (d, br) = at(beat);
+                    out.push(note(root, bar0 + beat, len, vel(100.0 * d), br * 0.5));
+                }
+            }
+            Role::Lead => {
+                // Motiv über zwei Takte aus Akkordtönen; sparsam nur jeden zweiten Takt
+                const A: &[(f64, f64, usize)] = &[(0.0, 0.5, 2), (0.75, 0.25, 1), (1.5, 0.5, 2), (2.5, 0.25, 3), (3.0, 0.75, 1)];
+                const B: &[(f64, f64, usize)] = &[(0.0, 0.75, 3), (1.0, 0.25, 2), (1.5, 0.5, 1), (2.0, 1.0, 0), (3.5, 0.5, 1)];
+                let phrase = if (first_bar + b) % 2 == 0 { A } else { B };
+                if level < 2 && (first_bar + b) % 2 == 1 {
+                    continue;
+                }
+                let tones = voiced(chord, 74);
+                let pick = |i: usize| -> u8 {
+                    let t = &tones;
+                    if i < t.len() { t[i] } else { t[i % t.len()] + 12 }
+                };
+                for &(beat, len, idx) in phrase {
+                    let (d, br) = at(beat);
+                    out.push(note(pick(idx), bar0 + beat, len * 0.95, vel(92.0 * d), br + 0.2));
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Schläge einer Trommel-Rolle als Raster-Zeilen je Takt (Schritte 0–15).
+fn drum_steps(role: Role, level: u8) -> Vec<(&'static str, Vec<usize>)> {
+    let q = vec![0, 4, 8, 12];
+    let off = vec![2, 6, 10, 14];
+    match role {
+        Role::Kick => vec![("kick", q)],
+        Role::Hats if level >= 2 => vec![("hho", off), ("hhc", (0..16).filter(|s| s % 4 != 2).collect())],
+        Role::Hats => vec![("hho", off)],
+        Role::Clap if level >= 2 => vec![("clap", vec![4, 12]), ("snare", vec![4, 12, 15])],
+        Role::Clap => vec![("clap", vec![4, 12])],
+        Role::Perc if level >= 2 => vec![("shk", (0..16).collect()), ("rim", vec![3, 10])],
+        Role::Perc => vec![("shk", (0..16).step_by(2).collect())],
+        _ => vec![],
+    }
+}
+
+/// Trommeln eines Abschnitts (alle Trommel-Rollen zusammen).
+fn drum_notes(plan: &SongPlan, sec: &Section) -> Vec<Note> {
+    let bars = sec.bars;
+    let total = bars as f64 * BEATS_PER_BAR;
+    let mut grid = rhythm::Grid { steps: (bars as usize) * rhythm::STEPS_PER_BAR, rows: BTreeMap::new() };
+    let mut fx = 0u8;
+    let mut kick_level = 0u8;
+    for l in plan.layers.iter().filter(|l| l.role.is_drum()) {
+        let level = sec.levels.get(&l.key).copied().unwrap_or(0);
+        if level == 0 {
+            continue;
+        }
+        if l.role == Role::Fx {
+            fx = level;
+            continue;
+        }
+        if l.role == Role::Kick {
+            kick_level = level;
+        }
+        for (row, steps) in drum_steps(l.role, level) {
+            let e = grid.rows.entry(row.to_string()).or_default();
+            for b in 0..bars as usize {
+                e.extend(steps.iter().map(|s| b * rhythm::STEPS_PER_BAR + s));
+            }
+        }
+    }
+    // Snare-Wirbel am Ende eines Aufbaus: im vorletzten Takt Achtel, im letzten Sechzehntel
+    let roll_bars = if fx >= 2 { 4 } else { 2 };
+    if fx > 0 && sec.kind == Aufbau && bars >= 2 {
+        let e = grid.rows.entry("snare".to_string()).or_default();
+        let from = bars.saturating_sub(roll_bars) as usize;
+        for b in from..bars as usize {
+            let left = bars as usize - b;
+            let step = match left {
+                1 => 1,
+                2 => 2,
+                _ => 4,
+            };
+            e.extend((0..16).step_by(step).map(|s| b * rhythm::STEPS_PER_BAR + s));
+        }
+    }
+    for v in grid.rows.values_mut() {
+        v.sort_unstable();
+        v.dedup();
+    }
+    let mut notes = rhythm::grid_notes(&grid, plan.swing);
+    // Becken zum Abschnittsbeginn (außer im Intro)
+    if fx > 0 && sec.kind != Intro {
+        notes.push(note(drums::CRASH, 0.0, 0.5, 104, 0.0));
+    }
+    // Verlauf des Abschnitts: Aufbau wird lauter (der Wirbel besonders), Outro leiser
+    for n in notes.iter_mut() {
+        let (d, _) = shape(sec.kind, n.start_beats / total);
+        let roll = n.pitch == drums::SNARE && sec.kind == Aufbau && n.start_beats >= total - roll_bars as f64 * BEATS_PER_BAR;
+        if roll && fx > 0 {
+            // Wirbel: von leise bis kräftig, gleichmäßig über seine Länge
+            let r = (n.start_beats - (total - roll_bars as f64 * BEATS_PER_BAR)) / (roll_bars as f64 * BEATS_PER_BAR);
+            n.velocity = vel(40.0 + 80.0 * r);
+        } else {
+            n.velocity = vel(n.velocity as f64 * d.max(0.3));
+        }
+    }
+    // volle Kick: etwas mehr Druck
+    if kick_level >= 2 {
+        for n in notes.iter_mut().filter(|n| n.pitch == drums::KICK) {
+            n.velocity = n.velocity.saturating_add(8).min(127);
+        }
+    }
+    notes.sort_by(|a, b| a.start_beats.total_cmp(&b.start_beats).then(a.pitch.cmp(&b.pitch)));
+    notes
+}
+
+/// Eine erzeugte Spur.
+pub struct GenTrack {
+    pub name: String,
+    pub instrument: Instrument,
+    pub gain_db: f32,
+    /// (Name, Anfang in Schlägen, Länge, Noten)
+    pub clips: Vec<(String, f64, f64, Vec<Note>)>,
+}
+
+fn layer_instrument(l: &Layer) -> Instrument {
+    let kind = l.kind.unwrap_or(match l.role {
+        Role::Bass => InstrumentKind::Bass,
+        r if r.is_drum() => InstrumentKind::Drums,
+        _ => InstrumentKind::Synth,
+    });
+    let mut inst = sound::default_instrument(kind);
+    if let Some(p) = &l.sound {
+        if let Ok((x, y)) = sound::field_preset(kind, "charakter", p) {
+            let _ = sound::apply_field(&mut inst, "charakter", x, y);
+            inst.preset = p.clone();
+        }
+    }
+    if let Some(r) = &l.raum {
+        if let Ok((x, y)) = sound::field_preset(kind, "raum", r) {
+            let _ = sound::apply_field(&mut inst, "raum", x, y);
+        }
+    }
+    if let Some(v) = &l.verlauf {
+        let _ = sound::apply_verlauf(&mut inst, v);
+    }
+    inst
+}
+
+/// Alle Spuren eines Plans.
+pub fn generate(plan: &SongPlan) -> Result<Vec<GenTrack>, String> {
+    let (_, chords) = plan.check()?;
+    let ctx = Ctx { chords: &chords, chord_bars: plan.chord_bars.max(1) };
+    let starts: Vec<u32> = plan.sections.iter().scan(0u32, |acc, s| {
+        let at = *acc;
+        *acc += s.bars;
+        Some(at)
+    }).collect();
+    let mut out = Vec::new();
+    for l in plan.layers.iter().filter(|l| !l.role.is_drum()) {
+        let mut clips = Vec::new();
+        for (sec, &first) in plan.sections.iter().zip(&starts) {
+            let level = sec.levels.get(&l.key).copied().unwrap_or(0);
+            if level == 0 {
+                continue;
+            }
+            let notes = melodic(l.role, level, sec, first, &ctx);
+            clips.push((sec.name.clone(), first as f64 * BEATS_PER_BAR, sec.bars as f64 * BEATS_PER_BAR, notes));
+        }
+        if !clips.is_empty() {
+            out.push(GenTrack { name: l.name.clone(), instrument: layer_instrument(l), gain_db: l.gain_db, clips });
+        }
+    }
+    // alle Trommeln in eine Spur
+    let mut drum_clips = Vec::new();
+    for (sec, &first) in plan.sections.iter().zip(&starts) {
+        let any = plan.layers.iter().any(|l| l.role.is_drum() && sec.levels.get(&l.key).copied().unwrap_or(0) > 0);
+        if !any {
+            continue;
+        }
+        drum_clips.push((sec.name.clone(), first as f64 * BEATS_PER_BAR, sec.bars as f64 * BEATS_PER_BAR, drum_notes(plan, sec)));
+    }
+    if !drum_clips.is_empty() {
+        let mut inst = sound::default_instrument(InstrumentKind::Drums);
+        if let Some(p) = &plan.drums {
+            if let Ok((x, y)) = sound::field_preset(InstrumentKind::Drums, "charakter", p) {
+                let _ = sound::apply_field(&mut inst, "charakter", x, y);
+                inst.preset = p.clone();
+            }
+        }
+        out.push(GenTrack { name: "Beat".into(), instrument: inst, gain_db: -2.0, clips: drum_clips });
+    }
+    Ok(out)
+}
+
+// ---------------------------------------------------------------- im Projekt
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SongWritten {
+    pub snapshot: Snapshot,
+    pub track_ids: Vec<Id>,
+    /// ersetzte (zuletzt erzeugte) Spuren
+    pub replaced: usize,
+    pub bars: u32,
+    pub seconds: f64,
+}
+
+impl AppState {
+    /// Schreibt den Song: setzt Tempo und 4/4, ersetzt die zuletzt erzeugten
+    /// Song-Spuren (wenn es sie noch gibt) und legt die neuen an – ein Rückgängig-Schritt.
+    pub fn song_write(&self, plan: &SongPlan, replace: bool, label_prefix: &str) -> CmdResult<SongWritten> {
+        let tracks = generate(plan)?;
+        let previous: Vec<Id> = if replace { lock(&self.song_tracks)?.clone() } else { Vec::new() };
+        let mut commands = vec![Command::SetProject { patch: ProjectPatch { tempo_bpm: Some(plan.tempo), beats_per_bar: Some(4), beat_unit: Some(4), ..Default::default() } }];
+        let mut ids = Vec::new();
+        let replaced;
+        {
+            let mut s = lock(&self.session)?;
+            let p = &mut s.project;
+            let present: Vec<Id> = previous.iter().copied().filter(|id| p.track(*id).is_some()).collect();
+            replaced = present.len();
+            commands.extend(present.into_iter().map(|track_id| Command::RemoveTrack { track_id }));
+            for g in tracks {
+                let id = p.alloc_id();
+                let mut t = Track::new(id, g.name, TrackKind::Instrument);
+                t.instrument = Some(g.instrument);
+                t.gain_db = g.gain_db;
+                // flache Zeilen: der ganze Song auf einen Blick
+                t.view = TrackView::Compact;
+                for (name, start, len, notes) in g.clips {
+                    t.clips.push(Clip { id: p.alloc_id(), name, start_beats: start, source: ClipSource::Notes { length_beats: len, notes } });
+                }
+                ids.push(id);
+                commands.push(Command::AddTrack { track: t, index: None });
+            }
+        }
+        let label = format!("{label_prefix}Song „{}“ {}", plan.name, if replaced > 0 { "neu erzeugen" } else { "erzeugen" });
+        let snapshot = self.execute(Command::Batch { label, commands }, false)?;
+        *lock(&self.song_tracks)? = ids.clone();
+        let bars = plan.total_bars();
+        Ok(SongWritten { snapshot, track_ids: ids, replaced, bars, seconds: bars as f64 * BEATS_PER_BAR * 60.0 / plan.tempo })
+    }
+}
+
+
+/// Stufen eines Abschnitts als Text für den Agenten, z. B. „pad 2 · arp 1 · kick 1“.
+pub fn levels_text(sec: &Section, plan: &SongPlan) -> String {
+    plan.layers
+        .iter()
+        .filter_map(|l| sec.levels.get(&l.key).filter(|v| **v > 0).map(|v| format!("{} {v}", l.key)))
+        .collect::<Vec<_>>()
+        .join(" · ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_template_is_valid_and_generates() {
+        for t in templates() {
+            t.check().unwrap_or_else(|e| panic!("{}: {e}", t.name));
+            let tracks = generate(&t).unwrap();
+            assert!(tracks.iter().any(|g| g.name == "Beat"), "{}: Schlagzeug", t.name);
+            // jede Spur: Clips im Raster der Abschnitte, alle Noten innerhalb ihres Clips
+            for g in &tracks {
+                for (name, start, len, notes) in &g.clips {
+                    assert!(start % 4.0 == 0.0 && *len > 0.0, "{} {name}", g.name);
+                    assert!(notes.iter().all(|n| n.start_beats >= 0.0 && n.start_beats < *len && n.velocity > 0), "{} {name}", g.name);
+                }
+            }
+            for l in &t.layers {
+                if let Some(s) = &l.sound {
+                    let kind = layer_instrument(l).kind;
+                    assert!(sound::field_preset(kind, "charakter", s).is_ok(), "{}: Klang {s}", t.name);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn trance_grows_from_pads_to_full() {
+        let t = template("Trance").unwrap();
+        let tracks = generate(&t).unwrap();
+        let names: Vec<&str> = tracks.iter().map(|g| g.name.as_str()).collect();
+        assert_eq!(names, ["Fläche", "Arpeggio", "Bass", "Lead", "Beat"]);
+        // Intro: nur die Fläche, kein Beat
+        let beat = tracks.iter().find(|g| g.name == "Beat").unwrap();
+        assert!(beat.clips.iter().all(|c| c.1 >= 16.0 * 4.0), "Beat erst nach dem Intro");
+        assert_eq!(tracks[0].clips[0].0, "Intro");
+        // Aufbau endet mit einem Snare-Wirbel, der lauter wird
+        let aufbau = beat.clips.iter().find(|c| c.0 == "Aufbau").unwrap();
+        let roll: Vec<&Note> = aufbau.3.iter().filter(|n| n.pitch == drums::SNARE).collect();
+        assert!(roll.len() >= 16 + 8, "Wirbel: {}", roll.len());
+        assert!(roll.last().unwrap().velocity > roll.first().unwrap().velocity + 30);
+        // Höhepunkt: Crash zu Beginn, mehr Trommeln als im Thema
+        let hp = beat.clips.iter().find(|c| c.0 == "Höhepunkt").unwrap();
+        assert!(hp.3.iter().any(|n| n.pitch == drums::CRASH && n.start_beats == 0.0));
+        let thema = beat.clips.iter().find(|c| c.0 == "Thema").unwrap();
+        assert!(hp.3.len() > 3 * thema.3.len());
+        // Aufbau: Arpeggio wird heller
+        let arp = tracks.iter().find(|g| g.name == "Arpeggio").unwrap();
+        let a = &arp.clips.iter().find(|c| c.0 == "Aufbau").unwrap().3;
+        assert!(a.last().unwrap().brightness > a.first().unwrap().brightness + 0.6);
+        // Akkorde folgen a – F – C – G mit zwei Takten je Akkord
+        let pad = &tracks[0].clips[1].3; // Thema
+        let roots: Vec<u8> = pad.iter().filter(|n| n.start_beats % 8.0 == 0.0).map(|n| n.pitch % 12).collect();
+        assert!(roots.contains(&9) && roots.contains(&5), "{roots:?}");
+    }
+
+    #[test]
+    fn levels_change_density() {
+        let t = template("trance").unwrap();
+        let (_, chords) = t.check().unwrap();
+        let ctx = Ctx { chords: &chords, chord_bars: 2 };
+        let sec = section("x", 4, Teil, &[]);
+        let n1 = melodic(Role::Arp, 1, &sec, 0, &ctx).len();
+        let n2 = melodic(Role::Arp, 2, &sec, 0, &ctx).len();
+        assert_eq!((n1, n2), (32, 64));
+        assert!(melodic(Role::Lead, 1, &sec, 0, &ctx).len() < melodic(Role::Lead, 2, &sec, 0, &ctx).len());
+        assert!(drum_steps(Role::Hats, 2).iter().map(|r| r.1.len()).sum::<usize>() > drum_steps(Role::Hats, 1)[0].1.len());
+    }
+
+    #[test]
+    fn bad_plans_are_explained() {
+        let mut t = template("Ambient").unwrap();
+        t.key = "Lila".into();
+        assert!(t.check().unwrap_err().contains("Tonart"));
+        let mut t = template("Ambient").unwrap();
+        t.chords = vec!["Xyz".into()];
+        assert!(t.check().unwrap_err().contains("Akkord"));
+        let mut t = template("Ambient").unwrap();
+        t.sections[0].levels.insert("gong".into(), 1);
+        assert!(t.check().unwrap_err().contains("gong"));
+        assert!(template("Polka").unwrap_err().contains("Trance"));
+    }
+}

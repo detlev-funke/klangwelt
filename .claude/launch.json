@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ui-preview",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["ui/scripts/serve.mjs"],
+      "port": 1420
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["ui/scripts/serve.mjs", "--web", "--port=1477"],
+      "port": 1477
+    }
+  ]
+}

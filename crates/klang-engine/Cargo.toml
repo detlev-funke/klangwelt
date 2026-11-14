@@ -1,0 +1,13 @@
+[package]
+name = "klang-engine"
+description = "Klangwelt real-time audio engine (playback, metronome, recording)"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+rtrb = { workspace = true }
+
+# The audio device exists only on the desktop; in the browser an AudioWorklet mixes.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+cpal = { workspace = true }

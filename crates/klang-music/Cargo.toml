@@ -1,0 +1,14 @@
+[package]
+name = "klang-music"
+description = "Klangwelt music library: MusicXML, melody index, theory, voice analysis"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+quick-xml = { workspace = true }
+zip = { workspace = true }
+flate2 = { workspace = true }
+tar = { workspace = true }

@@ -1,0 +1,1875 @@
+// Zeitleiste: Lineal oben, darunter die Spuren.
+// Lineal: Ziehen verschiebt die Ansicht, Klick setzt die Abspielposition,
+// Umschalt/Strg+Ziehen markiert einen Zeitbereich (Schleife), Kanten lassen
+// sich nachziehen. Spuren: Klick wählt Noten, Ziehen auf freier Fläche zieht
+// einen Auswahlrahmen auf, gewählte Noten lassen sich verschieben (mit
+// Takteinteilung); erst Alt+Klick setzt eine Note. Rechtsklick öffnet ein
+// Kontextmenü (Noten ausrichten/transponieren, Aufnahme umwandeln, Zeitbereich
+// löschen). Audio-Clips tragen den Knopf „♪ → Noten“; gezogene Audiodateien
+// zeigen, wo sie landen (filedrop.ts).
+
+import { startTour } from "./tour.js";
+import { backend } from "../bridge.js";
+import {
+  addTrack, analyzeSelected, convertAudio, deleteRange, deleteSelectedNotes, detectTempo, loadDemo, quantizeSelectedNotes, resetRowHeight,
+  seekBeats, startRowResize, toggleRecord, transposeSelectedNotes,
+} from "../actions.js";
+import { type MenuEntry, openContextMenu } from "../ctxmenu.js";
+import { dropdown, fitCanvas, formatBarBeat, h, icon } from "../dom.js";
+import { type DropTarget, audioDrag } from "../filedrop.js";
+import { fillBeatMenu } from "./rhythm.js";
+import { fillSongMenu } from "./song.js";
+import { MOOD_COLORS, MOOD_LABELS, chordIndexAt, harmonyFocus, harmonyLaneOn, harmonyLine, watchHarmonyLine } from "../harmonyline.js";
+import {
+  NOTES_TOP, RHYTHM_H, type NoteGeo, analysisFor, analysisState, geoFor, heightDraft, highOnTop, inView, isBlack, laneY,
+  maxScrollY, noteGrid, noteKey, noteSel, offViewAtTop, pitchAt, pitchDelta, pitchOfLane, pitchViews, rowHeight, rowTops,
+  scrollPitch, viewFor, wheelPitchStep, exprAt, exprY,
+} from "../pianoroll.js";
+import { effect } from "../signals.js";
+import { RULER_H, act, clipLengthBeats, counterpointMarks, rangeFocus, run, selection, snapshot, specFor, status, viewport } from "../store.js";
+import type { Clip, Command, Note, Project, Track } from "../types.js";
+import { EXPRS, type ExprKey, exprKeysFor, exprLanes, exprValue, laneKeyFor, withExpr } from "../expression.js";
+import { clipSpan, fmtShift, gridLabel, gridOf, rangeGrid, rangeLabel, snapTo } from "../editmath.js";
+
+const WAVE_BUCKETS = 2400;
+const waves = new Map<string, Float32Array | "loading">();
+/** Länge der zuletzt gesetzten Note (neue Noten übernehmen sie). */
+let lastNoteLength = 1;
+
+function rgba(hex: string, a: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+}
+
+type Drag =
+  | {
+      /** Lineal ziehen: Ansicht verschieben (ohne Bewegung: Abspielposition setzen). */
+      kind: "pan";
+      startX: number;
+      scrollX0: number;
+      moved: boolean;
+    }
+  | {
+      /** Zeitbereich markieren bzw. eine Kante nachziehen. */
+      kind: "range";
+      anchor: number;
+      cur: number;
+      moved: boolean;
+      free: boolean;
+    }
+  | {
+      /** Auswahlrahmen über Noten einer Spur. */
+      kind: "marquee";
+      trackId: number;
+      /** Clip unter dem Startpunkt (sonst der mit den meisten Treffern). */
+      clipId: number | null;
+      x0: number;
+      y0: number;
+      x: number;
+      y: number;
+      /** Umschalt/Strg: zur bisherigen Auswahl hinzunehmen. */
+      base: { clipId: number; keys: string[] } | null;
+      moved: boolean;
+    }
+  | { kind: "clip"; trackId: number; clipId: number; startX: number; origBeats: number; beats: number; moved: boolean; curX: number; curY: number }
+  | {
+      kind: "notes";
+      mode: "move" | "resize";
+      trackId: number;
+      clipId: number;
+      startX: number;
+      startY: number;
+      /** Zeigerposition (für die Positionsanzeige beim Verschieben). */
+      curX: number;
+      curY: number;
+      /** Noten vor der Geste (bei neuer Note inklusive dieser). */
+      orig: Note[];
+      /** Indizes in `orig`, die bewegt bzw. in der Länge geändert werden. */
+      active: number[];
+      /** Index der angefassten Note. */
+      grabbed: number;
+      draft: Note[];
+      moved: boolean;
+      created: boolean;
+      lastPitch: number;
+      /** Bahnhöhe beim Start der Geste (für die Umrechnung y → Halbtöne). */
+      laneH: number;
+    }
+  | {
+      /** Ausdrucksspur: Werte ziehen/malen, mit Shift eine Linie (Crescendo). */
+      kind: "expr";
+      trackId: number;
+      key: ExprKey;
+      line: boolean;
+      startX: number;
+      startY: number;
+      lastX: number;
+      curX: number;
+      curY: number;
+      /** Notenlisten je Clip vor bzw. während der Geste. */
+      orig: Map<number, Note[]>;
+      draft: Map<number, Note[]>;
+      /** Nur diese Noten (Auswahl) bearbeiten; fehlt ein Clip, sind alle frei. */
+      only: Map<number, Set<number>> | null;
+    }
+  | {
+      /** Alt+Ziehen auf einer Note: Anschlag (mit Shift: Vibrato) direkt ändern. */
+      kind: "noteExpr";
+      trackId: number;
+      clipId: number;
+      key: ExprKey;
+      startY: number;
+      curX: number;
+      curY: number;
+      orig: Note[];
+      active: number[];
+      grabbed: number;
+      draft: Note[];
+      moved: boolean;
+    };
+
+interface Hit {
+  track: Track;
+  index: number;
+  rowY: number;
+  clip: Clip | null;
+  /** Bereich innerhalb der Notenzeile. */
+  zone: "band" | "lanes" | "rhythm" | "expr" | "compact";
+  note: number; // Index der getroffenen Note oder -1
+  edge: boolean; // rechter Rand einer Note (Länge ändern)
+  pitch: number;
+  beatInClip: number;
+  /** Position im Projekt (Schläge). */
+  beat: number;
+}
+
+class KwTimeline extends HTMLElement {
+  #canvas = h("canvas");
+  #hint!: HTMLDivElement;
+  #raf = 0;
+  #drag: Drag | null = null;
+  #width = 0;
+  /** Knöpfe „♪ → Noten“ der Audio-Clips (beim Zeichnen gesammelt, Zeitleisten-Koordinaten). */
+  #noteButtons: Array<{ x: number; y: number; w: number; h: number; trackId: number; clipId: number }> = [];
+
+  connectedCallback(): void {
+    if (this.childElementCount) return;
+    this.#hint = h(
+      "div",
+      { class: "empty-hint" },
+      h("h2", {}, "Leeres Projekt"),
+      h("div", {}, "Lade die Demo, starte mit einem Song oder Beat, lege eine Spur an, nimm direkt über das Mikrofon auf – oder zieh Audiodateien (WAV, AIFF, FLAC, Opus) hierher."),
+      h(
+        "div",
+        { class: "row" },
+        h("button", { class: "btn intro-btn", title: "Rundgang durch alle Fenster – mit Zetteln zu den wichtigsten Funktionen", onclick: () => startTour() }, icon("help"), "Intro"),
+        h("button", { class: "btn primary", title: "Beispielprojekt mit Beat, Arpeggio und Melodie laden – zum Ausprobieren", onclick: () => loadDemo() }, icon("sparkle"), "Demo laden"),
+        dropdown(h("button", { class: "btn song-start", title: "Ganzes Stück aus einer Vorlage (Trance, Ambient …) anlegen – im Fenster „Song“ weiter gestalten" }, icon("song"), "Mit Song starten ▾") as HTMLButtonElement, "beat-menu song-menu", fillSongMenu),
+        dropdown(h("button", { class: "btn beat-start", title: "Beat-Vorlage eines Genres als Schlagzeug-Spur anlegen" }, icon("grid"), "Mit Beat starten ▾") as HTMLButtonElement, "beat-menu", fillBeatMenu),
+        h("button", { class: "btn", title: "Leere Instrumentspur (Zupfer) anlegen – Noten mit Alt+Klick setzen", onclick: () => addTrack("instrument") }, icon("keys"), "Instrumentspur"),
+        h("button", { class: "btn rec", title: "Über das Mikrofon aufnehmen (R) – legt eine Audiospur an", onclick: () => toggleRecord() }, icon("mic"), "Aufnehmen"),
+      ),
+      h(
+        "div",
+        { class: "muted", html: "<kbd>Leertaste</kbd> Wiedergabe · <kbd>L</kbd> Wiederholen · <kbd>R</kbd> Aufnahme · <kbd>Strg</kbd>+Mausrad Zoom · <kbd>Alt</kbd>+Klick Note setzen · <kbd>Entf</kbd> löschen" },
+      ),
+    );
+    this.append(this.#canvas, this.#hint);
+
+    new ResizeObserver(() => this.#invalidate()).observe(this);
+    effect(() => {
+      const p = snapshot.value?.project;
+      selection.value;
+      viewport.value;
+      noteSel.value;
+      pitchViews.value;
+      heightDraft.value;
+      highOnTop.value;
+      exprLanes.value;
+      counterpointMarks.value;
+      harmonyLine.value;
+      harmonyLaneOn.value;
+      harmonyFocus.value;
+      audioDrag.value;
+      this.#hint.style.display = p && p.tracks.length === 0 ? "" : "none";
+      this.#invalidate();
+    });
+    effect(() => {
+      const st = status.value;
+      this.#follow(st.positionSecs, st.playing);
+      this.#invalidate();
+    });
+
+    watchHarmonyLine();
+    this.#canvas.addEventListener("pointerdown", (e) => this.#down(e));
+    this.#canvas.addEventListener("pointermove", (e) => this.#move(e));
+    this.#canvas.addEventListener("pointerup", (e) => this.#up(e));
+    this.#canvas.addEventListener("pointercancel", () => (this.#drag = null));
+    this.#canvas.addEventListener("contextmenu", (e) => this.#context(e));
+    this.#canvas.addEventListener("dblclick", (e) => this.#dblclick(e));
+    this.addEventListener("wheel", (e) => this.#wheel(e), { passive: false });
+  }
+
+  /** Ziel für gezogene Audiodateien an einer Stelle (Fensterkoordinaten); null außerhalb. */
+  dropTargetAt(cx: number, cy: number): DropTarget | null {
+    const r = this.#canvas.getBoundingClientRect();
+    if (cx < r.left || cx >= r.right || cy < r.top || cy >= r.bottom) return null;
+    const x = cx - r.left;
+    const y = cy - r.top;
+    const startBeats = Math.max(0, snapTo(this.#xToBeat(x), this.#ppb() > 70 ? 0.25 : 1));
+    const hit = y >= RULER_H ? this.#hit(x, y) : null;
+    return { trackId: hit?.track.id ?? null, startBeats };
+  }
+
+  /** Lage des Knopfs „♪ → Noten“ eines Audio-Clips in Fensterkoordinaten (null: nicht sichtbar). */
+  noteButtonRect(clipId: number): { x: number; y: number; w: number; h: number } | null {
+    const b = this.#noteButtons.find((n) => n.clipId === clipId);
+    if (!b) return null;
+    const r = this.#canvas.getBoundingClientRect();
+    return { x: r.left + b.x, y: r.top + b.y, w: b.w, h: b.h };
+  }
+
+  #noteButtonAt(x: number, y: number): { trackId: number; clipId: number } | null {
+    for (let i = this.#noteButtons.length - 1; i >= 0; i--) {
+      const b = this.#noteButtons[i]!;
+      if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return b;
+    }
+    return null;
+  }
+
+  // ---------- Koordinaten ----------
+  #ppb(): number {
+    return viewport.peek().pxPerBeat;
+  }
+  #beatToX(b: number): number {
+    return b * this.#ppb() - viewport.peek().scrollX;
+  }
+  #xToBeat(x: number): number {
+    return (x + viewport.peek().scrollX) / this.#ppb();
+  }
+
+  #rows(p: Project): Array<{ track: Track; y: number; h: number }> {
+    const tops = rowTops(p.tracks);
+    const sy = viewport.peek().scrollY;
+    return p.tracks.map((track, i) => ({ track, y: RULER_H + tops[i]! - sy, h: rowHeight(track) }));
+  }
+
+  #clipNotes(c: Clip): Note[] {
+    const d = this.#drag;
+    if ((d?.kind === "notes" || d?.kind === "noteExpr") && d.clipId === c.id) return d.draft;
+    if (d?.kind === "expr") {
+      const draft = d.draft.get(c.id);
+      if (draft) return draft;
+    }
+    return c.source.type === "notes" ? c.source.notes : [];
+  }
+
+  #hit(x: number, y: number): Hit | null {
+    const p = snapshot.peek()?.project;
+    if (!p || y < RULER_H) return null;
+    const rows = this.#rows(p);
+    const index = rows.findIndex((r) => y >= r.y && y < r.y + r.h);
+    if (index < 0) return null;
+    const { track, y: rowY } = rows[index]!;
+    const beat = this.#xToBeat(x);
+    let clip: Clip | null = null;
+    for (let k = track.clips.length - 1; k >= 0; k--) {
+      const c = track.clips[k]!;
+      if (beat >= c.startBeats && beat <= c.startBeats + clipLengthBeats(c, p.tempoBpm)) {
+        clip = c;
+        break;
+      }
+    }
+    const hit: Hit = { track, index, rowY, clip, zone: "compact", note: -1, edge: false, pitch: 0, beatInClip: 0, beat };
+    if (track.view !== "notes") return hit;
+    const rel = y - rowY;
+    const g = geoFor(track);
+    hit.zone = rel < NOTES_TOP ? "band" : g.exprH && rel >= g.exprTop ? "expr" : rel >= g.rhythmTop ? "rhythm" : "lanes";
+    hit.pitch = Math.max(0, Math.min(127, pitchAt(g, rel)));
+    if (clip && hit.zone === "lanes" && clip.source.type === "notes") {
+      hit.beatInClip = beat - clip.startBeats;
+      const notes = this.#clipNotes(clip);
+      for (let n = notes.length - 1; n >= 0; n--) {
+        const note = notes[n]!;
+        if (note.pitch !== hit.pitch) continue;
+        if (hit.beatInClip >= note.startBeats && hit.beatInClip <= note.startBeats + note.lengthBeats) {
+          hit.note = n;
+          const right = this.#beatToX(clip.startBeats + note.startBeats + note.lengthBeats);
+          hit.edge = right - x <= 6 && note.lengthBeats * this.#ppb() > 10;
+          break;
+        }
+      }
+    }
+    return hit;
+  }
+
+  /** Spur, deren Unterkante (Splitter) an dieser y-Position liegt (±4 px). */
+  #splitterAt(y: number): Track | null {
+    const p = snapshot.peek()?.project;
+    if (!p || y < RULER_H) return null;
+    const row = this.#rows(p).find((r) => Math.abs(r.y + r.h - y) <= 4);
+    return row?.track ?? null;
+  }
+
+  // ---------- Interaktion ----------
+  #down(e: PointerEvent): void {
+    if (e.button === 2) return; // Rechtsklick: Kontextaktion
+    const split = this.#splitterAt(e.offsetY);
+    if (split) {
+      startRowResize(split, e, this.#canvas);
+      return;
+    }
+    const btn = this.#noteButtonAt(e.offsetX, e.offsetY);
+    if (btn) {
+      selection.value = { trackId: btn.trackId, clipId: btn.clipId };
+      void convertAudio(btn.trackId, btn.clipId, "melodie");
+      return;
+    }
+    try {
+      this.#canvas.setPointerCapture(e.pointerId);
+    } catch {
+      /* z. B. synthetische Ereignisse – Geste funktioniert trotzdem */
+    }
+    if (e.offsetY < RULER_H) {
+      this.#rulerDown(e);
+      return;
+    }
+    const hit = this.#hit(e.offsetX, e.offsetY);
+    if (!hit) {
+      selection.value = null;
+      noteSel.value = null;
+      return;
+    }
+    if (hit.zone === "expr") {
+      this.#beginExprGesture(e, hit);
+      return;
+    }
+    selection.value = { trackId: hit.track.id, clipId: hit.clip?.id ?? null };
+
+    const editable = hit.track.kind === "instrument" && hit.zone === "lanes" && hit.clip?.source.type === "notes";
+    if (editable && hit.clip && hit.note >= 0 && e.altKey) {
+      this.#beginNoteExpr(e, hit, hit.clip);
+      return;
+    }
+    if (editable && hit.clip && hit.note >= 0) {
+      this.#beginNoteGesture(e, hit, hit.clip);
+      return;
+    }
+    if (hit.track.kind === "instrument" && hit.zone === "lanes") {
+      // Erst Alt+Klick setzt eine Note, sonst zieht man einen Auswahlrahmen auf.
+      // Neben einem Clip kommt die Note in den nächsten Clip der Spur, der sich
+      // beim Loslassen auf ganze Takte erweitert; nur ohne Clip entsteht ein neuer.
+      if (e.altKey) {
+        if (editable && hit.clip) this.#beginNoteCreate(e, hit, hit.clip);
+        else if (!hit.clip) {
+          const near = this.#nearestNotesClip(hit.track, hit.beat);
+          if (near) {
+            selection.value = { trackId: hit.track.id, clipId: near.id };
+            this.#beginNoteCreate(e, { ...hit, clip: near, beatInClip: hit.beat - near.startBeats }, near);
+          } else this.#createClipWithNote(hit);
+        }
+        return;
+      }
+      this.#beginMarquee(e, hit);
+      return;
+    }
+    if (noteSel.peek()?.clipId !== hit.clip?.id) noteSel.value = null;
+    if (hit.clip && (hit.zone === "band" || hit.zone === "compact" || hit.track.kind === "audio")) {
+      this.#drag = {
+        kind: "clip", trackId: hit.track.id, clipId: hit.clip.id, startX: e.offsetX,
+        origBeats: hit.clip.startBeats, beats: hit.clip.startBeats, moved: false, curX: e.offsetX, curY: e.offsetY,
+      };
+    }
+  }
+
+  // ---------- Lineal ----------
+  #rangeShown(): [number, number] | null {
+    const d = this.#drag;
+    if (d?.kind === "range") return d.moved && Math.abs(d.cur - d.anchor) > 1e-6 ? [Math.min(d.anchor, d.cur), Math.max(d.anchor, d.cur)] : null;
+    return snapshot.peek()?.engine.loopRange ?? null;
+  }
+
+  /** Kante des markierten Bereichs unter x (±5 px): 0 = Anfang, 1 = Ende. */
+  #rangeEdgeAt(x: number): 0 | 1 | null {
+    const r = snapshot.peek()?.engine.loopRange;
+    if (!r) return null;
+    if (Math.abs(x - this.#beatToX(r[0])) <= 5) return 0;
+    if (Math.abs(x - this.#beatToX(r[1])) <= 5) return 1;
+    return null;
+  }
+
+  #rulerDown(e: PointerEvent): void {
+    const range = snapshot.peek()?.engine.loopRange ?? null;
+    const mod = e.shiftKey || e.ctrlKey || e.metaKey;
+    const edge = mod ? null : this.#rangeEdgeAt(e.offsetX);
+    if (range && edge != null) {
+      // Kante packen: die andere bleibt stehen
+      this.#drag = { kind: "range", anchor: range[1 - edge]!, cur: range[edge]!, moved: true, free: e.altKey };
+      return;
+    }
+    if (mod) {
+      const bpb = snapshot.peek()?.project.beatsPerBar ?? 4;
+      const b = Math.max(0, snapTo(this.#xToBeat(e.offsetX), rangeGrid(this.#ppb(), bpb, e.altKey)));
+      this.#drag = { kind: "range", anchor: b, cur: b, moved: false, free: e.altKey };
+      return;
+    }
+    this.#drag = { kind: "pan", startX: e.offsetX, scrollX0: viewport.peek().scrollX, moved: false };
+  }
+
+  // ---------- Noten ----------
+  /** Auswahlrahmen: alle Noten im Rechteck (Zeit × Tonhöhe) eines Clips der Spur. */
+  #beginMarquee(e: PointerEvent, hit: Hit): void {
+    const additive = e.shiftKey || e.ctrlKey || e.metaKey;
+    const sel = noteSel.peek();
+    const base = additive && sel && sel.trackId === hit.track.id ? { clipId: sel.clipId, keys: sel.keys } : null;
+    if (!additive) noteSel.value = null;
+    this.#drag = {
+      kind: "marquee", trackId: hit.track.id, clipId: hit.clip?.source.type === "notes" ? hit.clip.id : null,
+      x0: e.offsetX, y0: e.offsetY, x: e.offsetX, y: e.offsetY, base, moved: false,
+    };
+  }
+
+  #marqueeSelect(): void {
+    const d = this.#drag;
+    const p = snapshot.peek()?.project;
+    if (d?.kind !== "marquee" || !p) return;
+    const t = p.tracks.find((tr) => tr.id === d.trackId);
+    const row = t ? this.#rows(p).find((r) => r.track.id === t.id) : undefined;
+    if (!t || !row) return;
+    const g = geoFor(t);
+    const clampRel = (y: number) => Math.max(NOTES_TOP, Math.min(NOTES_TOP + g.lanesH - 1, y - row.y));
+    const pa = pitchAt(g, clampRel(d.y0));
+    const pb = pitchAt(g, clampRel(d.y));
+    const [lo, hi] = [Math.min(pa, pb), Math.max(pa, pb)];
+    const b0 = this.#xToBeat(Math.min(d.x0, d.x));
+    const b1 = this.#xToBeat(Math.max(d.x0, d.x));
+    let best: { clipId: number; keys: string[] } | null = null;
+    for (const c of t.clips) {
+      if (c.source.type !== "notes" || (d.clipId != null && c.id !== d.clipId)) continue;
+      const keys = c.source.notes
+        .filter((n) => n.pitch >= lo && n.pitch <= hi && c.startBeats + n.startBeats < b1 && c.startBeats + n.startBeats + n.lengthBeats > b0)
+        .map(noteKey);
+      if (!best || keys.length > best.keys.length) best = { clipId: c.id, keys };
+    }
+    if (!best) return;
+    let keys = best.keys;
+    if (d.base && d.base.clipId === best.clipId) keys = [...new Set([...d.base.keys, ...keys])];
+    else if (d.base && !keys.length) {
+      noteSel.value = { trackId: t.id, ...d.base };
+      return;
+    }
+    noteSel.value = keys.length ? { trackId: t.id, clipId: best.clipId, keys } : null;
+    selection.value = { trackId: t.id, clipId: best.clipId };
+  }
+
+  /** Nächster Noten-Clip der Spur zu einer Position (Abstand zur Clipkante; bei Gleichstand der linke). */
+  #nearestNotesClip(t: Track, beat: number): Clip | null {
+    const p = snapshot.peek()?.project;
+    if (!p) return null;
+    let best: { c: Clip; d: number } | null = null;
+    for (const c of t.clips) {
+      if (c.source.type !== "notes") continue;
+      const end = c.startBeats + clipLengthBeats(c, p.tempoBpm);
+      const d = beat < c.startBeats ? c.startBeats - beat : beat > end ? beat - end : 0;
+      if (!best || d < best.d - 1e-9) best = { c, d };
+    }
+    return best?.c ?? null;
+  }
+
+  /** Spur ohne Noten-Clip: Alt+Klick legt einen Clip (1 Takt) mit dieser Note an. */
+  #createClipWithNote(hit: Hit): void {
+    const p = snapshot.peek()?.project;
+    if (!p) return;
+    const bpb = p.beatsPerBar;
+    const at = Math.max(0, hit.beat);
+    const bar = Math.floor(at / bpb) * bpb;
+    const grid = noteGrid(this.#ppb(), false);
+    const start = grid ? Math.floor((at - bar) / grid) * grid : at - bar;
+    const len = Math.max(lastNoteLength, grid || 0.0625);
+    const note: Note = { pitch: hit.pitch, startBeats: start, lengthBeats: len, velocity: 100 };
+    void backend.previewNote(hit.track.id, hit.pitch).catch(() => {});
+    void run({
+      type: "addClip",
+      trackId: hit.track.id,
+      clip: { id: 0, name: "Noten", startBeats: bar, source: { type: "notes", lengthBeats: Math.max(1, Math.ceil((start + len) / bpb)) * bpb, notes: [note] } },
+    });
+  }
+
+  #beginNoteGesture(e: PointerEvent, hit: Hit, clip: Clip): void {
+    const notes = clip.source.type === "notes" ? clip.source.notes : [];
+    const sel = noteSel.peek();
+    const selKeys = new Set(sel && sel.clipId === clip.id ? sel.keys : []);
+    const base = {
+      kind: "notes" as const, trackId: hit.track.id, clipId: clip.id, startX: e.offsetX, startY: e.offsetY, curX: e.offsetX, curY: e.offsetY,
+      moved: false, laneH: geoFor(hit.track).laneH,
+    };
+    // Klick wählt die Note, Umschalt/Strg+Klick nimmt sie dazu bzw. heraus;
+    // Ziehen verschiebt alle gewählten Noten, am rechten Rand ändert es die Länge.
+    const key = noteKey(notes[hit.note]!);
+    if (e.shiftKey || e.ctrlKey || e.metaKey) {
+      selKeys.has(key) ? selKeys.delete(key) : selKeys.add(key);
+    } else if (!selKeys.has(key)) {
+      selKeys.clear();
+      selKeys.add(key);
+    }
+    noteSel.value = { trackId: hit.track.id, clipId: clip.id, keys: [...selKeys] };
+    const active = hit.edge ? [hit.note] : notes.map((n, i) => (selKeys.has(noteKey(n)) ? i : -1)).filter((i) => i >= 0);
+    this.#drag = { ...base, mode: hit.edge ? "resize" : "move", orig: notes, active, grabbed: hit.note, draft: notes, created: false, lastPitch: hit.pitch };
+    void backend.previewNote(hit.track.id, notes[hit.note]!.pitch).catch(() => {});
+  }
+
+  /** Alt+Klick auf eine leere Bahn im Clip: neue Note, Ziehen nach rechts bestimmt die Länge. */
+  #beginNoteCreate(e: PointerEvent, hit: Hit, clip: Clip): void {
+    const notes = clip.source.type === "notes" ? clip.source.notes : [];
+    const base = {
+      kind: "notes" as const, trackId: hit.track.id, clipId: clip.id, startX: e.offsetX, startY: e.offsetY, curX: e.offsetX, curY: e.offsetY,
+      moved: false, laneH: geoFor(hit.track).laneH,
+    };
+    const grid = noteGrid(this.#ppb(), e.shiftKey);
+    // auch vor dem Clipanfang (negativ) – nur nicht vor den Projektanfang
+    const start = Math.max(-clip.startBeats, grid ? Math.floor(hit.beatInClip / grid) * grid : hit.beatInClip);
+    const created: Note = { pitch: hit.pitch, startBeats: start, lengthBeats: Math.max(lastNoteLength, grid || 0.0625), velocity: 100 };
+    const orig = [...notes, created];
+    const idx = orig.length - 1;
+    noteSel.value = { trackId: hit.track.id, clipId: clip.id, keys: [noteKey(created)] };
+    this.#drag = { ...base, mode: "resize", orig, active: [idx], grabbed: idx, draft: orig, created: true, lastPitch: hit.pitch };
+    void backend.previewNote(hit.track.id, hit.pitch).catch(() => {});
+    this.#invalidate();
+  }
+
+  /** Alt+Ziehen auf einer Note: Anschlag, mit Shift Vibrato – für die Note bzw. die ganze Auswahl. */
+  #beginNoteExpr(e: PointerEvent, hit: Hit, clip: Clip): void {
+    const notes = clip.source.type === "notes" ? clip.source.notes : [];
+    const sel = noteSel.peek();
+    const selKeys = new Set(sel && sel.clipId === clip.id ? sel.keys : []);
+    const key = noteKey(notes[hit.note]!);
+    if (!selKeys.has(key)) {
+      selKeys.clear();
+      selKeys.add(key);
+      noteSel.value = { trackId: hit.track.id, clipId: clip.id, keys: [key] };
+    }
+    const active = notes.map((n, i) => (selKeys.has(noteKey(n)) ? i : -1)).filter((i) => i >= 0);
+    const exprKey: ExprKey = e.shiftKey && exprKeysFor(hit.track).includes("vibrato") ? "vibrato" : "velocity";
+    this.#drag = {
+      kind: "noteExpr", trackId: hit.track.id, clipId: clip.id, key: exprKey, startY: e.offsetY, curX: e.offsetX, curY: e.offsetY,
+      orig: notes, active, grabbed: hit.note, draft: notes, moved: false,
+    };
+    this.#invalidate();
+  }
+
+  /** Ausdrucksspur: Wert setzen/malen; Shift: gerade Linie über mehrere Noten (z. B. Crescendo). */
+  #beginExprGesture(e: PointerEvent, hit: Hit): void {
+    const t = hit.track;
+    selection.value = { trackId: t.id, clipId: hit.clip?.id ?? null };
+    const orig = new Map<number, Note[]>();
+    for (const c of t.clips) if (c.source.type === "notes") orig.set(c.id, c.source.notes);
+    // Mit Notenauswahl in dieser Spur: nur die ausgewählten Noten ändern.
+    const sel = noteSel.peek();
+    let only: Map<number, Set<number>> | null = null;
+    if (sel && sel.trackId === t.id && sel.keys.length) {
+      const notes = orig.get(sel.clipId) ?? [];
+      const keys = new Set(sel.keys);
+      only = new Map([[sel.clipId, new Set(notes.map((n, i) => (keys.has(noteKey(n)) ? i : -1)).filter((i) => i >= 0))]]);
+    }
+    this.#drag = {
+      kind: "expr", trackId: t.id, key: laneKeyFor(t), line: e.shiftKey,
+      startX: e.offsetX, startY: e.offsetY, lastX: e.offsetX, curX: e.offsetX, curY: e.offsetY,
+      orig, draft: new Map(orig), only,
+    };
+    this.#paintExpr(e.offsetX, e.offsetY);
+  }
+
+  /** Noten der Spur, deren Anfang zwischen x0 und x1 liegt: [Clip, Index, x]. */
+  #notesBetween(t: Track, x0: number, x1: number, only: Map<number, Set<number>> | null): Array<[Clip, number, number]> {
+    const lo = Math.min(x0, x1);
+    const hi = Math.max(x0, x1);
+    const out: Array<[Clip, number, number]> = [];
+    for (const c of t.clips) {
+      if (c.source.type !== "notes") continue;
+      if (only && !only.has(c.id)) continue;
+      const allowed = only?.get(c.id);
+      c.source.notes.forEach((n, i) => {
+        if (allowed && !allowed.has(i)) return;
+        const x = this.#beatToX(c.startBeats + n.startBeats);
+        if (x >= lo && x <= hi) out.push([c, i, x]);
+      });
+    }
+    return out;
+  }
+
+  #paintExpr(x: number, y: number): void {
+    const d = this.#drag;
+    if (d?.kind !== "expr") return;
+    const p = snapshot.peek()?.project;
+    const t = p?.tracks.find((tr) => tr.id === d.trackId);
+    const row = p && t ? this.#rows(p).find((r) => r.track.id === t.id) : undefined;
+    if (!t || !row) return;
+    const g = geoFor(t);
+    const def = EXPRS[d.key];
+    const valueAt = (yy: number) => exprAt(g, def, yy - row.y);
+    d.curX = x;
+    d.curY = y;
+    if (d.line) {
+      // Gerade vom Startpunkt zum Zeiger: dazwischen liegende Noten folgen der Linie.
+      d.draft = new Map(d.orig);
+      const v0 = valueAt(d.startY);
+      const v1 = valueAt(y);
+      // 5 px Toleranz an den Enden, damit Noten genau am Linienanfang/-ende dazugehören.
+      const tol = x >= d.startX ? 5 : -5;
+      for (const [c, i, nx] of this.#notesBetween(t, d.startX - tol, x + tol, d.only)) {
+        const f = x === d.startX ? 0 : Math.max(0, Math.min(1, (nx - d.startX) / (x - d.startX)));
+        const notes = d.draft.get(c.id) === d.orig.get(c.id) ? d.orig.get(c.id)!.slice() : d.draft.get(c.id)!;
+        notes[i] = withExpr(notes[i]!, d.key, v0 + (v1 - v0) * f);
+        d.draft.set(c.id, notes);
+      }
+    } else {
+      // Malen: alle Noten, über deren Anfang der Zeiger seit dem letzten Schritt gestrichen ist.
+      const v = valueAt(y);
+      const from = d.lastX === x ? x - 6 : d.lastX;
+      const to = d.lastX === x ? x + 6 : x;
+      for (const [c, i] of this.#notesBetween(t, from, to, d.only)) {
+        const cur = d.draft.get(c.id)!;
+        const notes = cur === d.orig.get(c.id) ? cur.slice() : cur;
+        notes[i] = withExpr(notes[i]!, d.key, v);
+        d.draft.set(c.id, notes);
+      }
+      d.lastX = x;
+    }
+    this.#invalidate();
+  }
+
+  #move(e: PointerEvent): void {
+    const d = this.#drag;
+    if (!d) {
+      this.#canvas.style.cursor = this.#cursorFor(e);
+      this.#canvas.title = this.#noteButtonAt(e.offsetX, e.offsetY)
+        ? "In Noten umwandeln: die erkannten Töne als Melodie-Spur darunter anlegen (Rechtsklick: auch als Rhythmus-Spur)"
+        : this.#harmonyTip(e);
+      return;
+    }
+    if (d.kind === "pan") {
+      // Lineal greifen: die Zeit wandert mit der Maus
+      const dx = e.offsetX - d.startX;
+      if (Math.abs(dx) > 3) d.moved = true;
+      if (!d.moved) return;
+      viewport.update((v) => ({ ...v, scrollX: Math.max(0, d.scrollX0 - dx) }));
+      this.#canvas.style.cursor = "grabbing";
+      return;
+    }
+    if (d.kind === "range") {
+      const bpb = snapshot.peek()?.project.beatsPerBar ?? 4;
+      const b = Math.max(0, snapTo(this.#xToBeat(e.offsetX), rangeGrid(this.#ppb(), bpb, d.free || e.altKey)));
+      if (Math.abs(b - d.anchor) > 1e-6) d.moved = true;
+      d.cur = b;
+      this.#canvas.style.cursor = "ew-resize";
+      this.#invalidate();
+      return;
+    }
+    if (d.kind === "marquee") {
+      d.x = e.offsetX;
+      d.y = e.offsetY;
+      if (Math.abs(d.x - d.x0) > 3 || Math.abs(d.y - d.y0) > 3) d.moved = true;
+      if (d.moved) this.#marqueeSelect();
+      this.#invalidate();
+      return;
+    }
+    if (d.kind === "notes" || d.kind === "clip") {
+      d.curX = e.offsetX;
+      d.curY = e.offsetY;
+    }
+    if (d.kind === "expr") {
+      this.#paintExpr(e.offsetX, e.offsetY);
+      return;
+    }
+    if (d.kind === "noteExpr") {
+      const dy = d.startY - e.offsetY; // nach oben = mehr
+      if (Math.abs(dy) > 2) d.moved = true;
+      d.curX = e.offsetX;
+      d.curY = e.offsetY;
+      if (!d.moved) return;
+      const def = EXPRS[d.key];
+      const perPx = (def.max - def.min) / 160; // 160 px = ganzer Bereich
+      d.draft = d.orig.slice();
+      for (const i of d.active) d.draft[i] = withExpr(d.orig[i]!, d.key, exprValue(d.orig[i]!, d.key) + dy * perPx);
+      this.#canvas.style.cursor = "ns-resize";
+      this.#invalidate();
+      return;
+    }
+    const dx = e.offsetX - d.startX;
+    if (d.kind === "clip") {
+      if (Math.abs(dx) > 3) d.moved = true;
+      if (!d.moved) return;
+      const raw = Math.max(0, d.origBeats + dx / this.#ppb());
+      const grid = e.shiftKey ? 0 : this.#ppb() > 70 ? 0.25 : 1;
+      d.beats = snapTo(raw, grid);
+      this.#canvas.style.cursor = "grabbing";
+      this.#invalidate();
+      return;
+    }
+
+    // Noten
+    const dy = e.offsetY - d.startY;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) d.moved = true;
+    if (!d.moved) return;
+    const grid = noteGrid(this.#ppb(), e.shiftKey);
+    const dBeatsRaw = dx / this.#ppb();
+    if (d.mode === "move") {
+      const dPitch = pitchDelta(d, dy); // Richtung folgt der Einstellung der Tonachse
+      let dBeats = snapTo(dBeatsRaw, grid);
+      // auch vor den Clipanfang (der Clip wächst dann nach links), nicht vor den Projektanfang
+      const minStart = Math.min(...d.active.map((i) => d.orig[i]!.startBeats));
+      const clipStart = snapshot.peek()?.project.tracks.find((t) => t.id === d.trackId)?.clips.find((c) => c.id === d.clipId)?.startBeats ?? 0;
+      dBeats = Math.max(dBeats, -(clipStart + minStart));
+      const activeSet = new Set(d.active);
+      d.draft = d.orig.map((n, i) =>
+        activeSet.has(i) ? { ...n, startBeats: n.startBeats + dBeats, pitch: Math.max(0, Math.min(127, n.pitch + dPitch)) } : n,
+      );
+      const p = d.draft[d.grabbed]!.pitch;
+      if (p !== d.lastPitch) {
+        d.lastPitch = p;
+        void backend.previewNote(d.trackId, p).catch(() => {});
+      }
+      this.#canvas.style.cursor = "grabbing";
+    } else {
+      const n = d.orig[d.grabbed]!;
+      // neue Note: endet am Zeiger; vorhandene: Kante um die Zugstrecke verschieben
+      const clipStart = snapshot.peek()?.project.tracks.find((t) => t.id === d.trackId)?.clips.find((c) => c.id === d.clipId)?.startBeats ?? 0;
+      const end = d.created ? snapTo(this.#xToBeat(e.offsetX) - clipStart, grid) : snapTo(n.startBeats + n.lengthBeats + dBeatsRaw, grid);
+      const len = Math.max(grid || 0.0625, end - n.startBeats);
+      d.draft = d.orig.map((x, i) => (i === d.grabbed ? { ...x, lengthBeats: len } : x));
+      this.#canvas.style.cursor = "ew-resize";
+    }
+    this.#invalidate();
+  }
+
+  #up(e: PointerEvent): void {
+    const d = this.#drag;
+    this.#drag = null;
+    try {
+      if (this.#canvas.hasPointerCapture(e.pointerId)) this.#canvas.releasePointerCapture(e.pointerId);
+    } catch {
+      /* ignorieren */
+    }
+    if (d?.kind === "pan" && !d.moved) seekBeats(this.#xToBeat(e.offsetX));
+    if (d?.kind === "range") {
+      // Ziehen setzt den Bereich, Umschalt/Strg-Klick ohne Ziehen hebt ihn auf
+      const r: [number, number] | null = d.moved && Math.abs(d.cur - d.anchor) > 1e-6 ? [Math.min(d.anchor, d.cur), Math.max(d.anchor, d.cur)] : null;
+      void act(backend.setLoopRange(r));
+      // zuletzt markiert: der Zeitbereich – Entf löscht ihn (nicht die Noten- oder Clip-Auswahl)
+      rangeFocus.value = !!r;
+      if (r) noteSel.value = null;
+    }
+    if (d?.kind === "marquee" && d.moved) this.#marqueeSelect();
+    if (d?.kind === "clip" && d.moved && Math.abs(d.beats - d.origBeats) > 1e-9) {
+      void run({ type: "setClip", trackId: d.trackId, clipId: d.clipId, patch: { startBeats: d.beats } });
+    }
+    if (d?.kind === "notes" && (d.moved || d.created)) {
+      this.#commitNotes(d.trackId, d.clipId, d.draft, d.active.map((i) => d.draft[i]!));
+      if (d.mode === "resize") lastNoteLength = d.draft[d.grabbed]!.lengthBeats;
+    }
+    if (d?.kind === "noteExpr" && d.moved) {
+      void run({ type: "setClipNotes", trackId: d.trackId, clipId: d.clipId, notes: d.draft });
+      noteSel.value = { trackId: d.trackId, clipId: d.clipId, keys: d.active.map((i) => noteKey(d.draft[i]!)) };
+    }
+    if (d?.kind === "expr") {
+      const commands: Command[] = [];
+      for (const [clipId, notes] of d.draft) {
+        if (notes !== d.orig.get(clipId)) commands.push({ type: "setClipNotes", trackId: d.trackId, clipId, notes });
+      }
+      const label = `${EXPRS[d.key].label} ${d.line ? "als Linie" : "gezeichnet"}`;
+      if (commands.length === 1) void run(commands[0]!);
+      else if (commands.length > 1) void run({ type: "batch", label, commands });
+    }
+    this.#invalidate();
+  }
+
+  /**
+   * Neue Notenliste übernehmen. Liegen Noten außerhalb des Clips, wächst er in
+   * ganzen Takten: nach rechts (Länge) bzw. nach links (Anfang früher, Noten
+   * rücken um denselben Betrag nach) – alles ein Undo-Schritt.
+   */
+  #commitNotes(trackId: number, clipId: number, notes: Note[], selected: Note[]): void {
+    const p = snapshot.peek()?.project;
+    const clip = p?.tracks.find((t) => t.id === trackId)?.clips.find((c) => c.id === clipId);
+    if (!p || !clip || clip.source.type !== "notes") return;
+    const span = clipSpan(notes, clip.source.lengthBeats, p.beatsPerBar, clip.startBeats);
+    const shift = -span.lo;
+    const moved = shift ? notes.map((n) => ({ ...n, startBeats: n.startBeats + shift })) : notes;
+    const sel = shift ? selected.map((n) => ({ ...n, startBeats: n.startBeats + shift })) : selected;
+    const lengthBeats = span.hi - span.lo > clip.source.lengthBeats + 1e-9 ? span.hi - span.lo : undefined;
+    const setNotes = { type: "setClipNotes" as const, trackId, clipId, notes: moved, ...(lengthBeats ? { lengthBeats } : {}) };
+    noteSel.value = sel.length ? { trackId, clipId, keys: sel.map(noteKey) } : null;
+    if (shift) {
+      void run({ type: "batch", label: "Noten (Clip nach links erweitert)", commands: [{ type: "setClip", trackId, clipId, patch: { startBeats: clip.startBeats - shift } }, setNotes] });
+    } else {
+      void run(setNotes);
+    }
+  }
+
+  /**
+   * Rechtsklick: Kontextmenü für das, was unter der Maus liegt – markierte
+   * Noten (eine nicht markierte Note wird vorher gewählt), einen Audio-Clip,
+   * den markierten Zeitbereich; sonst den Clip.
+   */
+  #context(e: MouseEvent): void {
+    e.preventDefault();
+    const p = snapshot.peek()?.project;
+    if (!p) return;
+    const entries: MenuEntry[] = [];
+    const add = (more: MenuEntry[]) => {
+      if (entries.length && more.length) entries.push("sep");
+      entries.push(...more);
+    };
+    const range = snapshot.peek()?.engine.loopRange ?? null;
+    const beat = this.#xToBeat(e.offsetX);
+    const hit = e.offsetY >= RULER_H ? this.#hit(e.offsetX, e.offsetY) : null;
+    const clip = hit?.clip ?? null;
+    if (hit && clip?.source.type === "notes" && hit.track.kind === "instrument" && hit.zone === "lanes") {
+      if (hit.note >= 0) {
+        const key = noteKey(clip.source.notes[hit.note]!);
+        const sel = noteSel.peek();
+        if (!(sel && sel.clipId === clip.id && sel.keys.includes(key))) noteSel.value = { trackId: hit.track.id, clipId: clip.id, keys: [key] };
+        selection.value = { trackId: hit.track.id, clipId: clip.id };
+      }
+      const now = noteSel.peek();
+      if (now && now.clipId === clip.id && now.keys.length) add(this.#notesMenu(now.keys.length, p));
+    }
+    if (hit && clip?.source.type === "audio") {
+      selection.value = { trackId: hit.track.id, clipId: clip.id };
+      add(this.#audioMenu(hit.track, clip));
+    }
+    if (range && (e.offsetY < RULER_H || (beat >= range[0] && beat <= range[1]))) add(this.#rangeMenu(range, p.beatsPerBar));
+    if (hit && clip && !entries.length) {
+      selection.value = { trackId: hit.track.id, clipId: clip.id };
+      add([{ heading: clip.name }, { label: "Clip löschen", hint: "Entf", act: "clip-loeschen", action: () => void run({ type: "removeClip", trackId: hit.track.id, clipId: clip.id }) }]);
+    }
+    if (entries.length) openContextMenu(e.clientX, e.clientY, entries);
+  }
+
+  /** Menü für markierte Noten: am Takt ausrichten (Raster wählbar), transponieren, löschen. */
+  #notesMenu(count: number, p: Project): MenuEntry[] {
+    const unit = p.beatUnit || 4;
+    const view = noteGrid(this.#ppb(), false) || 0.25;
+    const chips = (lengths: boolean) => [
+      ...[4, 8, 16].map((d) => ({
+        label: `1/${d}`,
+        act: `raster-${d}${lengths ? "-laenge" : ""}`,
+        title: `Auf ${d === 4 ? "Viertel" : d === 8 ? "Achtel" : "Sechzehntel"} ausrichten`,
+        action: () => void quantizeSelectedNotes(gridOf(d, unit), lengths),
+      })),
+      {
+        label: "Raster",
+        act: `raster-ansicht${lengths ? "-laenge" : ""}`,
+        title: `Raster der Ansicht: ${gridLabel(view, unit)} (feiner, je weiter hineingezoomt)`,
+        action: () => void quantizeSelectedNotes(view, lengths),
+      },
+    ];
+    return [
+      { heading: count === 1 ? "1 Note markiert" : `${count} Noten markiert` },
+      { label: "Am Takt ausrichten", act: "ausrichten", title: "Die Anfänge rücken auf das nächste Raster – die Längen bleiben", chips: chips(false) },
+      { label: "Anfang und Länge", act: "ausrichten-laenge", title: "Anfang und Ende rücken auf das Raster (jede Note mindestens ein Raster lang)", chips: chips(true) },
+      {
+        label: "Transponieren",
+        act: "transponieren",
+        title: "In Halbtönen verschieben – schneller mit ↑ / ↓ (Umschalt: Oktave)",
+        chips: [[-12, "−Okt"], [-1, "−1"], [1, "+1"], [12, "+Okt"]].map(([d, label]) => ({
+          label: String(label),
+          act: `transponieren${Number(d) > 0 ? "+" : ""}${d}`,
+          title: Math.abs(Number(d)) === 12 ? `Eine Oktave ${Number(d) > 0 ? "höher" : "tiefer"} (Umschalt+${Number(d) > 0 ? "↑" : "↓"})` : `Einen Halbton ${Number(d) > 0 ? "höher (↑)" : "tiefer (↓)"}`,
+          action: () => void transposeSelectedNotes(Number(d)),
+        })),
+      },
+      { label: "Löschen", hint: "Entf", act: "noten-loeschen", action: () => void deleteSelectedNotes() },
+    ];
+  }
+
+  /** Menü für einen Audio-Clip: in eine Melodie- oder Rhythmus-Spur umwandeln, Analyse, Tempo, Löschen. */
+  #audioMenu(t: Track, c: Clip): MenuEntry[] {
+    return [
+      { heading: c.name },
+      { label: "In Melodie-Spur umwandeln", hint: "Töne → Noten", act: "melodie", title: "Die erkannten Töne als Instrumentspur direkt darunter (auf Sechzehntel gerastert, tiefe Lagen als Bass)", action: () => void convertAudio(t.id, c.id, "melodie") },
+      { label: "In Rhythmus-Spur umwandeln", hint: "Anschläge → Schlagzeug", act: "rhythmus", title: "Die erkannten Anschläge als Schlagzeug-Spur direkt darunter: Bassdrum, Snare und Hi-Hat nach Klangfarbe", action: () => void convertAudio(t.id, c.id, "rhythmus") },
+      "sep",
+      { label: "Analyse zeigen", act: "analyse", action: () => void analyzeSelected() },
+      { label: "Tempo erkennen", act: "tempo", title: "Quelltempo schätzen – der Clip läuft danach im Projekttempo mit", action: () => void detectTempo() },
+      { label: "Clip löschen", hint: "Entf", act: "clip-loeschen", action: () => void run({ type: "removeClip", trackId: t.id, clipId: c.id }) },
+    ];
+  }
+
+  /** Menü für den markierten Zeitbereich. */
+  #rangeMenu(range: [number, number], bpb: number): MenuEntry[] {
+    return [
+      { heading: `Markiert: ${rangeLabel(range[0], range[1], bpb)}` },
+      { label: "Zeitbereich löschen", hint: "Entf", act: "bereich-loeschen", title: "Aus allen Spuren löschen – alles danach rückt auf, Clips werden geteilt bzw. gekürzt", action: () => void deleteRange() },
+      { label: "Markierung aufheben", act: "bereich-aufheben", action: () => void act(backend.setLoopRange(null)) },
+    ];
+  }
+
+  #dblclick(e: MouseEvent): void {
+    const split = this.#splitterAt(e.offsetY);
+    if (split) {
+      void resetRowHeight(split);
+      return;
+    }
+    const hit = this.#hit(e.offsetX, e.offsetY);
+    if (!hit) return;
+    if (hit.zone === "expr") {
+      // Doppelklick in der Ausdrucksspur: Wert der nächstgelegenen Note(n) zurücksetzen.
+      const key = laneKeyFor(hit.track);
+      const near = this.#notesBetween(hit.track, e.offsetX - 8, e.offsetX + 8, null);
+      const byClip = new Map<number, Note[]>();
+      for (const [c, i] of near) {
+        const notes = byClip.get(c.id) ?? (c.source.type === "notes" ? c.source.notes.slice() : []);
+        notes[i] = withExpr(notes[i]!, key, EXPRS[key].neutral);
+        byClip.set(c.id, notes);
+      }
+      for (const [clipId, notes] of byClip) void run({ type: "setClipNotes", trackId: hit.track.id, clipId, notes });
+      return;
+    }
+    if (hit.clip?.source.type === "audio") {
+      void analyzeSelected();
+      return;
+    }
+    // Doppelklick auf freie Fläche einer Instrumentspur: neuen Clip (1 Takt) anlegen.
+    const p = snapshot.peek()?.project;
+    if (!hit.clip && hit.track.kind === "instrument" && p) {
+      const bar = Math.floor(this.#xToBeat(e.offsetX) / p.beatsPerBar) * p.beatsPerBar;
+      void run({
+        type: "addClip",
+        trackId: hit.track.id,
+        clip: { id: 0, name: "Noten", startBeats: Math.max(0, bar), source: { type: "notes", lengthBeats: p.beatsPerBar, notes: [] } },
+      });
+    }
+  }
+
+  #cursorFor(e: PointerEvent): string {
+    if (e.offsetY < RULER_H) {
+      if (e.shiftKey || e.ctrlKey || e.metaKey) return "text";
+      return this.#rangeEdgeAt(e.offsetX) != null ? "ew-resize" : "grab";
+    }
+    if (this.#splitterAt(e.offsetY)) return "row-resize";
+    if (this.#noteButtonAt(e.offsetX, e.offsetY)) return "pointer";
+    const hit = this.#hit(e.offsetX, e.offsetY);
+    if (!hit) return "default";
+    if (hit.zone === "expr") return "crosshair";
+    if (hit.zone === "lanes" && hit.track.kind === "instrument") {
+      if (hit.note >= 0) return e.altKey ? "ns-resize" : hit.edge ? "ew-resize" : "move";
+      // leere Bahn: Alt = Note setzen, sonst Auswahlrahmen
+      return e.altKey ? "copy" : "crosshair";
+    }
+    return hit.clip ? "grab" : "default";
+  }
+
+  #wheel(e: WheelEvent): void {
+    e.preventDefault();
+    const rect = this.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const p = snapshot.peek()?.project;
+    // Alt + Mausrad über einer Notenzeile: Tonbereich verschieben.
+    if (e.altKey && p) {
+      const hit = this.#hit(mx, my);
+      if (hit?.track.view === "notes") {
+        scrollPitch(hit.track.id, wheelPitchStep(e.deltaY), viewFor(hit.track));
+        return;
+      }
+    }
+    const max = maxScrollY(p?.tracks ?? []);
+    viewport.update((v) => {
+      if (e.ctrlKey || e.metaKey) {
+        const ppb = Math.min(400, Math.max(1.5, v.pxPerBeat * Math.exp(-e.deltaY * 0.0015)));
+        const beatAtMouse = (mx + v.scrollX) / v.pxPerBeat;
+        return { ...v, pxPerBeat: ppb, scrollX: Math.max(0, beatAtMouse * ppb - mx) };
+      }
+      if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        return { ...v, scrollX: Math.max(0, v.scrollX + (e.deltaX || e.deltaY)) };
+      }
+      return { ...v, scrollY: Math.max(0, Math.min(max, v.scrollY + e.deltaY)) };
+    });
+  }
+
+  #follow(secs: number, playing: boolean): void {
+    if (!playing || this.#drag || !this.#width) return;
+    const bpm = snapshot.peek()?.project.tempoBpm ?? 120;
+    const x = this.#beatToX((secs * bpm) / 60);
+    if (x > this.#width * 0.88 || x < 0) {
+      viewport.update((v) => ({ ...v, scrollX: Math.max(0, v.scrollX + x - this.#width * 0.15) }));
+    }
+  }
+
+  #invalidate(): void {
+    if (this.#raf) return;
+    this.#raf = requestAnimationFrame(() => {
+      this.#raf = 0;
+      this.#draw();
+    });
+  }
+
+  #wave(assetId: string): Float32Array | null {
+    const w = waves.get(assetId);
+    if (w instanceof Float32Array) return w;
+    if (!w) {
+      waves.set(assetId, "loading");
+      backend
+        .getWaveform(assetId, WAVE_BUCKETS)
+        .then((d) => {
+          waves.set(assetId, Float32Array.from(d));
+          this.#invalidate();
+        })
+        .catch(() => waves.delete(assetId));
+    }
+    return null;
+  }
+
+  /** Was gerade verschoben wird (Noten oder Clip): Bereich, neue Position, Abstand, Raster. */
+  #moving(p: Project): { start: number; end: number; at: number; shift: number; pitch: number; trackId: number; grid: number; x: number; y: number } | null {
+    const d = this.#drag;
+    if (d?.kind === "notes" && d.mode === "move" && d.moved) {
+      const clip = p.tracks.find((t) => t.id === d.trackId)?.clips.find((c) => c.id === d.clipId);
+      if (!clip) return null;
+      const now = d.active.map((i) => d.draft[i]!);
+      const g = d.draft[d.grabbed]!;
+      const o = d.orig[d.grabbed]!;
+      return {
+        start: clip.startBeats + Math.min(...now.map((n) => n.startBeats)),
+        end: clip.startBeats + Math.max(...now.map((n) => n.startBeats + n.lengthBeats)),
+        at: clip.startBeats + g.startBeats, shift: g.startBeats - o.startBeats, pitch: g.pitch - o.pitch,
+        trackId: d.trackId, grid: noteGrid(this.#ppb(), false), x: d.curX, y: d.curY,
+      };
+    }
+    if (d?.kind === "clip" && d.moved) {
+      const clip = p.tracks.find((t) => t.id === d.trackId)?.clips.find((c) => c.id === d.clipId);
+      if (!clip) return null;
+      return {
+        start: d.beats, end: d.beats + clipLengthBeats(clip, p.tempoBpm), at: d.beats, shift: d.beats - d.origBeats, pitch: 0,
+        trackId: d.trackId, grid: this.#ppb() > 70 ? 0.25 : 1, x: d.curX, y: d.curY,
+      };
+    }
+    return null;
+  }
+
+  /** Kästchen mit Text am Zeiger (Wert beim Ziehen). */
+  #tip(ctx: CanvasRenderingContext2D, x0: number, y0: number, text: string, border = "rgba(255, 180, 84, 0.7)"): void {
+    ctx.font = "600 11.5px 'Segoe UI', system-ui, sans-serif";
+    const tw = ctx.measureText(text).width;
+    const x = Math.min(x0 + 14, this.#width - tw - 22);
+    const y = Math.max(RULER_H + 4, y0 - 30);
+    ctx.fillStyle = "rgba(20, 24, 33, 0.94)";
+    ctx.strokeStyle = border;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(x, y, tw + 16, 22, 6);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#f1e3cc";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, x + 8, y + 11.5);
+  }
+
+  // ---------- Zeichnen ----------
+  #draw(): void {
+    const { ctx, w, h: hh } = fitCanvas(this.#canvas);
+    this.#width = w;
+    ctx.fillStyle = "#0d0f14";
+    ctx.fillRect(0, 0, w, hh);
+    this.#noteButtons = [];
+    const p = snapshot.peek()?.project;
+    if (!p) return;
+    const sel = selection.peek();
+    const ppb = this.#ppb();
+    const bpb = p.beatsPerBar;
+    const rows = this.#rows(p);
+
+    // Spurzeilen (Notenzeilen mit Tonbahnen)
+    rows.forEach(({ track: t, y, h: rh }, i) => {
+      if (y > hh || y + rh < RULER_H) return;
+      if (t.view === "notes") {
+        this.#drawLanes(ctx, t, y, w);
+      } else {
+        ctx.fillStyle = sel?.trackId === t.id ? "#131824" : i % 2 ? "#0f1219" : "#0d1016";
+        ctx.fillRect(0, y, w, rh);
+      }
+      ctx.fillStyle = "#1a202b";
+      ctx.fillRect(0, y + rh - 1, w, 1);
+    });
+
+    // Raster
+    const first = Math.max(0, Math.floor(this.#xToBeat(0)));
+    const last = Math.ceil(this.#xToBeat(w));
+    const barStep = ppb * bpb < 40 ? Math.ceil(40 / (ppb * bpb)) : 1;
+    for (let b = first; b <= last; b++) {
+      const isBar = b % bpb === 0;
+      if (!isBar && ppb < 14) continue;
+      // ganz herausgezoomt: nur jede n-te Taktlinie, sonst wird das Raster zur Fläche
+      if (isBar && ppb * bpb < 12 && (b / bpb) % barStep) continue;
+      const x = Math.round(this.#beatToX(b)) + 0.5;
+      ctx.fillStyle = isBar ? "#262d3b" : "#171c26";
+      ctx.fillRect(x, RULER_H, 1, hh);
+      if (ppb > 90) {
+        ctx.fillStyle = "#12161e";
+        for (let s = 1; s < 4; s++) ctx.fillRect(Math.round(this.#beatToX(b + s / 4)) + 0.5, RULER_H, 1, hh);
+      }
+    }
+
+    // Beim Verschieben: Takteinteilung deutlich – Takte, Schläge und in der
+    // bewegten Spur das Einrastraster; der neue Bereich leicht hervorgehoben.
+    const mv = this.#moving(p);
+    if (mv) {
+      const mvRow = rows.find((r) => r.track.id === mv.trackId);
+      const xs = this.#beatToX(mv.start);
+      const xe = this.#beatToX(mv.end);
+      ctx.fillStyle = "rgba(255, 180, 84, 0.05)";
+      ctx.fillRect(xs, RULER_H, xe - xs, hh - RULER_H);
+      for (let b = first; b <= last; b++) {
+        const isBar = b % bpb === 0;
+        if (!isBar && ppb < 8) continue;
+        const x = Math.round(this.#beatToX(b)) + 0.5;
+        ctx.fillStyle = isBar ? "rgba(255, 255, 255, 0.30)" : "rgba(255, 255, 255, 0.11)";
+        ctx.fillRect(x, RULER_H, isBar ? 1.5 : 1, hh);
+        if (mvRow && mv.grid > 0 && mv.grid < 1 && ppb * mv.grid >= 6) {
+          ctx.fillStyle = "rgba(255, 255, 255, 0.06)";
+          for (let s = mv.grid; s < 1 - 1e-9; s += mv.grid) ctx.fillRect(Math.round(this.#beatToX(b + s)) + 0.5, mvRow.y, 1, mvRow.h);
+        }
+      }
+    }
+
+    // Clips
+    for (const { track: t, y, h: rh } of rows) {
+      if (y > hh || y + rh < RULER_H) continue;
+      for (const c of t.clips) {
+        if (t.view === "notes") this.#drawNotesClip(ctx, p, t, c, y, w, sel?.clipId === c.id);
+        else this.#drawClip(ctx, p, t, c, y, w, sel?.clipId === c.id);
+      }
+    }
+
+    this.#drawExprTip(ctx, p);
+    this.#drawDrop(ctx, p, rows, w, hh);
+
+    // Markierter Zeitbereich (türkis: wird wiederholt, blau: nur markiert)
+    const range = this.#rangeShown();
+    const loopOn = !!snapshot.peek()?.engine.loopOn;
+    const rangeX = range ? [this.#beatToX(range[0]), this.#beatToX(range[1])] as const : null;
+    if (rangeX) {
+      const [x0, x1] = rangeX;
+      ctx.fillStyle = loopOn ? "rgba(110, 231, 216, 0.06)" : "rgba(122, 167, 255, 0.05)";
+      ctx.fillRect(x0, RULER_H, x1 - x0, hh - RULER_H);
+      ctx.fillStyle = loopOn ? "rgba(110, 231, 216, 0.55)" : "rgba(122, 167, 255, 0.45)";
+      ctx.fillRect(Math.round(x0), RULER_H, 1, hh);
+      ctx.fillRect(Math.round(x1), RULER_H, 1, hh);
+    }
+
+    // Auswahlrahmen
+    const dm = this.#drag;
+    if (dm?.kind === "marquee" && dm.moved) {
+      const row = rows.find((r) => r.track.id === dm.trackId);
+      if (row) {
+        const top = row.y + NOTES_TOP;
+        const bottom = top + geoFor(row.track).lanesH;
+        const cy = (y: number) => Math.max(top, Math.min(bottom, y));
+        const x0 = Math.min(dm.x0, dm.x);
+        const y0 = cy(Math.min(dm.y0, dm.y));
+        const rw = Math.abs(dm.x - dm.x0);
+        const rh = cy(Math.max(dm.y0, dm.y)) - y0;
+        ctx.save();
+        ctx.fillStyle = "rgba(110, 231, 216, 0.08)";
+        ctx.fillRect(x0, y0, rw, rh);
+        ctx.strokeStyle = "rgba(110, 231, 216, 0.85)";
+        ctx.setLineDash([4, 3]);
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x0 + 0.5, y0 + 0.5, rw, rh);
+        ctx.restore();
+      }
+    }
+
+    // Position beim Verschieben (auch als Attribut – für Tests und Bildschirmleser)
+    if (mv) {
+      const pitch = mv.pitch ? ` · ${mv.pitch > 0 ? "+" : "−"}${Math.abs(mv.pitch)} HT` : "";
+      const label = `Takt ${formatBarBeat(mv.at, bpb)}   ${fmtShift(mv.shift, bpb)}${pitch}`;
+      this.#tip(ctx, mv.x, mv.y, label);
+      this.dataset.dragInfo = label;
+    } else if (this.dataset.dragInfo) {
+      delete this.dataset.dragInfo;
+    }
+
+    // Stellen des Kontrapunkt-Prüfers: Tönung in den beteiligten Spuren
+    const marks = counterpointMarks.peek();
+    const markColor = (s: string, a: number) => (s === "fehler" ? `rgba(255, 93, 108, ${a})` : s === "warnung" ? `rgba(255, 180, 84, ${a})` : `rgba(122, 167, 255, ${a})`);
+    for (const m of marks) {
+      const x0 = this.#beatToX(m.start);
+      const x1 = Math.max(x0 + 3, this.#beatToX(m.end));
+      if (x1 < 0 || x0 > w) continue;
+      for (const r of rows) {
+        if (!m.trackIds.includes(r.track.id) || r.y > hh || r.y + r.h < RULER_H) continue;
+        ctx.fillStyle = markColor(m.severity, m.severity === "hinweis" ? 0.06 : 0.12);
+        ctx.fillRect(x0, Math.max(RULER_H, r.y), x1 - x0, r.h);
+      }
+    }
+
+    // Lineal
+    ctx.fillStyle = "#121620";
+    ctx.fillRect(0, 0, w, RULER_H);
+    ctx.fillStyle = "#262d3b";
+    ctx.fillRect(0, RULER_H - 1, w, 1);
+    if (rangeX) {
+      const [x0, x1] = rangeX;
+      ctx.fillStyle = loopOn ? "rgba(110, 231, 216, 0.22)" : "rgba(122, 167, 255, 0.16)";
+      ctx.fillRect(x0, 0, x1 - x0, RULER_H - 1);
+      ctx.fillStyle = loopOn ? "#6ee7d8" : "#7aa7ff";
+      ctx.fillRect(x0, 0, x1 - x0, 3);
+      ctx.fillRect(x0 - 1, 0, 2, RULER_H - 1);
+      ctx.fillRect(x1 - 1, 0, 2, RULER_H - 1);
+    }
+    if (mv) {
+      // neuer Bereich der verschobenen Noten bzw. des Clips im Lineal
+      const xs = this.#beatToX(mv.start);
+      ctx.fillStyle = "rgba(255, 180, 84, 0.22)";
+      ctx.fillRect(xs, 0, this.#beatToX(mv.end) - xs, RULER_H - 1);
+      ctx.fillStyle = "#ffb454";
+      ctx.fillRect(xs, RULER_H - 4, this.#beatToX(mv.end) - xs, 3);
+    }
+    ctx.font = "11px 'Segoe UI', system-ui, sans-serif";
+    ctx.textBaseline = "middle";
+    // Harmonie-Band unten im Lineal: Taktzahlen rücken nach oben
+    const lane = this.#harmonyLane();
+    for (let b = first - (first % bpb); b <= last; b += bpb) {
+      const bar = b / bpb;
+      if (bar % barStep) continue;
+      const x = Math.round(this.#beatToX(b)) + 0.5;
+      ctx.fillStyle = "#3a4458";
+      ctx.fillRect(x, lane ? 0 : RULER_H - 12, 1, lane ? 14 : 12);
+      ctx.fillStyle = "#8a93a6";
+      ctx.fillText(String(bar + 1), x + 5, lane ? 8 : RULER_H / 2 - 2);
+      if (ppb > 24 && !lane) {
+        for (let k = 1; k < bpb; k++) {
+          ctx.fillStyle = "#2a3242";
+          ctx.fillRect(Math.round(this.#beatToX(b + k)) + 0.5, RULER_H - 6, 1, 6);
+        }
+      }
+    }
+
+    if (lane) this.#drawHarmony(ctx, w, hh);
+
+    // Prüfer-Markierungen im Lineal (rot Fehler, orange Warnung, blau Hinweis)
+    for (const m of marks) {
+      const x0 = this.#beatToX(m.start);
+      const x1 = Math.max(x0 + 4, this.#beatToX(m.end));
+      if (x1 < 0 || x0 > w) continue;
+      ctx.fillStyle = markColor(m.severity, 0.95);
+      ctx.fillRect(x0, RULER_H - 5, x1 - x0, 4);
+    }
+
+    // Abspielposition
+    const st = status.peek();
+    const px = this.#beatToX((st.positionSecs * p.tempoBpm) / 60);
+    if (px >= -2 && px <= w + 2) {
+      const col = st.recording ? "#ff5d6c" : "#ffb454";
+      ctx.fillStyle = col;
+      ctx.fillRect(Math.round(px), RULER_H, 1.5, hh);
+      ctx.beginPath();
+      ctx.moveTo(px - 6, 4);
+      ctx.lineTo(px + 6, 4);
+      ctx.lineTo(px, 14);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  /** Gezogene Audiodateien: wohin sie kommen (Zeile, Startlinie, Beschriftung). */
+  #drawDrop(ctx: CanvasRenderingContext2D, p: Project, rows: Array<{ track: Track; y: number; h: number }>, w: number, hh: number): void {
+    const drag = audioDrag.peek();
+    const target = drag ? this.dropTargetAt(drag.x, drag.y) : null;
+    if (!drag || !target) {
+      if (this.dataset.dropInfo) delete this.dataset.dropInfo;
+      return;
+    }
+    const row = target.trackId != null ? rows.find((r) => r.track.id === target.trackId) : undefined;
+    const into = row?.track.kind === "audio";
+    const x = Math.round(this.#beatToX(target.startBeats));
+    ctx.save();
+    ctx.fillStyle = "rgba(110, 231, 216, 0.85)";
+    if (row && into) {
+      ctx.fillStyle = "rgba(110, 231, 216, 0.09)";
+      ctx.fillRect(0, row.y, w, row.h);
+      ctx.fillStyle = "rgba(110, 231, 216, 0.85)";
+    } else {
+      // neue Spur: unter der Spur unter der Maus bzw. unter der letzten
+      const last = row ?? rows[rows.length - 1];
+      ctx.fillRect(0, Math.max(RULER_H, last ? last.y + last.h - 1 : RULER_H), w, 2);
+    }
+    ctx.fillRect(x, RULER_H, 2, hh - RULER_H);
+    ctx.restore();
+    const n = drag.count;
+    const files = n === 1 ? "Audiodatei" : `${n} Audiodateien`;
+    const where = into ? `in „${row!.track.name}“${n > 1 ? ` (+${n - 1} neue Spur${n > 2 ? "en" : ""})` : ""}` : n === 1 ? "neue Spur" : "neue Spuren";
+    const label = `${files} → Takt ${formatBarBeat(target.startBeats, p.beatsPerBar)} · ${where}`;
+    this.#tip(ctx, x, drag.y - this.#canvas.getBoundingClientRect().top, label, "rgba(110, 231, 216, 0.8)");
+    this.dataset.dropInfo = label;
+  }
+
+  /** Knopf „♪ → Noten“ im Kopf eines Audio-Clips (entfällt, wenn der Clip zu schmal ist). */
+  #drawNoteButton(ctx: CanvasRenderingContext2D, t: Track, c: Clip, x0: number, x1: number, top: number, hgt: number, w: number): void {
+    const text = "♪ → Noten";
+    ctx.save();
+    ctx.font = "600 10.5px 'Segoe UI', system-ui, sans-serif";
+    const bw = Math.ceil(ctx.measureText(text).width) + 12;
+    const bh = Math.max(12, Math.min(15, hgt - 3));
+    const right = Math.min(x1, w) - 5;
+    if (right - Math.max(x0, 0) < bw + 40 || this.#drag?.kind === "clip") {
+      ctx.restore();
+      return;
+    }
+    const bx = right - bw;
+    const by = top + (hgt - bh) / 2;
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "rgba(13, 15, 20, 0.78)";
+    ctx.strokeStyle = "rgba(110, 231, 216, 0.8)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(bx + 0.5, by + 0.5, bw, bh, 4);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#6ee7d8";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, bx + 6, by + bh / 2 + 0.5);
+    ctx.restore();
+    this.#noteButtons.push({ x: bx, y: by, w: bw, h: bh, trackId: t.id, clipId: c.id });
+  }
+
+  /** Harmonie-Band sichtbar (eingeschaltet oder Arbeit im Harmonie-Fenster) und Akkorde da? */
+  #harmonyLane(): boolean {
+    return (harmonyLaneOn.peek() || harmonyFocus.peek()) && !!harmonyLine.peek()?.chords.length;
+  }
+
+  /**
+   * Akkordfolge unten im Lineal: je Akkord ein Feld in der Farbe seiner
+   * Stimmung (wie im Quintenzirkel), mit Namen; harmonische Brüche als rote
+   * Kante, die durch alle Spuren läuft. Der Akkord unter der Abspielposition leuchtet.
+   */
+  #drawHarmony(ctx: CanvasRenderingContext2D, w: number, hh: number): void {
+    const line = harmonyLine.peek();
+    const p = snapshot.peek()?.project;
+    if (!line || !p) return;
+    const top = 16;
+    const bandH = RULER_H - 1 - top;
+    const now = chordIndexAt(line, (status.peek().positionSecs * p.tempoBpm) / 60);
+    ctx.font = "600 10.5px 'Segoe UI', system-ui, sans-serif";
+    ctx.textBaseline = "middle";
+    line.chords.forEach((c, i) => {
+      const x0 = this.#beatToX(c.startBeats);
+      const x1 = this.#beatToX(c.startBeats + c.lengthBeats);
+      if (x1 < 0 || x0 > w) return;
+      const col = MOOD_COLORS[c.mood];
+      ctx.globalAlpha = i === now ? 0.5 : 0.24;
+      ctx.fillStyle = col;
+      ctx.fillRect(x0 + 0.5, top, Math.max(1, x1 - x0 - 1), bandH);
+      ctx.globalAlpha = 1;
+      ctx.fillRect(x0 + 0.5, top, Math.max(1, x1 - x0 - 1), 2);
+      if (x1 - x0 > 16) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x0 + 1, top, x1 - x0 - 2, bandH);
+        ctx.clip();
+        ctx.fillStyle = "#eef1f6";
+        ctx.fillText(c.name, x0 + 4, top + bandH / 2 + 1);
+        ctx.restore();
+      }
+      if (c.bruch) {
+        // Bruch: rote Kante im Lineal und gestrichelt durch alle Spuren
+        ctx.fillStyle = "#ff4d5e";
+        ctx.fillRect(Math.round(x0) - 1, top - 3, 3, bandH + 3);
+        ctx.beginPath();
+        ctx.moveTo(x0 - 5, top - 3);
+        ctx.lineTo(x0 + 5, top - 3);
+        ctx.lineTo(x0, top + 4);
+        ctx.closePath();
+        ctx.fill();
+        ctx.globalAlpha = 0.45;
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = "#ff4d5e";
+        ctx.beginPath();
+        ctx.moveTo(Math.round(x0) + 0.5, RULER_H);
+        ctx.lineTo(Math.round(x0) + 0.5, hh);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
+      }
+    });
+  }
+
+  /** Erklärung zum Akkord unter der Maus im Harmonie-Band. */
+  #harmonyTip(e: PointerEvent): string {
+    if (e.offsetY < 14 || e.offsetY > RULER_H || !this.#harmonyLane()) return "";
+    const line = harmonyLine.peek()!;
+    const i = chordIndexAt(line, this.#xToBeat(e.offsetX));
+    const c = line.chords[i];
+    if (!c || this.#xToBeat(e.offsetX) > c.startBeats + c.lengthBeats) return "";
+    const prev = line.chords[i - 1];
+    return `${c.name} · ${c.roman} · ${c.function} – ${c.role}`
+      + `\n${prev ? `${prev.name} → ${c.name}: ` : ""}${MOOD_LABELS[c.mood]}`
+      + (c.bruch ? `\nHarmonischer Bruch: ${c.bruch}` : "")
+      + `\nTonart ${line.key.name}`;
+  }
+
+  #drawLanes(ctx: CanvasRenderingContext2D, t: Track, y: number, w: number): void {
+    const g = geoFor(t);
+    const LANE_SPAN = g.view.span;
+    const LANE_H = g.laneH;
+    const LANES_H = g.lanesH;
+    const RHYTHM_TOP = g.rhythmTop;
+    ctx.fillStyle = "#0f1219";
+    ctx.fillRect(0, y, w, NOTES_TOP);
+    // Schlagzeug: belegte Tasten (Trommeln) hervorheben
+    const drumKeys = t.instrument?.kind === "drums" ? new Set(specFor(t.instrument)?.keys.map((k) => k.midi)) : null;
+    const up = highOnTop.peek();
+    for (let k = 0; k < LANE_SPAN; k++) {
+      const pitch = pitchOfLane(g.view, k);
+      const ly = y + NOTES_TOP + k * LANE_H;
+      ctx.fillStyle = drumKeys?.has(pitch) ? "#181d28" : isBlack(pitch) ? "#0b0d12" : "#11141b";
+      ctx.fillRect(0, ly, w, LANE_H);
+      if (pitch % 12 === 0) {
+        // Oktavgrenze zwischen H und C (H liegt je nach Richtung darüber oder darunter)
+        ctx.fillStyle = "#283041";
+        ctx.fillRect(0, up ? ly + LANE_H - 1 : ly, w, 1);
+      }
+    }
+    // Rhythmus-Leiste unter den Tonbahnen.
+    const lanesEnd = y + NOTES_TOP + LANES_H;
+    ctx.fillStyle = "#0d1016";
+    ctx.fillRect(0, lanesEnd, w, RHYTHM_TOP - NOTES_TOP - LANES_H);
+    ctx.fillStyle = "#0b0d12";
+    ctx.fillRect(0, y + RHYTHM_TOP, w, RHYTHM_H);
+    ctx.fillStyle = "#1d2330";
+    ctx.fillRect(0, y + RHYTHM_TOP, w, 1);
+    // Ausdrucksspur: Hilfslinien bei 0/50/100 %, bei zweiseitigen Werten die Nulllinie betont.
+    if (g.exprH) {
+      const def = EXPRS[laneKeyFor(t)];
+      ctx.fillStyle = "#0a0c11";
+      ctx.fillRect(0, y + g.exprTop, w, g.exprH);
+      ctx.fillStyle = "#1d2330";
+      ctx.fillRect(0, y + g.exprTop, w, 1);
+      for (const f of [0, 0.5, 1]) {
+        const v = def.min + f * (def.max - def.min);
+        ctx.fillStyle = f === 0.5 && def.bipolar ? "#2a3243" : "#151a24";
+        ctx.fillRect(0, Math.round(y + exprY(g, def, v)), w, 1);
+      }
+    }
+  }
+
+  /** Während Ausdrucks-Gesten: Linie (Shift) und Wert am Zeiger. */
+  #drawExprTip(ctx: CanvasRenderingContext2D, p: Project): void {
+    const d = this.#drag;
+    if (d?.kind !== "expr" && d?.kind !== "noteExpr") return;
+    const def = EXPRS[d.key];
+    let value: number;
+    if (d.kind === "expr") {
+      const t = p.tracks.find((tr) => tr.id === d.trackId);
+      const row = t ? this.#rows(p).find((r) => r.track.id === t.id) : undefined;
+      if (!t || !row) return;
+      value = exprAt(geoFor(t), def, d.curY - row.y);
+      if (d.line) {
+        ctx.save();
+        ctx.strokeStyle = "rgba(255, 180, 84, 0.9)";
+        ctx.setLineDash([5, 4]);
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(d.startX, d.startY);
+        ctx.lineTo(d.curX, d.curY);
+        ctx.stroke();
+        ctx.restore();
+      }
+    } else {
+      if (!d.moved) return;
+      value = exprValue(d.draft[d.grabbed]!, d.key);
+    }
+    const text = `${def.label}: ${def.format(value)}`;
+    ctx.font = "600 11.5px 'Segoe UI', system-ui, sans-serif";
+    const tw = ctx.measureText(text).width;
+    const x = Math.min(d.curX + 14, this.#width - tw - 22);
+    const y = Math.max(RULER_H + 4, d.curY - 30);
+    ctx.fillStyle = "rgba(20, 24, 33, 0.94)";
+    ctx.strokeStyle = "rgba(255, 180, 84, 0.7)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(x, y, tw + 16, 22, 6);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#f1e3cc";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, x + 8, y + 11.5);
+  }
+
+  #clipStart(c: Clip): number {
+    const d = this.#drag;
+    return d?.kind === "clip" && d.clipId === c.id && d.moved ? d.beats : c.startBeats;
+  }
+
+  #drawNotesClip(ctx: CanvasRenderingContext2D, p: Project, t: Track, c: Clip, rowY: number, w: number, selected: boolean): void {
+    const start = this.#clipStart(c);
+    // x0: Clipanfang (Bezug der Noten); wx0/wx1: Rahmen des Clips – während
+    // eine Note außerhalb liegt, wächst er schon mit (ganze Takte)
+    const x0 = this.#beatToX(start);
+    const len = clipLengthBeats(c, p.tempoBpm);
+    const dr = this.#drag;
+    const span = (dr?.kind === "notes" || dr?.kind === "noteExpr") && dr.clipId === c.id && c.source.type === "notes"
+      ? clipSpan(dr.draft, len, p.beatsPerBar, start)
+      : { lo: 0, hi: len };
+    const growing = span.lo < 0 || span.hi > len + 1e-9;
+    const wx0 = x0 + span.lo * this.#ppb();
+    const wx1 = x0 + span.hi * this.#ppb();
+    if (wx1 < 0 || wx0 > w) return;
+    const g = geoFor(t);
+    const LANE_H = g.laneH;
+    const RHYTHM_TOP = g.rhythmTop;
+    const lanesTop = rowY + NOTES_TOP;
+    const lanesH = g.lanesH;
+
+    const bottom = g.exprH ? g.exprTop + g.exprH : RHYTHM_TOP + RHYTHM_H;
+    ctx.save();
+    ctx.globalAlpha = t.mute ? 0.45 : 1;
+    ctx.fillStyle = rgba(t.color, 0.06);
+    ctx.fillRect(wx0, lanesTop, wx1 - wx0, lanesH);
+    ctx.strokeStyle = selected ? "rgba(255,255,255,0.85)" : rgba(t.color, 0.45);
+    ctx.lineWidth = selected ? 1.5 : 1;
+    if (growing) ctx.setLineDash([5, 3]);
+    ctx.strokeRect(wx0 + 0.5, rowY + 2.5, wx1 - wx0 - 1, bottom - 3);
+    ctx.setLineDash([]);
+    ctx.fillStyle = rgba(t.color, 0.3);
+    ctx.fillRect(wx0, rowY + 2, wx1 - wx0, NOTES_TOP - 3);
+    ctx.beginPath();
+    ctx.rect(wx0, rowY, wx1 - wx0, bottom);
+    ctx.clip();
+    ctx.fillStyle = "#e8ebf1";
+    ctx.font = "600 11px 'Segoe UI', system-ui, sans-serif";
+    ctx.textBaseline = "middle";
+    ctx.fillText(growing ? `${c.name} – wird erweitert` : c.name, Math.max(wx0, 0) + 7, rowY + NOTES_TOP / 2 + 1);
+
+    if (c.source.type === "notes") {
+      const sel = noteSel.peek();
+      const selKeys = new Set(sel && sel.clipId === c.id ? sel.keys : []);
+      const trackHasSel = !!sel && sel.trackId === t.id && sel.keys.length > 0;
+      const d = this.#drag;
+      const activeDraft = (d?.kind === "notes" || d?.kind === "noteExpr") && d.clipId === c.id ? new Set(d.active) : null;
+      const exprDef = g.exprH ? EXPRS[laneKeyFor(t)] : null;
+      this.#clipNotes(c).forEach((n, i) => {
+        const nx = x0 + n.startBeats * this.#ppb();
+        const nw = Math.max(3, n.lengthBeats * this.#ppb() - 1);
+        const isSel = activeDraft ? activeDraft.has(i) : selKeys.has(noteKey(n));
+        // Rhythmus-Leiste: Notenanfänge dezent
+        ctx.fillStyle = rgba(t.color, 0.4);
+        ctx.fillRect(Math.round(nx), rowY + RHYTHM_TOP + 4, 2, RHYTHM_H - 7);
+        // Ausdrucksspur: Lolli je Note (Stiel von der Grund- bzw. Nulllinie zum Wert)
+        if (exprDef) {
+          const v = exprValue(n, exprDef.key);
+          const base = rowY + exprY(g, exprDef, exprDef.bipolar ? 0 : exprDef.min);
+          const vy = rowY + exprY(g, exprDef, v);
+          const dim = trackHasSel && !isSel;
+          ctx.fillStyle = rgba(t.color, dim ? 0.25 : 0.75);
+          ctx.fillRect(Math.round(nx), Math.min(base, vy), 1.5, Math.max(1, Math.abs(vy - base)));
+          ctx.fillStyle = isSel ? "#ffffff" : rgba(t.color, dim ? 0.4 : 1);
+          ctx.beginPath();
+          ctx.arc(Math.round(nx) + 0.75, vy, isSel ? 3.2 : 2.6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        if (!inView(g.view, n.pitch)) {
+          // außerhalb des sichtbaren Bereichs: Markierung am Rand
+          ctx.fillStyle = rgba(t.color, 0.7);
+          ctx.fillRect(nx, offViewAtTop(g.view, n.pitch) ? lanesTop : lanesTop + lanesH - 2, nw, 2);
+          return;
+        }
+        const ny = rowY + laneY(g, n.pitch);
+        const nh = Math.max(2, LANE_H - 1);
+        // Anschleifen: Bogen vom versetzten Ton in den Notenanfang
+        if (n.bend) {
+          const from = Math.max(g.view.low - 1, Math.min(g.view.low + g.view.span, n.pitch + n.bend));
+          const fy = rowY + laneY(g, from) + LANE_H / 2;
+          const reach = Math.min(nw * 0.45, 10);
+          ctx.strokeStyle = rgba(t.color, 0.95);
+          ctx.lineWidth = 1.6;
+          ctx.beginPath();
+          ctx.moveTo(nx - 7, fy);
+          ctx.quadraticCurveTo(nx + reach * 0.2, ny + LANE_H / 2, nx + reach, ny + LANE_H / 2);
+          ctx.stroke();
+        }
+        // Anschlag = Deckkraft
+        ctx.fillStyle = rgba(t.color, 0.28 + 0.72 * (n.velocity / 127));
+        ctx.beginPath();
+        ctx.roundRect(nx + 0.5, ny + 0.5, nw, nh, 2);
+        ctx.fill();
+        // Helligkeit: heller Rand oben bzw. Abdunkeln
+        const br = n.brightness ?? 0;
+        if (br > 0.01) {
+          ctx.fillStyle = `rgba(255,255,255,${(0.25 + 0.6 * br).toFixed(2)})`;
+          ctx.fillRect(nx + 1.5, ny + 1, Math.max(1, nw - 2), Math.min(2, nh / 3));
+        } else if (br < -0.01) {
+          ctx.fillStyle = `rgba(5,7,10,${(0.5 * -br).toFixed(2)})`;
+          ctx.fillRect(nx + 0.5, ny + 0.5, nw, nh);
+        }
+        // Vibrato: Wellenlinie im hinteren Teil der Note (setzt verzögert ein)
+        const vib = n.vibrato ?? 0;
+        if (vib > 0.005 && nw > 10 && LANE_H >= 4) {
+          const amp = Math.min(nh / 2 - 0.5, 0.8 + vib * Math.max(3, LANE_H));
+          const cy = ny + 0.5 + nh / 2;
+          const xs = nx + Math.min(nw * 0.25, 10);
+          ctx.strokeStyle = "rgba(255,255,255,0.85)";
+          ctx.lineWidth = 1.1;
+          ctx.beginPath();
+          for (let x = xs; x <= nx + nw - 2; x += 1) {
+            const ramp = Math.min(1, (x - xs) / 8);
+            const yy = cy - Math.sin((x - xs) * 0.9) * amp * ramp;
+            if (x === xs) ctx.moveTo(x, yy);
+            else ctx.lineTo(x, yy);
+          }
+          ctx.stroke();
+        }
+        if (isSel) {
+          ctx.strokeStyle = "#ffffff";
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.roundRect(nx + 0.5, ny + 0.5, nw, nh, 2);
+          ctx.stroke();
+        }
+        if (nw > 14) {
+          ctx.fillStyle = "rgba(13,15,20,0.45)";
+          ctx.fillRect(nx + nw - 3, ny + 2, 1.5, LANE_H - 4);
+        }
+      });
+    } else {
+      this.#drawAudioPitch(ctx, p, t, c, x0, rowY, g, w);
+      this.#drawNoteButton(ctx, t, c, wx0, wx1, rowY + 2, NOTES_TOP - 3, w);
+    }
+    ctx.restore();
+  }
+
+  /** Hinweisfeld innerhalb eines Clips. */
+  #clipNote(ctx: CanvasRenderingContext2D, x: number, y: number, title: string, sub: string): void {
+    const titleFont = "600 12px 'Segoe UI', system-ui, sans-serif";
+    const subFont = "11px 'Segoe UI', system-ui, sans-serif";
+    ctx.font = titleFont;
+    const titleW = ctx.measureText(title).width;
+    ctx.font = subFont;
+    const tw = Math.max(titleW, ctx.measureText(sub).width);
+    ctx.fillStyle = "rgba(13, 15, 20, 0.82)";
+    ctx.strokeStyle = "rgba(138, 147, 166, 0.35)";
+    ctx.beginPath();
+    ctx.roundRect(x, y, tw + 20, 42, 6);
+    ctx.fill();
+    ctx.stroke();
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#e8ebf1";
+    ctx.font = titleFont;
+    ctx.fillText(title, x + 10, y + 14);
+    ctx.fillStyle = "#8a93a6";
+    ctx.font = subFont;
+    ctx.fillText(sub, x + 10, y + 30);
+  }
+
+  /**
+   * Audioaufnahme in der Notenansicht (nur Anzeige): erkannte Melodienoten mit
+   * Tonhöhenkurve, Anschläge mit Grundton (Bassdrum, Snare, Bass …) und tonlose
+   * Schläge (Hi-Hat …) in der Rhythmus-Leiste.
+   */
+  #drawAudioPitch(ctx: CanvasRenderingContext2D, p: Project, t: Track, c: Clip, x0: number, rowY: number, g: NoteGeo, w: number): void {
+    if (c.source.type !== "audio") return;
+    const view = g.view;
+    const low = view.low;
+    const LANE_H = g.laneH;
+    const RHYTHM_TOP = g.rhythmTop;
+    const lanesTop = rowY + NOTES_TOP;
+    const lanesH = g.lanesH;
+    const a = analysisFor(c.source.assetId, () => this.#invalidate());
+    const noteX = Math.max(x0, 0) + 10;
+    if (!a) {
+      const none = analysisState(c.source.assetId) === "none";
+      this.#clipNote(ctx, noteX, lanesTop + 10, none ? "Keine Analyse verfügbar" : "Analysiere …", none ? "Nur in der Desktop-App" : "Tonhöhen und Einsätze werden erkannt");
+      return;
+    }
+    const beatsPerSec = (c.source.warp ? c.source.sourceBpm : p.tempoBpm) / 60;
+    const ppb = this.#ppb();
+    const xAt = (secs: number) => x0 + secs * beatsPerSec * ppb;
+
+    const shift = t.pitchSemitones;
+    const yAt = (midi: number) => rowY + laneY(g, midi) + LANE_H / 2;
+    const diamond = Math.max(3, Math.min(5, LANE_H * 0.6));
+
+    // Rhythmus-Leiste: tonlose Schläge (Hi-Hat, Shaker …) – nur Zeitpunkt und Stärke.
+    const stripTop = rowY + RHYTHM_TOP;
+    const unpitched = a.hits.filter((hp) => hp.midi == null);
+    for (const hp of unpitched) {
+      const x = Math.round(xAt(hp.time));
+      if (x < -3 || x > w + 3) continue;
+      const bar = Math.max(4, (RHYTHM_H - 4) * Math.sqrt(hp.strength));
+      ctx.fillStyle = rgba(t.color, 0.95);
+      ctx.fillRect(x - 1, stripTop + RHYTHM_H - 2 - bar, 3, bar);
+    }
+
+    // Melodienoten und Anschläge zusammenführen: Eine kurze Note, die mit einem
+    // Anschlag gleicher Tonhöhe beginnt (z. B. ausklingende Bassdrum), zeigt nur
+    // die Raute; bei längeren Noten zeigt das Notenkästchen den Anschlag.
+    const hideHit = new Set<number>();
+    const hideNote = new Set<number>();
+    a.notes.forEach((n, ni) => {
+      // Die Note darf etwas später beginnen (fallende Kick-Tonhöhe beruhigt sich erst).
+      const hi = a.hits.findIndex(
+        (h) => h.midi != null && n.startSecs >= h.time - 0.08 && n.startSecs <= h.end && Math.abs(Math.round(h.midi) - n.midi) <= 2,
+      );
+      if (hi < 0) return;
+      if (n.endSecs - n.startSecs < 0.3) hideNote.add(ni);
+      else hideHit.add(hi);
+    });
+
+    // Anschläge mit Grundton (Bassdrum, Snare, Toms, Bass): Raute + kurzer Balken.
+    for (const [hi, hp] of a.hits.entries()) {
+      if (hp.midi == null || hideHit.has(hi)) continue;
+      const m = Math.round(hp.midi + shift);
+      const x = xAt(hp.time);
+      if (x < -10 || x > w + 10) continue;
+      const alpha = 0.45 + 0.55 * hp.strength;
+      if (!inView(view, m)) {
+        ctx.fillStyle = rgba(t.color, alpha);
+        ctx.fillRect(x - 3, offViewAtTop(view, m) ? lanesTop : lanesTop + lanesH - 2, 7, 2);
+        continue;
+      }
+      const y = yAt(m);
+      const len = Math.max(6, xAt(Math.min(hp.end, hp.time + 0.25)) - x);
+      ctx.fillStyle = rgba(t.color, alpha * 0.45);
+      ctx.fillRect(x, y - Math.min(2, LANE_H / 3), len, Math.min(4, LANE_H * 0.66));
+      ctx.fillStyle = rgba(t.color, alpha);
+      ctx.beginPath();
+      ctx.moveTo(x, y - diamond);
+      ctx.lineTo(x + diamond, y);
+      ctx.lineTo(x, y + diamond);
+      ctx.lineTo(x - diamond, y);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    const pitchedHits = a.hits.length - unpitched.length;
+    if (!a.notes.length && !pitchedHits) {
+      const tempo = a.tempoEstimate ? ` · Tempo ≈ ${a.tempoEstimate.toFixed(1)} BPM` : "";
+      this.#clipNote(ctx, noteX, lanesTop + 14, "Keine Tonhöhe erkannt", `${unpitched.length} Schläge in der Rhythmus-Leiste${tempo}`);
+      return;
+    }
+    for (const [ni, n] of a.notes.entries()) {
+      const m = n.midi + Math.round(shift);
+      if (hideNote.has(ni) || !inView(view, m)) continue;
+      ctx.fillStyle = rgba(t.color, 0.35);
+      ctx.strokeStyle = rgba(t.color, 0.9);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(xAt(n.startSecs), rowY + laneY(g, m) + 0.5, Math.max(2, xAt(n.endSecs) - xAt(n.startSecs)), Math.max(2, LANE_H - 1), 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    // Tonhöhenkurve nur in gehaltenen Melodienoten (≥ 0,3 s): dort zeigt sie Intonation
+    // und Vibrato; bei Schlägen (fallende Kick-Tonhöhe) wäre sie nur Unruhe.
+    const held = a.notes.filter((n, ni) => !hideNote.has(ni) && n.endSecs - n.startSecs >= 0.3);
+    const inNote = (secs: number) => held.some((n) => secs >= n.startSecs - 0.04 && secs <= n.endSecs + 0.04);
+    ctx.strokeStyle = "#6ee7d8";
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    let prev: number | null = null;
+    for (const [secs, midi] of a.pitch) {
+      const m = midi == null ? null : midi + shift;
+      if (m == null || m < low - 1 || m > low + view.span || !inNote(secs)) {
+        prev = null;
+        continue;
+      }
+      const x = xAt(secs);
+      const y = yAt(m);
+      // Sprünge (Tonwechsel, Oktavfehler) nicht als senkrechte Linie verbinden.
+      if (prev != null && Math.abs(m - prev) <= 1.5) ctx.lineTo(x, y);
+      else ctx.moveTo(x, y);
+      prev = m;
+    }
+    ctx.stroke();
+  }
+
+  #drawClip(ctx: CanvasRenderingContext2D, p: Project, t: Track, c: Clip, rowY: number, w: number, selected: boolean): void {
+    const start = this.#clipStart(c);
+    const len = clipLengthBeats(c, p.tempoBpm);
+    const x0 = this.#beatToX(start);
+    const x1 = x0 + len * this.#ppb();
+    if (x1 < 0 || x0 > w) return;
+    const rh = rowHeight(t);
+    const y0 = rowY + 5;
+    const ch = rh - 10;
+    const header = 17;
+
+    ctx.save();
+    ctx.globalAlpha = t.mute ? 0.45 : 1;
+    ctx.beginPath();
+    ctx.roundRect(x0 + 0.5, y0 + 0.5, Math.max(4, x1 - x0 - 1), ch, 6);
+    ctx.fillStyle = rgba(t.color, 0.13);
+    ctx.fill();
+    ctx.lineWidth = selected ? 2 : 1;
+    ctx.strokeStyle = selected ? "#ffffff" : rgba(t.color, 0.55);
+    ctx.stroke();
+    ctx.clip();
+
+    ctx.fillStyle = rgba(t.color, 0.3);
+    ctx.fillRect(x0, y0, x1 - x0, header);
+    ctx.fillStyle = "#e8ebf1";
+    ctx.font = "600 11px 'Segoe UI', system-ui, sans-serif";
+    ctx.textBaseline = "middle";
+    let label = c.name;
+    if (c.source.type === "audio" && c.source.warp && Math.abs(c.source.sourceBpm - p.tempoBpm) > 0.05) {
+      label += `   ⇄ ${+c.source.sourceBpm.toFixed(1)} → ${+p.tempoBpm.toFixed(1)} BPM`;
+    }
+    if (t.pitchSemitones) label += `   ${t.pitchSemitones > 0 ? "+" : ""}${t.pitchSemitones} HT`;
+    ctx.fillText(label, Math.max(x0, 0) + 7, y0 + header / 2 + 0.5);
+
+    const top = y0 + header + 3;
+    const bodyH = ch - header - 6;
+    if (c.source.type === "audio") {
+      this.#drawNoteButton(ctx, t, c, x0, x1, y0, header, w);
+      const wave = this.#wave(c.source.assetId);
+      const mid = top + bodyH / 2;
+      ctx.fillStyle = rgba(t.color, 0.85);
+      if (wave) {
+        const buckets = wave.length / 2;
+        const from = Math.max(0, Math.floor(x0));
+        const to = Math.min(w, Math.ceil(x1));
+        for (let px = from; px < to; px++) {
+          const a = Math.floor(((px - x0) / (x1 - x0)) * buckets);
+          const b = Math.max(a + 1, Math.floor(((px + 1 - x0) / (x1 - x0)) * buckets));
+          let lo = 0;
+          let hi = 0;
+          for (let k = a; k < b && k < buckets; k++) {
+            lo = Math.min(lo, wave[2 * k]!);
+            hi = Math.max(hi, wave[2 * k + 1]!);
+          }
+          const y1 = mid - hi * (bodyH / 2);
+          const y2 = mid - lo * (bodyH / 2);
+          ctx.fillRect(px, y1, 1, Math.max(1, y2 - y1));
+        }
+      } else {
+        ctx.fillRect(x0, mid, x1 - x0, 1);
+      }
+    } else {
+      const notes = c.source.notes;
+      if (notes.length) {
+        let lo = 127;
+        let hi = 0;
+        for (const n of notes) {
+          lo = Math.min(lo, n.pitch);
+          hi = Math.max(hi, n.pitch);
+        }
+        lo -= 2;
+        hi += 2;
+        const nh = Math.max(2, Math.min(7, bodyH / (hi - lo + 1)));
+        ctx.fillStyle = rgba(t.color, 0.95);
+        for (const n of notes) {
+          const nx = x0 + n.startBeats * this.#ppb();
+          const nw = Math.max(2, n.lengthBeats * this.#ppb() - 1.5);
+          const ny = top + ((hi - n.pitch) / (hi - lo)) * (bodyH - nh);
+          ctx.beginPath();
+          ctx.roundRect(nx, ny, nw, nh, 2);
+          ctx.fill();
+        }
+      }
+    }
+    ctx.restore();
+  }
+}
+
+customElements.define("kw-timeline", KwTimeline);

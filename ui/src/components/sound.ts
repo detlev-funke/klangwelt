@@ -1,0 +1,851 @@
+// Klang-Fenster: Instrument wählen, Klang in Feldern gestalten (Charakter,
+// Klangfarbe, Raum – jedes mit eigenen Startpunkten, die nur seine eigenen
+// Regler setzen), Zeitverlauf als Wellenform (beim Synth mit gezeichneten
+// Kurven und Verlaufsvorlagen), alle Regler im Feinschliff, Messwerte.
+
+import { backend } from "../bridge.js";
+import { fitCanvas, h, icon, noteName, setRange } from "../dom.js";
+import { act, errorText, findTrack, instrumentSpecs, notify, project, run, savedSounds, showPanel, snapshot, specFor } from "../store.js";
+import type { CurvePoint, FieldSpec, Instrument, InstrumentSpec, ParamSpec, PreviewPattern, SavedSound, VerlaufSpec, WaveView } from "../types.js";
+
+export interface SoundPanel {
+  el: HTMLElement;
+  update(): void;
+}
+
+/** Vorhör-Muster je Regler-Gruppe beim Schlagzeug (Klick auf die Gruppenüberschrift). */
+const GROUP_PREVIEW: Record<string, string> = {
+  Bassdrum: "kick", Snare: "snare", Clap: "clap", "Hi-Hat": "hihat", Toms: "toms",
+};
+
+export function defaultParams(spec: InstrumentSpec): Record<string, number> {
+  return Object.fromEntries(spec.params.map((p) => [p.key, p.default]));
+}
+
+/** Instrument mit Standardwerten (Synth: mit dem ersten Verlauf). */
+export function defaultInstrument(spec: InstrumentSpec): Instrument {
+  const v = spec.verlauf[0];
+  return { kind: spec.kind, preset: "standard", params: defaultParams(spec), ...(v ? { curves: { laut: v.laut, hell: v.hell } } : {}) };
+}
+
+// ---------------------------------------------------------------- Einstellungen der Ansicht
+
+const VIEW_KEY = "klangwelt.klang.ansicht";
+/** Was nach einer Änderung kurz erklingt: nichts, ein einzelner Ton (Schlagzeug: Bassdrum) oder das Muster. */
+type PlayMode = "aus" | "ton" | "muster";
+type ViewPrefs = { klangfarbe: boolean; raum: boolean; anspielen: PlayMode; feinschliff: boolean; zeitverlauf: boolean; klaenge: boolean };
+function viewPrefs(): ViewPrefs {
+  const d: ViewPrefs = { klangfarbe: true, raum: true, anspielen: "ton", feinschliff: false, zeitverlauf: true, klaenge: false };
+  try {
+    const v = { ...d, ...(JSON.parse(localStorage.getItem(VIEW_KEY) ?? "{}") as Partial<Record<keyof ViewPrefs, unknown>>) };
+    // früher ein Häkchen: an → Einzelton, aus → aus
+    const a = v.anspielen;
+    return { ...(v as ViewPrefs), anspielen: a === false ? "aus" : a === "aus" || a === "muster" ? a : "ton" };
+  } catch {
+    return d;
+  }
+}
+
+/** Vorhör-Muster für das Anspielen nach einer Änderung. */
+export function playPattern(spec: InstrumentSpec, mode: PlayMode): PreviewPattern | null {
+  if (mode === "aus") return null;
+  if (mode === "muster") return spec.previews[0]?.key ?? null;
+  const single = spec.kind === "drums" ? "kick" : "einzelton";
+  return spec.previews.find((p) => p.key === single)?.key ?? spec.previews[0]?.key ?? null;
+}
+function setViewPref<K extends keyof ViewPrefs>(k: K, v: ViewPrefs[K]): void {
+  try {
+    localStorage.setItem(VIEW_KEY, JSON.stringify({ ...viewPrefs(), [k]: v }));
+  } catch {
+    /* ohne Speicher eben nicht gemerkt */
+  }
+}
+
+const word = (words: readonly string[], v: number) => words[Math.min(3, Math.max(0, Math.floor(v * 4)))] ?? "";
+const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+
+// ---------------------------------------------------------------- Feld
+
+interface FieldView {
+  el: HTMLElement;
+  set(x: number, y: number, active: string | null): void;
+}
+
+/** Ein Feld: Startpunkte als Marken (Klick setzt sie), Punkt zum Ziehen. */
+function fieldView(f: FieldSpec, pick: (name: string) => void, move: (x: number, y: number, phase: "start" | "move" | "end") => void): FieldView {
+  const dot = h("div", { class: "snd-dot", title: "Ziehen" });
+  const marks = f.presets.map((p) => {
+    const b = h("button", { class: "snd-mark", title: `Startpunkt „${p.name}“ – setzt nur ${f.name}` }, h("i"), h("span", {}, p.name));
+    b.dataset.name = p.name;
+    b.dataset.edge = p.x > 0.86 ? "r" : p.x < 0.12 ? "l" : p.y > 0.9 ? "t" : "";
+    b.style.left = `${p.x * 100}%`;
+    b.style.top = `${(1 - p.y) * 100}%`;
+    b.addEventListener("pointerdown", (e) => e.stopPropagation());
+    b.addEventListener("click", () => pick(p.name));
+    return b;
+  });
+  const plot = h("div", { class: "snd-plot" }, ...marks, dot);
+  const words = h("span", { class: "muted" });
+  const at = (e: PointerEvent): [number, number] => {
+    const r = plot.getBoundingClientRect();
+    return [clamp01((e.clientX - r.left) / r.width), clamp01(1 - (e.clientY - r.top) / r.height)];
+  };
+  let dragging = false;
+  plot.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    plot.setPointerCapture(e.pointerId);
+    dragging = true;
+    const [x, y] = at(e);
+    view.set(x, y, null);
+    move(x, y, "start");
+  });
+  plot.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    const [x, y] = at(e);
+    view.set(x, y, null);
+    move(x, y, "move");
+  });
+  const end = (e: PointerEvent) => {
+    if (!dragging) return;
+    dragging = false;
+    const [x, y] = at(e);
+    move(x, y, "end");
+  };
+  plot.addEventListener("pointerup", end);
+  plot.addEventListener("pointercancel", end);
+  const el = h(
+    "div",
+    { class: "snd-field" },
+    h("div", { class: "snd-field-head" }, h("b", {}, f.name), words),
+    h("div", { class: "snd-field-body" },
+      h("div", { class: "snd-ylab" }, `${f.y.words[0]} → ${f.y.words[3]}`),
+      plot,
+      h("div", { class: "snd-xwords" }, ...f.x.words.map((w) => h("span", {}, w)))),
+  );
+  el.dataset.field = f.key;
+  const view: FieldView = {
+    el,
+    set(x, y, active) {
+      dot.style.left = `${x * 100}%`;
+      dot.style.top = `${(1 - y) * 100}%`;
+      words.textContent = `${word(f.x.words, x)} · ${word(f.y.words, y)}`;
+      for (const m of marks) m.classList.toggle("on", m.dataset.name === active);
+    },
+  };
+  return view;
+}
+
+// ---------------------------------------------------------------- Zeitverlauf
+
+type Lane = "laut" | "hell";
+
+/** Zeitachse, Wellenform und – beim Synth – die gezeichneten Kurven. */
+function timeView(isSynth: boolean, edit: (lane: Lane, pts: CurvePoint[], merge: boolean, done: boolean) => void) {
+  const canvas = h("canvas", { class: `snd-wave${isSynth ? " synth" : ""}`, title: isSynth ? "Verlauf eines Tons: Punkte ziehen ändert Lautstärke (laut) und Helligkeit (hell) über die Zeit – Doppelklick setzt oder löscht einen Punkt" : "Wellenform eines Tons mit dem aktuellen Klang" }) as HTMLCanvasElement;
+  let wave: WaveView | null = null;
+  let curves: Record<Lane, CurvePoint[]> = { laut: [], hell: [] };
+  let geo = { L: 34, R: 0, T: 1, lanes: {} as Record<Lane, [number, number]> };
+  let drag: { lane: Lane; i: number; started: boolean } | null = null;
+
+  const css = (n: string, d: string) => getComputedStyle(canvas).getPropertyValue(n).trim() || d;
+  const xOf = (t: number) => geo.L + (t / geo.T) * (geo.R - geo.L);
+  const tOf = (x: number) => ((x - geo.L) / (geo.R - geo.L)) * geo.T;
+  const yOf = (lane: Lane, v: number) => {
+    const [top, bot] = geo.lanes[lane];
+    return bot - v * (bot - top);
+  };
+  const vOf = (lane: Lane, y: number) => {
+    const [top, bot] = geo.lanes[lane];
+    return clamp01((bot - y) / (bot - top));
+  };
+
+  const draw = () => {
+    const { ctx, w, h: hh } = fitCanvas(canvas);
+    ctx.clearRect(0, 0, w, hh);
+    const lastCurve = Math.max(curves.laut.at(-1)?.[0] ?? 0, curves.hell.at(-1)?.[0] ?? 0);
+    geo.T = Math.max(wave?.secs ?? 1, isSynth ? lastCurve + 0.6 : 0.2, 0.2);
+    geo.R = w - 8;
+    const axis = hh - 16;
+    geo.lanes = isSynth ? { laut: [8, axis * 0.6], hell: [axis * 0.6 + 10, axis - 4] } : { laut: [6, axis - 4], hell: [6, axis - 4] };
+    const line = css("--line-2", "#2a3140");
+    const muted = css("--muted", "#8a93a6");
+    ctx.font = "10px system-ui";
+    ctx.textAlign = "center";
+    const step = geo.T > 6 ? 1 : geo.T > 2.5 ? 0.5 : geo.T > 1 ? 0.25 : 0.1;
+    for (let t = 0; t <= geo.T + 1e-6; t += step) {
+      ctx.fillStyle = line;
+      ctx.fillRect(Math.round(xOf(t)), 4, 1, axis - 4);
+      ctx.fillStyle = muted;
+      ctx.fillText(geo.T > 1.2 ? `${t.toLocaleString("de-DE", { maximumFractionDigits: 2 })} s` : `${Math.round(t * 1000)} ms`, xOf(t), hh - 4);
+    }
+    // Wellenform (in der Lautstärke-Spur)
+    if (wave?.peaks.length) {
+      const [top, bot] = geo.lanes.laut;
+      const mid = (top + bot) / 2;
+      const amp = (bot - top) / 2;
+      const peak = Math.max(0.05, ...wave.peaks.map((p) => Math.max(-p[0], p[1])));
+      ctx.fillStyle = isSynth ? "rgba(255, 180, 84, 0.28)" : "rgba(255, 180, 84, 0.85)";
+      const per = wave.secs / wave.peaks.length;
+      wave.peaks.forEach(([lo, hi], i) => {
+        const x0 = xOf(i * per);
+        const x1 = xOf((i + 1) * per);
+        ctx.fillRect(x0, mid - (hi / peak) * amp, Math.max(1, x1 - x0), Math.max(1, ((hi - lo) / peak) * amp));
+      });
+      if (isSynth && wave.held < geo.T) {
+        ctx.strokeStyle = muted;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(xOf(wave.held) + 0.5, 4);
+        ctx.lineTo(xOf(wave.held) + 0.5, axis);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = muted;
+        ctx.textAlign = "left";
+        ctx.fillText("loslassen", xOf(wave.held) + 4, 14);
+      }
+    }
+    if (!isSynth) return;
+    for (const [lane, color, label] of [["laut", "#ffb454", "Lautstärke"], ["hell", "#6ee7d8", "Helligkeit"]] as const) {
+      const pts = curves[lane];
+      const [top, bot] = geo.lanes[lane];
+      ctx.fillStyle = "rgba(255,255,255,0.025)";
+      ctx.fillRect(geo.L, top, geo.R - geo.L, bot - top);
+      ctx.fillStyle = muted;
+      ctx.textAlign = "left";
+      ctx.fillText(label, geo.L + 4, top + 11);
+      if (!pts.length) continue;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      pts.forEach(([t, v], i) => (i ? ctx.lineTo(xOf(t), yOf(lane, v)) : ctx.moveTo(xOf(t), yOf(lane, v))));
+      ctx.lineTo(geo.R, yOf(lane, pts.at(-1)![1]));
+      ctx.stroke();
+      ctx.fillStyle = color;
+      for (const [t, v] of pts) {
+        ctx.beginPath();
+        ctx.arc(xOf(t), yOf(lane, v), 4.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  };
+
+  const local = (e: MouseEvent): [number, number] => {
+    const r = canvas.getBoundingClientRect();
+    return [e.clientX - r.left, e.clientY - r.top];
+  };
+  const hit = (x: number, y: number): { lane: Lane; i: number } | null => {
+    let best: { lane: Lane; i: number; d: number } | null = null;
+    for (const lane of ["laut", "hell"] as const) {
+      curves[lane].forEach(([t, v], i) => {
+        const d = Math.hypot(xOf(t) - x, yOf(lane, v) - y);
+        if (d < 10 && (!best || d < best.d)) best = { lane, i, d };
+      });
+    }
+    return best;
+  };
+  const laneAt = (y: number): Lane | null => {
+    for (const lane of ["laut", "hell"] as const) {
+      const [top, bot] = geo.lanes[lane];
+      if (y >= top - 4 && y <= bot + 4) return lane;
+    }
+    return null;
+  };
+  if (isSynth) {
+    canvas.addEventListener("pointerdown", (e) => {
+      const [x, y] = local(e);
+      const target = hit(x, y);
+      if (!target) return;
+      canvas.setPointerCapture(e.pointerId);
+      drag = { ...target, started: false };
+    });
+    canvas.addEventListener("pointermove", (e) => {
+      const [x, y] = local(e);
+      if (!drag) {
+        canvas.style.cursor = hit(x, y) ? "grab" : laneAt(y) ? "copy" : "default";
+        return;
+      }
+      const pts = curves[drag.lane].map((p) => [...p] as CurvePoint);
+      const prev = pts[drag.i - 1];
+      const next = pts[drag.i + 1];
+      const t = drag.i === 0 ? 0 : Math.min(next ? next[0] - 0.01 : 12, Math.max(prev ? prev[0] + 0.01 : 0, tOf(x)));
+      pts[drag.i] = [Math.round(t * 1000) / 1000, Math.round(vOf(drag.lane, y) * 1000) / 1000];
+      curves = { ...curves, [drag.lane]: pts };
+      draw();
+      edit(drag.lane, pts, drag.started, false);
+      drag.started = true;
+    });
+    const up = () => {
+      if (drag?.started) edit(drag.lane, curves[drag.lane], true, true);
+      drag = null;
+    };
+    canvas.addEventListener("pointerup", up);
+    canvas.addEventListener("pointercancel", up);
+    // Doppelklick: Punkt hinzufügen bzw. (auf einem Punkt) entfernen
+    canvas.addEventListener("dblclick", (e) => {
+      const [x, y] = local(e);
+      const target = hit(x, y);
+      if (target) {
+        const pts = curves[target.lane];
+        if (target.i === 0 || pts.length <= 2) return;
+        const next = pts.filter((_, i) => i !== target.i);
+        curves = { ...curves, [target.lane]: next };
+        edit(target.lane, next, false, true);
+      } else {
+        const lane = laneAt(y);
+        if (!lane) return;
+        const t = Math.max(0.01, tOf(x));
+        const next = [...curves[lane], [Math.round(t * 1000) / 1000, Math.round(vOf(lane, y) * 1000) / 1000] as CurvePoint].sort((a, b) => a[0] - b[0]);
+        if (next.length > 24) return;
+        curves = { ...curves, [lane]: next };
+        edit(lane, next, false, true);
+      }
+      draw();
+    });
+  }
+  return {
+    el: canvas,
+    setWave(w: WaveView) {
+      wave = w;
+      draw();
+    },
+    setCurves(c: Record<Lane, CurvePoint[]>) {
+      if (drag) return;
+      curves = c;
+      draw();
+    },
+    draw,
+  };
+}
+
+// ---------------------------------------------------------------- Meine Klänge
+
+/** Derselbe Klang? Alle Regler (fehlende = Standardwert), beim Synth auch die Kurven. */
+function sameSound(spec: InstrumentSpec, a: Instrument, b: Instrument): boolean {
+  if (a.kind !== b.kind) return false;
+  for (const p of spec.params) {
+    if (Math.abs((a.params[p.key] ?? p.default) - (b.params[p.key] ?? p.default)) > 1e-4) return false;
+  }
+  if (spec.kind !== "synth") return true;
+  const v = spec.verlauf[0];
+  const c = (i: Instrument, k: Lane) => JSON.stringify(i.curves?.[k] ?? v?.[k] ?? []);
+  return c(a, "laut") === c(b, "laut") && c(a, "hell") === c(b, "hell");
+}
+
+/**
+ * Klang-Bibliothek im Klang-Fenster: die aktuelle Einstellung unter einem
+ * Namen sichern (gleicher Name beim selben Instrument = ersetzen), gesicherte
+ * Klänge laden, umbenennen, löschen. Hervorgehoben ist, was gerade eingestellt ist.
+ */
+function soundLibrary(spec: InstrumentSpec, trackId: number, loaded: (s: SavedSound) => void) {
+  const nameInput = h("input", { type: "text", class: "snd-lib-name", maxLength: 60, title: "Name des Klangs" }) as HTMLInputElement;
+  nameInput.spellcheck = false;
+  const saveBtn = h("button", { class: "btn small primary snd-lib-save" }) as HTMLButtonElement;
+  const list = h("div", { class: "snd-lib-list" });
+  const others = h("details", { class: "snd-lib-others" }) as HTMLDetailsElement;
+  let othersOpen = false;
+  others.addEventListener("toggle", () => (othersOpen = others.open));
+  let inst: Instrument | null = null;
+  let key = "";
+  let editing = false;
+
+  const clean = (n: string) => n.trim().replace(/\s+/g, " ");
+  const mine = () => (savedSounds.peek() ?? []).filter((s) => s.kind === spec.kind);
+  const existing = (name: string) => mine().find((s) => s.name.toLowerCase() === clean(name).toLowerCase());
+  /** Vorschlag: der gewählte Charakter-Startpunkt, sonst der Instrumentname – frei gemacht mit einer Zahl. */
+  const suggestion = () => {
+    const charakter = spec.fields.find((f) => f.key === "charakter");
+    const base = inst && charakter?.presets.some((p) => p.name === inst!.preset) ? inst.preset : spec.name;
+    if (!existing(base)) return base;
+    for (let n = 2; ; n++) if (!existing(`${base} ${n}`)) return `${base} ${n}`;
+  };
+  const refreshSave = () => {
+    const name = clean(nameInput.value) || suggestion();
+    const ex = existing(name);
+    nameInput.placeholder = suggestion();
+    saveBtn.replaceChildren(icon("save"), ex ? "Ersetzen" : "Sichern");
+    saveBtn.title = ex ? `„${ex.name}“ mit der aktuellen Einstellung überschreiben` : `Aktuelle Einstellung als „${name}“ sichern`;
+  };
+  const save = async () => {
+    const name = clean(nameInput.value) || suggestion();
+    try {
+      const r = await backend.soundSave(trackId, name);
+      savedSounds.value = r.sounds;
+      nameInput.value = "";
+      refreshSave();
+      notify(r.replaced ? `Klang „${r.name}“ ersetzt` : `Klang „${r.name}“ gesichert`);
+    } catch (e) {
+      notify(errorText(e), "error");
+    }
+  };
+  saveBtn.addEventListener("click", () => void save());
+  nameInput.addEventListener("input", refreshSave);
+  nameInput.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter") void save();
+    if (e.key === "Escape") {
+      nameInput.value = "";
+      refreshSave();
+      nameInput.blur();
+    }
+  });
+
+  const row = (s: SavedSound, active: boolean, other: boolean) => {
+    const label = h(
+      "button",
+      { class: "snd-lib-load", title: other ? `„${s.name}“ laden – die Spur wird zu ${s.kindName}` : `„${s.name}“ laden` },
+      h("b", {}, s.name),
+      h("span", {}, other ? `${s.kindName} · ${s.summary}` : s.summary),
+    );
+    label.addEventListener("click", () => {
+      void act(backend.soundLoad(trackId, s.id)).then((ok) => ok && loaded(s));
+    });
+    const ren = h("button", { class: "btn ghost small snd-lib-ren", title: "Umbenennen" }, icon("pencil"));
+    ren.addEventListener("click", () => {
+      editing = true;
+      const input = h("input", { type: "text", class: "snd-lib-rename", maxLength: 60 }) as HTMLInputElement;
+      input.value = s.name;
+      input.spellcheck = false;
+      let done = false;
+      const finish = (commit: boolean) => {
+        if (done) return;
+        done = true;
+        editing = false;
+        const v = clean(input.value);
+        if (!commit || !v || v === s.name) return render(true);
+        backend.soundRename(s.id, v).then((l) => (savedSounds.value = l)).catch((e) => {
+          notify(errorText(e), "error");
+          render(true);
+        });
+      };
+      input.addEventListener("keydown", (e) => {
+        e.stopPropagation();
+        if (e.key === "Enter") finish(true);
+        if (e.key === "Escape") finish(false);
+      });
+      input.addEventListener("blur", () => finish(true));
+      label.replaceWith(input);
+      input.focus();
+      input.select();
+    });
+    // Löschen mit zweitem Klick (wie bei den Notenbibliotheken)
+    let armed = false;
+    const del = h("button", { class: "btn ghost small snd-lib-del", title: "Aus „Meine Klänge“ löschen" }, icon("trash"));
+    del.addEventListener("click", () => {
+      if (!armed) {
+        armed = true;
+        del.classList.add("warn");
+        del.replaceChildren(icon("trash"), "Löschen?");
+        setTimeout(() => {
+          armed = false;
+          del.classList.remove("warn");
+          del.replaceChildren(icon("trash"));
+        }, 4000);
+        return;
+      }
+      backend.soundDelete(s.id).then((l) => {
+        savedSounds.value = l;
+        notify(`Klang „${s.name}“ gelöscht`);
+      }).catch((e) => notify(errorText(e), "error"));
+    });
+    const el = h("div", { class: `snd-lib-item${active ? " on" : ""}` }, label, ren, del);
+    el.dataset.id = s.id;
+    el.dataset.name = s.name;
+    return el;
+  };
+
+  const render = (force = false) => {
+    const all = savedSounds.peek();
+    const own = mine();
+    const active = new Set(inst ? own.filter((s) => sameSound(spec, s.instrument, inst!)).map((s) => s.id) : []);
+    const k = JSON.stringify([all?.map((s) => [s.id, s.name, s.summary, s.modified]), [...active]]);
+    if (editing || (!force && k === key)) return;
+    key = k;
+    const rest = (all ?? []).filter((s) => s.kind !== spec.kind);
+    list.replaceChildren(
+      ...(own.length
+        ? own.map((s) => row(s, active.has(s.id), false))
+        : [h("div", { class: "snd-lib-empty" }, all === null ? "Wird geladen …" : `Noch keine eigenen Klänge für ${spec.name} – Namen eingeben und sichern.`)]),
+    );
+    others.hidden = rest.length === 0;
+    others.replaceChildren(h("summary", {}, `Andere Instrumente (${rest.length})`), ...rest.map((s) => row(s, false, true)));
+    others.open = othersOpen;
+    // Kurzinfo für den eingeklappten Zustand: Anzahl und der gerade eingestellte Klang
+    const on = own.find((s) => active.has(s.id));
+    badge.textContent = all === null ? "" : `${own.length}${on ? ` · ${on.name}` : ""}`;
+    badge.title = on ? `Eingestellt: „${on.name}“` : `${own.length} eigene Klänge für ${spec.name}`;
+    refreshSave();
+  };
+
+  const badge = h("span", { class: "snd-lib-badge" });
+  const el = h("div", { class: "snd-lib" }, h("div", { class: "snd-lib-saverow" }, nameInput, saveBtn), list, others);
+  return {
+    el,
+    badge,
+    update(i: Instrument) {
+      inst = i;
+      render();
+      refreshSave(); // Vorschlag folgt dem Charakter-Startpunkt
+    },
+  };
+}
+
+// ---------------------------------------------------------------- Fenster
+
+export function soundPanel(trackId: number): SoundPanel {
+  const spec = specFor(findTrack(project(), trackId)?.instrument);
+  if (!spec) return { el: h("div", { class: "placeholder" }, "Instrumente werden geladen … (Klanggestaltung gibt es nur in der Desktop-App)"), update() {} };
+  const isSynth = spec.kind === "synth";
+  const prefs = viewPrefs();
+  const current = (): Instrument | null => findTrack(project(), trackId)?.instrument ?? null;
+  const setInstrument = (inst: Instrument, merge = false) => run({ type: "setTrack", trackId, patch: { instrument: inst } }, merge);
+  const base = (): Instrument => {
+    const cur = current();
+    return { kind: spec.kind, preset: cur?.preset ?? "standard", params: { ...defaultParams(spec), ...(cur?.params ?? {}) }, ...(cur?.curves ? { curves: cur.curves } : {}) };
+  };
+  const setParams = (params: Record<string, number>, preset: string, merge: boolean) => setInstrument({ ...base(), preset, params: { ...base().params, ...params } }, merge);
+  const preview = (pattern: PreviewPattern) => backend.previewTrack(trackId, pattern).catch((e) => notify(errorText(e), "error"));
+  // Anspielen nach einer Änderung: aus · Einzelton · Muster (gemerkt)
+  let playMode: PlayMode = prefs.anspielen;
+  const autoPreview = (s: InstrumentSpec = spec) => {
+    const p = playPattern(s, playMode);
+    if (p) void preview(p);
+  };
+
+  // Instrumentwahl
+  const kinds = h(
+    "div",
+    { class: "seg snd-kinds" },
+    ...instrumentSpecs.peek().map((s) =>
+      h("button", {
+        class: `seg-btn${s.kind === spec.kind ? " on" : ""}`,
+        title: s.description,
+        onclick: () => s.kind !== spec.kind && setInstrument(defaultInstrument(s)),
+      }, s.name),
+    ),
+  );
+  const listen = h(
+    "div",
+    { class: "presets" },
+    ...spec.previews.map((pv, i) =>
+      h("button", { class: `btn small${i === 0 ? " primary" : ""}`, title: `Den Klang mit „${pv.label}“ anspielen`, onclick: () => preview(pv.key) }, i === 0 ? icon("play") : null, pv.label),
+    ),
+  );
+  const insert = h("button", { class: "btn small", title: "Ein Takt Beispielmuster hinter dem letzten Clip einfügen", onclick: () => act(backend.insertPattern(trackId)) }, icon("plus"), "Muster einfügen");
+
+  // Felder (Charakter immer, Klangfarbe und Raum zuschaltbar)
+  let dragging: string | null = null;
+  let pending: { field: string; x: number; y: number } | null = null;
+  let fresh = false;
+  let inflight = false;
+  let playAfter = false;
+  const pump = async () => {
+    if (inflight || !pending) return;
+    const p = pending;
+    pending = null;
+    const merge = !fresh;
+    fresh = false;
+    inflight = true;
+    await act(backend.soundField(trackId, p.field, p.x, p.y, null, merge));
+    inflight = false;
+    if (pending) void pump();
+    else if (playAfter) {
+      playAfter = false;
+      autoPreview();
+    }
+  };
+  const fieldViews = spec.fields.map((f) => {
+    const view = fieldView(
+      f,
+      (name) => {
+        void act(backend.soundField(trackId, f.key, null, null, name, false)).then((ok) => {
+          if (ok) autoPreview();
+        });
+      },
+      (x, y, phase) => {
+        if (phase === "start") {
+          dragging = f.key;
+          fresh = true;
+        }
+        pending = { field: f.key, x, y };
+        if (phase === "end") {
+          dragging = null;
+          playAfter = true;
+        }
+        void pump();
+      },
+    );
+    return { f, view };
+  });
+  const fieldBox = h("div", { class: "snd-fields" }, ...fieldViews.map((v) => v.view.el));
+  /** Seitenlänge der Felder: gleich breit nebeneinander, aber nie höher als der sichtbare Platz. */
+  const fitPads = () => {
+    const body = fieldBox.closest(".tab-body") as HTMLElement | null;
+    const shown = fieldViews.filter((v) => !v.view.el.hidden).length;
+    if (!body || !shown || !fieldBox.clientWidth) return;
+    const GAP = 14;
+    const YLAB = 20; // senkrechte Beschriftung links vom Feld
+    const perW = (fieldBox.clientWidth - GAP * (shown - 1)) / shown - YLAB;
+    const top = fieldBox.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop;
+    const perH = body.clientHeight - top - 22 - 18 - 14; // Kopfzeile, Achsenwörter, Rand
+    const size = Math.round(Math.max(120, Math.min(perW, perH, 640)));
+    if (fieldBox.style.getPropertyValue("--pad") !== `${size}px`) fieldBox.style.setProperty("--pad", `${size}px`);
+  };
+  const toggles = (["klangfarbe", "raum"] as const).map((key) => {
+    const name = spec.fields.find((f) => f.key === key)?.name ?? key;
+    const b = h("button", { class: `btn small snd-toggle${prefs[key] ? " on" : ""}`, title: `Feld „${name}“ ein- oder ausblenden (die Einstellung bleibt)` }, name);
+    b.dataset.field = key;
+    const apply = (on: boolean) => {
+      b.classList.toggle("on", on);
+      const fv = fieldViews.find((v) => v.f.key === key);
+      if (fv) fv.view.el.hidden = !on;
+      fitPads();
+    };
+    b.addEventListener("click", () => {
+      const on = !b.classList.contains("on");
+      setViewPref(key, on);
+      apply(on);
+    });
+    apply(prefs[key]);
+    return b;
+  });
+  const single = spec.kind === "drums" ? "Einzelschlag" : "Einzelton";
+  const playBtns = ([
+    ["aus", "aus", "Nach Änderungen nichts anspielen"],
+    ["ton", single, spec.kind === "drums" ? "Nach dem Loslassen einen Bassdrum-Schlag anspielen" : "Nach dem Loslassen einen einzelnen Ton anspielen"],
+    ["muster", spec.previews[0]?.label ?? "Muster", `Nach dem Loslassen „${spec.previews[0]?.label ?? "Muster"}“ anspielen`],
+  ] as const).map(([mode, label, title]) => {
+    const b = h("button", { class: `seg-btn${mode === playMode ? " on" : ""}`, title }, label);
+    b.dataset.mode = mode;
+    b.addEventListener("click", () => {
+      playMode = mode;
+      setViewPref("anspielen", mode);
+      for (const x of playBtns) x.classList.toggle("on", x.dataset.mode === mode);
+      autoPreview();
+    });
+    return b;
+  });
+  const playSwitch = h("div", { class: "seg mini snd-play" }, ...playBtns);
+
+  // Zeitverlauf
+  const time = timeView(isSynth, (lane, pts, merge) => {
+    const cur = base();
+    void setInstrument({ ...cur, preset: cur.preset, curves: { ...(cur.curves ?? {}), [lane]: pts } }, merge);
+  });
+  const testton = h("span", { class: "muted" });
+  let verlaufBox: HTMLElement | null = null;
+  const vchips: Array<{ v: VerlaufSpec; b: HTMLElement }> = [];
+  const pulsBtns: HTMLElement[] = [];
+  const pulsDepth = h("input", { type: "range", min: 0, max: 1, step: 0.01, title: "Wie tief der Puls die Lautstärke absenkt" }) as HTMLInputElement;
+  const release = h("input", { type: "range", min: 0.05, max: 6, step: 0.05, title: "Ausklang nach dem Loslassen" }) as HTMLInputElement;
+  const releaseVal = h("b");
+  if (isSynth) {
+    for (const v of spec.verlauf) {
+      const b = h("button", { class: "btn small snd-vchip", title: v.beschreibung, onclick: () => {
+        const cur = base();
+        void setInstrument({ ...cur, curves: { ...(cur.curves ?? {}), laut: v.laut, hell: v.hell },
+          params: { ...cur.params, "verlauf.ausklang": v.ausklang, "verlauf.puls": v.puls, "verlauf.pulstiefe": v.pulstiefe } }).then((ok) => {
+          if (ok) autoPreview();
+        });
+      } }, v.name);
+      vchips.push({ v, b });
+    }
+    [["aus", 0], ["¼", 1], ["⅛", 2], ["1/16", 3]].forEach(([label, n]) => {
+      const b = h("button", { class: "seg-btn", title: n ? `Puls in ${label}-Noten im Takt` : "Kein Puls", onclick: () => {
+        const cur = base().params;
+        const depth = n && (cur["verlauf.pulstiefe"] ?? 0) < 0.05 ? 0.8 : cur["verlauf.pulstiefe"] ?? 0;
+        void setParams({ "verlauf.puls": n as number, "verlauf.pulstiefe": depth }, base().preset, false);
+      } }, label as string);
+      pulsBtns.push(b);
+    });
+    let merging = false;
+    for (const [input, key] of [[pulsDepth, "verlauf.pulstiefe"], [release, "verlauf.ausklang"]] as const) {
+      input.addEventListener("pointerdown", () => (merging = false));
+      input.addEventListener("input", () => {
+        void setParams({ [key]: Number(input.value) }, base().preset, merging);
+        merging = true;
+      });
+      input.addEventListener("change", () => (merging = false));
+      input.addEventListener("keydown", (e) => e.stopPropagation());
+    }
+    verlaufBox = h(
+      "div",
+      { class: "snd-verlauf" },
+      h("div", { class: "snd-vchips" }, h("span", { class: "muted" }, "Verlauf:"), ...vchips.map((c) => c.b)),
+      h("div", { class: "snd-vctl" },
+        h("label", {}, "Puls"), h("div", { class: "seg" }, ...pulsBtns),
+        h("label", {}, "Tiefe"), pulsDepth,
+        h("label", {}, "Ausklang"), release, releaseVal),
+      h("div", { class: "hint" }, "Punkte ziehen · Doppelklick fügt einen Punkt hinzu bzw. entfernt ihn"),
+    );
+  }
+
+  // Feinschliff: alle Regler
+  const sliders: Array<{ p: ParamSpec; input: HTMLInputElement; val: HTMLElement }> = [];
+  const makeSlider = (p: ParamSpec) => {
+    const input = h("input", { type: "range", min: p.min, max: p.max, step: p.note ? 1 : 0.01 }) as HTMLInputElement;
+    const val = h("b");
+    let merging = false;
+    input.addEventListener("pointerdown", () => (merging = false));
+    input.addEventListener("input", () => {
+      void setParams({ [p.key]: Number(input.value) }, "eigen", merging);
+      merging = true;
+    });
+    input.addEventListener("change", () => {
+      merging = false;
+      const pv = GROUP_PREVIEW[p.group];
+      if (spec.kind === "drums" && pv) setTimeout(() => void preview(pv), 120);
+    });
+    input.addEventListener("keydown", (e) => e.stopPropagation());
+    sliders.push({ p, input, val });
+    return h(
+      "div",
+      { class: "slider", title: p.meaning },
+      h("label", {}, h("span", {}, p.label), val),
+      input,
+      h("div", { class: "scale" }, h("span", {}, p.note ? noteName(p.min) : p.left), h("span", {}, p.note ? noteName(p.max) : p.right)),
+    );
+  };
+  const groups = new Map<string, ParamSpec[]>();
+  for (const p of spec.params.filter((p) => !p.hidden)) groups.set(p.group, [...(groups.get(p.group) ?? []), p]);
+  const groupEls = [...groups].map(([name, ps]) => {
+    const pv = spec.kind === "drums" ? GROUP_PREVIEW[name] : undefined;
+    const head = h("h4", {}, name, pv ? h("button", { class: "btn ghost small", title: `${name} anspielen`, onclick: () => preview(pv) }, icon("play")) : null);
+    return h("div", { class: "pgroup" }, head, h("div", { class: "sliders" }, ...ps.map(makeSlider)));
+  });
+  const fine = h("details", { class: "snd-fine", open: prefs.feinschliff }, h("summary", {}, "Feinschliff – alle Regler"), ...groupEls) as HTMLDetailsElement;
+  fine.addEventListener("toggle", () => setViewPref("feinschliff", fine.open));
+
+  // Messwerte – dieselben Zahlen und Wörter sieht der Agent.
+  const measures = h("div", { class: "measures" });
+  const measureTon = h("span", { class: "muted" });
+  let lastKey = "";
+  let timer: number | undefined;
+  const refresh = () => {
+    const inst = current();
+    const key = JSON.stringify(inst ?? {});
+    if (!inst || key === lastKey) return;
+    lastKey = key;
+    clearTimeout(timer);
+    timer = window.setTimeout(async () => {
+      try {
+        const [r, w] = await Promise.all([backend.describeSound(trackId), backend.soundWave(trackId)]);
+        measureTon.textContent = r.testton;
+        testton.textContent = w.testton;
+        time.setWave(w);
+        measures.replaceChildren(
+          ...r.anzeige.map((m) => {
+            const fill = h("i");
+            fill.style.width = `${Math.round(Math.max(0.03, Math.min(1, m.wert)) * 100)}%`;
+            return h("div", { class: "measure" }, h("span", { class: "name" }, m.label), h("b", {}, m.wort), h("div", { class: "bar" }, fill), h("span", { class: "detail" }, m.detail));
+          }),
+        );
+      } catch {
+        /* Messung ist optional */
+      }
+    }, 180);
+  };
+
+  // Meine Klänge (Klang-Bibliothek über alle Projekte)
+  const lib = soundLibrary(spec, trackId, (s) => autoPreview(instrumentSpecs.peek().find((x) => x.kind === s.kind) ?? spec));
+
+  // Meine Klänge einklappbar (anfangs zu); eingeklappt zeigt die Zeile Anzahl und eingestellten Klang
+  const libBox = h("details", { class: "prop snd-lib-box", open: prefs.klaenge },
+    h("summary", { title: "Eigene Klänge – in jedem Projekt verfügbar" }, h("span", { class: "snd-lib-title" }, "Meine Klänge"), lib.badge),
+    lib.el) as HTMLDetailsElement;
+  libBox.addEventListener("toggle", () => setViewPref("klaenge", libBox.open));
+
+  // Zeitverlauf einklappbar
+  const timeBox = h("details", { class: "snd-time", open: prefs.zeitverlauf },
+    h("summary", { class: "snd-time-head" }, h("b", {}, "Zeitverlauf"), testton),
+    time.el,
+    verlaufBox) as HTMLDetailsElement;
+  timeBox.addEventListener("toggle", () => {
+    setViewPref("zeitverlauf", timeBox.open);
+    fitPads();
+  });
+
+  const agentNote = h("div", { class: "agent-note" });
+  const el = h(
+    "div",
+    { class: "sound snd" },
+    h("div", { class: "snd-main" },
+      h("div", { class: "snd-head" },
+        kinds,
+        h("div", { class: "snd-head-right" },
+          h("span", { class: "muted" }, "Felder:"), ...toggles,
+          h("span", { class: "muted snd-play-label", title: "Was nach einer Änderung kurz erklingt" }, "anspielen:"), playSwitch)),
+      fieldBox,
+      timeBox,
+      fine),
+    h("div", { class: "sound-side" },
+      libBox,
+      h("div", { class: "prop" }, h("label", {}, "Vorhören"), listen),
+      h("div", { class: "prop snd-insert" }, insert,
+        spec.kind === "drums" ? h("button", { class: "btn small", title: "Genre-Muster und Schritt-Raster im Fenster „Rhythmus“", onclick: () => showPanel("rhythmus") }, icon("grid"), "Genre-Muster …") : null),
+      h("div", { class: "prop" }, h("label", {}, "Gemessen · ", measureTon), measures),
+      agentNote),
+  );
+  new ResizeObserver(() => time.draw()).observe(time.el);
+  // Felder wachsen mit dem Platz: so groß, wie Breite und sichtbare Höhe des Fensters erlauben
+  let bodySeen = false;
+  const padObserver = new ResizeObserver(() => {
+    if (!el.isConnected) {
+      if (bodySeen) padObserver.disconnect();
+      return;
+    }
+    const body = el.closest(".tab-body");
+    if (body && !bodySeen) {
+      bodySeen = true;
+      padObserver.observe(body);
+    }
+    fitPads();
+  });
+  padObserver.observe(fieldBox);
+
+  return {
+    el,
+    update() {
+      const inst = current();
+      if (!inst) return;
+      const color = findTrack(project(), trackId)?.color ?? "#ffb454";
+      el.style.setProperty("--c", color);
+      const prm = (k: string, d = 0.5) => inst.params[k] ?? spec.params.find((p) => p.key === k)?.default ?? d;
+      for (const { f, view } of fieldViews) {
+        if (dragging === f.key) continue;
+        const x = prm(f.x.param);
+        const y = prm(f.y.param);
+        const active = f.key === "charakter"
+          ? (f.presets.some((p) => p.name === inst.preset) ? inst.preset : null)
+          : f.presets.find((p) => Math.abs(p.x - x) < 0.005 && Math.abs(p.y - y) < 0.005)?.name ?? null;
+        view.set(x, y, active);
+      }
+      for (const s of sliders) {
+        const v = inst.params[s.p.key] ?? s.p.default;
+        s.input.style.setProperty("--c", color);
+        setRange(s.input, v);
+        s.val.textContent = s.p.note ? noteName(Math.round(v)) : `${Math.round(((v - s.p.min) / (s.p.max - s.p.min)) * 100)}`;
+      }
+      if (isSynth) {
+        const laut = inst.curves?.laut ?? spec.verlauf[0]?.laut ?? [];
+        const hell = inst.curves?.hell ?? spec.verlauf[0]?.hell ?? [];
+        time.setCurves({ laut, hell });
+        const puls = Math.round(prm("verlauf.puls", 0));
+        pulsBtns.forEach((b, i) => b.classList.toggle("on", i === puls));
+        setRange(pulsDepth, prm("verlauf.pulstiefe", 0));
+        pulsDepth.disabled = puls === 0;
+        setRange(release, prm("verlauf.ausklang", 1.6));
+        releaseVal.textContent = `${prm("verlauf.ausklang", 1.6).toLocaleString("de-DE", { maximumFractionDigits: 2 })} s`;
+        const same = (a: CurvePoint[], b: CurvePoint[]) => JSON.stringify(a) === JSON.stringify(b);
+        for (const { v, b } of vchips) {
+          b.classList.toggle("on", same(laut, v.laut) && same(hell, v.hell) && Math.round(prm("verlauf.puls", 0)) === v.puls);
+        }
+      }
+      const url = snapshot.peek()?.agent.url;
+      agentNote.textContent = url
+        ? `Agent: z. B. „Mach die Kick mächtiger“, „Fläche dunkler und rauer“, „lass den Synth atmen“ oder „sichere das als Mein Beat“ – im Agent-Chat oder über Claude Code (${url}).`
+        : "Agent-Schnittstelle (MCP) ist nicht aktiv.";
+      lib.update(inst);
+      refresh();
+    },
+  };
+}

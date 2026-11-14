@@ -1,0 +1,9 @@
+[package]
+name = "klang-mcp"
+description = "Lean, self-written MCP server (JSON-RPC over HTTP) and stdio bridge"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+serde_json = { workspace = true }

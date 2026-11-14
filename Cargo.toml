@@ -1,0 +1,49 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/klang-dsp",
+    "crates/klang-core",
+    "crates/klang-music",
+    "crates/klang-engine",
+    "crates/klang-mcp",
+    "crates/klang-opus",
+    "crates/klang-app",
+    "crates/klang-web",
+    "crates/klang-worklet",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+cpal = "0.15"
+rtrb = "0.3"
+quick-xml = "0.37"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+flate2 = "1"
+tar = { version = "0.4", default-features = false }
+
+klang-dsp = { path = "crates/klang-dsp" }
+klang-core = { path = "crates/klang-core" }
+klang-music = { path = "crates/klang-music" }
+klang-engine = { path = "crates/klang-engine" }
+klang-mcp = { path = "crates/klang-mcp" }
+klang-opus = { path = "crates/klang-opus" }
+klang-app = { path = "crates/klang-app", default-features = false }
+
+# DSP has to be fast in debug builds, too.
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.dev.package.klang-dsp]
+opt-level = 3
+
+[profile.dev.package.klang-music]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 4

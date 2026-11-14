@@ -1,0 +1,9 @@
+[package]
+name = "klang-dsp"
+description = "Klangwelt DSP: FFT, pitch, onsets, time stretching, synthesis"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+serde = { workspace = true }

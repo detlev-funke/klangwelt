@@ -1,0 +1,440 @@
+import { addTrack, convertAudio, resetRowHeight, startRowResize } from "../actions.js";
+import { audioDrag } from "../filedrop.js";
+import { backend } from "../bridge.js";
+import { fitCanvas, h, icon, noteName, setRange } from "../dom.js";
+import {
+  EXPR_H, NOTES_TOP, RHYTHM_H, type NoteGeo, geoFor, heightDraft, highOnTop, isBlack, maxScrollY, pitchAt, pitchOfLane, pitchViews,
+  refitPitch, rowHeight, scrollPitch, viewFor, wheelPitchStep, zoomPitch,
+} from "../pianoroll.js";
+import { EXPRS, type ExprKey, exprKeysFor, exprLanes, exprShown, laneKeyFor, setLaneKey, toggleExprLane } from "../expression.js";
+import { effect } from "../signals.js";
+import { act, instrumentSpecs, run, selection, snapshot, specFor, viewport } from "../store.js";
+import { harmonyLaneOn, setHarmonyLane } from "../harmonyline.js";
+import type { InstrumentKind, Track } from "../types.js";
+
+/** Knopf „Harmonie“: Akkordfolge in der Zeitleiste ein-/ausblenden. */
+function harmonyToggle(): HTMLElement {
+  const b = h("button", { class: "btn small harmony-toggle", title: "Harmonie in der Zeitleiste zeigen: Akkorde in der Farbe ihrer Stimmung, Brüche rot (erscheint auch, solange man im Harmonie-Fenster arbeitet)", onclick: () => setHarmonyLane(!harmonyLaneOn.peek()) }, icon("fifths"), "Harmonie");
+  effect(() => b.classList.toggle("on", harmonyLaneOn.value));
+  return b;
+}
+
+/**
+ * Klaviatur am rechten Rand des Spurkopfs (nur in der Notenansicht).
+ * Wie bei einem echten Klavier, von links gespielt: weiße Tasten über die volle
+ * Breite mit der Tastenfront links, schwarze Tasten kürzer und hinten (rechts,
+ * an der Zeitleiste) liegend. Die Tastenhöhe folgt Zoom und Zeilenhöhe.
+ */
+function drawKeys(canvas: HTMLCanvasElement, g: NoteGeo, drumKeys?: Map<number, string>): void {
+  const { ctx, w, h: hh } = fitCanvas(canvas);
+  ctx.clearRect(0, 0, w, hh);
+  const LANE_SPAN = g.view.span;
+  const LANE_H = g.laneH;
+  const total = g.lanesH;
+  const blackW = Math.round(w * 0.6);
+  const blackX = w - blackW;
+  const up = highOnTop.peek();
+  const pitchOf = (k: number) => pitchOfLane(g.view, k);
+
+  // Weiße Tasten als durchgehende Fläche, zur Front (links) heller.
+  const white = ctx.createLinearGradient(0, 0, w, 0);
+  white.addColorStop(0, "#e4e7ee");
+  white.addColorStop(1, "#c3c8d2");
+  ctx.fillStyle = white;
+  ctx.fillRect(0, 0, w, total);
+
+  // Fugen zwischen weißen Tasten.
+  ctx.fillStyle = "#8a919e";
+  for (let k = 0; k < LANE_SPAN; k++) {
+    const pitch = pitchOf(k);
+    const y = k * LANE_H;
+    if (isBlack(pitch)) {
+      // zwei weiße Tasten stoßen vor der schwarzen Taste aneinander
+      ctx.fillRect(0, Math.round(y + LANE_H / 2), blackX, 1);
+    } else if (!isBlack(pitch + 1)) {
+      // E|F und H|C: weiße Tasten direkt nebeneinander – Fuge zur Seite des höheren Tons
+      ctx.fillRect(0, up ? y : y + LANE_H - 1, w, 1);
+    }
+  }
+
+  // Schwarze Tasten: kürzer, hinten (rechts) angesetzt, Front links abgerundet.
+  for (let k = 0; k < LANE_SPAN; k++) {
+    const pitch = pitchOf(k);
+    if (!isBlack(pitch)) continue;
+    const y = k * LANE_H + 0.5;
+    ctx.fillStyle = "#171b23";
+    ctx.beginPath();
+    ctx.roundRect(blackX, y, blackW, Math.max(2, LANE_H - 1), [2, 0, 0, 2]);
+    ctx.fill();
+    if (LANE_H >= 6) {
+      ctx.fillStyle = "#3a4252";
+      ctx.fillRect(blackX + 2, y + 1, blackW - 3, 1);
+    }
+  }
+
+  // Beschriftung vorne (links) auf der weißen Taste: C-Töne bzw. beim Schlagzeug die Trommeln.
+  ctx.font = `600 ${Math.max(5.5, Math.min(7.5, LANE_H - 0.5)).toFixed(1)}px system-ui`;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  for (let k = 0; k < LANE_SPAN; k++) {
+    const pitch = pitchOf(k);
+    const y = k * LANE_H + LANE_H / 2 + 0.5;
+    if (drumKeys) {
+      const name = drumKeys.get(pitch);
+      if (!name) continue;
+      ctx.fillStyle = "rgba(255, 180, 84, 0.9)";
+      ctx.fillRect(0, k * LANE_H + 1, 2, Math.max(2, LANE_H - 2));
+      ctx.fillStyle = "#1b2130";
+      ctx.fillText(name, 3, y);
+    } else if (pitch % 12 === 0) {
+      ctx.fillStyle = "#5b6271";
+      ctx.fillText(noteName(pitch), 2, y);
+    }
+  }
+}
+
+/** Kurznamen der Trommeln einer Schlagzeugspur (Taste → „BD“, „SD“ …). */
+export function drumKeyNames(t: Track): Map<number, string> | undefined {
+  if (t.instrument?.kind !== "drums") return undefined;
+  const keys = specFor(t.instrument)?.keys ?? [];
+  return new Map(keys.map((k) => [k.midi, k.short]));
+}
+
+/** Regler, dessen Zwischenwerte beim Ziehen zu einem Undo-Schritt verschmelzen. */
+function gestureRange(min: number, max: number, step: number, onValue: (v: number, merge: boolean) => void, reset?: number) {
+  const input = h("input", { type: "range", min, max, step });
+  let merging = false;
+  input.addEventListener("pointerdown", () => (merging = false));
+  input.addEventListener("input", () => {
+    onValue(Number(input.value), merging);
+    merging = true;
+  });
+  input.addEventListener("change", () => (merging = false));
+  input.addEventListener("keydown", (e) => e.stopPropagation());
+  if (reset !== undefined) {
+    input.addEventListener("dblclick", () => {
+      input.value = String(reset);
+      onValue(reset, false);
+    });
+  }
+  return input;
+}
+
+function panText(p: number): string {
+  if (Math.abs(p) < 0.01) return "C";
+  return `${p < 0 ? "L" : "R"} ${Math.round(Math.abs(p) * 100)}`;
+}
+
+class TrackRow {
+  readonly el: HTMLDivElement;
+  #track!: Track;
+  #name: HTMLInputElement;
+  #mute: HTMLButtonElement;
+  #solo: HTMLButtonElement;
+  #gain: HTMLInputElement;
+  #gainVal: HTMLElement;
+  #pan: HTMLInputElement;
+  #panVal: HTMLElement;
+  #pitchVal: HTMLElement;
+  #kind: HTMLElement;
+  #viewBtn: HTMLButtonElement;
+  #keys: HTMLCanvasElement;
+  #rhythm: HTMLDivElement;
+  #exprBtn: HTMLButtonElement;
+  #convertBtn: HTMLButtonElement;
+  #exprHead: HTMLDivElement;
+  #exprSelect: HTMLSelectElement;
+  #exprHint: HTMLElement;
+
+  constructor(readonly id: number) {
+    const set = (patch: object, merge = false) => run({ type: "setTrack", trackId: this.id, patch }, merge);
+
+    this.#name = h("input", { class: "text", spellcheck: false, title: "Name der Spur – klicken und tippen zum Umbenennen" });
+    this.#name.addEventListener("change", () => {
+      const v = this.#name.value.trim();
+      if (v) void set({ name: v });
+      else this.#name.value = this.#track.name;
+    });
+    this.#name.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter" || e.key === "Escape") this.#name.blur();
+    });
+
+    this.#mute = h("button", { class: "toggle m", title: "Stumm", onclick: () => set({ mute: !this.#track.mute }) }, "M");
+    this.#solo = h("button", { class: "toggle s", title: "Solo", onclick: () => set({ solo: !this.#track.solo }) }, "S");
+    const del = h("button", { class: "btn ghost small", title: "Spur löschen", onclick: () => run({ type: "removeTrack", trackId: this.id }) }, icon("trash"));
+
+    this.#gain = gestureRange(-60, 6, 0.5, (v, m) => set({ gainDb: v }, m), 0);
+    this.#gain.title = "Pegel in dB – Doppelklick: 0 dB";
+    this.#gain.dataset.help = "pegel";
+    this.#gainVal = h("b");
+    this.#pan = gestureRange(-1, 1, 0.01, (v, m) => set({ pan: v }, m), 0);
+    this.#pan.title = "Panorama: links ↔ rechts – Doppelklick: Mitte";
+    this.#pan.dataset.help = "panorama";
+    this.#panVal = h("b");
+
+    this.#pitchVal = h("span", { class: "val", title: "Tonhöhe in Halbtönen" });
+    const pitch = (d: number) => {
+      const v = Math.max(-24, Math.min(24, Math.round(this.#track.pitchSemitones) + d));
+      void set({ pitchSemitones: v });
+    };
+    const stepper = h(
+      "div",
+      { class: "stepper", title: "Tonhöhe (Halbtöne) – Tempo bleibt gleich" },
+      h("button", { title: "Einen Halbton tiefer", onclick: () => pitch(-1) }, "−"),
+      this.#pitchVal,
+      h("button", { title: "Einen Halbton höher", onclick: () => pitch(1) }, "+"),
+    );
+
+    this.#kind = h("span", { class: "kind" });
+    this.#viewBtn = h("button", {
+      class: "toggle v",
+      onclick: () => set({ view: this.#track.view === "notes" ? "compact" : "notes" }),
+    });
+
+    this.#keys = h("canvas", {
+      class: "keys",
+      title: "Mausrad: Tonbereich verschieben · Strg+Mausrad: zoomen · Doppelklick: einpassen · Klick: Ton anspielen",
+    });
+    this.#keys.style.top = `${NOTES_TOP}px`;
+    this.#keys.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const view = viewFor(this.#track);
+      if (e.ctrlKey || e.metaKey) zoomPitch(this.id, e.deltaY > 0 ? 3 : -3, view);
+      else scrollPitch(this.id, wheelPitchStep(e.deltaY), view); // nach oben = was oben liegt
+    }, { passive: false });
+    this.#keys.addEventListener("dblclick", () => refitPitch(this.id));
+
+    this.#rhythm = h("div", {
+      class: "rhythm-label",
+      title: "Rhythmus-Leiste: tonlose Schläge wie Hi-Hat oder Shaker (bei Instrumentspuren die Notenanfänge)",
+    }, "Rhythmus");
+    this.#rhythm.style.height = `${RHYTHM_H}px`;
+
+    // Ausdrucksspur: welche Ausdrucksform gezeigt und bearbeitet wird.
+    this.#exprSelect = h("select", { class: "expr-select", title: "Ausdrucksform der Ausdrucksspur" });
+    this.#exprSelect.addEventListener("change", () => setLaneKey(this.id, this.#exprSelect.value as ExprKey));
+    this.#exprSelect.addEventListener("pointerdown", (e) => e.stopPropagation());
+    this.#exprHint = h("span", { class: "expr-range" });
+    this.#exprHead = h("div", {
+      class: "expr-head",
+      title: "Ausdrucksspur: Werte ziehen oder über mehrere Noten malen · Shift: gerade Linie (z. B. Crescendo) · Doppelklick: zurücksetzen",
+    }, this.#exprSelect, this.#exprHint);
+    this.#exprHead.style.height = `${EXPR_H}px`;
+    this.#exprBtn = h("button", {
+      class: "toggle v x",
+      onclick: () => {
+        const t = this.#track;
+        const shown = exprShown(t);
+        toggleExprLane(this.id);
+        // Gespeicherte Zeilenhöhe mitwachsen/-schrumpfen lassen, damit die Tonbahnen gleich groß bleiben.
+        if (t.notesHeight > 0) void set({ notesHeight: Math.max(140, t.notesHeight + (shown ? -EXPR_H : EXPR_H)) });
+      },
+    }, icon("expr"));
+
+    // Audiospur in der Tonhöhen-Ansicht: erkannte Töne aller Clips in eine Melodie-Spur umwandeln.
+    this.#convertBtn = h("button", {
+      class: "toggle convert",
+      title: "In Noten umwandeln: die erkannten Töne aller Clips als Melodie-Spur darunter anlegen (Rechtsklick auf einen Clip: auch als Rhythmus-Spur)",
+      onclick: () => void convertAudio(this.id, null, "melodie"),
+    }, icon("keys"), "Noten");
+
+    // Splitter an der Unterkante: Zeile einzeln größer/kleiner ziehen, Doppelklick = Standardhöhe.
+    const splitter = h("div", { class: "splitter", title: "Ziehen: Spurhöhe ändern · Doppelklick: Standardhöhe" });
+    splitter.addEventListener("pointerdown", (e) => {
+      e.stopPropagation();
+      startRowResize(this.#track, e, splitter);
+    });
+    splitter.addEventListener("dblclick", (e) => {
+      e.stopPropagation();
+      void resetRowHeight(this.#track);
+    });
+    this.#keys.addEventListener("pointerdown", (e) => {
+      if (this.#track.kind !== "instrument") return;
+      const pitch = pitchAt(geoFor(this.#track), e.offsetY + NOTES_TOP);
+      void backend.previewNote(this.id, pitch).catch(() => {});
+    });
+
+    this.el = h(
+      "div",
+      { class: "track-row" },
+      h("div", { class: "stripe" }),
+      h(
+        "div",
+        { class: "inner" },
+        h("div", { class: "track-top" }, this.#kind, this.#name, this.#viewBtn, this.#exprBtn, this.#convertBtn, this.#mute, this.#solo, del),
+        h(
+          "div",
+          { class: "track-controls" },
+          h("div", { class: "knob" }, h("span", {}, "Pegel", this.#gainVal), this.#gain),
+          h("div", { class: "knob" }, h("span", {}, "Pan", this.#panVal), this.#pan),
+          stepper,
+        ),
+      ),
+      this.#keys,
+      this.#rhythm,
+      this.#exprHead,
+      splitter,
+    );
+    this.el.dataset.trackId = String(id);
+    this.el.addEventListener("pointerdown", () => {
+      const sel = selection.peek();
+      if (sel?.trackId !== this.id) selection.value = { trackId: this.id, clipId: null };
+    });
+  }
+
+  update(t: Track, selected: boolean): void {
+    const kindChanged = !this.#track || this.#track.kind !== t.kind;
+    this.#track = t;
+    this.el.style.setProperty("--c", t.color);
+    this.el.style.height = `${rowHeight(t)}px`;
+    this.el.classList.toggle("selected", selected);
+    const notes = t.view === "notes";
+    this.el.classList.toggle("notes", notes);
+    // Symbol nur bei Änderung tauschen: ein Neuzeichnen beim Drücken (Spur wird
+    // ausgewählt) würde sonst das Element unter der Maus ersetzen – der Klick käme nie an.
+    const viewIcon = notes ? "wave" : "keys";
+    if (this.#viewBtn.dataset.icon !== viewIcon) {
+      this.#viewBtn.dataset.icon = viewIcon;
+      this.#viewBtn.replaceChildren(icon(viewIcon));
+    }
+    this.#viewBtn.classList.toggle("on", notes);
+    this.#viewBtn.title = notes ? "Kompakte Ansicht" : t.kind === "instrument" ? "Notenansicht (bearbeitbar)" : "Tonhöhen anzeigen (aus der Analyse)";
+    const canExpr = notes && t.kind === "instrument";
+    this.#exprBtn.hidden = !canExpr;
+    this.#convertBtn.hidden = !(notes && t.kind === "audio" && t.clips.some((c) => c.source.type === "audio"));
+    const exprOn = canExpr && exprShown(t);
+    this.#exprBtn.classList.toggle("on", exprOn);
+    this.#exprBtn.title = exprOn ? "Ausdrucksspur ausblenden" : "Ausdrucksspur einblenden (Anschlag, Vibrato, Helligkeit, Biegung je Note)";
+    this.el.classList.toggle("expr", exprOn);
+    if (notes) {
+      const g = geoFor(t);
+      this.#keys.style.height = `${g.lanesH}px`;
+      this.#rhythm.style.top = `${g.rhythmTop}px`;
+      drawKeys(this.#keys, g, drumKeyNames(t));
+      if (exprOn) {
+        this.#exprHead.style.top = `${g.exprTop}px`;
+        const keys = exprKeysFor(t);
+        const current = laneKeyFor(t);
+        const sig = keys.join(",");
+        if (this.#exprSelect.dataset.keys !== sig) {
+          this.#exprSelect.dataset.keys = sig;
+          this.#exprSelect.replaceChildren(...keys.map((k) => h("option", { value: k }, EXPRS[k].label)));
+        }
+        this.#exprSelect.value = current;
+        const d = EXPRS[current];
+        this.#exprHint.textContent = d.bipolar ? "− · 0 · +" : current === "velocity" ? "pp … ff" : "0 … max";
+        this.#exprHead.title = `${d.label}: ${d.hint}. Werte ziehen oder über mehrere Noten malen · Shift: gerade Linie (z. B. Crescendo) · Doppelklick: zurücksetzen`;
+      }
+    }
+    if (kindChanged) {
+      this.#kind.replaceChildren(icon(t.kind === "audio" ? "wave" : "keys"));
+      this.#kind.title = t.kind === "audio" ? "Audiospur" : "Instrumentspur";
+    }
+    if (document.activeElement !== this.#name) this.#name.value = t.name;
+    this.#mute.classList.toggle("on", t.mute);
+    this.#solo.classList.toggle("on", t.solo);
+    setRange(this.#gain, t.gainDb);
+    this.#gainVal.textContent = `${t.gainDb > 0 ? "+" : ""}${t.gainDb.toFixed(1)} dB`;
+    setRange(this.#pan, t.pan);
+    this.#panVal.textContent = panText(t.pan);
+    const st = Math.round(t.pitchSemitones);
+    this.#pitchVal.textContent = st === 0 ? "±0" : `${st > 0 ? "+" : ""}${st}`;
+  }
+}
+
+class KwTracks extends HTMLElement {
+  #rows = new Map<number, TrackRow>();
+  #body = h("div", { class: "tracks-body" });
+  #menu!: HTMLDivElement;
+
+  connectedCallback(): void {
+    if (this.childElementCount) return;
+    const head = h(
+      "div",
+      { class: "tracks-head" },
+      h("span", {}, "Spuren"),
+      h(
+        "div",
+        { class: "group" },
+        harmonyToggle(),
+        h("button", { class: "btn small", "data-help": "neue-audiospur", title: "Audiospur hinzufügen", onclick: () => addTrack("audio") }, icon("plus"), "Audio"),
+        h("button", {
+          class: "btn small",
+          "data-help": "neue-instrumentspur",
+          title: "Instrumentspur hinzufügen: Zupfer, Orgel, Cembalo, Bass, Synth oder Schlagzeug",
+          onclick: (e: MouseEvent) => {
+            e.stopPropagation();
+            this.#menu.classList.toggle("open");
+          },
+        }, icon("plus"), "Instrument ▾"),
+      ),
+    );
+    this.#menu = h("div", { class: "menu" });
+    effect(() => {
+      const specs = instrumentSpecs.value;
+      const pick = (kind: InstrumentKind) => {
+        this.#menu.classList.remove("open");
+        void act(backend.createInstrumentTrack(kind));
+      };
+      this.#menu.replaceChildren(
+        ...(specs.length
+          ? specs.map((s) => h("button", { class: "menu-item", title: s.description, onclick: () => pick(s.kind) },
+              h("b", {}, s.name), h("span", {}, s.kind === "drums" ? "mit Beat" : s.kind === "bass" ? "mit Basslinie" : s.kind === "synth" ? "mit Akkordfolge" : "mit Arpeggio")))
+          : [h("button", { class: "menu-item", onclick: () => { this.#menu.classList.remove("open"); addTrack("instrument"); } }, h("b", {}, "Instrument"), h("span", {}, "Zupfer"))]),
+      );
+    });
+    document.addEventListener("click", () => this.#menu.classList.remove("open"));
+    this.append(head, this.#menu, this.#body);
+
+    effect(() => {
+      instrumentSpecs.value; // Trommelnamen auf der Klaviatur
+      pitchViews.value; // Klaviatur folgt Tonbereich und Zoom
+      heightDraft.value; // … und der Zeilenhöhe beim Ziehen
+      highOnTop.value; // … und der Richtung der Tonachse
+      exprLanes.value; // … und der Ausdrucksspur
+      this.#render(snapshot.value?.project.tracks ?? [], selection.value?.trackId);
+    });
+    effect(() => {
+      this.#body.style.transform = `translateY(${-viewport.value.scrollY}px)`;
+    });
+    // gezogene Audiodateien über einem Spurkopf: diese Spur hervorheben
+    effect(() => {
+      const d = audioDrag.value;
+      const over = d ? document.elementFromPoint(d.x, d.y)?.closest(".track-row") : null;
+      for (const row of this.#rows.values()) row.el.classList.toggle("drop-target", row.el === over);
+    });
+    this.addEventListener(
+      "wheel",
+      (e) => {
+        e.preventDefault();
+        const max = maxScrollY(snapshot.peek()?.project.tracks ?? []);
+        viewport.update((v) => ({ ...v, scrollY: Math.max(0, Math.min(max, v.scrollY + e.deltaY)) }));
+      },
+      { passive: false },
+    );
+  }
+
+  #render(tracks: Track[], selectedId: number | undefined): void {
+    const seen = new Set<number>();
+    tracks.forEach((t, i) => {
+      let row = this.#rows.get(t.id);
+      if (!row) {
+        row = new TrackRow(t.id);
+        this.#rows.set(t.id, row);
+      }
+      row.update(t, t.id === selectedId);
+      if (this.#body.children[i] !== row.el) this.#body.insertBefore(row.el, this.#body.children[i] ?? null);
+      seen.add(t.id);
+    });
+    for (const [id, row] of this.#rows) {
+      if (!seen.has(id)) {
+        row.el.remove();
+        this.#rows.delete(id);
+      }
+    }
+  }
+}
+
+customElements.define("kw-tracks", KwTracks);

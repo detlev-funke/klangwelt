@@ -1,0 +1,8 @@
+/target
+/ui/node_modules
+/ui/dist
+/ui/dist-web
+*.kwix
+.DS_Store
+# screenshots of failed end-to-end tests
+/tests/web/out/

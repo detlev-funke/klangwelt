@@ -1,0 +1,12 @@
+[package]
+name = "klang-worklet"
+description = "Klangwelt in the browser: the engine's mixer as WebAssembly for the AudioWorklet – counterpart of the desktop audio callback"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+klang-engine = { workspace = true }

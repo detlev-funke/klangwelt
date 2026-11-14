@@ -1,0 +1,10 @@
+[package]
+name = "klang-core"
+description = "Klangwelt project model, commands and undo/redo"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }

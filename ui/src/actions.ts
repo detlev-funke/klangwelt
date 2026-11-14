@@ -5,6 +5,7 @@ import {
   act, analysis, errorText, findClip, notify, project, rangeFocus, run, selection, showPanel, snapshot, status, viewport,
 } from "./store.js";
 import { heightDraft, heightLimits, noteKey, noteSel, rowHeight } from "./pianoroll.js";
+import { playheadMoved } from "./noteinput.js";
 import { gridLabel, rangeLabel } from "./editmath.js";
 import { plural, t } from "./i18n.js";
 import type { ConvertTarget, Note, Track, TrackKind } from "./types.js";
@@ -165,6 +166,7 @@ export const stopToStart = () =>
     if (status.peek().playing) await backend.transport("stop");
     await backend.transport("rewind");
     viewport.update((v) => ({ ...v, scrollX: 0 }));
+    playheadMoved(0);
   });
 
 /** Loop: at the end of the piece (or the selected range) start again from the beginning. */
@@ -178,6 +180,7 @@ export async function toggleLoop(): Promise<void> {
 
 export function seekBeats(beats: number): void {
   const bpm = project()?.tempoBpm ?? 120;
+  playheadMoved(Math.max(0, beats));
   void guarded(() => backend.seek((Math.max(0, beats) * 60) / bpm));
 }
 

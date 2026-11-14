@@ -4,6 +4,7 @@
 // help window at least shows the tooltip (title) and the window's entry.
 
 import { t } from "./i18n.js";
+import { keyLabel } from "./noteinput.js";
 
 export interface HelpTopic {
   title: string;
@@ -41,6 +42,8 @@ const lanes: HelpTopic = {
   text: [
     t("The clips of all tracks over time. Dragging clips moves them (they snap to beats), the right edge changes the length."),
     t("In an instrument track's **piano roll** you edit the notes directly: Alt+click adds a note, dragging moves the selection, the right edge changes the length. Right-click on selected notes: **quantize** (1/4, 1/8, 1/16 or the view grid – starts only, or start and length), transpose, delete."),
+    t("A **double-click** on an empty lane of the piano roll also adds a note there – on the grid, as long as the note you set last. Next to a clip the clip grows by whole bars; a track without a note clip gets one."),
+    t("With the **keyboard entry** switch in the track header you type notes: the letter keys play the visible octave like a piano and add the note at the violet mark."),
     t("Just drag audio files (WAV, AIFF, FLAC, Opus) here: each becomes an audio track with a clip starting at the spot under the mouse – dropped onto an audio track, the first file lands in it. Klangwelt can't read MP3 and AAC yet."),
     t("Recordings and inserted audio files have a **♪ → Notes** button: it creates the detected pitches as a melody track below. Right-click also offers a **rhythm track** (hits as kick, snare, hi-hat)."),
   ],
@@ -49,6 +52,7 @@ const lanes: HelpTopic = {
     [t("Shift + mouse wheel"), t("scroll horizontally")],
     [t("Shift while dragging"), t("off grid")],
     [t("Alt + click"), t("Add note (drag: length)")],
+    [t("Double-click in the piano roll"), t("Add note")],
     [t("Double-click (empty space)"), t("new note clip")],
     [t("Double-click on audio"), t("Open analysis")],
     [t("Del"), t("Delete selection – after selecting a time range: remove it from all tracks")],
@@ -184,7 +188,29 @@ const ENTRIES: Entry[] = [
   { sel: ".track-row .stepper", topic: { title: t("Pitch"), text: [t("Shifts the track in semitones (−24 … +24). For audio the tempo stays the same; the shift is included in the export and in MIDI.")] } },
   { sel: "[data-help=pegel]", topic: { title: t("Level"), text: [t("Track volume in dB (−60 … +6). Double-click sets 0 dB.")] } },
   { sel: "[data-help=panorama]", topic: { title: t("Pan"), text: [t("Position in the stereo field, from left to right. Double-click centers it.")] } },
-  { sel: ".track-row canvas.keys", topic: { title: t("Keyboard"), text: [t("A piano rotated by 90°: click plays a note. Change the pitch axis (low or high notes at the top) in the gear menu.")], keys: [[t("Mouse wheel"), t("scroll pitch range")], [t("Ctrl + mouse wheel"), t("zoom")], [t("Double-click"), t("fit")]] } },
+  { sel: ".track-row canvas.keys", topic: { title: t("Keyboard"), text: [t("A piano rotated by 90°: click plays a note. Change the pitch axis (low or high notes at the top) in the gear menu."), t("With keyboard entry on, a click adds the note at the violet mark – like the letter keys shown on the piano.")], keys: [[t("Mouse wheel"), t("scroll pitch range")], [t("Ctrl + mouse wheel"), t("zoom")], [t("Double-click"), t("fit")]] } },
+  {
+    sel: ".track-row .entry-switch",
+    // a function: the letters of the octave keys come from the keyboard layout (arrives later)
+    topic: () => ({
+      title: t("Keyboard entry"),
+      text: [
+        t("Type notes instead of drawing them. While the switch is on, the letter keys play the octave visible in the piano roll – the middle letter row are the white keys, the row above the black ones; the piano shows each key's letter. Every note lands at the **violet mark** in the timeline, which then moves on by one grid step (the grid follows the zoom)."),
+        t("Hold **Shift** to stay in place: that's how you type chords. A click on a key of the piano works like its letter. Each note is its own undo step."),
+        t("The mark starts at the playhead or at the selected time range; a click into the piano roll or the ruler moves it."),
+        t("While the mode is on, the letter keys don't trigger their usual shortcuts (L loop, R record); Space and the Ctrl shortcuts (undo, save …) still work."),
+      ],
+      keys: [
+        [t("Letter keys"), t("Add a note and move on")],
+        [t("Shift + letter"), t("Add a note, stay in place (chord)")],
+        [t("Click on the piano"), t("Add this note")],
+        [`${keyLabel("KeyZ")} / ${keyLabel("KeyX")}`, t("Octave down / up")],
+        ["← / →", t("Move the mark one step (Shift: one bar)")],
+        [t("Backspace"), t("One step back, delete the notes there")],
+        [t("Esc"), t("End keyboard entry")],
+      ],
+    }),
+  },
   { sel: ".track-row .expr-select", topic: { title: t("Expression type"), text: [t("What the expression lane shows: velocity (loudness), vibrato, brightness or bend (scoop).")] } },
   { sel: ".track-row", topic: { title: t("Track header"), text: [t("A track's name, mute/solo, view, level, pan and pitch. Drag the line between two tracks to change the height (double-click: default).")] } },
   { sel: "kw-timeline canvas", topic: (el, _x, y) => (y - el.getBoundingClientRect().top < RULER_H ? ruler : lanes) },

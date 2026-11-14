@@ -112,9 +112,22 @@ One canvas for ruler and tracks; gestures are a `Drag` state:
   zoomed far out. On release it goes to the core via `set_loop_range`.
 * `marquee`: selection rectangle on an empty lane. `noteSel` only holds notes
   of one clip: the clip under the starting point, otherwise the one with the most hits.
-* `notes`: moving or resizing. Only Alt+click places a note.
+* `notes`: moving or resizing. A plain click never places a note: Alt+click
+  does (dragging sets the length), and so does a double-click on an empty lane.
   Placed next to a clip, it goes into the nearest note clip on the track, with
   a start position relative to that clip's beginning, negative if need be.
+
+**Note entry** (`ui/src/noteinput.ts`): `addNoteAt` adds one note at a project
+position – into the clip there, else into the nearest note clip (it grows like
+below), else into a new clip – as one `batch` command named after the note.
+The double-click and the keyboard entry mode use it. Keyboard entry (`entry`:
+track and position, null = off) is switched on next to the piano of a piano
+roll; `handleEntryKey` runs in app.ts before every other shortcut. Keys count
+by position (`KeyboardEvent.code`), the piano labels them with the letters of
+the keyboard layout (`navigator.keyboard.getLayoutMap`, else US letters). Typed
+notes queue up so that each one is added to the snapshot of the one before.
+The shortcut line (`.keys-hint`) sits right below the last track; while
+typing it lists the mode's keys.
 
 **The clip grows along:** `clipSpan` (in `ui/src/editmath.ts`, pure and tested
 in Node) computes how far the clip has to grow in whole bars: to the left at

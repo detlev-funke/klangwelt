@@ -7,6 +7,7 @@ import { fileShortcut, handleCloseRequests, openPath } from "./components/fileop
 import { helpKey, initHelp } from "./components/help.js";
 import { deleteSelection, redo, stopToStart, toggleLoop, togglePlay, toggleRecord, transposeSelectedNotes, undo } from "./actions.js";
 import { noteSel } from "./pianoroll.js";
+import { handleEntryKey } from "./noteinput.js";
 import { backend } from "./bridge.js";
 import { initLibrary } from "./components/library.js";
 import { initFileDrop } from "./filedrop.js";
@@ -36,6 +37,8 @@ window.addEventListener("keydown", (e) => {
 }, true);
 
 window.addEventListener("keydown", (e) => {
+  // keyboard entry mode: letters add notes (before the single-key shortcuts; Ctrl ones stay)
+  if (!isTyping(e) && handleEntryKey(e)) return;
   // Save/Open/New also while typing in a field
   if (fileShortcut(e)) return;
   if (isTyping(e)) return;

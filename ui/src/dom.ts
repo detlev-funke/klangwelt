@@ -44,6 +44,7 @@ const PATHS: Record<string, string> = {
   trash: '<path d="M5 7h14M10 7V5h4v2M7 7l1 13h8l1-13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
   sparkle: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM18.5 15l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" fill="currentColor"/>',
   wave: '<path d="M2 12h2M6 8v8M10 4v16M14 7v10M18 10v4M22 12h0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+  keyboard: '<rect x="2.5" y="6" width="19" height="12" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M6 9.6h.8M9.4 9.6h.8M12.8 9.6h.8M16.2 9.6h.8M7.7 12.3h.8M11.1 12.3h.8M14.5 12.3h.8M8 15h8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
   keys: '<rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 5v9M12 5v9M16 5v9" stroke="currentColor" stroke-width="1.8"/>',
   mic: '<rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5.5 11a6.5 6.5 0 0013 0M12 17.5V21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
   speaker: '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M15.5 9a4.2 4.2 0 010 6M18 6.5a7.8 7.8 0 010 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',

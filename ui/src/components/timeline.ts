@@ -22,7 +22,7 @@ import { fillBeatMenu } from "./rhythm.js";
 import { fillSongMenu } from "./song.js";
 import { MOOD_COLORS, MOOD_LABELS, chordIndexAt, harmonyFocus, harmonyLaneOn, harmonyLine, watchHarmonyLine } from "../harmonyline.js";
 import {
-  NOTES_TOP, RHYTHM_H, type NoteGeo, analysisFor, analysisState, geoFor, heightDraft, highOnTop, inView, isBlack, laneY,
+  NOTES_TOP, RHYTHM_H, type NoteGeo, analysisFor, analysisState, contentHeight, geoFor, heightDraft, highOnTop, inView, isBlack, laneY,
   maxScrollY, noteGrid, noteKey, noteSel, offViewAtTop, pitchAt, pitchDelta, pitchOfLane, pitchViews, rowHeight, rowTops,
   scrollPitch, viewFor, wheelPitchStep, exprAt, exprY,
 } from "../pianoroll.js";
@@ -31,6 +31,7 @@ import { effect } from "../signals.js";
 import { RULER_H, act, clipLengthBeats, counterpointMarks, rangeFocus, run, selection, snapshot, specFor, status, viewport } from "../store.js";
 import type { Clip, Command, Note, Project, Track } from "../types.js";
 import { EXPRS, type ExprKey, exprKeysFor, exprLanes, exprValue, laneKeyFor, withExpr } from "../expression.js";
+import { addNoteAt, entry, entryStep, entryTrack, keyLabel, keyLabelsVersion, setEntryPosition } from "../noteinput.js";
 import { clipSpan, fmtShift, gridLabel, gridOf, rangeGrid, rangeLabel, snapTo } from "../editmath.js";
 
 const WAVE_BUCKETS = 2400;
@@ -148,6 +149,9 @@ interface Hit {
 class KwTimeline extends HTMLElement {
   #canvas = h("canvas");
   #hint!: HTMLDivElement;
+  /** Shortcut line, always visible right below the last track (keyboard entry: its keys). */
+  #keysHint = h("div", { class: "keys-hint" });
+  #keysHintMode = "";
   #raf = 0;
   #drag: Drag | null = null;
   #width = 0;
@@ -171,12 +175,8 @@ class KwTimeline extends HTMLElement {
         h("button", { class: "btn", title: t("Create an empty instrument track (pluck) – add notes with Alt+click"), onclick: () => addTrack("instrument") }, icon("keys"), t("Instrument track")),
         h("button", { class: "btn rec", title: t("Record from the microphone (R) – creates an audio track"), onclick: () => toggleRecord() }, icon("mic"), t("Record")),
       ),
-      h(
-        "div",
-        { class: "muted", html: t("<kbd>Space</kbd> Play · <kbd>L</kbd> Loop · <kbd>R</kbd> Record · <kbd>Ctrl</kbd>+mouse wheel Zoom · <kbd>Alt</kbd>+click Add note · <kbd>Del</kbd> Delete") },
-      ),
     );
-    this.append(this.#canvas, this.#hint);
+    this.append(this.#canvas, this.#hint, this.#keysHint);
 
     new ResizeObserver(() => this.#invalidate()).observe(this);
     effect(() => {
@@ -193,7 +193,9 @@ class KwTimeline extends HTMLElement {
       harmonyLaneOn.value;
       harmonyFocus.value;
       audioDrag.value;
+      entry.value;
       this.#hint.style.display = p && p.tracks.length === 0 ? "" : "none";
+      this.#updateKeysHint(entryTrack.value !== null, keyLabelsVersion.value);
       this.#invalidate();
     });
     effect(() => {
@@ -210,6 +212,19 @@ class KwTimeline extends HTMLElement {
     this.#canvas.addEventListener("contextmenu", (e) => this.#context(e));
     this.#canvas.addEventListener("dblclick", (e) => this.#dblclick(e));
     this.addEventListener("wheel", (e) => this.#wheel(e), { passive: false });
+  }
+
+  /** Text of the shortcut line: the usual shortcuts, or the keys of keyboard entry. */
+  #updateKeysHint(typing: boolean, labels: number): void {
+    const mode = `${typing}:${labels}`;
+    if (mode === this.#keysHintMode) return;
+    this.#keysHintMode = mode;
+    this.#keysHint.classList.toggle("entry", typing);
+    this.#keysHint.innerHTML = typing
+      ? t("Keyboard entry: <kbd>{first}</kbd>…<kbd>{last}</kbd> notes · <kbd>Shift</kbd> chord · <kbd>{down}</kbd> <kbd>{up}</kbd> octave · <kbd>←</kbd> <kbd>→</kbd> step · <kbd>Backspace</kbd> back · <kbd>Esc</kbd> end", {
+          first: keyLabel("KeyA"), last: keyLabel("KeyK"), down: keyLabel("KeyZ"), up: keyLabel("KeyX"),
+        })
+      : t("<kbd>Space</kbd> Play · <kbd>L</kbd> Loop · <kbd>R</kbd> Record · <kbd>Ctrl</kbd>+mouse wheel Zoom · <kbd>Alt</kbd>+click Add note · <kbd>Del</kbd> Delete");
   }
 
   /** Target for dragged audio files at a position (window coordinates); null outside. */
@@ -762,6 +777,11 @@ class KwTimeline extends HTMLElement {
       if (r) noteSel.value = null;
     }
     if (d?.kind === "marquee" && d.moved) this.#marqueeSelect();
+    if (d?.kind === "marquee" && !d.moved && entry.peek()) {
+      // keyboard entry: a click into the piano roll puts the entry position there
+      const step = entryStep();
+      setEntryPosition(Math.floor(this.#xToBeat(d.x0) / step + 1e-9) * step, d.trackId);
+    }
     if (d?.kind === "clip" && d.moved && Math.abs(d.beats - d.origBeats) > 1e-9) {
       void run({ type: "setClip", trackId: d.trackId, clipId: d.clipId, patch: { startBeats: d.beats } });
     }
@@ -934,6 +954,17 @@ class KwTimeline extends HTMLElement {
       void analyzeSelected();
       return;
     }
+    // Double-click on an empty lane of the piano roll: a note at this spot – start on
+    // the grid, length as with Alt+click; outside a clip like Alt+click, too.
+    if (hit.zone === "lanes" && hit.track.kind === "instrument") {
+      if (hit.note >= 0) return;
+      const grid = noteGrid(this.#ppb(), e.shiftKey);
+      const ref = hit.clip?.startBeats ?? 0;
+      const beat = grid ? ref + Math.floor((hit.beat - ref) / grid + 1e-9) * grid : hit.beat;
+      void backend.previewNote(hit.track.id, hit.pitch).catch(() => {});
+      void addNoteAt(hit.track.id, beat, hit.pitch, Math.max(lastNoteLength, grid || 0.0625));
+      return;
+    }
     // Double-click on empty space of an instrument track: create a new clip (1 bar).
     const p = snapshot.peek()?.project;
     if (!hit.clip && hit.track.kind === "instrument" && p) {
@@ -1084,6 +1115,11 @@ class KwTimeline extends HTMLElement {
     const bpb = p.beatsPerBar;
     const rows = this.#rows(p);
 
+    // shortcut line right below the last track – at the bottom edge when the tracks go further
+    const below = RULER_H + contentHeight(p.tracks) - viewport.peek().scrollY + 8;
+    const hintTop = `${Math.round(Math.max(RULER_H + 4, Math.min(below, hh - this.#keysHint.offsetHeight - 6)))}px`;
+    if (this.#keysHint.style.top !== hintTop) this.#keysHint.style.top = hintTop;
+
     // Track rows (note rows with pitch lanes)
     rows.forEach(({ track: t, y, h: rh }, i) => {
       if (y > hh || y + rh < RULER_H) return;
@@ -1185,6 +1221,22 @@ class KwTimeline extends HTMLElement {
       }
     }
 
+    // Keyboard entry: where the next typed note goes (one grid step wide, line at its start)
+    const en = entry.peek();
+    const enRow = en ? rows.find((r) => r.track.id === en.trackId) : undefined;
+    const enX = en ? this.#beatToX(en.beat) : 0;
+    if (en && enRow) {
+      const x1 = this.#beatToX(en.beat + entryStep());
+      const top = Math.max(RULER_H, enRow.y);
+      const bottom = enRow.y + enRow.h - 1;
+      if (x1 >= 0 && enX <= w && bottom > top) {
+        ctx.fillStyle = "rgba(199, 146, 255, 0.12)";
+        ctx.fillRect(enX, top, x1 - enX, bottom - top);
+        ctx.fillStyle = "rgba(199, 146, 255, 0.95)";
+        ctx.fillRect(Math.round(enX) - 1, top, 2, bottom - top);
+      }
+    }
+
     // Position while moving (also as an attribute – for tests and screen readers)
     if (mv) {
       const pitch = mv.pitch ? ` · ${t("{delta} st", { delta: `${mv.pitch > 0 ? "+" : "−"}${Math.abs(mv.pitch)}` })}` : "";
@@ -1252,6 +1304,17 @@ class KwTimeline extends HTMLElement {
     }
 
     if (lane) this.#drawHarmony(ctx, w, hh);
+
+    // keyboard entry position in the ruler (small violet triangle at the bottom)
+    if (en && enX >= -6 && enX <= w + 6) {
+      ctx.fillStyle = "#c792ff";
+      ctx.beginPath();
+      ctx.moveTo(enX - 5, RULER_H - 1);
+      ctx.lineTo(enX + 5, RULER_H - 1);
+      ctx.lineTo(enX, RULER_H - 8);
+      ctx.closePath();
+      ctx.fill();
+    }
 
     // Checker markers in the ruler (red error, orange warning, blue hint)
     for (const m of marks) {

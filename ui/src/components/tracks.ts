@@ -10,6 +10,7 @@ import { EXPRS, type ExprKey, exprKeysFor, exprLanes, exprShown, laneKeyFor, set
 import { t } from "../i18n.js";
 import { effect } from "../signals.js";
 import { act, instrumentSpecs, run, selection, snapshot, specFor, viewport } from "../store.js";
+import { enterNote, entry, entryLetters, entryTrack, keyLabelsVersion, setEntryPosition, toggleEntry } from "../noteinput.js";
 import { harmonyLaneOn, setHarmonyLane } from "../harmonyline.js";
 import type { InstrumentKind, Track } from "../types.js";
 
@@ -26,7 +27,7 @@ function harmonyToggle(): HTMLElement {
  * width with the key front on the left, black keys shorter and at the back
  * (right, at the timeline). The key height follows zoom and row height.
  */
-function drawKeys(canvas: HTMLCanvasElement, g: NoteGeo, drumKeys?: Map<number, string>): void {
+function drawKeys(canvas: HTMLCanvasElement, g: NoteGeo, drumKeys?: Map<number, string>, letters?: Map<number, string> | null): void {
   const { ctx, w, h: hh } = fitCanvas(canvas);
   ctx.clearRect(0, 0, w, hh);
   const LANE_SPAN = g.view.span;
@@ -92,6 +93,25 @@ function drawKeys(canvas: HTMLCanvasElement, g: NoteGeo, drumKeys?: Map<number, 
       ctx.fillText(noteName(pitch), 2, y);
     }
   }
+
+  // Keyboard entry: the keys the letters play are tinted and show the letter (at the back, right).
+  if (letters) {
+    ctx.font = `700 ${Math.max(6, Math.min(8.5, LANE_H - 1)).toFixed(1)}px system-ui`;
+    ctx.textAlign = "right";
+    for (let k = 0; k < LANE_SPAN; k++) {
+      const pitch = pitchOf(k);
+      const letter = letters.get(pitch);
+      if (!letter) continue;
+      const y = k * LANE_H;
+      const black = isBlack(pitch);
+      ctx.fillStyle = black ? "rgba(199, 146, 255, 0.42)" : "rgba(199, 146, 255, 0.26)";
+      if (black) ctx.fillRect(blackX, y + 0.5, blackW, Math.max(2, LANE_H - 1));
+      else ctx.fillRect(0, y, w, LANE_H);
+      if (LANE_H < 6) continue;
+      ctx.fillStyle = black ? "#efe4ff" : "#4b2380";
+      ctx.fillText(letter, w - 3, y + LANE_H / 2 + 0.5);
+    }
+  }
 }
 
 /** Short names of the drums of a drum track (key → "BD", "SD" …). */
@@ -146,6 +166,7 @@ class TrackRow {
   #exprHead: HTMLDivElement;
   #exprSelect: HTMLSelectElement;
   #exprHint: HTMLElement;
+  #entryBtn: HTMLButtonElement;
 
   constructor(readonly id: number) {
     const set = (patch: object, merge = false) => run({ type: "setTrack", trackId: this.id, patch }, merge);
@@ -241,6 +262,18 @@ class TrackRow {
       onclick: () => void convertAudio(this.id, null, "melodie"),
     }, icon("keys"), t("Notes"));
 
+    // Keyboard entry mode: letters and clicks on the piano add notes to this track.
+    this.#entryBtn = h("button", {
+      class: "entry-switch",
+      role: "switch",
+      title: t("Keyboard entry: letter keys and clicks on the piano add notes at the violet mark – one grid step further each time, with Shift in the same place (chords)"),
+      onclick: () => {
+        toggleEntry(this.id);
+        this.#entryBtn.blur(); // Enter (stop) must not toggle it again
+      },
+    }, h("span", { class: "switch" }), icon("keyboard"), t("Keyboard entry"));
+    this.#entryBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+
     // Splitter at the bottom edge: drag a row larger/smaller individually, double-click = default height.
     const splitter = h("div", { class: "splitter", title: t("Drag: change track height · Double-click: default height") });
     splitter.addEventListener("pointerdown", (e) => {
@@ -254,6 +287,13 @@ class TrackRow {
     this.#keys.addEventListener("pointerdown", (e) => {
       if (this.#track.kind !== "instrument") return;
       const pitch = pitchAt(geoFor(this.#track), e.offsetY + NOTES_TOP);
+      const en = entry.peek();
+      if (en) {
+        // keyboard entry: the key adds its note (Shift: stay in place)
+        if (en.trackId !== this.id) setEntryPosition(en.beat, this.id);
+        enterNote(pitch, e.shiftKey);
+        return;
+      }
       void backend.previewNote(this.id, pitch).catch(() => {});
     });
 
@@ -272,6 +312,7 @@ class TrackRow {
           h("div", { class: "knob" }, h("span", {}, t("Pan"), this.#panVal), this.#pan),
           stepper,
         ),
+        h("div", { class: "track-entry" }, this.#entryBtn),
       ),
       this.#keys,
       this.#rhythm,
@@ -305,6 +346,10 @@ class TrackRow {
     const canExpr = notes && track.kind === "instrument";
     this.#exprBtn.hidden = !canExpr;
     this.#convertBtn.hidden = !(notes && track.kind === "audio" && track.clips.some((c) => c.source.type === "audio"));
+    const typing = entryTrack.peek() === track.id;
+    this.#entryBtn.hidden = !canExpr;
+    this.#entryBtn.classList.toggle("on", typing);
+    this.#entryBtn.setAttribute("aria-checked", String(typing));
     const exprOn = canExpr && exprShown(track);
     this.#exprBtn.classList.toggle("on", exprOn);
     this.#exprBtn.title = exprOn ? t("Hide expression lane") : t("Show expression lane (velocity, vibrato, brightness, bend per note)");
@@ -313,7 +358,7 @@ class TrackRow {
       const g = geoFor(track);
       this.#keys.style.height = `${g.lanesH}px`;
       this.#rhythm.style.top = `${g.rhythmTop}px`;
-      drawKeys(this.#keys, g, drumKeyNames(track));
+      drawKeys(this.#keys, g, drumKeyNames(track), entryLetters(track));
       if (exprOn) {
         this.#exprHead.style.top = `${g.exprTop}px`;
         const keys = exprKeysFor(track);
@@ -395,6 +440,8 @@ class KwTracks extends HTMLElement {
       heightDraft.value; // … and the row height while dragging
       highOnTop.value; // … and the direction of the pitch axis
       exprLanes.value; // … and the expression track
+      entryTrack.value; // keyboard entry: switch and letters on the piano
+      keyLabelsVersion.value;
       this.#render(snapshot.value?.project.tracks ?? [], selection.value?.trackId);
     });
     effect(() => {

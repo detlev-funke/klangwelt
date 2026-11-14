@@ -32,6 +32,7 @@ pub const COMMANDS: &[&str] = &[
     "transport",
     "seek",
     "set_metronome",
+    "simulate_load",
     "set_loop",
     "set_loop_range",
     "audio_devices",
@@ -156,6 +157,12 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
         "set_metronome" => {
             let (enabled,) = args!(a; enabled: bool);
             json(st.set_metronome(enabled)?)
+        }
+        // for tests: the live mixer counts as at least this loaded (pre-rendering kicks in)
+        "simulate_load" => {
+            let (load,) = args!(a; load: f32);
+            st.simulate_load(load);
+            json(())
         }
         // Repeat on/off (at the end of the piece or the selected range, start over)
         "set_loop" => {

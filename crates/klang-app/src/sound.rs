@@ -9,11 +9,11 @@ use klang_core::{Instrument, InstrumentKind, Note};
 use klang_dsp::bass::{render_bass, BassParams};
 use klang_dsp::drums::{self, ClapParams, DrumKit, HatParams, KickParams, SnareParams, TomParams};
 use klang_dsp::features::analyze_sound;
-use klang_dsp::fx;
+use klang_dsp::live::{self, Patch, Shaping};
 use klang_dsp::keys::{render_harpsichord, render_organ, HarpsichordParams, OrganParams};
 use klang_dsp::pad::{render_synth, SynthParams, Verlauf, VERLAUF_PRESETS};
 use klang_dsp::pitch::{detect_pitch, hit_pitches, YinConfig};
-use klang_dsp::synth::{render_notes, NoteSpec, PluckParams};
+use klang_dsp::synth::{NoteSpec, PluckParams};
 use klang_dsp::util::median;
 use klang_i18n::{tid, tk, tr, trn};
 use serde::{Serialize, Serializer};
@@ -795,31 +795,43 @@ pub fn reverb_send(inst: Option<&Instrument>) -> f32 {
     shaping_value(inst, "raum") * 0.6
 }
 
+/// The track's sound generator for the live mixer.
+pub fn patch(inst: Option<&Instrument>) -> Patch {
+    match kind_of(inst) {
+        InstrumentKind::Pluck => Patch::Pluck(pluck_params(inst)),
+        InstrumentKind::Drums => Patch::Drums(drum_kit(inst)),
+        InstrumentKind::Bass => Patch::Bass(bass_params(inst)),
+        InstrumentKind::Organ => Patch::Organ(organ_params(inst)),
+        InstrumentKind::Harpsichord => Patch::Harpsichord(harpsichord_params(inst)),
+        InstrumentKind::Synth => Patch::Synth(synth_params(inst), verlauf(inst)),
+    }
+}
+
+/// The track's sound shaping: warmth, shimmer, roughness, color, distance and width
+/// (the reverb is added by the engine, see [`reverb_send`]).
+pub fn shaping_of(inst: Option<&Instrument>) -> Shaping {
+    Shaping {
+        waerme: shaping_value(inst, "waerme"),
+        schwebung: shaping_value(inst, "schwebung"),
+        rauheit: shaping_value(inst, "rauheit"),
+        farbe: shaping_value(inst, "farbe"),
+        raum: shaping_value(inst, "raum"),
+        breite: shaping_value(inst, "breite"),
+    }
+}
+
 /// Rendered track: mid and – with width – side (stereo, see `PlacedClip`).
 pub struct Rendered {
     pub mid: Vec<f32>,
     pub side: Option<Vec<f32>>,
 }
 
-/// Renders notes with the track's sound generator – including warmth, detuning,
-/// roughness, color, distance and width (the reverb is added by the engine, see
-/// [`reverb_send`]). `spb` = seconds per beat (pulse of the synth).
+/// Renders notes with the track's sound generator and sound shaping – the same
+/// voices the mixer plays live (for previews and the wave view). `spb` =
+/// seconds per beat (pulse of the synth).
 pub fn render_track(inst: Option<&Instrument>, notes: &[NoteSpec], total_secs: f32, sr: f32, spb: f32) -> Rendered {
-    let mut out = match kind_of(inst) {
-        InstrumentKind::Pluck => render_notes(notes, total_secs, sr, &pluck_params(inst)),
-        InstrumentKind::Drums => drums::render_drums(notes, total_secs, sr, &drum_kit(inst)),
-        InstrumentKind::Bass => render_bass(notes, total_secs, sr, &bass_params(inst)),
-        InstrumentKind::Organ => render_organ(notes, total_secs, sr, &organ_params(inst)),
-        InstrumentKind::Harpsichord => render_harpsichord(notes, total_secs, sr, &harpsichord_params(inst)),
-        InstrumentKind::Synth => render_synth(notes, total_secs, sr, &synth_params(inst), &verlauf(inst), spb),
-    };
-    fx::warmth(&mut out, shaping_value(inst, "waerme"), sr);
-    fx::chorus(&mut out, shaping_value(inst, "schwebung"), sr);
-    fx::roughness(&mut out, shaping_value(inst, "rauheit"), sr);
-    fx::tone(&mut out, shaping_value(inst, "farbe"), sr);
-    fx::distance(&mut out, shaping_value(inst, "raum"), sr);
-    let side = fx::widen(&out, shaping_value(inst, "breite"), sr);
-    Rendered { mid: out, side }
+    let (mid, side) = live::render(&patch(inst), &shaping_of(inst), notes, total_secs, sr, spb);
+    Rendered { mid, side }
 }
 
 /// Like [`render_track`], but only the mid (mono) – for previews without stereo.

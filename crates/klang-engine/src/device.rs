@@ -8,7 +8,7 @@
 //! Counterpart in the browser: `web.rs` (same interface, the worklet instead
 //! of the audio callback).
 
-use crate::{update_peak, Arrangement, AudioDevices, EngineError, EngineInfo, EngineStatus, OutSample, PlacedClip, PreviewSource, PreviewStream, Recording, Renderer, RtMsg, Shared, STREAM_AHEAD_SECS};
+use crate::{update_peak, Arrangement, AudioDevices, EngineError, EngineInfo, EngineStatus, Garbage, OutSample, PlacedClip, PreviewSource, PreviewStream, Recording, Renderer, RtMsg, Shared, STREAM_AHEAD_SECS};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, SizedSample};
 use klang_i18n::tr;
@@ -166,7 +166,7 @@ impl Engine {
     /// Like [`Engine::preview_send`], with a side signal for stereo width.
     pub fn preview_stereo(&self, data: Arc<[f32]>, side: Option<Arc<[f32]>>, gain: f32, send: f32) {
         let clip = PlacedClip { start_frame: 0, data, side, gain_l: gain, gain_r: gain, send };
-        self.send(Control::Rt(RtMsg::Preview(Arc::new(Arrangement { clips: vec![clip] }))));
+        self.send(Control::Rt(RtMsg::Preview(Arc::new(Arrangement { clips: vec![clip], notes: Vec::new() }))));
     }
 
     /// Plays a preview that `source` supplies piece by piece – until it ends
@@ -191,6 +191,12 @@ impl Engine {
     pub fn status(&self) -> EngineStatus {
         self.shared.status(self.shared.sample_rate.load(Ordering::Relaxed))
     }
+
+    /// The status without resetting the peak levels (for work on the side;
+    /// the levels belong to the UI).
+    pub fn peek_status(&self) -> EngineStatus {
+        self.shared.peek(self.shared.sample_rate.load(Ordering::Relaxed))
+    }
 }
 
 impl Drop for Engine {
@@ -210,7 +216,7 @@ impl Drop for Engine {
 struct Output {
     stream: cpal::Stream,
     rt_tx: Producer<RtMsg>,
-    garbage_rx: Consumer<Arc<Arrangement>>,
+    garbage_rx: Consumer<Garbage>,
     name: String,
     sample_rate: u32,
     channels: u16,
@@ -252,7 +258,7 @@ fn open_output(host: &cpal::Host, choice: Option<&str>, shared: &Arc<Shared>) ->
     let format = supported.sample_format();
     let config: cpal::StreamConfig = supported.into();
     let (rt_tx, rt_rx) = RingBuffer::<RtMsg>::new(512);
-    let (garbage_tx, garbage_rx) = RingBuffer::<Arc<Arrangement>>::new(64);
+    let (garbage_tx, garbage_rx) = RingBuffer::<Garbage>::new(crate::GARBAGE);
     let renderer = Renderer::new(config.sample_rate.0 as f32, config.channels as usize, rt_rx, garbage_tx, shared.clone());
     let stream = match format {
         cpal::SampleFormat::F32 => build_output::<f32>(&device, &config, renderer),
@@ -521,7 +527,11 @@ where
                     boosted = true;
                     boost_audio_thread();
                 }
-                r.process(data)
+                // how much of the real-time budget the mixer needs (status → pre-rendering when it gets tight)
+                let t = std::time::Instant::now();
+                r.process(data);
+                let frames = data.len() / r.channels;
+                r.note_time(t.elapsed().as_secs_f32(), frames);
             },
             |e| eprintln!("Audio-Ausgabefehler: {e}"),
             None,

@@ -29,7 +29,7 @@ interface Exports {
   kw_status(): void;
   kw_mcp(ptr: number, len: number): number;
   kw_tick(): void;
-  kw_engine_report(playing: number, previewing: number, position: number, peakOut: number, peakIn: number): void;
+  kw_engine_report(playing: number, previewing: number, position: number, peakOut: number, peakIn: number, load: number): void;
   kw_record_input(ptr: number, len: number): void;
   kw_fs_put(path: number, pathLen: number, data: number, dataLen: number, modified: number): void;
   kw_fs_write(path: number, pathLen: number, data: number, dataLen: number): number;
@@ -57,7 +57,7 @@ interface Request {
 }
 
 /** Messages from the worklet. */
-type FromWorklet = { s: [number, number, number, number, number] } | { rec: Float32Array } | { flushed: number };
+type FromWorklet = { s: [number, number, number, number, number, number?] } | { rec: Float32Array } | { flushed: number };
 
 const scope = self as unknown as {
   postMessage(m: unknown, transfer?: Transferable[]): void;
@@ -177,8 +177,8 @@ async function start(init: Init): Promise<void> {
 
 function fromWorklet(m: FromWorklet): void {
   if ("s" in m) {
-    const [playing, previewing, pos, peakOut, peakIn] = m.s;
-    wasm.kw_engine_report(playing, previewing, pos, peakOut, peakIn);
+    const [playing, previewing, pos, peakOut, peakIn, load] = m.s;
+    wasm.kw_engine_report(playing, previewing, pos, peakOut, peakIn, load ?? 0);
   } else if ("rec" in m) {
     const bytes = new Uint8Array(m.rec.buffer, m.rec.byteOffset, m.rec.byteLength);
     const ptr = wasm.kw_alloc(bytes.length);

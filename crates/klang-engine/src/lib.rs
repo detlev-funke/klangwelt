@@ -21,8 +21,11 @@
 //!   rebuilds the output stream and brings the new callback up to the
 //!   state of the old one (tempo, metronome, loop, arrangement, position).
 
+mod live;
 mod reverb;
 pub mod wire;
+
+pub use klang_dsp::live::{LiveNote, LiveNotes, OrganTable, Patch, Plan, Shaping};
 
 #[cfg(not(target_arch = "wasm32"))]
 mod device;
@@ -63,9 +66,32 @@ pub struct PlacedClip {
     pub send: f32,
 }
 
+/// A note clip, played live: instrument and notes in beats – nothing is
+/// rendered, a new tempo takes effect immediately.
+pub struct NoteClip {
+    /// Track: its clips sound through one sound shaping chain.
+    pub track: u64,
+    pub start_beats: f64,
+    pub notes: Arc<LiveNotes>,
+    pub gain_l: f32,
+    pub gain_r: f32,
+    /// Share that goes into the reverb (room), 0…1.
+    pub send: f32,
+}
+
 #[derive(Default)]
 pub struct Arrangement {
+    /// Rendered clips (audio).
     pub clips: Vec<PlacedClip>,
+    /// Note clips (played live).
+    pub notes: Vec<NoteClip>,
+}
+
+/// What the mixer hands back to be freed outside of it.
+pub enum Garbage {
+    Arrangement(Arc<Arrangement>),
+    /// The clip of a finished voice.
+    Notes(Arc<LiveNotes>),
 }
 
 /// Supplies a preview piece by piece (e.g. a long score) so that it can
@@ -124,6 +150,7 @@ impl PreviewStream {
                 .iter()
                 .map(|c| PlacedClip { start_frame: c.start_frame, data: c.data.clone(), side: c.side.clone(), gain_l: c.gain_l, gain_r: c.gain_r, send: c.send })
                 .collect(),
+            notes: Vec::new(),
         }
     }
 }
@@ -143,19 +170,31 @@ struct Shared {
     /// in the browser the web engine knows it itself).
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     sample_rate: AtomicU32,
+    /// Share of the real-time budget the mixer needs (f32 bits, smoothed).
+    load: AtomicU32,
 }
 
 impl Shared {
     /// Reads the status; peak levels are reset in the process.
     fn status(&self, sample_rate: u32) -> EngineStatus {
         EngineStatus {
+            peak_out: f32::from_bits(self.peak_out.swap(0, Ordering::Relaxed)),
+            peak_in: f32::from_bits(self.peak_in.swap(0, Ordering::Relaxed)),
+            ..self.peek(sample_rate)
+        }
+    }
+
+    /// Like [`Shared::status`], but the peak levels stay for the next read.
+    fn peek(&self, sample_rate: u32) -> EngineStatus {
+        EngineStatus {
             playing: self.playing.load(Ordering::Relaxed),
             previewing: self.previewing.load(Ordering::Relaxed),
             recording: self.recording.load(Ordering::Relaxed),
             position_frames: self.position.load(Ordering::Relaxed),
             sample_rate,
-            peak_out: f32::from_bits(self.peak_out.swap(0, Ordering::Relaxed)),
-            peak_in: f32::from_bits(self.peak_in.swap(0, Ordering::Relaxed)),
+            peak_out: f32::from_bits(self.peak_out.load(Ordering::Relaxed)),
+            peak_in: f32::from_bits(self.peak_in.load(Ordering::Relaxed)),
+            load: f32::from_bits(self.load.load(Ordering::Relaxed)),
         }
     }
 }
@@ -191,6 +230,9 @@ pub struct EngineStatus {
     pub sample_rate: u32,
     pub peak_out: f32,
     pub peak_in: f32,
+    /// Share of the real-time budget the mixer needs (1 = all of it; above
+    /// that it can't keep up), smoothed over about 0.3 s.
+    pub load: f32,
 }
 
 pub struct Recording {
@@ -274,13 +316,23 @@ struct Fade {
     pos: u64,
     /// Level at the next sample.
     gain: f32,
+    /// Context of its live voices (they fade out with it).
+    ctx: u32,
 }
 
 struct Renderer {
     sr: f32,
     channels: usize,
     rx: Consumer<RtMsg>,
-    garbage: Producer<Arc<Arrangement>>,
+    garbage: Producer<Garbage>,
+    /// Live voices of the note clips.
+    live: live::Live,
+    /// Context of the current state (see `live`); a new one after every jump.
+    ctx: u32,
+    /// Pick up sounding notes before the next block (start, jump).
+    chase: bool,
+    /// Without reverb: one part of a parallel export (the reverb runs on the sum).
+    dry: bool,
     shared: Arc<Shared>,
     playing: bool,
     pos: u64,
@@ -297,6 +349,8 @@ struct Renderer {
     preview_pos: u64,
     /// End of the preview (frames from its start).
     preview_len: u64,
+    /// Smoothed share of the real-time budget (see `note_time`).
+    load: f32,
     /// Loop in beats.
     loop_beats: Option<(f64, f64)>,
     /// Stop (beat) and return jump (beat) when no loop is running.
@@ -319,12 +373,17 @@ struct Renderer {
 }
 
 impl Renderer {
-    fn new(sr: f32, channels: usize, rx: Consumer<RtMsg>, garbage: Producer<Arc<Arrangement>>, shared: Arc<Shared>) -> Self {
+    fn new(sr: f32, channels: usize, rx: Consumer<RtMsg>, garbage: Producer<Garbage>, shared: Arc<Shared>) -> Self {
+        let fade_step = 1.0 / (FADE_SECS * sr).max(1.0);
         Self {
             sr,
             channels: channels.max(1),
             rx,
             garbage,
+            live: live::Live::new(sr, fade_step),
+            ctx: 0,
+            chase: false,
+            dry: false,
             shared,
             playing: false,
             pos: 0,
@@ -340,6 +399,7 @@ impl Renderer {
             preview: Arc::new(Arrangement::default()),
             preview_pos: 0,
             preview_len: 0,
+            load: 0.0,
             loop_beats: None,
             stop_at: None,
             mix_l: [0.0; MAX_BLOCK],
@@ -365,10 +425,11 @@ impl Renderer {
     /// the new one starts at level 0. Afterwards `arrangement`, `pos`
     /// and `bpm` may change. Without playback – or if the current state has only
     /// just begun (level 0) – there is nothing to fade out.
-    /// Allocates nothing: the arrangement is only shared (`Arc`).
-    fn begin_fade(&mut self) {
+    /// Allocates nothing: the arrangement is only shared (`Arc`). Returns
+    /// whether a fading state was created.
+    fn begin_fade(&mut self) -> bool {
         if !self.playing || self.main_gain() <= 1e-4 {
-            return;
+            return false;
         }
         let slot = match self.fades.iter().position(Option::is_none) {
             Some(i) => i,
@@ -381,30 +442,51 @@ impl Renderer {
                     })
                     .unwrap_or(0);
                 if let Some(old) = self.fades[i].take() {
-                    let _ = self.garbage.push(old.arrangement);
+                    self.live.kill(old.ctx, &mut self.garbage);
+                    let _ = self.garbage.push(Garbage::Arrangement(old.arrangement));
                 }
                 i
             }
         };
         // (after the replacement including its share – the sum stays 1)
         let gain = self.main_gain();
-        self.fades[slot] = Some(Fade { arrangement: self.arrangement.clone(), pos: self.pos, gain });
+        self.fades[slot] = Some(Fade { arrangement: self.arrangement.clone(), pos: self.pos, gain, ctx: self.ctx });
+        true
     }
 
-    /// End fading states immediately (stop).
+    /// A jump during playback (new arrangement, tempo, position): the
+    /// current state fades out with its voices, a new one begins and picks
+    /// up the notes sounding at its position.
+    fn transition(&mut self) {
+        if !self.playing {
+            return;
+        }
+        if !self.begin_fade() {
+            // the current state had only just begun: replaced without a trace
+            self.live.kill(self.ctx, &mut self.garbage);
+        }
+        self.ctx = self.ctx.wrapping_add(1) % live::RELEASED;
+        self.chase = true;
+    }
+
+    /// End fading states immediately (stop); their voices end, those of the
+    /// current state fade out briefly.
     fn drop_fades(&mut self) {
+        let level = self.main_gain();
         for slot in self.fades.iter_mut() {
             if let Some(f) = slot.take() {
-                let _ = self.garbage.push(f.arrangement);
+                let _ = self.garbage.push(Garbage::Arrangement(f.arrangement));
             }
         }
+        self.live.kill_others(self.ctx, &mut self.garbage);
+        self.live.release(self.ctx, level);
     }
 
     /// New tempo; during playback the position in beats is
     /// preserved (the jump in the signal is crossfaded).
     fn set_tempo(&mut self, bpm: f64, beats_per_bar: u32) {
         if bpm > 0.0 && (bpm - self.bpm).abs() > 1e-9 {
-            self.begin_fade();
+            self.transition();
             self.pos = (self.pos as f64 * self.bpm / bpm).round() as u64;
             self.bpm = bpm;
         }
@@ -433,16 +515,19 @@ impl Renderer {
         while let Ok(msg) = self.rx.pop() {
             match msg {
                 RtMsg::Play => {
+                    if !self.playing {
+                        self.chase = true;
+                    }
                     self.playing = true;
                     self.resync_click();
                 }
                 RtMsg::Stop => {
-                    self.playing = false;
                     self.drop_fades();
+                    self.playing = false;
                 }
                 RtMsg::Seek(f) => {
                     if f != self.pos {
-                        self.begin_fade();
+                        self.transition();
                     }
                     self.pos = f;
                     self.resync_click();
@@ -456,24 +541,24 @@ impl Renderer {
                 RtMsg::StopAt(at) => self.stop_at = at,
                 RtMsg::Arrangement { arrangement, tempo } => {
                     // one transition for both (set_tempo does not start a second one afterwards)
-                    self.begin_fade();
+                    self.transition();
                     if let Some((bpm, beats_per_bar)) = tempo {
                         self.set_tempo(bpm, beats_per_bar);
                     }
                     let old = std::mem::replace(&mut self.arrangement, arrangement);
                     // Freed outside the callback; only if the return channel is full, here.
-                    let _ = self.garbage.push(old);
+                    let _ = self.garbage.push(Garbage::Arrangement(old));
                 }
                 RtMsg::Preview(p) => {
                     self.preview_len = p.clips.iter().map(|c| c.start_frame + c.data.len() as u64).max().unwrap_or(0);
                     let old = std::mem::replace(&mut self.preview, p);
                     self.preview_pos = 0;
-                    let _ = self.garbage.push(old);
+                    let _ = self.garbage.push(Garbage::Arrangement(old));
                 }
                 RtMsg::PreviewMore(p) => {
                     self.preview_len = p.clips.iter().map(|c| c.start_frame + c.data.len() as u64).max().unwrap_or(0);
                     let old = std::mem::replace(&mut self.preview, p);
-                    let _ = self.garbage.push(old);
+                    let _ = self.garbage.push(Garbage::Arrangement(old));
                 }
             }
         }
@@ -548,9 +633,9 @@ impl Renderer {
             f.gain = (g0 - n as f32 * step).max(0.0);
             f.pos += n as u64;
             if f.gain <= 0.0 {
-                // faded out: freed outside the callback
+                // faded out: freed outside the callback (its voices end in the next block)
                 if let Some(done) = slot.take() {
-                    let _ = self.garbage.push(done.arrangement);
+                    let _ = self.garbage.push(Garbage::Arrangement(done.arrangement));
                 }
             }
         }
@@ -570,19 +655,39 @@ impl Renderer {
         self.mix_r[..n].fill(0.0);
         self.mix_send[..n].fill(0.0);
         let block_start = self.pos;
+        // fading states at the start of the block: their voices fade along
+        let mut fading = [(0u32, 0f32); MAX_FADES];
+        let mut n_fading = 0;
+        for f in self.fades.iter().flatten() {
+            fading[n_fading] = (f.ctx, f.gain);
+            n_fading += 1;
+        }
         if self.playing {
-            if self.fades.iter().any(Option::is_some) {
+            let spf = self.samples_per_beat();
+            if self.chase {
+                self.chase = false;
+                self.live.chase(&self.arrangement.notes, block_start, spf, self.ctx, &mut self.garbage);
+            }
+            self.live.schedule(&self.arrangement.notes, block_start, n, spf, self.ctx, &mut self.garbage);
+            if n_fading > 0 {
                 self.mix_fading(n);
             } else {
                 Self::mix_clips(&self.arrangement, block_start, n, &mut self.mix_l[..n], &mut self.mix_r[..n], &mut self.mix_send[..n]);
             }
         }
+        let levels = live::Levels {
+            current: self.ctx,
+            fading: &fading[..n_fading],
+            step: self.fade_step,
+            fade_sum: (self.playing && n_fading > 0).then_some(&self.fade_sum[..n]),
+        };
+        self.live.render(n, &levels, (&mut self.mix_l[..n], &mut self.mix_r[..n], &mut self.mix_send[..n]), &mut self.garbage);
         if !self.preview.clips.is_empty() {
             Self::mix_clips(&self.preview, self.preview_pos, n, &mut self.mix_l[..n], &mut self.mix_r[..n], &mut self.mix_send[..n]);
             self.preview_pos += n as u64;
         }
         // room: the reverb keeps ringing out even after stopping
-        for i in 0..n {
+        for i in (0..n).filter(|_| !self.dry) {
             let (l, r) = self.reverb.process(self.mix_send[i]);
             self.mix_l[i] += l;
             self.mix_r[i] += r;
@@ -611,6 +716,18 @@ impl Renderer {
         if self.playing {
             self.pos = block_start + n as u64;
         }
+    }
+
+    /// The last callback took `secs` for `frames` frames: the share of the
+    /// real-time budget, smoothed over about 0.3 s, goes into the status.
+    fn note_time(&mut self, secs: f32, frames: usize) {
+        if frames == 0 {
+            return;
+        }
+        let dt = frames as f32 / self.sr;
+        let a = 1.0 - (-dt / 0.3).exp();
+        self.load += (secs / dt - self.load) * a;
+        self.shared.load.store(self.load.to_bits(), Ordering::Relaxed);
     }
 
     fn process<T: OutSample>(&mut self, out: &mut [T]) {
@@ -647,12 +764,15 @@ impl Renderer {
                 if before < e && self.pos >= e {
                     self.pos = s;
                     self.resync_click();
+                    // the voices from before the jump fade out, the loop start picks up its notes
+                    self.live.release(self.ctx, 1.0);
+                    self.chase = true;
                 }
             }
             if let Some((s, back)) = halt {
                 if before < s && self.pos >= s {
-                    self.playing = false;
                     self.drop_fades();
+                    self.playing = false;
                     self.pos = back;
                     self.resync_click();
                 }
@@ -686,11 +806,20 @@ impl Renderer {
 /// pan, side signal, reverb bus, soft limiter –, but without a device and
 /// without metronome. Returns `frames` frames left/right at `sample_rate`.
 pub fn render_offline(arrangement: Arrangement, sample_rate: u32, frames: u64) -> (Vec<f32>, Vec<f32>) {
-    let (_tx, rx) = RingBuffer::new(1);
-    let (gtx, _grx) = RingBuffer::new(1);
-    let mut r = Renderer::new(sample_rate as f32, 2, rx, gtx, Arc::new(Shared::default()));
-    r.arrangement = Arc::new(arrangement);
-    r.playing = true;
+    // the tracks are independent up to the reverb: on the desktop each core takes some
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).clamp(1, 8);
+        if threads > 1 && arrangement.notes.len() > 1 {
+            return render_parallel(arrangement, sample_rate, frames, threads);
+        }
+    }
+    render_serial(arrangement, sample_rate, frames)
+}
+
+/// [`render_offline`] in one renderer.
+fn render_serial(arrangement: Arrangement, sample_rate: u32, frames: u64) -> (Vec<f32>, Vec<f32>) {
+    let (mut r, mut grx) = offline_renderer(arrangement, sample_rate, false);
     let mut left = Vec::with_capacity(frames as usize);
     let mut right = Vec::with_capacity(frames as usize);
     let mut done = 0u64;
@@ -702,9 +831,148 @@ pub fn render_offline(arrangement: Arrangement, sample_rate: u32, frames: u64) -
             right.push(soft_limit(r.mix_r[i]));
         }
         done += n as u64;
+        while let Ok(g) = grx.pop() {
+            drop(g);
+        }
     }
     (left, right)
 }
+
+/// Renders a note clip step by step – e.g. in the browser between other
+/// work – into mid and side, like a rendered clip: the same voices and sound
+/// shaping as during playback (for clips that the live mixer can't keep up with).
+pub struct StepRender {
+    r: Renderer,
+    garbage: Consumer<Garbage>,
+    frames: usize,
+    mid: Vec<f32>,
+    side: Vec<f32>,
+}
+
+impl StepRender {
+    /// `clip` from its start at `bpm` (its position, level and reverb do not
+    /// matter: they belong to the clip that plays the result).
+    pub fn new(clip: NoteClip, bpm: f64, sample_rate: u32) -> Self {
+        let clip = NoteClip { start_beats: 0.0, gain_l: 1.0, gain_r: 1.0, send: 0.0, ..clip };
+        let frames = clip.notes.patch.buffer_len((clip.notes.len_beats * 60.0 / bpm) as f32, sample_rate as f32);
+        let (mut r, garbage) = offline_renderer(Arrangement { clips: Vec::new(), notes: vec![clip] }, sample_rate, true);
+        r.bpm = bpm;
+        Self { r, garbage, frames, mid: Vec::with_capacity(frames), side: Vec::with_capacity(frames) }
+    }
+
+    /// Renders up to `max` more frames; `true` once the clip is complete.
+    pub fn step(&mut self, max: usize) -> bool {
+        let mut left = (self.frames - self.mid.len()).min(max);
+        while left > 0 {
+            let n = left.min(MAX_BLOCK);
+            self.r.render_block(n);
+            for i in 0..n {
+                let (l, r) = (self.r.mix_l[i], self.r.mix_r[i]);
+                self.mid.push((l + r) * 0.5);
+                self.side.push((l - r) * 0.5);
+            }
+            while let Ok(g) = self.garbage.pop() {
+                drop(g);
+            }
+            left -= n;
+        }
+        self.mid.len() >= self.frames
+    }
+
+    /// The rendered sound: mid and – if the clip is wide – side.
+    pub fn finish(self) -> (Arc<[f32]>, Option<Arc<[f32]>>) {
+        let wide = self.side.iter().any(|v| v.abs() > 1e-9);
+        (self.mid.into(), wide.then(|| self.side.into()))
+    }
+}
+
+/// A renderer that plays `arrangement` from the start, without a device.
+fn offline_renderer(arrangement: Arrangement, sample_rate: u32, dry: bool) -> (Renderer, Consumer<Garbage>) {
+    let (_tx, rx) = RingBuffer::new(1);
+    let (gtx, grx) = RingBuffer::new(GARBAGE);
+    let mut r = Renderer::new(sample_rate as f32, 2, rx, gtx, Arc::new(Shared::default()));
+    r.arrangement = Arc::new(arrangement);
+    r.playing = true;
+    r.chase = true;
+    r.dry = dry;
+    (r, grx)
+}
+
+/// [`render_offline`] on several cores: the tracks are spread over `threads`
+/// renderers without reverb, which render one second at a time side by
+/// side; the sum then goes through the reverb and the limiter – the same as
+/// in one renderer (a track's clips stay together, they share one chain).
+#[cfg(not(target_arch = "wasm32"))]
+fn render_parallel(arrangement: Arrangement, sample_rate: u32, frames: u64, threads: usize) -> (Vec<f32>, Vec<f32>) {
+    let Arrangement { clips, notes } = arrangement;
+    let mut tracks: Vec<u64> = notes.iter().map(|n| n.track).collect();
+    tracks.sort_unstable();
+    tracks.dedup();
+    let groups = threads.min(tracks.len()).max(1);
+    let mut parts: Vec<Arrangement> = (0..groups).map(|_| Arrangement::default()).collect();
+    parts[0].clips = clips;
+    for n in notes {
+        let g = tracks.binary_search(&n.track).unwrap_or(0) % groups;
+        parts[g].notes.push(n);
+    }
+    struct Part {
+        r: Renderer,
+        garbage: Consumer<Garbage>,
+        out: [Vec<f32>; 3],
+    }
+    let mut parts: Vec<Part> = parts
+        .into_iter()
+        .map(|a| {
+            let (r, garbage) = offline_renderer(a, sample_rate, true);
+            Part { r, garbage, out: [Vec::new(), Vec::new(), Vec::new()] }
+        })
+        .collect();
+    let chunk = sample_rate as usize;
+    let mut reverb = reverb::Reverb::new(sample_rate as f32);
+    let mut left = Vec::with_capacity(frames as usize);
+    let mut right = Vec::with_capacity(frames as usize);
+    let mut done = 0u64;
+    while done < frames {
+        let n = ((frames - done) as usize).min(chunk);
+        std::thread::scope(|s| {
+            for p in parts.iter_mut() {
+                s.spawn(move || {
+                    for o in p.out.iter_mut() {
+                        o.clear();
+                    }
+                    let mut k = 0;
+                    while k < n {
+                        let m = (n - k).min(MAX_BLOCK);
+                        p.r.render_block(m);
+                        p.out[0].extend_from_slice(&p.r.mix_l[..m]);
+                        p.out[1].extend_from_slice(&p.r.mix_r[..m]);
+                        p.out[2].extend_from_slice(&p.r.mix_send[..m]);
+                        while let Ok(g) = p.garbage.pop() {
+                            drop(g);
+                        }
+                        k += m;
+                    }
+                });
+            }
+        });
+        for i in 0..n {
+            let (mut l, mut r, mut send) = (0f32, 0f32, 0f32);
+            for p in &parts {
+                l += p.out[0][i];
+                r += p.out[1][i];
+                send += p.out[2][i];
+            }
+            let (rl, rr) = reverb.process(send);
+            left.push(soft_limit(l + rl));
+            right.push(soft_limit(r + rr));
+        }
+        done += n as u64;
+    }
+    (left, right)
+}
+
+/// Capacity of the channel through which the mixer hands back what is to be freed.
+pub(crate) const GARBAGE: usize = 1024;
 
 /// The engine's mixer without a device of its own: for an output that itself
 /// requests blocks – in the browser the AudioWorklet. The same [`Renderer`] as
@@ -712,13 +980,13 @@ pub fn render_offline(arrangement: Arrangement, sample_rate: u32, frames: u64) -
 pub struct Mixer {
     renderer: Renderer,
     tx: Producer<RtMsg>,
-    garbage: Consumer<Arc<Arrangement>>,
+    garbage: Consumer<Garbage>,
 }
 
 impl Mixer {
     pub fn new(sample_rate: f32, channels: usize) -> Self {
         let (tx, rx) = RingBuffer::<RtMsg>::new(512);
-        let (gtx, garbage) = RingBuffer::<Arc<Arrangement>>::new(64);
+        let (gtx, garbage) = RingBuffer::<Garbage>::new(GARBAGE);
         Self { renderer: Renderer::new(sample_rate, channels, rx, gtx, Arc::new(Shared::default())), tx, garbage }
     }
 
@@ -764,7 +1032,7 @@ mod tests {
     fn mixer_plays_like_the_device_renderer() {
         let mut m = Mixer::new(48_000.0, 2);
         let data: Arc<[f32]> = vec![0.5f32; 100].into();
-        m.send(arrangement_msg(Arrangement { clips: vec![PlacedClip { start_frame: 10, data, side: None, gain_l: 1.0, gain_r: 0.5, send: 0.0 }] }));
+        m.send(arrangement_msg(Arrangement { notes: Vec::new(), clips: vec![PlacedClip { start_frame: 10, data, side: None, gain_l: 1.0, gain_r: 0.5, send: 0.0 }] }));
         m.send(RtMsg::Play);
         let mut out = vec![0f32; 2 * 64];
         m.process(&mut out);
@@ -777,9 +1045,9 @@ mod tests {
         assert_eq!(m.status().peak_out, 0.0, "Spitzenpegel beim Lesen zurückgesetzt");
     }
 
-    fn renderer() -> (Renderer, Producer<RtMsg>, Consumer<Arc<Arrangement>>) {
+    fn renderer() -> (Renderer, Producer<RtMsg>, Consumer<Garbage>) {
         let (tx, rx) = RingBuffer::new(64);
-        let (gtx, grx) = RingBuffer::new(8);
+        let (gtx, grx) = RingBuffer::new(GARBAGE);
         (Renderer::new(48_000.0, 2, rx, gtx, Arc::new(Shared::default())), tx, grx)
     }
 
@@ -838,7 +1106,7 @@ mod tests {
     /// A sine (frequency, phase, amplitude) as a clip from frame 0.
     fn sine(len: usize, freq: f32, phase: f32, amp: f32) -> Arrangement {
         let data: Arc<[f32]> = (0..len).map(|i| amp * (std::f32::consts::TAU * freq * i as f32 / SR + phase).sin()).collect::<Vec<f32>>().into();
-        Arrangement { clips: vec![PlacedClip { start_frame: 0, data, side: None, gain_l: 1.0, gain_r: 1.0, send: 0.0 }] }
+        Arrangement { notes: Vec::new(), clips: vec![PlacedClip { start_frame: 0, data, side: None, gain_l: 1.0, gain_r: 1.0, send: 0.0 }] }
     }
 
     /// Value of the sine at frame `f` (as in [`sine`]).
@@ -1007,7 +1275,7 @@ mod tests {
     fn mixes_clips_at_their_position() {
         let (mut r, mut tx, mut grx) = renderer();
         let data: Arc<[f32]> = vec![0.5f32; 100].into();
-        let arr = Arrangement { clips: vec![PlacedClip { start_frame: 10, data, side: None, gain_l: 1.0, gain_r: 0.5, send: 0.0 }] };
+        let arr = Arrangement { notes: Vec::new(), clips: vec![PlacedClip { start_frame: 10, data, side: None, gain_l: 1.0, gain_r: 0.5, send: 0.0 }] };
         let _ = tx.push(arrangement_msg(arr));
         let _ = tx.push(RtMsg::Play);
         let mut out = vec![0f32; 2 * 64];
@@ -1025,7 +1293,7 @@ mod tests {
         let (mut r, mut tx, _g) = renderer();
         let data: Arc<[f32]> = vec![0.5f32; 64].into();
         let side: Arc<[f32]> = vec![0.25f32; 64].into();
-        let arr = Arrangement { clips: vec![PlacedClip { start_frame: 0, data, side: Some(side), gain_l: 1.0, gain_r: 1.0, send: 0.0 }] };
+        let arr = Arrangement { notes: Vec::new(), clips: vec![PlacedClip { start_frame: 0, data, side: Some(side), gain_l: 1.0, gain_r: 1.0, send: 0.0 }] };
         let _ = tx.push(arrangement_msg(arr));
         let _ = tx.push(RtMsg::Play);
         let mut out = vec![0f32; 2 * 32];
@@ -1056,7 +1324,7 @@ mod tests {
         let (mut r, mut tx, _g) = renderer();
         let data: Arc<[f32]> = vec![0.25f32; 10].into();
         let clip = PlacedClip { start_frame: 0, data, side: None, gain_l: 1.0, gain_r: 1.0, send: 0.0 };
-        let _ = tx.push(RtMsg::Preview(Arc::new(Arrangement { clips: vec![clip] })));
+        let _ = tx.push(RtMsg::Preview(Arc::new(Arrangement { notes: Vec::new(), clips: vec![clip] })));
         let mut out = vec![0f32; 2 * 16];
         r.process(&mut out);
         assert_eq!(out[0], 0.25);
@@ -1091,7 +1359,7 @@ mod tests {
     #[test]
     fn offline_render_matches_the_clip_mix() {
         let data: Arc<[f32]> = vec![0.25f32; 100].into();
-        let arr = Arrangement { clips: vec![PlacedClip { start_frame: 10, data, side: None, gain_l: 1.0, gain_r: 0.5, send: 0.0 }] };
+        let arr = Arrangement { notes: Vec::new(), clips: vec![PlacedClip { start_frame: 10, data, side: None, gain_l: 1.0, gain_r: 0.5, send: 0.0 }] };
         let (l, r) = render_offline(arr, 48_000, 2_000);
         assert_eq!(l.len(), 2_000);
         assert_eq!(l[5], 0.0);
@@ -1125,7 +1393,7 @@ mod tests {
     fn reports_previewing_until_the_preview_has_played() {
         let (mut r, mut tx, _g) = renderer();
         let data: Arc<[f32]> = vec![0.1f32; 300].into();
-        let _ = tx.push(RtMsg::Preview(Arc::new(Arrangement { clips: vec![PlacedClip { start_frame: 0, data, side: None, gain_l: 1.0, gain_r: 1.0, send: 0.0 }] })));
+        let _ = tx.push(RtMsg::Preview(Arc::new(Arrangement { notes: Vec::new(), clips: vec![PlacedClip { start_frame: 0, data, side: None, gain_l: 1.0, gain_r: 1.0, send: 0.0 }] })));
         let mut out = vec![0f32; 2 * 256];
         r.process(&mut out);
         assert!(r.shared.previewing.load(Ordering::Relaxed));
@@ -1133,7 +1401,7 @@ mod tests {
         assert!(!r.shared.previewing.load(Ordering::Relaxed), "nach 512 von 300 Frames vorbei");
         // stop = empty preview
         let data: Arc<[f32]> = vec![0.1f32; 3000].into();
-        let _ = tx.push(RtMsg::Preview(Arc::new(Arrangement { clips: vec![PlacedClip { start_frame: 0, data, side: None, gain_l: 1.0, gain_r: 1.0, send: 0.0 }] })));
+        let _ = tx.push(RtMsg::Preview(Arc::new(Arrangement { notes: Vec::new(), clips: vec![PlacedClip { start_frame: 0, data, side: None, gain_l: 1.0, gain_r: 1.0, send: 0.0 }] })));
         r.process(&mut out);
         assert!(r.shared.previewing.load(Ordering::Relaxed));
         let _ = tx.push(RtMsg::Preview(Arc::new(Arrangement::default())));
@@ -1145,12 +1413,12 @@ mod tests {
     fn preview_more_continues_where_the_preview_is() {
         let (mut r, mut tx, _g) = renderer();
         let a: Arc<[f32]> = vec![0.1f32; 256].into();
-        let _ = tx.push(RtMsg::Preview(Arc::new(Arrangement { clips: vec![PlacedClip { start_frame: 0, data: a, side: None, gain_l: 1.0, gain_r: 1.0, send: 0.0 }] })));
+        let _ = tx.push(RtMsg::Preview(Arc::new(Arrangement { notes: Vec::new(), clips: vec![PlacedClip { start_frame: 0, data: a, side: None, gain_l: 1.0, gain_r: 1.0, send: 0.0 }] })));
         let mut out = vec![0f32; 2 * 256];
         r.process(&mut out);
         // second piece right behind it: keeps running without restarting from the beginning
         let b: Arc<[f32]> = vec![0.3f32; 256].into();
-        let _ = tx.push(RtMsg::PreviewMore(Arc::new(Arrangement { clips: vec![PlacedClip { start_frame: 256, data: b, side: None, gain_l: 1.0, gain_r: 1.0, send: 0.0 }] })));
+        let _ = tx.push(RtMsg::PreviewMore(Arc::new(Arrangement { notes: Vec::new(), clips: vec![PlacedClip { start_frame: 256, data: b, side: None, gain_l: 1.0, gain_r: 1.0, send: 0.0 }] })));
         r.process(&mut out);
         assert_eq!(out[0], 0.3);
         r.process(&mut out);
@@ -1188,7 +1456,7 @@ mod tests {
         // device change (desktop): the new callback knows tempo, metronome, loop and arrangement
         let mut m = crate::device::Mirror::default();
         let data: Arc<[f32]> = vec![0.5f32; 100].into();
-        let arr = Arc::new(Arrangement { clips: vec![PlacedClip { start_frame: 0, data, side: None, gain_l: 1.0, gain_r: 1.0, send: 0.0 }] });
+        let arr = Arc::new(Arrangement { notes: Vec::new(), clips: vec![PlacedClip { start_frame: 0, data, side: None, gain_l: 1.0, gain_r: 1.0, send: 0.0 }] });
         for msg in [RtMsg::Tempo { bpm: 90.0, beats_per_bar: 3 }, RtMsg::Metronome(true), RtMsg::Loop(Some((1.0, 2.0))), RtMsg::Arrangement { arrangement: arr, tempo: None }, RtMsg::Play] {
             m.note(&msg, 48_000);
         }
@@ -1250,7 +1518,7 @@ mod tests {
                     PlacedClip { start_frame: (i % 97) as u64, data: d.clone(), side: Some(sd.clone()), gain_l: 0.8, gain_r: 0.7, send: 0.3 }
                 })
                 .collect();
-            m.send(arrangement_msg(Arrangement { clips }));
+            m.send(arrangement_msg(Arrangement { clips, notes: Vec::new() }));
             m.send(RtMsg::Play);
             let mut out = vec![0f32; BLOCK * 2];
             for _ in 0..50 {
@@ -1268,5 +1536,275 @@ mod tests {
             }
         }
         println!("Bis {last_ok} gleichzeitige Clips bleibt das Mischen unter der Hälfte des Echtzeit-Budgets.");
+    }
+
+    // ------------------------------------------------ Live note clips
+
+    fn note_clip(track: u64, start_beats: f64, patch: Patch, shaping: Shaping, notes: &[(f64, f64, f32)], len_beats: f64) -> NoteClip {
+        let notes: Vec<LiveNote> = notes.iter().map(|&(s, l, m)| LiveNote::new(s, l, m, 0.5)).collect();
+        NoteClip { track, start_beats, notes: Arc::new(LiveNotes::new(patch, shaping, &notes, len_beats, SR)), gain_l: 1.0, gain_r: 1.0, send: 0.0 }
+    }
+
+    fn live(clips: Vec<NoteClip>) -> Arrangement {
+        Arrangement { clips: Vec::new(), notes: clips }
+    }
+
+    fn pad() -> Patch {
+        Patch::Synth(klang_dsp::pad::SynthParams::default(), klang_dsp::pad::Verlauf::default())
+    }
+
+    fn pluck() -> Patch {
+        Patch::Pluck(klang_dsp::synth::PluckParams::default())
+    }
+
+    /// Plays `blocks` blocks (messages first) and appends the left channel before the limiter.
+    fn play_raw(r: &mut Renderer, grx: &mut Consumer<Garbage>, blocks: usize, left: &mut Vec<f32>) {
+        for _ in 0..blocks {
+            r.handle_messages();
+            r.render_block(BLOCK);
+            left.extend_from_slice(&r.mix_l[..BLOCK]);
+            while let Ok(g) = grx.pop() {
+                drop(g);
+            }
+        }
+    }
+
+    fn rms(x: &[f32]) -> f32 {
+        (x.iter().map(|v| v * v).sum::<f32>() / x.len().max(1) as f32).sqrt()
+    }
+
+    #[test]
+    fn note_clips_play_live_like_the_offline_render() {
+        let shaping = Shaping { waerme: 0.4, schwebung: 0.3, farbe: 0.6, ..Default::default() };
+        let melody = [(0.0, 0.5, 60.0), (0.5, 0.5, 64.0), (1.0, 1.0, 67.0), (1.0, 1.0, 72.0), (2.5, 0.5, 62.0), (3.75, 1.0, 55.0)];
+        let beat = [(0.0, 0.25, 36.0), (0.5, 0.25, 38.0), (1.0, 0.25, 42.0), (1.25, 0.25, 46.0), (1.5, 0.25, 42.0), (3.0, 0.25, 49.0)];
+        for (patch, notes) in [(pad(), &melody), (Patch::Bass(Default::default()), &melody), (Patch::Drums(Default::default()), &beat), (pluck(), &melody)] {
+            let clip = note_clip(1, 0.0, patch.clone(), shaping, notes, 4.0);
+            let specs: Vec<klang_dsp::synth::NoteSpec> = clip.notes.notes.iter().map(|n| n.spec(0.5)).collect();
+            let (offline, _) = klang_dsp::live::render(&patch, &shaping, &specs, 2.0, SR, 0.5);
+            let (mut r, mut tx, mut grx) = renderer();
+            let _ = tx.push(RtMsg::Tempo { bpm: 120.0, beats_per_bar: 4 });
+            let _ = tx.push(arrangement_msg(live(vec![clip])));
+            let _ = tx.push(RtMsg::Play);
+            let mut left = Vec::new();
+            play_raw(&mut r, &mut grx, offline.len() / BLOCK + 1, &mut left);
+            let diff = offline.iter().zip(&left).map(|(a, b)| (a - b).abs()).fold(0.0, f32::max);
+            assert!(rms(&offline) > 0.001, "{patch:?} sounds");
+            assert!(diff < 1e-4, "{patch:?}: live differs from offline by {diff}");
+        }
+    }
+
+    #[test]
+    fn a_tempo_change_keeps_long_notes_sounding_without_a_gap() {
+        let clip = note_clip(1, 0.0, pad(), Shaping::default(), &[(0.0, 16.0, 57.0), (0.0, 16.0, 64.0)], 16.0);
+        let (mut r, mut tx, mut grx) = renderer();
+        let _ = tx.push(RtMsg::Tempo { bpm: 120.0, beats_per_bar: 4 });
+        let _ = tx.push(arrangement_msg(live(vec![clip])));
+        let _ = tx.push(RtMsg::Play);
+        let mut left = Vec::new();
+        play_raw(&mut r, &mut grx, 200, &mut left);
+        let before = rms(&left[150 * BLOCK..]);
+        let beat = r.pos as f64 / r.samples_per_beat();
+        let _ = tx.push(RtMsg::Tempo { bpm: 80.0, beats_per_bar: 4 });
+        let mut after = Vec::new();
+        play_raw(&mut r, &mut grx, 60, &mut after);
+        assert!((r.pos as f64 / r.samples_per_beat() - beat - 60.0 * BLOCK as f64 / r.samples_per_beat()).abs() < 0.01, "beat position kept");
+        for (k, block) in after.chunks(BLOCK).enumerate() {
+            assert!(rms(block) > before * 0.3, "block {k} after the tempo change: {} vs {before}", rms(block));
+        }
+        assert!(max_step(&[&left[left.len() - BLOCK..], &after[..4 * BLOCK]].concat()) < 0.05, "no click");
+    }
+
+    #[test]
+    fn starting_in_the_middle_of_a_note_picks_it_up() {
+        for patch in [pad(), pluck(), Patch::Organ(Default::default()), Patch::Bass(Default::default())] {
+            let clip = || note_clip(1, 0.0, patch.clone(), Shaping::default(), &[(0.0, 8.0, 52.0)], 8.0);
+            // the note played from its start: how loud is it at beat 2?
+            let (mut r, mut tx, mut grx) = renderer();
+            let _ = tx.push(RtMsg::Tempo { bpm: 120.0, beats_per_bar: 4 });
+            let _ = tx.push(arrangement_msg(live(vec![clip()])));
+            let _ = tx.push(RtMsg::Play);
+            let mut whole = Vec::new();
+            play_raw(&mut r, &mut grx, (2 * 24_000 + 20 * BLOCK) / BLOCK, &mut whole);
+            let want = rms(&whole[2 * 24_000 + 2 * BLOCK..]);
+            // stopped: jump to beat 2, then play
+            let (mut r, mut tx, mut grx) = renderer();
+            let _ = tx.push(RtMsg::Tempo { bpm: 120.0, beats_per_bar: 4 });
+            let _ = tx.push(arrangement_msg(live(vec![clip()])));
+            let _ = tx.push(RtMsg::Seek(2 * 24_000));
+            let _ = tx.push(RtMsg::Play);
+            let mut left = Vec::new();
+            play_raw(&mut r, &mut grx, 20, &mut left);
+            let have = rms(&left[2 * BLOCK..]);
+            assert!(want > 1e-4, "{patch:?} still sounds at beat 2");
+            assert!(have > want * 0.5 && have < want * 2.0, "{patch:?} picked up: {have} vs {want}");
+            assert!(left[0].abs() < 0.01, "{patch:?} fades in");
+        }
+    }
+
+    #[test]
+    fn stopping_fades_the_voices_out() {
+        let clip = note_clip(1, 0.0, pad(), Shaping { breite: 0.5, schwebung: 0.4, ..Default::default() }, &[(0.0, 16.0, 57.0)], 16.0);
+        let (mut r, mut tx, mut grx) = renderer();
+        let _ = tx.push(arrangement_msg(live(vec![clip])));
+        let _ = tx.push(RtMsg::Play);
+        let mut left = Vec::new();
+        play_raw(&mut r, &mut grx, 100, &mut left);
+        assert!(r.live.sounding());
+        let _ = tx.push(RtMsg::Stop);
+        let mut after = Vec::new();
+        play_raw(&mut r, &mut grx, 60, &mut after);
+        assert!(max_step(&[&left[left.len() - BLOCK..], &after[..8 * BLOCK]].concat()) < 0.05, "no click at the stop");
+        assert!(rms(&after[40 * BLOCK..]) < 1e-4, "silent after the fade");
+        assert!(!r.live.sounding(), "voices and chains done");
+    }
+
+    #[test]
+    fn notes_at_the_loop_start_sound_again_after_the_jump() {
+        let clip = note_clip(1, 0.0, pluck(), Shaping::default(), &[(0.0, 0.5, 64.0)], 2.0);
+        let (mut r, mut tx, mut grx) = renderer();
+        let _ = tx.push(RtMsg::Tempo { bpm: 120.0, beats_per_bar: 4 });
+        let _ = tx.push(arrangement_msg(live(vec![clip])));
+        let _ = tx.push(RtMsg::Loop(Some((0.0, 1.0))));
+        let _ = tx.push(RtMsg::Play);
+        // three times through the loop (one beat = 24 000 frames)
+        let mut out = vec![0f32; 2 * BLOCK];
+        let mut left = Vec::new();
+        for _ in 0..(3 * 24_000 / BLOCK) {
+            r.process(&mut out);
+            left.extend(out.chunks(2).map(|f| f[0]));
+            while let Ok(g) = grx.pop() {
+                drop(g);
+            }
+        }
+        for k in 0..3 {
+            let at = k * 24_000;
+            assert!(rms(&left[at + 200..at + 4000]) > 0.02, "note at loop pass {k}");
+            assert!(rms(&left[at + 15_000..at + 23_000]) < rms(&left[at + 200..at + 4000]) * 0.5, "it decays before the next pass");
+        }
+    }
+
+    #[test]
+    fn many_notes_at_once_reuse_the_oldest_voices() {
+        let chord: Vec<(f64, f64, f32)> = (0..400).map(|k| (k as f64 * 0.001, 4.0, 40.0 + (k % 40) as f32)).collect();
+        let strings: Vec<(f64, f64, f32)> = (0..100).map(|k| (k as f64 * 0.002, 4.0, 50.0 + (k % 20) as f32)).collect();
+        let (mut r, mut tx, mut grx) = renderer();
+        let _ = tx.push(arrangement_msg(live(vec![note_clip(1, 0.0, pad(), Shaping::default(), &chord, 4.0), note_clip(2, 0.0, pluck(), Shaping::default(), &strings, 4.0)])));
+        let _ = tx.push(RtMsg::Play);
+        let mut left = Vec::new();
+        play_raw(&mut r, &mut grx, 60, &mut left);
+        assert!(left.iter().all(|v| v.is_finite()));
+        assert!(rms(&left) > 0.01);
+    }
+
+    #[test]
+    fn live_voices_neither_allocate_nor_free_in_the_mixer() {
+        let (tx_rt, rx) = RingBuffer::new(64);
+        let (gtx, mut grx) = RingBuffer::new(GARBAGE);
+        let mut r = Renderer::new(SR, 2, rx, gtx, Arc::new(Shared::default()));
+        let mut tx = tx_rt;
+        let melody: Vec<(f64, f64, f32)> = (0..64).map(|k| (k as f64 * 0.25, 0.6, 48.0 + (k * 5 % 24) as f32)).collect();
+        let beat: Vec<(f64, f64, f32)> = (0..64).map(|k| (k as f64 * 0.25, 0.2, [36.0, 42.0, 38.0, 46.0][k % 4])).collect();
+        let shaping = Shaping { waerme: 0.5, schwebung: 0.5, rauheit: 0.3, farbe: 0.3, raum: 0.7, breite: 0.6 };
+        let make = |k: usize| {
+            live(vec![
+                note_clip(1, 0.0, pluck(), shaping, &melody, 16.0),
+                note_clip(2, 0.0, pad(), Shaping { breite: (k % 3) as f32 * 0.3, ..shaping }, &melody, 16.0),
+                note_clip(3, 0.0, Patch::Drums(Default::default()), Shaping::default(), &beat, 16.0),
+                note_clip(4, 0.0, Patch::Organ(Default::default()), shaping, &melody, 16.0),
+                note_clip(5, 0.0, Patch::Harpsichord(klang_dsp::keys::HarpsichordParams { vierfuss: 0.6, ..Default::default() }), shaping, &melody, 16.0),
+            ])
+        };
+        let _ = tx.push(RtMsg::Tempo { bpm: 120.0, beats_per_bar: 4 });
+        let _ = tx.push(arrangement_msg(make(0)));
+        let _ = tx.push(RtMsg::Play);
+        let mut out = [0f32; 2 * BLOCK];
+        let mut ops = 0;
+        for k in 0..400 {
+            // messages are built outside (as in the app)
+            match k % 37 {
+                3 => drop(tx.push(arrangement_msg(make(k)))),
+                11 => drop(tx.push(RtMsg::Tempo { bpm: 100.0 + (k % 50) as f64, beats_per_bar: 4 })),
+                17 => drop(tx.push(RtMsg::Seek(24_000 + k as u64 * 300))),
+                23 => drop(tx.push(RtMsg::Loop(Some((1.0, 3.0))))),
+                29 => drop(tx.push(RtMsg::Stop)),
+                31 => drop(tx.push(RtMsg::Play)),
+                _ => {}
+            }
+            let before = counting::ops();
+            r.process(&mut out);
+            ops += counting::ops() - before;
+            while let Ok(old) = grx.pop() {
+                drop(old);
+            }
+        }
+        assert_eq!(ops, 0, "allocations/frees in the mixer");
+    }
+
+    #[test]
+    fn a_parallel_export_sounds_like_one_renderer() {
+        let melody: Vec<(f64, f64, f32)> = (0..24).map(|k| (k as f64 * 0.5, 0.7, 48.0 + (k * 7 % 24) as f32)).collect();
+        let beat: Vec<(f64, f64, f32)> = (0..24).map(|k| (k as f64 * 0.5, 0.2, [36.0, 42.0, 38.0, 42.0][k % 4])).collect();
+        let shaping = Shaping { waerme: 0.4, schwebung: 0.5, breite: 0.6, raum: 0.6, ..Default::default() };
+        let make = || {
+            let mut a = live(vec![
+                note_clip(1, 0.0, pluck(), shaping, &melody, 6.0),
+                note_clip(1, 6.0, pluck(), shaping, &melody, 6.0),
+                note_clip(2, 0.0, pad(), shaping, &melody[..8], 12.0),
+                note_clip(3, 0.0, Patch::Drums(Default::default()), Shaping::default(), &beat, 12.0),
+                note_clip(4, 2.0, Patch::Bass(Default::default()), shaping, &melody, 8.0),
+            ]);
+            for (k, n) in a.notes.iter_mut().enumerate() {
+                n.send = 0.1 * k as f32;
+                n.gain_l = 1.0 - 0.1 * k as f32;
+            }
+            a.clips.push(PlacedClip { start_frame: 1000, data: vec![0.2f32; 30_000].into(), side: None, gain_l: 0.5, gain_r: 0.7, send: 0.3 });
+            a
+        };
+        let frames = 7 * 48_000;
+        let (sl, sr) = render_serial(make(), 48_000, frames);
+        for threads in [2, 3, 8] {
+            let (pl, pr) = render_parallel(make(), 48_000, frames, threads);
+            let d = sl.iter().zip(&pl).chain(sr.iter().zip(&pr)).map(|(a, b)| (a - b).abs()).fold(0.0, f32::max);
+            assert_eq!(pl.len(), frames as usize);
+            assert!(d < 1e-4, "{threads} threads: difference {d}");
+        }
+        assert!(rms(&sl) > 0.01);
+    }
+
+    #[test]
+    fn a_clip_rendered_step_by_step_sounds_like_it_does_live() {
+        let melody: Vec<(f64, f64, f32)> = (0..16).map(|k| (k as f64 * 0.5, 0.8, 50.0 + (k * 5 % 19) as f32)).collect();
+        let shaping = Shaping { waerme: 0.3, schwebung: 0.4, breite: 0.7, raum: 0.5, ..Default::default() };
+        for patch in [pad(), pluck()] {
+            let clip = || note_clip(7, 0.0, patch.clone(), shaping, &melody, 8.0);
+            let frames = clip().notes.patch.buffer_len(8.0 * 60.0 / 100.0, SR) as u64;
+            let mut live = live(vec![clip()]);
+            live.notes[0].send = 0.0;
+            let (mut r, mut grx) = offline_renderer(live, 48_000, true);
+            r.bpm = 100.0;
+            let (mut l, mut rr) = (Vec::new(), Vec::new());
+            while (l.len() as u64) < frames {
+                let n = ((frames - l.len() as u64) as usize).min(MAX_BLOCK);
+                r.render_block(n);
+                l.extend_from_slice(&r.mix_l[..n]);
+                rr.extend_from_slice(&r.mix_r[..n]);
+                while let Ok(g) = grx.pop() {
+                    drop(g);
+                }
+            }
+            // in odd steps, as between other work
+            let mut s = StepRender::new(clip(), 100.0, 48_000);
+            let mut steps = 0;
+            while !s.step(1000 + 37 * steps) {
+                steps += 1;
+            }
+            let (mid, side) = s.finish();
+            let side = side.expect("wide clip has a side");
+            assert_eq!(mid.len(), l.len());
+            let d = (0..mid.len()).map(|i| (mid[i] + side[i] - l[i]).abs().max((mid[i] - side[i] - rr[i]).abs())).fold(0.0, f32::max);
+            assert!(d < 1e-5, "{patch:?}: difference {d}");
+            assert!(rms(&l) > 0.001);
+        }
     }
 }

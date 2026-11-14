@@ -3,6 +3,7 @@
 //! * [`features`] – measurable sound properties (brightness, warmth, attack, decay)
 //! * [`fft`]     – radix-2 FFT
 //! * [`fx`]      – sound shaping (warmth, shimmer, color, roughness, distance, width)
+//! * [`live`]    – the instruments as live voices and the sound shaping as a running chain
 //! * [`hits`]    – assign the hits of a recording to drums (bass drum, snare, hi-hat)
 //! * [`pad`]     – synthesizer for pads with a drawn envelope
 //! * [`pitch`]   – pitch detection (YIN)
@@ -19,6 +20,7 @@ pub mod fft;
 pub mod fx;
 pub mod hits;
 pub mod keys;
+pub mod live;
 pub mod notes;
 pub mod onset;
 pub mod pad;

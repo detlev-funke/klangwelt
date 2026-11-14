@@ -109,6 +109,16 @@ impl Biquad {
         let c = w0.cos();
         Self::new(1.0 + alpha * a, -2.0 * c, 1.0 - alpha * a, 1.0 + alpha / a, -2.0 * c, 1.0 - alpha / a)
     }
+    /// Forgets what passed through (silence from now on).
+    pub(crate) fn clear(&mut self) {
+        (self.z1, self.z2) = (0.0, 0.0);
+    }
+
+    /// Takes over the coefficients of `other`; the state keeps running.
+    pub(crate) fn set_coeffs(&mut self, other: &Biquad) {
+        (self.b0, self.b1, self.b2, self.a1, self.a2) = (other.b0, other.b1, other.b2, other.a1, other.a2);
+    }
+
     pub(crate) fn process(&mut self, x: f32) -> f32 {
         let y = self.b0 * x + self.z1;
         self.z1 = self.b1 * x - self.a1 * y + self.z2;

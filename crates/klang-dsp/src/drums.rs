@@ -120,7 +120,7 @@ impl Default for DrumKit {
     }
 }
 
-fn soft_clip(x: f32, drive: f32) -> f32 {
+pub(crate) fn soft_clip(x: f32, drive: f32) -> f32 {
     (x * drive).tanh() / drive.tanh()
 }
 
@@ -244,7 +244,7 @@ pub fn rim(sr: f32, p: &SnareParams, velocity: f32, seed: u32) -> Vec<f32> {
 }
 
 /// Square wave from the first odd harmonics (without aliasing).
-fn square(phase: f32) -> f32 {
+pub(crate) fn square(phase: f32) -> f32 {
     phase.sin() + (3.0 * phase).sin() / 3.0 + (5.0 * phase).sin() / 5.0 + (7.0 * phase).sin() / 7.0
 }
 

@@ -6,6 +6,7 @@ edition.workspace = true
 publish = false
 
 [dependencies]
+klang-dsp = { workspace = true }
 klang-i18n = { workspace = true }
 rtrb = { workspace = true }
 

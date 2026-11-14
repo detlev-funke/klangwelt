@@ -93,7 +93,6 @@ do what a web page is not allowed to do, or cannot do well:
 | Score library (download thousands of scores, sing a melody and find it) | – | ✓ |
 | Choose audio devices (interface, headphones) | system default | ✓ |
 | Agent | via Claude in Chrome | its own MCP endpoint, one prompt for Claude Code |
-| Rendering long songs | one CPU core | all cores |
 | Installation | none | a single file, no installer |
 
 ## For developers

@@ -6,7 +6,7 @@ use crate::sound::{self, SoundReport};
 use klang_core::{Clip, ClipSource, Command, Id, InstrumentKind, Note, Project, Session, Track, TrackKind, TrackPatch};
 use klang_dsp::synth::NoteSpec;
 use klang_dsp::{stretch, util};
-use klang_engine::{Arrangement, Engine, PlacedClip};
+use klang_engine::{Arrangement, Engine, LiveNote, LiveNotes, NoteClip, PlacedClip, StepRender};
 use klang_i18n::tr;
 use klang_music::diskindex::AnyIndex;
 use serde::Serialize;
@@ -34,6 +34,11 @@ pub struct Asset {
 pub struct AssetPool {
     assets: HashMap<String, Asset>,
     renders: HashMap<String, Arc<[f32]>>,
+    /// Note clips prepared for the live mixer (they hold for every tempo).
+    live: HashMap<String, Arc<LiveNotes>>,
+    /// Note clips rendered because the live mixer couldn't keep up (mid,
+    /// side) – key with the tempo, so a new tempo plays them live again.
+    prerendered: HashMap<String, (Arc<[f32]>, Option<Arc<[f32]>>)>,
     analyses: HashMap<String, Analysis>,
     counter: u64,
 }
@@ -45,6 +50,8 @@ impl AssetPool {
         AssetPool {
             assets: self.assets.iter().map(|(k, a)| (k.clone(), Asset { name: a.name.clone(), samples: a.samples.clone(), sample_rate: a.sample_rate })).collect(),
             renders: self.renders.clone(),
+            live: self.live.clone(),
+            prerendered: self.prerendered.clone(),
             analyses: HashMap::new(),
             counter: self.counter,
         }
@@ -226,6 +233,10 @@ pub struct StatusDto {
     pub position_secs: f64,
     pub peak_out: f32,
     pub peak_in: f32,
+    /// Share of the real-time budget the live mixer needs (1 = all of it).
+    pub load: f32,
+    /// Note clips currently pre-rendered because the mixer couldn't keep up.
+    pub prerendered: usize,
 }
 
 pub struct AppState {
@@ -263,6 +274,10 @@ pub struct AppState {
     audio_notice: Mutex<AudioNotice>,
     /// The platform (events, storage locations); set at start.
     host: std::sync::OnceLock<Box<dyn crate::Host>>,
+    /// Pre-rendering when the live mixer can't keep up (see `tick`).
+    prerender: Mutex<Prerender>,
+    /// For tests: the mixer counts as at least this loaded (f32 bits).
+    test_load: AtomicU32,
 }
 
 /// Checksum for "unsaved": the content without the internal counter for new
@@ -315,6 +330,57 @@ mod hash_tests {
         st.unmute_metronome_after_recording();
         assert!(st.snapshot().unwrap().engine.metronome, "and still on afterwards");
     }
+
+    #[test]
+    fn an_overloaded_mixer_gets_clips_pre_rendered_until_it_is_relieved() {
+        let st = AppState::without_audio();
+        let plan = crate::song::templates().into_iter().next().unwrap();
+        st.song_write(&plan, true, "").unwrap();
+        let sr = 48_000;
+        let note_clips = |st: &AppState| {
+            let p = lock(&st.session).unwrap().project.clone();
+            let arr = build_arrangement(&p, &mut lock(&st.pool).unwrap(), sr);
+            (arr.notes.len(), arr.clips.len())
+        };
+        let (live_before, rendered_before) = note_clips(&st);
+        assert_eq!(rendered_before, 0, "everything live at first");
+        // calm: nothing happens
+        assert!(!st.prerender_step(0, true, 0.0, 0.3, sr));
+        assert!(lock(&st.prerender).unwrap().job.is_none());
+        // overloaded, but only briefly: still nothing
+        assert!(!st.prerender_step(1000, true, 0.0, 0.95, sr));
+        assert!(!st.prerender_step(1100, true, 0.0, 0.95, sr));
+        assert!(lock(&st.prerender).unwrap().job.is_none());
+        // overloaded for a while: the most expensive clip near the playback position is rendered step by step
+        let mut now = 1400;
+        let mut finished = false;
+        for _ in 0..10_000 {
+            if st.prerender_step(now, true, 0.0, 0.95, sr) {
+                finished = true;
+                break;
+            }
+            now += 33;
+        }
+        assert!(finished, "a clip got rendered");
+        assert_eq!(lock(&st.pool).unwrap().prerendered.len(), 1);
+        {
+            let pool = lock(&st.pool).unwrap();
+            let (mid, _) = pool.prerendered.values().next().unwrap();
+            let rms = (mid.iter().map(|v| v * v).sum::<f32>() / mid.len() as f32).sqrt();
+            assert!(rms > 0.001, "the rendered clip sounds: rms {rms} over {} samples", mid.len());
+        }
+        let (live_after, rendered_after) = note_clips(&st);
+        assert_eq!((live_after, rendered_after), (live_before - 1, 1), "it plays from its buffer now");
+        // relieved: no further clip
+        for k in 0..20 {
+            assert!(!st.prerender_step(now + 33 * k, true, 0.0, 0.4, sr));
+        }
+        assert!(lock(&st.prerender).unwrap().job.is_none());
+        // a new tempo plays it live again (its buffer belongs to the old tempo)
+        st.execute(Command::SetProject { patch: klang_core::ProjectPatch { tempo_bpm: Some(plan.tempo + 7.0), ..Default::default() } }, false).unwrap();
+        assert_eq!(note_clips(&st), (live_before, 0));
+        assert!(lock(&st.pool).unwrap().prerendered.is_empty(), "the old buffer is freed");
+    }
 }
 
 impl AppState {
@@ -357,6 +423,8 @@ impl AppState {
             settings_file: Mutex::new(None),
             audio_notice: Mutex::new(AudioNotice::default()),
             host: std::sync::OnceLock::new(),
+            prerender: Mutex::new(Prerender::default()),
+            test_load: AtomicU32::new(0),
         };
         if let Some(e) = &state.engine {
             e.set_metronome(false);
@@ -786,6 +854,101 @@ impl AppState {
         self.apply_loop()
     }
 
+/// Regular work on the side, called by the shells every few dozen
+    /// milliseconds (desktop: status thread, browser: worker timer): when the
+    /// live mixer can't keep up, note clips around the playback position are
+    /// rendered step by step and then play from their buffer.
+    pub fn tick(&self) {
+        let Some(engine) = &self.engine else { return };
+        // without taking the peak levels: they belong to the UI's status
+        let s = engine.peek_status();
+        let load = s.load.max(f32::from_bits(self.test_load.load(Ordering::Relaxed)));
+        let pos = s.position_frames as f64 / s.sample_rate.max(1) as f64;
+        if self.prerender_step(crate::clock::now_ms(), s.playing, pos, load, engine.info().sample_rate) {
+            if let Err(e) = self.sync_engine() {
+                eprintln!("pre-rendering: {e}");
+            }
+        }
+    }
+
+    /// For tests: the live mixer counts as at least `load` loaded (0 = off).
+    pub fn simulate_load(&self, load: f32) {
+        self.test_load.store(load.clamp(0.0, 4.0).to_bits(), Ordering::Relaxed);
+    }
+
+    /// One step of pre-rendering at time `now` (ms) with the mixer at `load`.
+    /// Returns `true` when a clip is finished – the arrangement then has to be
+    /// built anew.
+    fn prerender_step(&self, now: u64, playing: bool, pos_secs: f64, load: f32, sr: u32) -> bool {
+        let Ok(mut p) = lock(&self.prerender) else { return false };
+        if playing && load > LOAD_HIGH {
+            p.over_since.get_or_insert(now);
+        } else if !playing || load < LOAD_CALM {
+            p.over_since = None;
+        }
+        if let Some((_, job)) = p.job.as_mut() {
+            let t = crate::clock::Instant::now();
+            let mut done = false;
+            while !done && t.elapsed().as_secs_f64() * 1000.0 < PRERENDER_SLICE_MS {
+                done = job.step(4096);
+            }
+            if !done {
+                return false;
+            }
+            let Some((key, job)) = p.job.take() else { return false };
+            if let Ok(mut pool) = lock(&self.pool) {
+                pool.prerendered.insert(key, job.finish());
+            }
+            // the load needs a moment to show the effect before the next clip
+            if p.over_since.is_some() {
+                p.over_since = Some(now);
+            }
+            return true;
+        }
+        match p.over_since {
+            Some(since) if now.saturating_sub(since) >= LOAD_HOLD_MS => {}
+            _ => return false,
+        }
+        if let Some((key, clip, bpm)) = self.prerender_candidate(pos_secs, sr) {
+            p.job = Some((key, StepRender::new(clip, bpm, sr)));
+        }
+        false
+    }
+
+    /// The most expensive note clip that sounds in the next seconds and is
+    /// not yet rendered: its key (with the tempo), the clip and the tempo.
+    fn prerender_candidate(&self, pos_secs: f64, sr: u32) -> Option<(String, NoteClip, f64)> {
+        let project = lock(&self.session).ok()?.project.clone();
+        let bpm = project.tempo_bpm;
+        let spb = 60.0 / bpm;
+        let (from, to) = (pos_secs / spb, (pos_secs + PRERENDER_AHEAD_SECS) / spb);
+        let any_solo = project.tracks.iter().any(|t| t.solo);
+        let mut pool = lock(&self.pool).ok()?;
+        let mut best: Option<(f64, String, String, &Track, &Clip)> = None;
+        for track in project.tracks.iter().filter(|t| !t.mute && (!any_solo || t.solo)) {
+            let tail = sound::patch(track.instrument.as_ref()).release_secs() as f64 / spb + 1.0;
+            for clip in &track.clips {
+                let ClipSource::Notes { length_beats, notes } = &clip.source else { continue };
+                if clip.start_beats + length_beats + tail < from || clip.start_beats > to || notes.is_empty() {
+                    continue;
+                }
+                let key = notes_key(track, notes, *length_beats, sr);
+                let pre = prerendered_key(&key, bpm);
+                if pool.prerendered.contains_key(&pre) {
+                    continue;
+                }
+                let cost = clip_cost(track, notes, *length_beats);
+                if best.as_ref().is_none_or(|b| cost > b.0) {
+                    best = Some((cost, key, pre, track, clip));
+                }
+            }
+        }
+        let (_, key, pre, track, clip) = best?;
+        let ClipSource::Notes { length_beats, notes } = &clip.source else { return None };
+        let prepared = pool.live.entry(key).or_insert_with(|| Arc::new(live_notes(track, notes, *length_beats, sr))).clone();
+        Some((pre, NoteClip { track: track.id.0, start_beats: clip.start_beats, notes: prepared, gain_l: 1.0, gain_r: 1.0, send: 0.0 }, bpm))
+    }
+
     pub fn status(&self) -> StatusDto {
         match &self.engine {
             Some(e) => {
@@ -797,9 +960,11 @@ impl AppState {
                     position_secs: s.position_frames as f64 / s.sample_rate.max(1) as f64,
                     peak_out: s.peak_out,
                     peak_in: s.peak_in,
+                    load: s.load,
+                    prerendered: lock(&self.pool).map(|p| p.prerendered.len()).unwrap_or(0),
                 }
             }
-            None => StatusDto { playing: false, previewing: false, recording: false, position_secs: 0.0, peak_out: 0.0, peak_in: 0.0 },
+            None => StatusDto { playing: false, previewing: false, recording: false, position_secs: 0.0, peak_out: 0.0, peak_in: 0.0, load: 0.0, prerendered: 0 },
         }
     }
 
@@ -1080,21 +1245,50 @@ pub struct RecordResult {
     pub clip_id: Id,
 }
 
-/// Key of a rendered note clip (notes, sound, tempo, pitch, length).
-fn notes_key(track: &Track, notes: &[Note], length_beats: f64, bpm: f64, out_sr: u32) -> String {
+/// Key of a prepared note clip (notes, sound, pitch, length, output rate) –
+/// independent of the tempo: the mixer plays it live at any tempo.
+fn notes_key(track: &Track, notes: &[Note], length_beats: f64, out_sr: u32) -> String {
     let mut h = DefaultHasher::new();
     serde_json::to_string(notes).unwrap_or_default().hash(&mut h);
     serde_json::to_string(&track.instrument.as_ref()).unwrap_or_default().hash(&mut h);
-    format!("notes|{:x}|{bpm:.4}|{:.3}|{out_sr}|{length_beats}", h.finish(), track.pitch_semitones)
+    format!("notes|{:x}|{:.3}|{out_sr}|{length_beats}", h.finish(), track.pitch_semitones)
 }
 
-fn notes_specs(track: &Track, notes: &[Note], length_beats: f64, spb: f64) -> Vec<NoteSpec> {
-    let shift = if sound::transposes(track.instrument.as_ref()) { track.pitch_semitones } else { 0.0 };
-    notes
+/// The notes of a clip for the live mixer (beats, pitch with the track's transposition).
+fn live_notes(track: &Track, notes: &[Note], length_beats: f64, out_sr: u32) -> LiveNotes {
+    let inst = track.instrument.as_ref();
+    let shift = if sound::transposes(inst) { track.pitch_semitones } else { 0.0 };
+    let notes: Vec<LiveNote> = notes
         .iter()
-        .filter(|n| n.start_beats < length_beats)
-        .map(|n| NoteSpec { dur_secs: (n.length_beats.min(length_beats - n.start_beats) * spb) as f32, ..sound::note_spec(n, spb as f32, shift) })
-        .collect()
+        .map(|n| LiveNote {
+            vibrato: n.vibrato,
+            brightness: n.brightness,
+            bend: n.bend,
+            ..LiveNote::new(n.start_beats, n.length_beats, n.pitch as f32 + shift, n.velocity as f32 / 127.0)
+        })
+        .collect();
+    LiveNotes::new(sound::patch(inst), sound::shaping_of(inst), &notes, length_beats, out_sr as f32)
+}
+
+/// Key of a note clip rendered at `bpm` (see `AssetPool::prerendered`).
+fn prerendered_key(notes_key: &str, bpm: f64) -> String {
+    format!("{notes_key}|{bpm:.4}")
+}
+
+/// Rough cost of a note clip in the live mixer: average number of sounding
+/// notes times the effort of the instrument's voice.
+fn clip_cost(track: &Track, notes: &[Note], length_beats: f64) -> f64 {
+    let inst = track.instrument.as_ref();
+    let weight = match sound::kind_of(inst) {
+        // one oscillator per unison voice
+        InstrumentKind::Synth => 1.0 + 6.0 * inst.and_then(|i| i.params.get("stimmen").copied()).unwrap_or(0.5) as f64,
+        InstrumentKind::Harpsichord => 2.5,
+        InstrumentKind::Pluck => 1.5,
+        InstrumentKind::Organ | InstrumentKind::Bass => 1.0,
+        InstrumentKind::Drums => 0.6,
+    };
+    let sounding: f64 = notes.iter().filter(|n| n.start_beats < length_beats).map(|n| n.length_beats.min(length_beats - n.start_beats)).sum();
+    weight * sounding / length_beats.max(1e-9)
 }
 
 /// Key of an audio clip at project tempo, pitch and output rate.
@@ -1109,87 +1303,80 @@ fn render_audio(samples: &[f32], sample_rate: u32, time_ratio: f64, pitch_semito
 }
 
 /// There are no threads in the browser (wasm32-unknown-unknown): the loop in
-/// `arrange` renders the clips one after another.
+/// `arrange` stretches the audio clips one after another.
 #[cfg(target_arch = "wasm32")]
 fn prerender(_project: &Project, _pool: &mut AssetPool, _out_sr: u32) {}
 
-/// Renders what is not yet rendered (note clips, stretched audio clips) on
-/// several cores and puts it into the cache – e.g. after a tempo change
-/// (everything anew) or for a whole generated song.
+/// Stretch what is not yet rendered (audio clips at the project tempo) on
+/// several cores and put it in the cache – e.g. after a tempo change. Note
+/// clips are not rendered at all: the mixer plays them live.
 #[cfg(not(target_arch = "wasm32"))]
 fn prerender(project: &Project, pool: &mut AssetPool, out_sr: u32) {
-    enum Job<'a> {
-        Notes { track: &'a Track, specs: Vec<NoteSpec>, secs: f32 },
-        Audio { samples: Arc<[f32]>, sample_rate: u32, time_ratio: f64, pitch: f64 },
-    }
-    impl Job<'_> {
-        /// Roughly estimated effort, to distribute long jobs first.
-        fn cost(&self) -> f64 {
-            match self {
-                Job::Notes { specs, secs, .. } => *secs as f64 * specs.len() as f64,
-                // Stretching and converting cost about as much per second as two dozen notes
-                Job::Audio { samples, sample_rate, .. } => samples.len() as f64 / *sample_rate as f64 * 24.0,
-            }
-        }
+    struct Job {
+        samples: Arc<[f32]>,
+        sample_rate: u32,
+        time_ratio: f64,
+        pitch: f64,
     }
     let bpm = project.tempo_bpm;
-    let spb = 60.0 / bpm;
     let any_solo = project.tracks.iter().any(|t| t.solo);
     let mut jobs: Vec<(String, Job)> = Vec::new();
     let mut seen = HashSet::new();
     for track in project.tracks.iter().filter(|t| !t.mute && (!any_solo || t.solo)) {
         for clip in &track.clips {
-            match &clip.source {
-                ClipSource::Notes { length_beats, notes } => {
-                    let key = notes_key(track, notes, *length_beats, bpm, out_sr);
-                    if !pool.renders.contains_key(&key) && seen.insert(key.clone()) {
-                        jobs.push((key, Job::Notes { track, specs: notes_specs(track, notes, *length_beats, spb), secs: (length_beats * spb) as f32 }));
-                    }
-                }
-                ClipSource::Audio { asset_id, source_bpm, warp, .. } => {
-                    let Some(asset) = pool.assets.get(asset_id) else { continue };
-                    let time_ratio = if *warp { source_bpm / bpm } else { 1.0 };
-                    let pitch = track.pitch_semitones as f64;
-                    let key = audio_key(asset_id, time_ratio, pitch, out_sr);
-                    if !pool.renders.contains_key(&key) && seen.insert(key.clone()) {
-                        jobs.push((key, Job::Audio { samples: asset.samples.clone(), sample_rate: asset.sample_rate, time_ratio, pitch }));
-                    }
-                }
+            let ClipSource::Audio { asset_id, source_bpm, warp, .. } = &clip.source else { continue };
+            let Some(asset) = pool.assets.get(asset_id) else { continue };
+            let time_ratio = if *warp { source_bpm / bpm } else { 1.0 };
+            let pitch = track.pitch_semitones as f64;
+            let key = audio_key(asset_id, time_ratio, pitch, out_sr);
+            if !pool.renders.contains_key(&key) && seen.insert(key.clone()) {
+                jobs.push((key, Job { samples: asset.samples.clone(), sample_rate: asset.sample_rate, time_ratio, pitch }));
             }
         }
     }
     if jobs.len() < 2 {
-        return; // a single one: the loop in `arrange` renders it
+        return; // one alone: rendered by the loop in `arrange`
     }
-    // long jobs first, so the cores have an even load
-    jobs.sort_by(|a, b| b.1.cost().total_cmp(&a.1.cost()));
+    // long ones first, so the cores are evenly busy
+    jobs.sort_by_key(|(_, j)| std::cmp::Reverse(j.samples.len()));
     let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).clamp(1, 8).min(jobs.len());
     let next = std::sync::atomic::AtomicUsize::new(0);
-    let done: Mutex<Vec<(String, Arc<[f32]>, Option<Arc<[f32]>>)>> = Mutex::new(Vec::new());
+    let done: Mutex<Vec<(String, Arc<[f32]>)>> = Mutex::new(Vec::new());
     std::thread::scope(|s| {
         for _ in 0..threads {
             s.spawn(|| loop {
                 let i = next.fetch_add(1, Ordering::Relaxed);
                 let Some((key, job)) = jobs.get(i) else { break };
-                let (mid, side) = match job {
-                    Job::Notes { track, specs, secs } => {
-                        let r = sound::render_track(track.instrument.as_ref(), specs, *secs, out_sr as f32, spb as f32);
-                        (r.mid.into(), r.side.map(Into::into))
-                    }
-                    Job::Audio { samples, sample_rate, time_ratio, pitch } => (render_audio(samples, *sample_rate, *time_ratio, *pitch, out_sr), None),
-                };
+                let data = render_audio(&job.samples, job.sample_rate, job.time_ratio, job.pitch, out_sr);
                 if let Ok(mut d) = done.lock() {
-                    d.push((key.clone(), mid, side));
+                    d.push((key.clone(), data));
                 }
             });
         }
     });
-    for (key, mid, side) in done.into_inner().unwrap_or_default() {
-        if let Some(sd) = side {
-            pool.renders.insert(format!("{key}|seite"), sd);
-        }
-        pool.renders.insert(key, mid);
+    for (key, data) in done.into_inner().unwrap_or_default() {
+        pool.renders.insert(key, data);
     }
+}
+
+/// The mixer counts as overloaded from this share of its budget on …
+const LOAD_HIGH: f32 = 0.8;
+/// … and as relieved below this one.
+const LOAD_CALM: f32 = 0.6;
+/// This long overloaded (ms) before the next clip is pre-rendered.
+const LOAD_HOLD_MS: u64 = 300;
+/// Rendering per tick (ms), so commands and status keep flowing.
+const PRERENDER_SLICE_MS: f64 = 6.0;
+/// Clips sounding within this many seconds from the playback position are candidates.
+const PRERENDER_AHEAD_SECS: f64 = 10.0;
+
+/// Pre-rendering when the live mixer can't keep up (see `AppState::tick`).
+#[derive(Default)]
+struct Prerender {
+    /// The clip being rendered: key (with the tempo) and renderer.
+    job: Option<(String, StepRender)>,
+    /// Since when (ms) the mixer has needed more than `LOAD_HIGH` of its budget.
+    over_since: Option<u64>,
 }
 
 /// For the export (see `AppState::export_source`).
@@ -1200,7 +1387,7 @@ pub struct ExportSource {
 }
 
 impl ExportSource {
-    /// Arrangement of a (partial) project; what was rendered stays around for further calls.
+    /// Arrangement of a (partial) project; what is rendered stays for further calls.
     pub fn arrangement(&mut self, project: &Project, out_sr: u32) -> Arrangement {
         arrange(project, &mut self.pool, out_sr).0
     }
@@ -1209,6 +1396,8 @@ impl ExportSource {
 fn build_arrangement(project: &Project, pool: &mut AssetPool, out_sr: u32) -> Arrangement {
     let (arrangement, used) = arrange(project, pool, out_sr);
     pool.renders.retain(|k, _| used.contains(k));
+    pool.live.retain(|k, _| used.contains(k));
+    pool.prerendered.retain(|k, _| used.contains(k));
     arrangement
 }
 
@@ -1220,6 +1409,7 @@ fn arrange(project: &Project, pool: &mut AssetPool, out_sr: u32) -> (Arrangement
     let any_solo = project.tracks.iter().any(|t| t.solo);
     let mut used = HashSet::new();
     let mut clips = Vec::new();
+    let mut notes = Vec::new();
 
     for track in &project.tracks {
         if track.mute || (any_solo && !track.solo) {
@@ -1234,15 +1424,14 @@ fn arrange(project: &Project, pool: &mut AssetPool, out_sr: u32) -> (Arrangement
 
         let send = if track.instrument.is_some() { sound::reverb_send(track.instrument.as_ref()) } else { 0.0 };
         for clip in &track.clips {
-            let send = if matches!(clip.source, ClipSource::Audio { .. }) { 0.0 } else { send };
-            let (data, side): (Arc<[f32]>, Option<Arc<[f32]>>) = match &clip.source {
+            match &clip.source {
                 ClipSource::Audio { asset_id, source_bpm, warp, .. } => {
                     let Some(asset) = pool.assets.get(asset_id) else { continue };
                     let time_ratio = if *warp { source_bpm / bpm } else { 1.0 };
                     let pitch = track.pitch_semitones as f64;
                     let key = audio_key(asset_id, time_ratio, pitch, out_sr);
                     used.insert(key.clone());
-                    let rendered = match pool.renders.get(&key) {
+                    let data = match pool.renders.get(&key) {
                         Some(d) => d.clone(),
                         None => {
                             let rendered = render_audio(&asset.samples, asset.sample_rate, time_ratio, pitch, out_sr);
@@ -1250,41 +1439,39 @@ fn arrange(project: &Project, pool: &mut AssetPool, out_sr: u32) -> (Arrangement
                             rendered
                         }
                     };
-                    (rendered, None)
+                    clips.push(PlacedClip {
+                        start_frame: (clip.start_beats * spb * out_sr as f64).round().max(0.0) as u64,
+                        data,
+                        side: None,
+                        gain_l,
+                        gain_r,
+                        send: 0.0,
+                    });
                 }
-                ClipSource::Notes { length_beats, notes } => {
-                    let inst = track.instrument.as_ref();
-                    let key = notes_key(track, notes, *length_beats, bpm, out_sr);
-                    let side_key = format!("{key}|seite");
+                ClipSource::Notes { length_beats, notes: list } => {
+                    let key = notes_key(track, list, *length_beats, out_sr);
                     used.insert(key.clone());
-                    used.insert(side_key.clone());
-                    match pool.renders.get(&key) {
-                        Some(d) => (d.clone(), pool.renders.get(&side_key).cloned()),
-                        None => {
-                            let specs = notes_specs(track, notes, *length_beats, spb);
-                            let r = sound::render_track(inst, &specs, (length_beats * spb) as f32, out_sr as f32, spb as f32);
-                            let rendered: Arc<[f32]> = r.mid.into();
-                            let side: Option<Arc<[f32]>> = r.side.map(Into::into);
-                            pool.renders.insert(key, rendered.clone());
-                            if let Some(sd) = &side {
-                                pool.renders.insert(side_key, sd.clone());
-                            }
-                            (rendered, side)
-                        }
+                    // rendered because the live mixer couldn't keep up: plays like an audio clip
+                    let pre = prerendered_key(&key, bpm);
+                    if let Some((data, side)) = pool.prerendered.get(&pre) {
+                        clips.push(PlacedClip {
+                            start_frame: (clip.start_beats * spb * out_sr as f64).round().max(0.0) as u64,
+                            data: data.clone(),
+                            side: side.clone(),
+                            gain_l,
+                            gain_r,
+                            send,
+                        });
+                        used.insert(pre);
+                        continue;
                     }
+                    let prepared = pool.live.entry(key).or_insert_with(|| Arc::new(live_notes(track, list, *length_beats, out_sr))).clone();
+                    notes.push(NoteClip { track: track.id.0, start_beats: clip.start_beats, notes: prepared, gain_l, gain_r, send });
                 }
-            };
-            clips.push(PlacedClip {
-                start_frame: (clip.start_beats * spb * out_sr as f64).round().max(0.0) as u64,
-                data,
-                side,
-                gain_l,
-                gain_r,
-                send,
-            });
+            }
         }
     }
-    (Arrangement { clips }, used)
+    (Arrangement { clips, notes }, used)
 }
 
 
@@ -1425,6 +1612,96 @@ mod tempo_tests {
             let render_ms = t.elapsed().as_secs_f64() * 1e3;
             let (hard, faded) = worst_excess(&mut p, &mut pool, from, to, 32);
             println!("{from} → {to} BPM: größter Überschuss hart {hard:.4}, übergeblendet {faded:.4} (Neu-Rendern {render_ms:.0} ms)");
+        }
+    }
+
+    /// Measurement (output only): how many tracks play live at the same time?
+    /// The trance song stacked 1, 2, 4 times (5 tracks each), its first
+    /// 90 seconds; per block the shortest of three runs.
+    /// `cargo test --release -p klang-app -- --ignored --nocapture live_spuren`
+    #[test]
+    #[ignore = "Messung"]
+    fn live_spuren_messen() {
+        let plan = crate::song::templates().into_iter().next().expect("template");
+        let budget = BLOCK as f64 / SR as f64;
+        for stacks in [1usize, 2, 4] {
+            let st = AppState::without_audio();
+            for _ in 0..stacks {
+                st.song_write(&plan, false, "").expect("song");
+            }
+            let project = lock(&st.session).unwrap().project.clone();
+            let arr = Arc::new(build_arrangement(&project, &mut AssetPool::default(), SR));
+            let frames = 90 * SR as usize;
+            let mut out = vec![0f32; BLOCK * 2];
+            let mut blocks = vec![f64::MAX; frames / BLOCK];
+            for _ in 0..3 {
+                let mut m = mixer(&arr, project.tempo_bpm, 0);
+                for b in blocks.iter_mut() {
+                    let t = std::time::Instant::now();
+                    m.process(&mut out);
+                    *b = b.min(t.elapsed().as_secs_f64());
+                }
+            }
+            let avg = blocks.iter().sum::<f64>() / blocks.len() as f64 / budget;
+            let mut sorted = blocks.clone();
+            sorted.sort_by(f64::total_cmp);
+            let q = |p: f64| 100.0 * sorted[((sorted.len() - 1) as f64 * p) as usize] / budget;
+            let tracks = project.tracks.len();
+            println!(
+                "{tracks} tracks: average {:.1} % of the budget (per track {:.2} %), 99 % of the blocks under {:.0} %, 99.9 % under {:.0} %, longest {:.0} %",
+                100.0 * avg,
+                100.0 * avg / tracks as f64,
+                q(0.99),
+                q(0.999),
+                q(1.0)
+            );
+        }
+    }
+
+    /// Measurement (output only): generated songs played live – how long does
+    /// generating take, and how much of the real-time budget does the mixer
+    /// need (blocks of 128 frames as in the AudioWorklet)?
+    /// `cargo test --release -p klang-app -- --ignored --nocapture live_song`
+    #[test]
+    #[ignore = "Messung"]
+    fn live_song_messen() {
+        let ms = |t: std::time::Instant| t.elapsed().as_secs_f64() * 1e3;
+        for plan in crate::song::templates() {
+            let st = AppState::without_audio();
+            let t = std::time::Instant::now();
+            let written = st.song_write(&plan, true, "").expect("song");
+            let write_ms = ms(t);
+            let project = lock(&st.session).unwrap().project.clone();
+            let mut pool = AssetPool::default();
+            let t = std::time::Instant::now();
+            let arr = Arc::new(build_arrangement(&project, &mut pool, SR));
+            let build_ms = ms(t);
+            let frames = (written.seconds * SR as f64) as usize;
+            let mut out = vec![0f32; BLOCK * 2];
+            // three times through: per block the shortest time – what the
+            // mixer needs, without the moments the system took the core away
+            let mut blocks: Vec<(f64, usize)> = (0..frames.div_ceil(BLOCK)).map(|k| (f64::MAX, k * BLOCK)).collect();
+            for _ in 0..3 {
+                let mut m = mixer(&arr, project.tempo_bpm, 0);
+                for b in blocks.iter_mut() {
+                    let t = std::time::Instant::now();
+                    m.process(&mut out);
+                    b.0 = b.0.min(t.elapsed().as_secs_f64());
+                }
+            }
+            let total: f64 = blocks.iter().map(|b| b.0).sum();
+            blocks.sort_by(|a, b| b.0.total_cmp(&a.0));
+            let budget = BLOCK as f64 / SR as f64;
+            let worst: Vec<String> = blocks.iter().take(4).map(|(e, at)| format!("{:.0} % at {:.2} s", 100.0 * e / budget, *at as f64 / SR as f64)).collect();
+            println!(
+                "{}: {} tracks, {} clips, {:.0} s – generating {write_ms:.0} ms (arrangement {build_ms:.1} ms), live mixing {:.1} % of the real-time budget, longest blocks {}",
+                plan.name,
+                project.tracks.len(),
+                arr.notes.len() + arr.clips.len(),
+                written.seconds,
+                100.0 * total / (frames as f64 / SR as f64),
+                worst.join(", ")
+            );
         }
     }
 

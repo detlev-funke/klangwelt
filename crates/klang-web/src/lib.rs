@@ -328,18 +328,23 @@ pub extern "C" fn kw_status() {
     }
 }
 
-/// What the desktop's engine thread does on the side (refilling streamed preview).
+/// What the desktop's engine thread does on the side (refilling streamed
+/// preview), and the core's work on the side (pre-rendering when the live
+/// mixer can't keep up).
 #[no_mangle]
 pub extern "C" fn kw_tick() {
-    if let Some(e) = STATE.get().and_then(|st| st.engine().ok()) {
-        e.tick();
+    if let Some(st) = STATE.get() {
+        if let Ok(e) = st.engine() {
+            e.tick();
+        }
+        st.tick();
     }
 }
 
 /// Status from the worklet.
 #[no_mangle]
-pub extern "C" fn kw_engine_report(playing: u32, previewing: u32, position_frames: f64, peak_out: f32, peak_in: f32) {
-    klang_engine::web::report(playing != 0, previewing != 0, position_frames.max(0.0) as u64, peak_out, peak_in);
+pub extern "C" fn kw_engine_report(playing: u32, previewing: u32, position_frames: f64, peak_out: f32, peak_in: f32, load: f32) {
+    klang_engine::web::report(playing != 0, previewing != 0, position_frames.max(0.0) as u64, peak_out, peak_in, load);
 }
 
 /// Microphone samples of the running recording (mono, output rate) – `len` f32

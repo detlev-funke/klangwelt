@@ -168,16 +168,15 @@ at build time, not only in the browser. Emscripten is not needed.
 | MCP server over HTTP | A web page can't open a port. | The same tools in the page and via a stdio bridge (see below). |
 | Downloading library packs and managing several libraries (the desktop's catalog) | The desktop downloads sources and indexes them on disk; some of them have non-commercial licenses (KernScores, DCML) and must not be hosted. | The browser reads the prebuilt package by range and adds own files ([LIBRARY.md](LIBRARY.md)). |
 | "Show in folder" | A web page can't see folders. | "Download again". |
-| Multiple cores for rendering | Threads would need SharedArrayBuffer (COOP/COEP) and a custom-built standard library (nightly). | Rendering happens sequentially – long songs take somewhat longer. |
+| Multiple cores for rendering | Threads would need SharedArrayBuffer (COOP/COEP) and a custom-built standard library (nightly). | Note clips are played live, nothing waits for them; only stretching audio clips and the export run on one core. |
 | Choosing a project folder | Projects live in the browser's storage, separate per address. Clearing the website's data deletes them. | Download/upload; later the File System Access API. |
 | Double-clicking a `.klangwelt` file, command line | Not available for web pages. | Drag & drop, upload. |
 
 Limits worth knowing:
 
-* **Memory:** Rendered sounds are held in memory twice – in the core
-  (worker) and in the mixer (worklet); without SharedArrayBuffer the two
-  can't share memory. With very long songs with many tracks this adds up
-  (WebAssembly: at most 4 GB per instance).
+* **Memory:** Audio clips (recordings, imports) are held in memory twice –
+  in the core (worker) and in the mixer (worklet); without SharedArrayBuffer the two
+  can't share memory. Note clips are only notes – they cost next to nothing.
 * **Latency:** AudioWorklet processes in blocks of 128 frames; on top of that
   comes the browser's output latency. That's enough for playback and preview,
   but hardly for monitoring while recording.
@@ -289,52 +288,59 @@ is the same code.
 |---|---|---|
 | 100× `get_state` | 110–160 ms (IPC) | 12–20 ms (`postMessage`) |
 | Load demo | 0.4–0.6 s | 0.6 s |
-| Generate song (trance, 3½ min, 26 clips) | 1.5–1.9 s | 5.9–6.2 s |
-| WAV export of this song | 2.6–3.3 s | 7.0 s |
+| Generate song (trance, 3½ min, 26 clips) | under 10 ms (core) | 55–125 ms |
+| Tempo change while this song plays | – | 12–96 ms |
 
-Small commands are faster in the browser (no IPC between processes); large
-computations are slower because the core renders on a single thread there.
+Small commands are faster in the browser (no IPC between processes).
+Generating and changing the tempo are fast on both, because note clips are
+not rendered but played live (before: 1.5–1.9 s on the desktop, 6–15 s in
+the browser, and the browser's display stood still meanwhile). The single
+thread only matters for stretching audio clips and for the export.
 
-### How many voices in real time?
+### How many tracks live at once?
 
-Klangwelt pre-renders notes; in real time the mixer only sums the finished
-clips (panning, stereo width, reverb send, limiter). Measured with
-simultaneously sounding stereo clips with reverb send, in blocks of 128
-frames at 48 kHz (budget 2.67 ms per block):
+Note clips are synthesized while playing: voices in the mixer, one sound
+shaping chain per track. Measured with the trance song stacked several times
+(5 tracks each, all notes at the same moments – the hardest case), blocks of
+128 frames at 48 kHz (budget 2.67 ms):
 
-| simultaneous clips | native | browser (WebAssembly) |
-|---|---|---|
-| 512 | 3.5% | 5.3% |
-| 1024 | 7% | 10% |
-| 4096 | 28% | 48% |
-| 8192 | 56% | 83% |
+| tracks | native: average | native: 99.9 % of the blocks under | browser (AudioWorklet): playback rate |
+|---|---|---|---|
+| 5 | 4 % | 8 % | 0.998 |
+| 10 | 8 % | 15 % | 0.997 |
+| 20 | 15 % | 30 % | 0.997 |
+| 40 | – | – | 0.998 |
+| 60 | – | – | 0.998 |
+| 80 | – | – | 0.994 |
 
-In the real AudioWorklet, 1024 simultaneous tracks play in time
-(playback rate 0.99–1.0). So for playback the browser is not a
-bottleneck – 500 voices need around 5% of the budget. To measure:
-`cargo test --release -p klang-engine -- --ignored --nocapture stimmen` and
-`node tests/perf/voices.mjs`.
+Per track that is about 0.8 % of the budget on average. In the browser
+60 such tracks keep time (playback rate 1.0 = the beat is held); at 80 the
+worklet starts to fall behind. Before that happens on a weaker machine, the
+core pre-renders the most expensive clips around the playback position in
+the background and plays them from buffers (see ARCHITECTURE.md, "Note clips
+are played live"); the worklet reports its load for that. The mixer has room for 128 tracks and 512
+voices at once. To measure: `cargo test --release -p klang-app --
+--ignored --nocapture live_spuren` and `node tests/perf/live.mjs`.
+
+Audio clips arrive as finished buffers and only need adding up: 512
+simultaneous clips take 3.5 % (native) or 5.3 % (WebAssembly) of the budget,
+1024 take 7 % or 10 % (`cargo test --release -p klang-engine -- --ignored
+--nocapture stimmen`, `node tests/perf/voices.mjs`).
 
 ### SharedArrayBuffer and threads – worth it?
 
-Not for playback (see above). It would help in two other places:
+Not for playback (see above), and no longer for editing: note clips are not
+rendered. It would help in two other places:
 
-* **Rendering while editing:** A whole song takes 6 s in the browser on one
-  thread, 1.5–1.9 s on the desktop with 8 threads. With WebAssembly threads
-  it would be about 3–4 times faster. Small changes (one clip, the demo) are
-  barely noticeable.
-* **Memory:** Rendered sounds are currently held in memory twice (worker and
-  worklet), for the song around 130–260 MB extra. With shared memory they
-  would exist only once, and worker and worklet could communicate via a
-  lock-free ring buffer as on the desktop.
-
-The copying itself is the smaller part: measured at around 0.4 GB/s on the
-path worker → worklet (in chunks, with `postMessage`), so for the song
-0.3–0.6 s out of 6 s.
+* **Export:** the desktop spreads the tracks over its cores; the browser
+  synthesizes them one after another.
+* **Memory:** Audio clips are held in memory twice (worker and worklet).
+  With shared memory they would exist only once, and worker and worklet
+  could communicate via a lock-free ring buffer as on the desktop.
 
 Cost: COOP/COEP must be set (the service worker can take care of that, so a
 simple server is still sufficient); for shared memory and threads, Rust needs
 either nightly with a rebuilt standard library or the target
 `wasm32-wasip1-threads` with a small thread layer in JavaScript.
-Recommendation: only once long songs become noticeably sluggish in the
-browser or memory gets tight.
+Recommendation: only once exports in the browser take too long or memory
+gets tight.

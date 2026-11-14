@@ -41,6 +41,15 @@ class KlangweltProcessor extends AudioWorkletProcessor {
   private recPos = 0;
   private peakIn = 0;
   private blocks = 0;
+  /** Milliseconds spent mixing since the last status. */
+  private busy = 0;
+  /** Wall clock and audio time (ms) of the current stretch of about a second. */
+  private since = Date.now();
+  private audioMs = 0;
+  /** Wall clock of the last status. */
+  private last = Date.now();
+  /** Share of the real-time budget, smoothed (the core pre-renders clips when it gets tight). */
+  private load = 0;
 
   constructor(options: { processorOptions: { wasm: ArrayBuffer } }) {
     super();
@@ -94,7 +103,10 @@ class KlangweltProcessor extends AudioWorkletProcessor {
     const left = out[0]!;
     const right = out[1] ?? left;
     const frames = left.length;
+    // Only Date.now (ms) exists here – summed over many blocks it is precise enough
+    const t0 = Date.now();
     const ptr = this.wasm.kwl_process(frames);
+    this.busy += Date.now() - t0;
     const mix = new Float32Array(this.wasm.memory.buffer, ptr, frames * 2);
     for (let i = 0; i < frames; i++) {
       left[i] = mix[2 * i]!;
@@ -117,10 +129,32 @@ class KlangweltProcessor extends AudioWorkletProcessor {
       }
     }
     if (++this.blocks >= STATUS_EVERY && this.worker) {
+      // load: time spent mixing per audio time, smoothed over about 0.3 s
+      const audioMs = (this.blocks * frames * 1000) / sampleRate;
+      this.load += (this.busy / audioMs - this.load) * 0.08;
+      this.busy = 0;
       this.blocks = 0;
+      // over about a second: if the blocks come later than the audio time they
+      // cover, the mixer can't keep up either (the browser calls it in bursts,
+      // so only a longer stretch tells)
+      const now = Date.now();
+      if (now - this.last > 250) {
+        // a pause (audio suspended, tab in the background): a new stretch begins
+        this.since = now;
+        this.audioMs = 0;
+      } else {
+        this.audioMs += audioMs;
+      }
+      this.last = now;
+      if (this.audioMs >= 1000) {
+        const late = (now - this.since) / this.audioMs;
+        if (late > 1.03) this.load = Math.max(this.load, late);
+        this.since = now;
+        this.audioMs = 0;
+      }
       const sp = this.wasm.kwl_status();
       const s = new Float64Array(this.wasm.memory.buffer, sp, 4);
-      this.worker.postMessage({ s: [s[0], s[1], s[2], s[3], this.peakIn] });
+      this.worker.postMessage({ s: [s[0], s[1], s[2], s[3], this.peakIn, this.load] });
       this.peakIn = 0;
     }
     return true;

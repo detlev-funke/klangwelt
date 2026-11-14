@@ -17,7 +17,7 @@
 
 use crate::wire::{self, Kind};
 use klang_i18n::tr;
-use crate::{update_peak, Arrangement, AudioDevices, EngineError, EngineInfo, EngineStatus, PlacedClip, PreviewSource, PreviewStream, Recording, RtMsg, Shared, STREAM_AHEAD_SECS};
+use crate::{update_peak, Arrangement, AudioDevices, EngineError, EngineInfo, EngineStatus, LiveNotes, PlacedClip, PreviewSource, PreviewStream, Recording, RtMsg, Shared, STREAM_AHEAD_SECS};
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -47,6 +47,7 @@ static SHARED: Shared = Shared {
     peak_in: AtomicU32::new(0),
     muted: AtomicBool::new(false),
     sample_rate: AtomicU32::new(0),
+    load: AtomicU32::new(0),
 };
 
 /// Microphone samples of the current recording.
@@ -62,8 +63,10 @@ fn port() -> Option<WebPort> {
 }
 
 /// Status from the worklet (like the atomics that the audio callback
-/// sets on the desktop). Peak levels accumulate until the next read.
-pub fn report(playing: bool, previewing: bool, position_frames: u64, peak_out: f32, peak_in: f32) {
+/// sets on the desktop). Peak levels accumulate until the next read; `load`
+/// = share of the real-time budget the worklet needs (measured there).
+pub fn report(playing: bool, previewing: bool, position_frames: u64, peak_out: f32, peak_in: f32, load: f32) {
+    SHARED.load.store(load.max(0.0).to_bits(), Ordering::Relaxed);
     SHARED.playing.store(playing, Ordering::Relaxed);
     SHARED.previewing.store(previewing, Ordering::Relaxed);
     SHARED.position.store(position_frames, Ordering::Relaxed);
@@ -87,11 +90,19 @@ struct Inner {
     /// Addresses of the buffers in the current arrangement and preview respectively.
     in_arrangement: HashSet<usize>,
     in_preview: HashSet<usize>,
+    /// Note clips the worklet has (address → id, clip) and the buffers they use (organ tables).
+    notes: HashMap<usize, (u32, Arc<LiveNotes>)>,
+    next_notes_id: u32,
+    in_notes: HashSet<usize>,
     stream: Option<PreviewStream>,
 }
 
 fn addr(b: &Arc<[f32]>) -> usize {
     Arc::as_ptr(b) as *const f32 as usize
+}
+
+fn notes_addr(n: &Arc<LiveNotes>) -> usize {
+    Arc::as_ptr(n) as usize
 }
 
 impl Inner {
@@ -121,9 +132,40 @@ impl Inner {
         used
     }
 
+    /// Id of a note clip; a new one goes to the worklet in the process (its
+    /// organ tables as buffers beforehand).
+    fn notes_id(&mut self, port: &WebPort, n: &Arc<LiveNotes>) -> u32 {
+        let a = notes_addr(n);
+        if let Some((id, _)) = self.notes.get(&a) {
+            return *id;
+        }
+        self.next_notes_id += 1;
+        let id = self.next_notes_id;
+        let mut tables = Vec::new();
+        let d = wire::encode_notes(id, n, |b| {
+            tables.push(addr(b));
+            self.id_for(port, b)
+        });
+        self.in_notes.extend(tables);
+        (port.post)(Kind::Notes, &d);
+        self.notes.insert(a, (id, n.clone()));
+        id
+    }
+
+    /// Release note clips the arrangement no longer uses.
+    fn collect_notes(&mut self, port: &WebPort, used: &HashSet<usize>) {
+        let gone: Vec<usize> = self.notes.keys().copied().filter(|a| !used.contains(a)).collect();
+        if gone.is_empty() {
+            return;
+        }
+        let ids: Vec<f64> = gone.iter().filter_map(|a| self.notes.remove(a)).map(|(id, _)| id as f64).collect();
+        (port.post)(Kind::FreeNotes, &ids);
+        self.in_notes = self.notes.values().flat_map(|(_, n)| n.tables().iter().flat_map(|t| [addr(&t.low), addr(&t.high)])).collect();
+    }
+
     /// Release buffers that neither the arrangement nor the preview needs.
     fn collect(&mut self, port: &WebPort) {
-        let keep = |a: &usize| self.in_arrangement.contains(a) || self.in_preview.contains(a);
+        let keep = |a: &usize| self.in_arrangement.contains(a) || self.in_preview.contains(a) || self.in_notes.contains(a);
         let gone: Vec<usize> = self.known.keys().copied().filter(|a| !keep(a)).collect();
         if gone.is_empty() {
             return;
@@ -235,7 +277,24 @@ impl Engine {
 
     fn send_arrangement(&self, arrangement: Arrangement, tempo: Option<(f64, u32)>) {
         let mut g = self.inner();
-        g.in_arrangement = g.send_clips(&self.port, Kind::Arrangement, &wire::arrangement_head(tempo), &arrangement);
+        let g = &mut *g;
+        // note clips first (they travel once), then the arrangement referring to them
+        let notes: Vec<u32> = arrangement.notes.iter().map(|n| g.notes_id(&self.port, &n.notes)).collect();
+        let mut ids = notes.into_iter();
+        let mut used = HashSet::new();
+        let d = wire::encode_arrangement(
+            &arrangement,
+            tempo,
+            |b| {
+                used.insert(addr(b));
+                g.id_for(&self.port, b)
+            },
+            |_| ids.next().unwrap_or(0),
+        );
+        (self.port.post)(Kind::Arrangement, &d);
+        g.in_arrangement = used;
+        let used_notes: HashSet<usize> = arrangement.notes.iter().map(|n| notes_addr(&n.notes)).collect();
+        g.collect_notes(&self.port, &used_notes);
         g.collect(&self.port);
     }
 
@@ -249,7 +308,7 @@ impl Engine {
     }
 
     pub fn preview_stereo(&self, data: Arc<[f32]>, side: Option<Arc<[f32]>>, gain: f32, send: f32) {
-        let arr = Arrangement { clips: vec![PlacedClip { start_frame: 0, data, side, gain_l: gain, gain_r: gain, send }] };
+        let arr = Arrangement { clips: vec![PlacedClip { start_frame: 0, data, side, gain_l: gain, gain_r: gain, send }], notes: Vec::new() };
         let mut g = self.inner();
         g.stream = None;
         g.in_preview = g.send_clips(&self.port, Kind::Preview, &[], &arr);
@@ -312,6 +371,12 @@ impl Engine {
     /// Reads the status; peak levels are reset in the process.
     pub fn status(&self) -> EngineStatus {
         SHARED.status(self.info.sample_rate)
+    }
+
+    /// The status without resetting the peak levels (for work on the side;
+    /// the levels belong to the UI).
+    pub fn peek_status(&self) -> EngineStatus {
+        SHARED.peek(self.info.sample_rate)
     }
 }
 

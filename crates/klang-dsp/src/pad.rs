@@ -172,7 +172,7 @@ pub fn curve_at(points: &[[f32; 2]], t: f32) -> f32 {
 
 /// Pulse factor (1 = full) at position `phase` (0…1) of a pulse period – with
 /// short ramps so it does not click.
-fn gate(phase: f32, depth: f32) -> f32 {
+pub(crate) fn gate(phase: f32, depth: f32) -> f32 {
     const E: f32 = 0.05;
     let off = if phase < 0.5 - E {
         0.0

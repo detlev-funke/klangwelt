@@ -1,13 +1,14 @@
 // How many clips (tracks, voices) does the browser version mix in real time?
 // Counterpart to `stimmen_in_echtzeit` in crates/klang-engine (native).
 //
-// Klangwelt pre-renders notes; in real time the mixer only adds up the
-// finished clips (with pan, stereo width, reverb amount, limiter).
+// Audio clips reach the mixer as finished buffers; it adds them up (with
+// pan, stereo width, reverb amount, limiter). Note clips are synthesized
+// live – how many of those tracks play at once: tests/perf/live.mjs.
 //
 // 1. Compute time: the same mixer as in the AudioWorklet (klang_worklet.wasm),
 //    measured here on a page thread – N simultaneous clips with a side
 //    signal and reverb amount, blocks of 128 frames, budget 2.67 ms.
-// 2. Test in the real AudioWorklet: play K tracks from the core and measure
+// 2. Test in the real AudioWorklet: play K tracks (live) from the core and measure
 //    the playback rate (1.0 = the beat is held); the browser only counts
 //    dropouts if it knows AudioContext.playoutStats.
 //
@@ -64,7 +65,7 @@ try {
   //    4-bar pattern; all created in one step), play and measure the
   //    playback rate.
   const stats = await app.eval(() => !!window.__klangweltAudio.ctx && "playoutStats" in window.__klangweltAudio.ctx);
-  for (const k of [16, 64, 256, 1024]) {
+  for (const k of [8, 16, 32, 64]) {
     const r = await app.eval(async (k) => {
       const call = (cmd, args) => T.web.call(cmd, args);
       await call("project_new");

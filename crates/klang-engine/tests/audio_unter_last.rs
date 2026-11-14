@@ -58,7 +58,7 @@ fn audio_unter_last() {
     engine.set_muted(true);
     let sr = engine.info().sample_rate;
     let data: Arc<[f32]> = vec![0.1f32; sr as usize * 120].into();
-    engine.set_arrangement(Arrangement { clips: vec![PlacedClip { start_frame: 0, data, side: None, gain_l: 1.0, gain_r: 1.0, send: 0.3 }] });
+    engine.set_arrangement(Arrangement { notes: Vec::new(), clips: vec![PlacedClip { start_frame: 0, data, side: None, gain_l: 1.0, gain_r: 1.0, send: 0.3 }] });
     engine.play();
     let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
     println!("{} ({} Hz), {cores} Kerne", engine.info().output_device, sr);

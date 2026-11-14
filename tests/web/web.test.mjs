@@ -162,6 +162,69 @@ test("changing the tempo during playback: worklet keeps playing, beat position s
   await app.eval(() => T.st.act(T.backend.createDemo()));
 });
 
+test("Generated song is played live: generating and tempo changes during playback answer at once, playback keeps time", async () => {
+  await reset();
+  const made = await app.eval(async () => {
+    const t0 = performance.now();
+    const plans = await T.backend.songTemplates();
+    await T.backend.songWrite(plans[0], true);
+    await T.st.act(T.backend.getState());
+    return { ms: performance.now() - t0, tracks: T.st.snapshot.peek().project.tracks.length };
+  });
+  assert.ok(made.tracks >= 5, `song tracks: ${made.tracks}`);
+  // before, every note was rendered first (around 9 s in the browser)
+  assert.ok(made.ms < 2000, `song generated in ${Math.round(made.ms)} ms`);
+  await app.eval(() => T.backend.transport("play"));
+  await app.waitFor(() => T.st.status.peek().playing, { what: "playing" });
+  // status gaps in the page: the core in the worker never blocks for long
+  await app.eval(() => {
+    const r = (window.__gaps = { last: performance.now(), pos: -1, max: 0, stop: false });
+    const tick = () => {
+      const p = T.st.status.peek().positionSecs;
+      const now = performance.now();
+      if (p !== r.pos) {
+        r.max = Math.max(r.max, now - r.last);
+        r.last = now;
+        r.pos = p;
+      }
+      if (!r.stop) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  await sleep(500);
+  let bpm = (await snap()).project.tempoBpm;
+  for (const next of [100, 150, 90]) {
+    const t0 = Date.now();
+    await app.eval((v) => {
+      const i = T.$("kw-transport input.num");
+      i.value = String(v);
+      i.dispatchEvent(new Event("change"));
+    }, next);
+    await app.waitFor((v) => T.st.snapshot.peek().project.tempoBpm === v, { what: `tempo ${next}` }, next);
+    const took = Date.now() - t0;
+    assert.ok(took < 1000, `${bpm} → ${next} BPM in ${took} ms`);
+    // the worklet keeps time: the beat position advances with the clock at the new tempo
+    const beat = () => app.eval(() => ({ b: (T.st.status.peek().positionSecs * T.st.snapshot.peek().project.tempoBpm) / 60, t: performance.now() }));
+    await sleep(200);
+    const a = await beat();
+    await sleep(800);
+    const b = await beat();
+    const rate = ((b.b - a.b) * 60) / next / ((b.t - a.t) / 1000);
+    assert.ok(rate > 0.85 && rate < 1.15, `${next} BPM: playback rate ${rate.toFixed(3)}`);
+    const peak = await app.eval(() => {
+      const buf = new Float32Array(window.__analyser.fftSize);
+      window.__analyser.getFloatTimeDomainData(buf);
+      return Math.max(T.st.status.peek().peakOut, buf.reduce((m, v) => Math.max(m, Math.abs(v)), 0));
+    });
+    assert.ok(peak > 0.005, `sounds at ${next} BPM: ${peak}`);
+    bpm = next;
+  }
+  const gap = await app.eval(() => ((window.__gaps.stop = true), window.__gaps.max));
+  assert.ok(gap < 500, `longest status gap ${Math.round(gap)} ms`);
+  await reset();
+  await app.eval(() => T.st.act(T.backend.createDemo()));
+});
+
 test("editing and undo: change tempo, Ctrl+Z, Ctrl+Y", async () => {
   const before = (await snap()).project.tempoBpm;
   await app.eval(() => T.st.run({ type: "setProject", patch: { tempoBpm: 133 } }));

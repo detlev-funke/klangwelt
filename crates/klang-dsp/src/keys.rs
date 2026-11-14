@@ -43,10 +43,10 @@ impl Default for OrganParams {
     }
 }
 
-const TABLE: usize = 2048;
+pub(crate) const TABLE: usize = 2048;
 
 /// Partials (ratio to the fundamental, strength) of the drawn stops.
-fn organ_partials(p: &OrganParams) -> Vec<(f32, f32)> {
+pub(crate) fn organ_partials(p: &OrganParams) -> Vec<(f32, f32)> {
     let mut v = Vec::new();
     let mut add = |ratio: f32, amp: f32| {
         if amp > 1e-4 {
@@ -70,7 +70,7 @@ fn organ_partials(p: &OrganParams) -> Vec<(f32, f32)> {
 }
 
 /// Wavetable (unnormalized) from the partials for which `take` holds.
-fn organ_table(partials: &[(f32, f32)], freq: f32, sr: f32, take: impl Fn(f32) -> bool) -> Vec<f32> {
+pub(crate) fn organ_table(partials: &[(f32, f32)], freq: f32, sr: f32, take: impl Fn(f32) -> bool) -> Vec<f32> {
     let mut t = vec![0f32; TABLE + 1];
     for (j, &(ratio, amp)) in partials.iter().enumerate() {
         // partials above 0.45·sr are dropped (no aliasing)

@@ -22,8 +22,8 @@ release), which includes this repo as the Git submodule `klangwelt/`. Paths such
 └─────────────┬───────────────────┘   └──────────────────┬───────────────────────┘
 ┌ crates/klang-app  shared core ─────────────────────────▼───────────────────────┐
 │  commands.rs: the one command table (name + JSON) · agent.rs: MCP tools        │
-│  AppState: Session (project+undo) · AssetPool (audio, render cache) · Engine   │
-│  sync_engine(): project → rendered arrangement → Engine                        │
+│  AppState: Session (project+undo) · AssetPool (audio, caches) · Engine         │
+│  sync_engine(): project → arrangement (audio + live notes) → Engine            │
 │  Harmony · Fugue · Rhythm · Song · Sound · Analysis · Export · Projects        │
 │  host.rs (platform) · vfs.rs (files) · clock.rs (clock)                        │
 └────────────────────────────────────────────────────────────────────────────────┘
@@ -51,15 +51,17 @@ command belongs in `crates/klang-app/src/commands.rs`, a new agent tool in
   the inverse command. Control gestures merge into a single step (`merge`).
 * **Real-time rules:** Nothing is allocated, locked or freed in the audio
   callback. New arrangements arrive via a lock-free ring buffer; old ones go
-  back via a second ring buffer to be freed.
+  back via a second ring buffer to be freed – so do the clips of finished
+  live voices (`Garbage`). Voice slots, string delay lines and sound shaping
+  chains are allocated when the mixer is created.
   * On Windows the engine sets the audio thread to
     `THREAD_PRIORITY_TIME_CRITICAL` itself (cpal 0.15 tries to, but passes a
     thread ID instead of a handle). Without this, up to 170 ms of audio per 3 s
     went missing under full load (pre-rendering on all cores); measurement:
     `cargo test --release -p klang-engine --test audio_unter_last -- --ignored --nocapture`.
-* **Jumps without clicks:** Every change during playback sends a newly
-  rendered arrangement (on a tempo change, all clips are re-stretched or
-  re-rendered). The renderer does not switch hard but crossfades linearly
+* **Jumps without clicks:** Every change during playback sends a new
+  arrangement (note clips are played live – see below –, on a tempo change
+  only audio clips are re-stretched). The renderer does not switch hard but crossfades linearly
   over 15 ms (`FADE_SECS`): the old state keeps sounding at its position and
   fades out, the new one fades in. Identical content stays unchanged
   (sum 1), different content does not jump.
@@ -74,7 +76,9 @@ command belongs in `crates/klang-app/src/commands.rs`, a new agent tool in
     with hard switching the signal jumped by up to 0.84 per tempo step;
     with crossfading, every sample step stays within 0.002 of what the old
     or new signal does anyway.
-  * The tempo field does not queue up steps: while a re-render is running,
+  * Live voices belong to the state they were started in and fade out
+    with it; the new state picks up the notes sounding at its position.
+  * The tempo field does not queue up steps: while a step is running,
     only the newest value is remembered and sent afterwards.
 * **Looping:** The engine keeps the loop in beats (`RtMsg::Loop`), so that it
   survives tempo changes.
@@ -90,7 +94,7 @@ command belongs in `crates/klang-app/src/commands.rs`, a new agent tool in
   button into a stop button, which switches back afterwards.
 * **Expensive processing offline:** Tempo adjustment (WSOLA) and pitch are
   precomputed and cached when they change, not in the audio thread.
-  * Whatever is missing after a change (note clips, stretched audio clips) is
+  * Whatever is missing after a change (stretched audio clips) is
     rendered in parallel by `prerender` on the desktop; large resampling jobs
     are split across several cores by `stretch::resample` itself (same result
     as in one piece). In the browser both run sequentially.
@@ -100,6 +104,49 @@ command belongs in `crates/klang-app/src/commands.rs`, a new agent tool in
     melody) took 335 ms at 44.1 kHz output, now about 40 ms; at
     48 kHz 65 ms, now 23 ms. Measurement:
     `cargo test --release -p klang-app -- --ignored --nocapture tempo_schritt`.
+* **Note clips are played live** (`klang_dsp::live`, `klang_engine::live`):
+  nothing is rendered beforehand – generating a song, a tempo change or an
+  edit take effect immediately, also in the browser.
+  * The core prepares each note clip once (`LiveNotes`: notes in beats,
+    instrument as `Patch`, sound shaping as `Shaping`, what a note needs
+    from its neighbours – bass glide, choked hi-hat –, the organ's
+    wavetables). The preparation holds for every tempo and is cached per
+    clip (`AssetPool::live`); `NoteClip` places it on a track.
+  * The mixer starts a `Voice` per note in the block where it begins
+    (positions in beats at the current tempo). Voices write into their
+    track's running sound shaping chain (`FxChain`: warmth → shimmer →
+    roughness → color → distance → width), which feeds the mix and the reverb.
+    512 voices (96 of them with plucked strings), 128 chains; when they run
+    out, the voice sounding longest makes room.
+  * A track that pauses stops its chain; when it continues, the chain catches
+    up on the pause (delay lines empty, modulation on).
+  * Starting or jumping into the middle of notes picks them up
+    (`Live::chase`): envelopes continue at their place, plucked strings lose
+    the energy they would have lost meanwhile; picked-up voices fade in over
+    4 ms. Stop, end of the piece and a loop jump let the voices fade out over 15 ms.
+  * The voices are the instruments' offline functions sample for sample
+    (tests compare them: difference below 10⁻⁶, the chain below 10⁻⁴);
+    previews, the wave view and the export (`render_offline` runs the same
+    `Renderer`) use them too.
+  * In the browser a note clip travels once to the AudioWorklet
+    (`wire::Kind::Notes`, organ tables as buffers); arrangements refer to
+    it by its ID.
+  * **When live playback can't keep up, clips are pre-rendered.** The mixer
+    reports the share of its real-time budget it needs (`EngineStatus::load`;
+    desktop: time of the audio callback, browser: the worklet measures its
+    processing time with `Date.now` and whether its blocks come late over a
+    second). Above 80 % for 300 ms while playing, `AppState::tick` (called by
+    the shells every 20–33 ms) picks the most expensive note clip that sounds
+    within the next 10 s and renders it step by step (`StepRender`: the same
+    voices, 6 ms per tick, so commands and status keep flowing). Then it plays
+    from its buffer like an audio clip (`AssetPool::prerendered`, keyed with
+    the tempo). Below 60 % no further clip is taken. A new tempo or an edit of
+    the clip plays it live again. The status shows `load` and `prerendered`;
+    the command `simulate_load` lets tests trigger it.
+  * Measured with the five song templates (`live_song_messen` in
+    `state.rs`): generating takes 2–8 ms (before: 1.5–1.9 s on 8 cores);
+    live mixing needs 2–5 % of the real-time budget, the longest
+    block 18 % (native, blocks of 128 frames).
 * **No third-party DSP libraries:** FFT, YIN, onset detection,
   time stretching, resampling and synthesis are written in-house and tested.
 
@@ -251,8 +298,8 @@ taken into account.
   range and a *fork* of the AssetPool (sounds shared, separate
   render cache) – the export evicts nothing that playback currently
   needs. `klang_engine::render_offline` runs the same `Renderer` as
-  the real-time engine block by block (mixing, reverb, soft limiter) –
-  so offline it sounds exactly like during playback. Always 48 kHz.
+  the real-time engine block by block (live voices, mixing, reverb, soft
+  limiter) – so offline it sounds exactly like during playback. Always 48 kHz.
 * **Length:** the selected range exactly; otherwise up to the last clip, plus
   the tail until it drops below −80 dB (at most one bar + 6 s).
 * **WAV:** 44-byte header, 24 bit or 16 bit with triangular dither.
@@ -865,7 +912,7 @@ default layout.
   undo step). Every change reports `sounds-changed`, so that the
   UI also shows changes made by the agent; the UI itself determines which
   sound is "on" by comparison (all controls, plus the curves for the synth).
-* **Sound shaping after generation** (`sound::render_track`, `klang_dsp::fx`):
+* **Sound shaping after generation** (`sound::shaping_of`, `klang_dsp::live::FxChain`; offline `klang_dsp::fx`):
   warmth → beating → roughness → color → distance → width. Width is a
   side signal (delayed copy without lows); `PlacedClip` carries mid and
   optionally side (left = M + S, right = M − S); in mono the side is dropped.
@@ -909,9 +956,8 @@ default layout.
   transitions ends in a snare roll. `AppState::song_write` writes everything in
   one batch and remembers the generated tracks (`song_tracks`, cleared on
   open/new), so that regenerating replaces them.
-* **Parallel rendering:** `build_arrangement` pre-renders all note clips
-  not yet cached on several cores (`prerender_notes`,
-  long clips first) – a generated song thus takes ~1–2 s instead of ~5 s.
+* **No rendering:** `build_arrangement` only prepares the note clips for the
+  live mixer (cached per clip) – a generated song is there in a few milliseconds.
 * **Rhythm** (`crates/klang-app/src/rhythm.rs`, `ui/src/components/rhythm.ts`): 33
   genre patterns (steps 1–16 per drum, after "Pocket Operations") and the
   step grid as a view onto a drum clip. `grid_notes` turns

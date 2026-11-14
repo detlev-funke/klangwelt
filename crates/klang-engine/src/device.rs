@@ -11,6 +11,7 @@
 use crate::{update_peak, Arrangement, AudioDevices, EngineError, EngineInfo, EngineStatus, OutSample, PlacedClip, PreviewSource, PreviewStream, Recording, Renderer, RtMsg, Shared, STREAM_AHEAD_SECS};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, SizedSample};
+use klang_i18n::tr;
 use rtrb::{Consumer, Producer, RingBuffer};
 use std::sync::atomic::Ordering;
 use std::sync::{mpsc, Arc, Mutex};
@@ -41,7 +42,7 @@ pub struct Engine {
 }
 
 fn no_answer() -> EngineError {
-    EngineError("Keine Antwort vom Audio-Thread".into())
+    EngineError(tr!("No response from the audio thread"))
 }
 
 impl Engine {
@@ -62,7 +63,7 @@ impl Engine {
                 let _ = thread.join();
                 Err(e)
             }
-            Err(_) => Err(EngineError("Audio-Thread wurde unerwartet beendet".into())),
+            Err(_) => Err(EngineError(tr!("Audio thread ended unexpectedly"))),
         }
     }
 
@@ -242,9 +243,9 @@ fn list_devices(host: &cpal::Host) -> AudioDevices {
 /// der Stream läuft noch nicht.
 fn open_output(host: &cpal::Host, choice: Option<&str>, shared: &Arc<Shared>) -> Result<Output, EngineError> {
     let device = match choice {
-        None => host.default_output_device().ok_or_else(|| EngineError("Kein Audio-Ausgabegerät gefunden".into()))?,
+        None => host.default_output_device().ok_or_else(|| EngineError(tr!("No audio output device found")))?,
         Some(n) => find_device(host.output_devices(), n)
-            .ok_or_else(|| EngineError(format!("Ausgabegerät „{n}“ nicht gefunden – ist es angeschlossen?")))?,
+            .ok_or_else(|| EngineError(tr!("Output device \"{name}\" not found – is it connected?", name = n)))?,
     };
     let name = device.name().unwrap_or_else(|_| "Unbekanntes Gerät".into());
     let supported = device.default_output_config().map_err(err)?;
@@ -258,7 +259,7 @@ fn open_output(host: &cpal::Host, choice: Option<&str>, shared: &Arc<Shared>) ->
         cpal::SampleFormat::I16 => build_output::<i16>(&device, &config, renderer),
         cpal::SampleFormat::U16 => build_output::<u16>(&device, &config, renderer),
         cpal::SampleFormat::I32 => build_output::<i32>(&device, &config, renderer),
-        other => Err(EngineError(format!("Nicht unterstütztes Sampleformat: {other:?}"))),
+        other => Err(EngineError(tr!("Unsupported sample format: {format}", format = format!("{other:?}")))),
     }?;
     Ok(Output { stream, rt_tx, garbage_rx, name, sample_rate: config.sample_rate.0, channels: config.channels })
 }
@@ -376,7 +377,7 @@ fn engine_thread(rx: mpsc::Receiver<Control>, shared: Arc<Shared>, info: Arc<Mut
     let clock = Instant::now();
     let mut input: Option<InputCapture> = None;
     let mut stream_preview: Option<PreviewStream> = None;
-    let busy = || EngineError("Während einer Aufnahme lässt sich das Gerät nicht wechseln.".into());
+    let busy = || EngineError(tr!("The device can't be changed during a recording."));
     loop {
         let sr = out.sample_rate as f64;
         let ahead = (STREAM_AHEAD_SECS * sr) as u64;
@@ -430,7 +431,7 @@ fn engine_thread(rx: mpsc::Receiver<Control>, shared: Arc<Shared>, info: Arc<Mut
                 let res = match &choice {
                     _ if input.is_some() => Err(busy()),
                     Some(n) if find_device(host.input_devices(), n).is_none() => {
-                        Err(EngineError(format!("Aufnahmegerät „{n}“ nicht gefunden – ist es angeschlossen?")))
+                        Err(EngineError(tr!("Input device \"{name}\" not found – is it connected?", name = n)))
                     }
                     _ => {
                         input_choice = choice;
@@ -458,7 +459,7 @@ fn engine_thread(rx: mpsc::Receiver<Control>, shared: Arc<Shared>, info: Arc<Mut
                 shared.recording.store(false, Ordering::Relaxed);
                 let res = match input.take() {
                     Some(cap) => Ok(cap.finish()),
-                    None => Err(EngineError("Es läuft keine Aufnahme".into())),
+                    None => Err(EngineError(tr!("No recording is running"))),
                 };
                 let _ = reply.send(res);
             }
@@ -543,9 +544,9 @@ impl InputCapture {
     /// Nimmt vom gewählten Gerät auf (`None` = Systemstandard).
     fn start(host: &cpal::Host, choice: Option<&str>, shared: Arc<Shared>) -> Result<Self, EngineError> {
         let device = match choice {
-            None => host.default_input_device().ok_or_else(|| EngineError("Kein Mikrofon gefunden".into()))?,
+            None => host.default_input_device().ok_or_else(|| EngineError(tr!("No microphone found")))?,
             Some(n) => find_device(host.input_devices(), n)
-                .ok_or_else(|| EngineError(format!("Aufnahmegerät „{n}“ nicht gefunden – oben im Mikrofon-Menü ein anderes wählen")))?,
+                .ok_or_else(|| EngineError(tr!("Input device \"{name}\" not found – choose another one in the microphone menu at the top", name = n)))?,
         };
         let name = device.name().unwrap_or_else(|_| "Mikrofon".into());
         let supported = device.default_input_config().map_err(err)?;
@@ -558,7 +559,7 @@ impl InputCapture {
             cpal::SampleFormat::I16 => build_input::<i16>(&device, &config, producer, shared.clone()),
             cpal::SampleFormat::U16 => build_input::<u16>(&device, &config, producer, shared.clone()),
             cpal::SampleFormat::I32 => build_input::<i32>(&device, &config, producer, shared.clone()),
-            other => Err(EngineError(format!("Nicht unterstütztes Mikrofonformat: {other:?}"))),
+            other => Err(EngineError(tr!("Unsupported microphone format: {format}", format = format!("{other:?}")))),
         }?;
         stream.play().map_err(err)?;
         Ok(Self {

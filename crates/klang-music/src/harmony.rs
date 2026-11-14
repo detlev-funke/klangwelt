@@ -5,6 +5,7 @@
 //! Septime lösen sich auf).
 
 use crate::theory::Key;
+use klang_i18n::{tk, tr};
 use serde::{Deserialize, Serialize};
 
 // ------------------------------------------------------------------ Akkorde
@@ -327,41 +328,42 @@ fn plain_roman(ch: &Chord, key: &Key) -> String {
     format!("{prefix}{num}{mark}{}{tail}", figures(ch))
 }
 
-/// Funktion (Riemann) und Rolle in Worten eines leitereigenen oder
-/// entlehnten Dreiklangs; None = keine geläufige Funktion.
+/// Function (Riemann) and role in words of a diatonic or
+/// borrowed triad; None = no common function. The role is a
+/// key, translated in [`describe`].
 fn function_of(off: u8, triad: Quality, key: &Key) -> Option<(&'static str, &'static str)> {
     if key.minor {
         Some(match (off, triad) {
-            (0, Minor) => ("t", "Tonika"),
-            (0, Major) => ("T", "Picardische Terz (Dur-Tonika)"),
-            (2, Dim) => ("s⁶", "Subdominante mit Sexte"),
-            (3, Major) => ("tP", "Tonikaparallele"),
-            (5, Minor) => ("s", "Subdominante"),
-            (5, Major) => ("S", "Dur-Subdominante (dorisch)"),
-            (7, Minor) => ("d", "Moll-Dominante (ohne Leitton)"),
-            (7, Major) => ("D", "Dominante"),
-            (8, Major) => ("tG", "Tonikagegenklang"),
-            (10, Major) => ("dP", "Dominantparallele"),
-            (11, Dim) => ("Đ", "verkürzte Dominante"),
-            (1, Major) => ("sN", "Neapolitaner"),
+            (0, Minor) => ("t", tk!("Tonic")),
+            (0, Major) => ("T", tk!("Picardy third (major tonic)")),
+            (2, Dim) => ("s⁶", tk!("Subdominant with added sixth")),
+            (3, Major) => ("tP", tk!("Tonic relative")),
+            (5, Minor) => ("s", tk!("Subdominant")),
+            (5, Major) => ("S", tk!("Major subdominant (Dorian)")),
+            (7, Minor) => ("d", tk!("Minor dominant (no leading tone)")),
+            (7, Major) => ("D", tk!("Dominant")),
+            (8, Major) => ("tG", tk!("Tonic counter-relative")),
+            (10, Major) => ("dP", tk!("Dominant relative")),
+            (11, Dim) => ("Đ", tk!("Incomplete dominant")),
+            (1, Major) => ("sN", tk!("Neapolitan")),
             _ => return None,
         })
     } else {
         Some(match (off, triad) {
-            (0, Major) => ("T", "Tonika"),
-            (2, Minor) => ("Sp", "Subdominantparallele"),
-            (4, Minor) => ("Dp", "Dominantparallele"),
-            (5, Major) => ("S", "Subdominante"),
-            (7, Major) => ("D", "Dominante"),
-            (9, Minor) => ("Tp", "Tonikaparallele"),
-            (11, Dim) => ("Đ", "verkürzte Dominante"),
-            (5, Minor) => ("s", "Moll-Subdominante (aus Moll)"),
-            (0, Minor) => ("t", "Moll-Tonika (aus Moll)"),
-            (7, Minor) => ("d", "Moll-Dominante (aus Moll)"),
-            (3, Major) => ("tP", "aus Moll entlehnt"),
-            (8, Major) => ("sP", "aus Moll entlehnt"),
-            (10, Major) => ("dP", "aus Moll entlehnt"),
-            (1, Major) => ("sN", "Neapolitaner"),
+            (0, Major) => ("T", tk!("Tonic")),
+            (2, Minor) => ("Sp", tk!("Subdominant relative")),
+            (4, Minor) => ("Dp", tk!("Dominant relative")),
+            (5, Major) => ("S", tk!("Subdominant")),
+            (7, Major) => ("D", tk!("Dominant")),
+            (9, Minor) => ("Tp", tk!("Tonic relative")),
+            (11, Dim) => ("Đ", tk!("Incomplete dominant")),
+            (5, Minor) => ("s", tk!("Minor subdominant (borrowed from minor)")),
+            (0, Minor) => ("t", tk!("Minor tonic (borrowed from minor)")),
+            (7, Minor) => ("d", tk!("Minor dominant (borrowed from minor)")),
+            (3, Major) => ("tP", tk!("borrowed from minor")),
+            (8, Major) => ("sP", tk!("borrowed from minor")),
+            (10, Major) => ("dP", tk!("borrowed from minor")),
+            (1, Major) => ("sN", tk!("Neapolitan")),
             _ => return None,
         })
     }
@@ -377,7 +379,7 @@ pub struct ChordInfo {
     pub roman: String,
     /// Funktion nach Riemann, z. B. „D⁷“, „Sp“, „(D⁷) Tp“, „DD“.
     pub function: String,
-    /// Rolle in Worten, z. B. „Dominante“, „Zwischendominante zu a“.
+    /// Role in words, e.g. "Dominant", "Secondary dominant of a" (translated).
     pub role: String,
     pub diatonic: bool,
 }
@@ -406,12 +408,12 @@ pub fn describe(ch: &Chord, key: &Key) -> ChordInfo {
         let v = format!("V{}", figures(&ch));
         let tf = function_of(target, tq, key).map(|f| f.0).unwrap_or("?");
         let func = if target == 7 { format!("DD{seventh}") } else { format!("(D{seventh}) {tf}") };
-        (format!("{v}/{target_roman}"), func, format!("Zwischendominante zu {}", chord_name(&target_chord, key)))
+        (format!("{v}/{target_roman}"), func, tr!("Secondary dominant of {chord}", chord = crate::theory::display_name(&chord_name(&target_chord, key))))
     } else if off == 1 && triad == Major {
         let fig = if ch.inversion() == 1 { sup("6") } else { String::new() };
-        (format!("N{fig}"), "sN".to_string(), "Neapolitaner".to_string())
+        (format!("N{fig}"), "sN".to_string(), tr!("Neapolitan"))
     } else if off == 0 && ch.quality == tonic_triad && ch.inversion() == 2 {
-        (plain_roman(&ch, key), format!("D{}{}", sup("6"), sub("4")), "Quartsextvorhalt vor der Dominante".to_string())
+        (plain_roman(&ch, key), format!("D{}{}", sup("6"), sub("4")), tr!("Cadential six-four before the dominant"))
     } else if let Some((f, r)) = function_of(off, triad, key) {
         let special = matches!(f, "s⁶" | "Đ" | "sN");
         let func = match (f, ch.quality) {
@@ -422,9 +424,9 @@ pub fn describe(ch: &Chord, key: &Key) -> ChordInfo {
             _ if special => f.to_string(),
             _ => format!("{f}{seventh}{bass_mark}"),
         };
-        (plain_roman(&ch, key), func, r.to_string())
+        (plain_roman(&ch, key), func, klang_i18n::translate(r))
     } else {
-        (plain_roman(&ch, key), "–".to_string(), if diatonic { "leitereigen" } else { "leiterfremd" }.to_string())
+        (plain_roman(&ch, key), "–".to_string(), if diatonic { tr!("diatonic") } else { tr!("non-diatonic") })
     };
     ChordInfo { chord: ch, name, roman, function, role, diatonic }
 }
@@ -738,8 +740,9 @@ pub struct Suggestion {
     pub info: ChordInfo,
     pub score: f32,
     pub category: Category,
+    /// Reason (translated).
     pub reason: String,
-    /// Bei Zwischendominanten: die Tonart, in die man so ausweichen kann.
+    /// For secondary dominants: the key one can move to this way (translated).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub to_key: Option<String>,
     /// Stimmung des Übergangs vom letzten Akkord hierher.
@@ -765,13 +768,14 @@ pub enum Mood {
 }
 
 impl Mood {
+    /// Keyword (a key for `klang_i18n::translate`).
     pub fn label(self) -> &'static str {
         match self {
-            Mood::Loesend => "lösend",
-            Mood::Spannend => "spannend",
-            Mood::Ueberraschend => "überraschend",
-            Mood::Hell => "hell",
-            Mood::Dunkel => "dunkel",
+            Mood::Loesend => tk!("resolving"),
+            Mood::Spannend => tk!("tense"),
+            Mood::Ueberraschend => tk!("surprising"),
+            Mood::Hell => tk!("bright"),
+            Mood::Dunkel => tk!("dark"),
         }
     }
 }
@@ -825,10 +829,11 @@ pub fn transition_mood(prev: Option<&Chord>, next: &Chord, key: &Key) -> Mood {
 
 // ------------------------------------------------------------------ Brüche
 
-/// Harmonischer Bruch beim Übergang `prev` → `next`: ein Akkord, der sich nicht
-/// aus der Tonart erklärt (weder leitereigen noch Zwischendominante, noch aus
-/// der gleichnamigen Tonart entlehnt, noch Neapolitaner), oder ein
-/// Tritonus-Sprung des Grundtons ohne dominantische Begründung. Liefert den Grund.
+/// Harmonic break at the step `prev` → `next`: a chord that the key doesn't
+/// explain (neither diatonic nor a secondary dominant, nor borrowed from
+/// the parallel key, nor a Neapolitan), or a
+/// tritone leap of the root without a dominant reason. Returns the
+/// reason (a key for `klang_i18n::translate`).
 pub fn harmonic_break(prev: Option<&Chord>, next: &Chord, key: &Key) -> Option<&'static str> {
     let ni = describe(next, key);
     let parallel = Key { tonic: key.tonic, minor: !key.minor, confidence: key.confidence };
@@ -836,7 +841,7 @@ pub fn harmonic_break(prev: Option<&Chord>, next: &Chord, key: &Key) -> Option<&
     let tonicizes = secondary_target(next, key).is_some_and(|t| diatonic_triad(t, key) != Some(Dim));
     let explained = ni.diatonic || tonicizes || ni.function.starts_with("sN") || is_diatonic(next, &parallel);
     if !explained {
-        return Some("tonartfremd");
+        return Some(tk!("out of key"));
     }
     let prev = prev?;
     let pi = describe(prev, key);
@@ -844,7 +849,7 @@ pub fn harmonic_break(prev: Option<&Chord>, next: &Chord, key: &Key) -> Option<&
     // erklärt: Neapolitaner → Dominante, Leittonakkord, Dominanten untereinander
     let dominantish = |i: &ChordInfo, c: &Chord| dominant_function(i) || matches!(c.quality, Dom7 | Dim | Dim7 | HalfDim7);
     if tritone && !pi.function.starts_with("sN") && !dominantish(&pi, prev) && !dominantish(&ni, next) {
-        return Some("Tritonus-Sprung");
+        return Some(tk!("Tritone leap"));
     }
     None
 }
@@ -857,7 +862,8 @@ pub fn harmonic_break(prev: Option<&Chord>, next: &Chord, key: &Key) -> Option<&
 pub struct CadencePath {
     /// ganzschluss, plagalschluss, halbschluss, trugschluss, phrygisch
     pub goal: &'static str,
-    pub label: &'static str,
+    /// Name of the kind of cadence (translated).
+    pub label: String,
     pub steps: Vec<ChordInfo>,
     /// Stimmung je Übergang (in steps[i] hinein, der erste vom aktuellen Akkord).
     pub moods: Vec<Mood>,
@@ -870,11 +876,11 @@ pub struct CadencePath {
 const STEP_FACTOR: f32 = 0.93;
 
 const GOALS: [(&str, &str); 5] = [
-    ("ganzschluss", "Ganzschluss"),
-    ("plagalschluss", "Plagalschluss"),
-    ("halbschluss", "Halbschluss"),
-    ("trugschluss", "Trugschluss"),
-    ("phrygisch", "Phrygischer Halbschluss"),
+    ("ganzschluss", tk!("Perfect cadence")),
+    ("plagalschluss", tk!("Plagal cadence")),
+    ("halbschluss", tk!("Half cadence")),
+    ("trugschluss", tk!("Deceptive cadence")),
+    ("phrygisch", tk!("Phrygian half cadence")),
 ];
 
 /// Welcher Schluss endet mit `prev` → `next`?
@@ -972,7 +978,7 @@ pub fn cadence_paths(key: &Key, history: &[Chord], max_steps: usize, weight: &dy
             .collect();
         CadencePath {
             goal: GOALS[g].0,
-            label: GOALS[g].1,
+            label: klang_i18n::translate(GOALS[g].1),
             steps: chords.iter().map(|c| describe(c, key)).collect(),
             moods,
             score: (score * 100.0).round() / 100.0,
@@ -999,228 +1005,229 @@ pub fn cadence_paths(key: &Key, history: &[Chord], max_steps: usize, weight: &dy
 type Rule = (&'static str, f32, Category, &'static str);
 
 /// Übliche Fortsetzungen in Dur: Stufe → (Ziel, Gewicht, Art, Begründung).
+/// The reasons are keys; they are translated in [`suggest`].
 const MAJOR_RULES: &[(&str, &[Rule])] = &[
     ("I", &[
-        ("IV", 0.85, Weiter, "T → S: öffnet die Kadenz"),
-        ("V", 0.80, Spannung, "T → D: baut Spannung auf, Halbschluss möglich"),
-        ("vi", 0.75, Weiter, "T → Tp: Terzfall, weich"),
-        ("ii", 0.60, Weiter, "T → Sp: Vorbereitung der Dominante"),
-        ("iii", 0.40, Weiter, "T → Dp"),
-        ("V7/IV", 0.45, Ausweichen, "Tonika mit kleiner Septime zieht zur Subdominante"),
-        ("V7/V", 0.42, Ausweichen, "Doppeldominante: öffnet die Dominanttonart"),
-        ("V7/vi", 0.38, Ausweichen, "Zwischendominante zur Tonikaparallele"),
-        ("iv", 0.35, Farbe, "Moll-Subdominante: dunkle Färbung"),
-        ("♭VI", 0.30, Farbe, "aus Moll entlehnt: weicher, filmischer Klang"),
-        ("♭VII", 0.30, Farbe, "aus Moll entlehnt: mixolydische Farbe"),
+        ("IV", 0.85, Weiter, tk!("T → S: opens the cadence")),
+        ("V", 0.80, Spannung, tk!("T → D: builds tension, half cadence possible")),
+        ("vi", 0.75, Weiter, tk!("T → Tp: falling third, soft")),
+        ("ii", 0.60, Weiter, tk!("T → Sp: prepares the dominant")),
+        ("iii", 0.40, Weiter, tk!("T → Dp")),
+        ("V7/IV", 0.45, Ausweichen, tk!("Tonic with minor seventh pulls toward the subdominant")),
+        ("V7/V", 0.42, Ausweichen, tk!("Double dominant: opens up the dominant key")),
+        ("V7/vi", 0.38, Ausweichen, tk!("Secondary dominant of the tonic relative")),
+        ("iv", 0.35, Farbe, tk!("Minor subdominant: dark color")),
+        ("♭VI", 0.30, Farbe, tk!("borrowed from minor: softer, cinematic sound")),
+        ("♭VII", 0.30, Farbe, tk!("borrowed from minor: Mixolydian color")),
     ]),
     ("I6", &[
-        ("IV", 0.70, Weiter, "Bass steigt weiter zur Subdominante"),
-        ("ii6", 0.65, Spannung, "Sp mit Terz im Bass bereitet die Dominante vor"),
-        ("V", 0.55, Spannung, "T → D"),
-        ("vi", 0.30, Weiter, "Terzfall"),
+        ("IV", 0.70, Weiter, tk!("Bass keeps rising to the subdominant")),
+        ("ii6", 0.65, Spannung, tk!("Sp with the third in the bass prepares the dominant")),
+        ("V", 0.55, Spannung, tk!("T → D")),
+        ("vi", 0.30, Weiter, tk!("Falling third")),
     ]),
     ("I64", &[
-        ("V7", 0.95, Spannung, "Quartsextvorhalt löst sich in die Dominante auf"),
-        ("V", 0.90, Spannung, "Quartsextvorhalt löst sich in die Dominante auf"),
+        ("V7", 0.95, Spannung, tk!("Cadential six-four resolves to the dominant")),
+        ("V", 0.90, Spannung, tk!("Cadential six-four resolves to the dominant")),
     ]),
     ("ii", &[
-        ("V", 0.90, Spannung, "Sp → D: Quintfall, der Standardweg zur Dominante"),
-        ("V7", 0.88, Spannung, "Sp → D⁷: Quintfall"),
-        ("I64", 0.75, Spannung, "Sp → Quartsextvorhalt → Dominante"),
-        ("vii°6", 0.45, Spannung, "zur verkürzten Dominante"),
-        ("V7/V", 0.45, Farbe, "Sp wird chromatisch zur Doppeldominante"),
-        ("IV", 0.30, Weiter, "zurück zur Subdominante"),
+        ("V", 0.90, Spannung, tk!("Sp → D: falling fifth, the standard way to the dominant")),
+        ("V7", 0.88, Spannung, tk!("Sp → D⁷: falling fifth")),
+        ("I64", 0.75, Spannung, tk!("Sp → cadential six-four → dominant")),
+        ("vii°6", 0.45, Spannung, tk!("to the incomplete dominant")),
+        ("V7/V", 0.45, Farbe, tk!("Sp turns chromatically into the double dominant")),
+        ("IV", 0.30, Weiter, tk!("back to the subdominant")),
     ]),
     ("iii", &[
-        ("vi", 0.85, Weiter, "Dp → Tp: Quintfall"),
-        ("IV", 0.60, Weiter, "Dp → S"),
-        ("ii", 0.35, Weiter, "Dp → Sp"),
-        ("V7/vi", 0.30, Farbe, "Dp wird zur Zwischendominante der Tp"),
+        ("vi", 0.85, Weiter, tk!("Dp → Tp: falling fifth")),
+        ("IV", 0.60, Weiter, tk!("Dp → S")),
+        ("ii", 0.35, Weiter, tk!("Dp → Sp")),
+        ("V7/vi", 0.30, Farbe, tk!("Dp becomes the secondary dominant of Tp")),
     ]),
     ("IV", &[
-        ("V", 0.90, Spannung, "S → D: der Kern jeder Kadenz"),
-        ("V7", 0.85, Spannung, "S → D⁷"),
-        ("I64", 0.75, Spannung, "Quartsextvorhalt vor der Dominante"),
-        ("I", 0.70, Schluss, "Plagalschluss (Kirchenschluss, „Amen“)"),
-        ("V7/V", 0.50, Spannung, "Doppeldominante verstärkt den Zug zur Dominante"),
-        ("iv", 0.45, Farbe, "S → s: Dur-Subdominante wird Moll – typisch kurz vor dem Schluss"),
-        ("ii", 0.45, Weiter, "S → Sp"),
-        ("vii°6", 0.40, Spannung, "zur verkürzten Dominante"),
-        ("vi", 0.30, Weiter, "S → Tp"),
+        ("V", 0.90, Spannung, tk!("S → D: the core of every cadence")),
+        ("V7", 0.85, Spannung, tk!("S → D⁷")),
+        ("I64", 0.75, Spannung, tk!("Cadential six-four before the dominant")),
+        ("I", 0.70, Schluss, tk!("Plagal cadence (church cadence, \"Amen\")")),
+        ("V7/V", 0.50, Spannung, tk!("Double dominant strengthens the pull toward the dominant")),
+        ("iv", 0.45, Farbe, tk!("S → s: the major subdominant turns minor – typical just before the end")),
+        ("ii", 0.45, Weiter, tk!("S → Sp")),
+        ("vii°6", 0.40, Spannung, tk!("to the incomplete dominant")),
+        ("vi", 0.30, Weiter, tk!("S → Tp")),
     ]),
     ("V", &[
-        ("I", 0.95, Schluss, "Authentische Kadenz (Ganzschluss)"),
-        ("vi", 0.80, Schluss, "Trugschluss: D → Tp statt T"),
-        ("V7", 0.60, Spannung, "Septime dazu: verstärkt den Zug zur Tonika"),
-        ("I6", 0.40, Weiter, "zur Tonika mit Terz im Bass: kein Schluss, es geht weiter"),
-        ("♭VI", 0.40, Farbe, "Trugschluss nach ♭VI (aus Moll)"),
-        ("IV6", 0.25, Weiter, "abgeschwächter Rückweg"),
+        ("I", 0.95, Schluss, tk!("Authentic cadence (perfect cadence)")),
+        ("vi", 0.80, Schluss, tk!("Deceptive cadence: D → Tp instead of T")),
+        ("V7", 0.60, Spannung, tk!("Adding the seventh: strengthens the pull toward the tonic")),
+        ("I6", 0.40, Weiter, tk!("to the tonic with the third in the bass: no ending, it continues")),
+        ("♭VI", 0.40, Farbe, tk!("Deceptive cadence to ♭VI (borrowed from minor)")),
+        ("IV6", 0.25, Weiter, tk!("weakened way back")),
     ]),
     ("V7", &[
-        ("I", 0.95, Schluss, "Authentische Kadenz (Ganzschluss)"),
-        ("vi", 0.82, Schluss, "Trugschluss: D⁷ → Tp"),
-        ("I6", 0.40, Weiter, "zur Tonika mit Terz im Bass: es geht weiter"),
-        ("♭VI", 0.40, Farbe, "Trugschluss nach ♭VI (aus Moll)"),
+        ("I", 0.95, Schluss, tk!("Authentic cadence (perfect cadence)")),
+        ("vi", 0.82, Schluss, tk!("Deceptive cadence: D⁷ → Tp")),
+        ("I6", 0.40, Weiter, tk!("to the tonic with the third in the bass: it continues")),
+        ("♭VI", 0.40, Farbe, tk!("Deceptive cadence to ♭VI (borrowed from minor)")),
     ]),
     ("vi", &[
-        ("ii", 0.80, Weiter, "Tp → Sp: Quintfall"),
-        ("IV", 0.80, Weiter, "Tp → S"),
-        ("V", 0.50, Spannung, "Tp → D"),
-        ("iii", 0.35, Weiter, "Tp → Dp"),
-        ("V7/ii", 0.40, Farbe, "Zwischendominante zur Sp"),
-        ("I6", 0.30, Weiter, "zur Tonika mit Terz im Bass"),
+        ("ii", 0.80, Weiter, tk!("Tp → Sp: falling fifth")),
+        ("IV", 0.80, Weiter, tk!("Tp → S")),
+        ("V", 0.50, Spannung, tk!("Tp → D")),
+        ("iii", 0.35, Weiter, tk!("Tp → Dp")),
+        ("V7/ii", 0.40, Farbe, tk!("Secondary dominant of Sp")),
+        ("I6", 0.30, Weiter, tk!("to the tonic with the third in the bass")),
     ]),
     ("vii°", &[
-        ("I", 0.90, Schluss, "Leitton löst sich auf: verkürzte Dominante → T"),
-        ("I6", 0.60, Weiter, "verkürzte Dominante → T mit Terz im Bass"),
+        ("I", 0.90, Schluss, tk!("Leading tone resolves: incomplete dominant → T")),
+        ("I6", 0.60, Weiter, tk!("incomplete dominant → T with the third in the bass")),
     ]),
     ("vii°6", &[
-        ("I", 0.90, Schluss, "Leitton löst sich auf"),
-        ("I6", 0.65, Weiter, "Stimmtausch: T mit Terz im Bass"),
+        ("I", 0.90, Schluss, tk!("Leading tone resolves")),
+        ("I6", 0.65, Weiter, tk!("Voice exchange: T with the third in the bass")),
     ]),
     ("V/V", &[
-        ("V", 0.90, Spannung, "DD → D"),
-        ("V7", 0.85, Spannung, "DD → D⁷"),
-        ("I64", 0.70, Spannung, "DD → Quartsextvorhalt"),
+        ("V", 0.90, Spannung, tk!("DD → D")),
+        ("V7", 0.85, Spannung, tk!("DD → D⁷")),
+        ("I64", 0.70, Spannung, tk!("DD → cadential six-four")),
     ]),
     ("V7/V", &[
-        ("V", 0.90, Spannung, "DD⁷ → D"),
-        ("V7", 0.80, Spannung, "DD⁷ → D⁷"),
-        ("I64", 0.70, Spannung, "DD⁷ → Quartsextvorhalt"),
+        ("V", 0.90, Spannung, tk!("DD⁷ → D")),
+        ("V7", 0.80, Spannung, tk!("DD⁷ → D⁷")),
+        ("I64", 0.70, Spannung, tk!("DD⁷ → cadential six-four")),
     ]),
-    ("V7/ii", &[("ii", 0.95, Weiter, "Zwischendominante löst sich in die Sp auf"), ("V7/V", 0.40, Farbe, "Kette von Zwischendominanten (Quintfall)")]),
-    ("V7/iii", &[("iii", 0.95, Weiter, "Zwischendominante löst sich in die Dp auf"), ("V7/vi", 0.40, Farbe, "Kette von Zwischendominanten")]),
-    ("V7/IV", &[("IV", 0.95, Weiter, "Zwischendominante löst sich in die S auf"), ("ii", 0.35, Weiter, "Trugschluss der Zwischendominante")]),
-    ("V7/vi", &[("vi", 0.95, Weiter, "Zwischendominante löst sich in die Tp auf"), ("IV", 0.40, Farbe, "Trugschluss der Zwischendominante"), ("V7/ii", 0.40, Farbe, "Kette von Zwischendominanten")]),
+    ("V7/ii", &[("ii", 0.95, Weiter, tk!("Secondary dominant resolves to Sp")), ("V7/V", 0.40, Farbe, tk!("Chain of secondary dominants (falling fifths)"))]),
+    ("V7/iii", &[("iii", 0.95, Weiter, tk!("Secondary dominant resolves to Dp")), ("V7/vi", 0.40, Farbe, tk!("Chain of secondary dominants"))]),
+    ("V7/IV", &[("IV", 0.95, Weiter, tk!("Secondary dominant resolves to S")), ("ii", 0.35, Weiter, tk!("Deceptive resolution of the secondary dominant"))]),
+    ("V7/vi", &[("vi", 0.95, Weiter, tk!("Secondary dominant resolves to Tp")), ("IV", 0.40, Farbe, tk!("Deceptive resolution of the secondary dominant")), ("V7/ii", 0.40, Farbe, tk!("Chain of secondary dominants"))]),
     ("iv", &[
-        ("I", 0.75, Schluss, "Moll-Plagalschluss"),
-        ("V", 0.70, Spannung, "s → D"),
-        ("V7", 0.65, Spannung, "s → D⁷"),
-        ("I64", 0.55, Spannung, "s → Quartsextvorhalt"),
+        ("I", 0.75, Schluss, tk!("Minor plagal cadence")),
+        ("V", 0.70, Spannung, tk!("s → D")),
+        ("V7", 0.65, Spannung, tk!("s → D⁷")),
+        ("I64", 0.55, Spannung, tk!("s → cadential six-four")),
     ]),
     ("♭VI", &[
-        ("♭VII", 0.65, Weiter, "♭VI → ♭VII → I: hymnischer Schluss"),
-        ("V", 0.60, Spannung, "♭VI → D"),
-        ("iv", 0.45, Farbe, "bleibt in der Moll-Farbe"),
-        ("IV", 0.40, Weiter, "zurück nach Dur"),
+        ("♭VII", 0.65, Weiter, tk!("♭VI → ♭VII → I: hymn-like ending")),
+        ("V", 0.60, Spannung, tk!("♭VI → D")),
+        ("iv", 0.45, Farbe, tk!("stays in the minor color")),
+        ("IV", 0.40, Weiter, tk!("back to major")),
     ]),
     ("♭VII", &[
-        ("I", 0.75, Schluss, "♭VII → I: mixolydischer Schluss"),
-        ("IV", 0.50, Weiter, "♭VII → IV"),
+        ("I", 0.75, Schluss, tk!("♭VII → I: Mixolydian ending")),
+        ("IV", 0.50, Weiter, tk!("♭VII → IV")),
     ]),
     ("N6", &[
-        ("V", 0.85, Spannung, "Neapolitaner → Dominante"),
-        ("V7", 0.85, Spannung, "Neapolitaner → D⁷"),
-        ("I64", 0.80, Spannung, "Neapolitaner → Quartsextvorhalt"),
+        ("V", 0.85, Spannung, tk!("Neapolitan → dominant")),
+        ("V7", 0.85, Spannung, tk!("Neapolitan → D⁷")),
+        ("I64", 0.80, Spannung, tk!("Neapolitan → cadential six-four")),
     ]),
 ];
 
 /// Übliche Fortsetzungen in Moll.
 const MINOR_RULES: &[(&str, &[Rule])] = &[
     ("i", &[
-        ("iv", 0.85, Weiter, "t → s: öffnet die Kadenz"),
-        ("V", 0.80, Spannung, "t → D: baut Spannung auf"),
-        ("VI", 0.70, Weiter, "t → tG: Terzfall"),
-        ("iiø7", 0.55, Spannung, "t → s⁶₅: Vorbereitung der Dominante"),
-        ("III", 0.55, Weiter, "t → tP: Wendung zur Paralleltonart"),
-        ("VII", 0.45, Weiter, "t → dP: absteigender Bass"),
-        ("v6", 0.40, Weiter, "Lamentobass: der Bass steigt chromatisch/diatonisch ab"),
-        ("V7/iv", 0.45, Ausweichen, "Tonika in Dur mit Septime zieht zur Subdominante"),
-        ("V7/III", 0.40, Ausweichen, "öffnet die Paralleltonart"),
-        ("N6", 0.40, Farbe, "Neapolitaner: scharfe Färbung vor der Dominante"),
-        ("iv6", 0.38, Spannung, "s mit Terz im Bass – führt zum phrygischen Halbschluss"),
-        ("V/V", 0.35, Spannung, "Doppeldominante"),
+        ("iv", 0.85, Weiter, tk!("t → s: opens the cadence")),
+        ("V", 0.80, Spannung, tk!("t → D: builds tension")),
+        ("VI", 0.70, Weiter, tk!("t → tG: falling third")),
+        ("iiø7", 0.55, Spannung, tk!("t → s⁶₅: prepares the dominant")),
+        ("III", 0.55, Weiter, tk!("t → tP: turn to the relative key")),
+        ("VII", 0.45, Weiter, tk!("t → dP: descending bass")),
+        ("v6", 0.40, Weiter, tk!("Lament bass: the bass descends chromatically/diatonically")),
+        ("V7/iv", 0.45, Ausweichen, tk!("Major tonic with a seventh pulls toward the subdominant")),
+        ("V7/III", 0.40, Ausweichen, tk!("opens up the relative key")),
+        ("N6", 0.40, Farbe, tk!("Neapolitan: sharp color before the dominant")),
+        ("iv6", 0.38, Spannung, tk!("s with the third in the bass – leads to the Phrygian half cadence")),
+        ("V/V", 0.35, Spannung, tk!("Double dominant")),
     ]),
     ("i64", &[
-        ("V7", 0.95, Spannung, "Quartsextvorhalt löst sich in die Dominante auf"),
-        ("V", 0.90, Spannung, "Quartsextvorhalt löst sich in die Dominante auf"),
+        ("V7", 0.95, Spannung, tk!("Cadential six-four resolves to the dominant")),
+        ("V", 0.90, Spannung, tk!("Cadential six-four resolves to the dominant")),
     ]),
     ("ii°", &[
-        ("V", 0.90, Spannung, "s⁶ → D"),
-        ("V7", 0.85, Spannung, "s⁶ → D⁷"),
-        ("i64", 0.75, Spannung, "s⁶ → Quartsextvorhalt"),
+        ("V", 0.90, Spannung, tk!("s⁶ → D")),
+        ("V7", 0.85, Spannung, tk!("s⁶ → D⁷")),
+        ("i64", 0.75, Spannung, tk!("s⁶ → cadential six-four")),
     ]),
     ("iiø7", &[
-        ("V", 0.90, Spannung, "s⁶₅ → D: Quintfall"),
-        ("V7", 0.88, Spannung, "s⁶₅ → D⁷"),
-        ("i64", 0.75, Spannung, "s⁶₅ → Quartsextvorhalt"),
+        ("V", 0.90, Spannung, tk!("s⁶₅ → D: falling fifth")),
+        ("V7", 0.88, Spannung, tk!("s⁶₅ → D⁷")),
+        ("i64", 0.75, Spannung, tk!("s⁶₅ → cadential six-four")),
     ]),
     ("III", &[
-        ("VI", 0.80, Weiter, "tP → tG: Quintfall"),
-        ("iv", 0.60, Weiter, "tP → s"),
-        ("VII", 0.40, Weiter, "tP → dP"),
-        ("V7/VI", 0.35, Farbe, "Zwischendominante zum tG"),
-        ("i", 0.30, Weiter, "zurück zur Tonika"),
+        ("VI", 0.80, Weiter, tk!("tP → tG: falling fifth")),
+        ("iv", 0.60, Weiter, tk!("tP → s")),
+        ("VII", 0.40, Weiter, tk!("tP → dP")),
+        ("V7/VI", 0.35, Farbe, tk!("Secondary dominant of tG")),
+        ("i", 0.30, Weiter, tk!("back to the tonic")),
     ]),
     ("iv", &[
-        ("V", 0.90, Spannung, "s → D: der Kern der Kadenz"),
-        ("V7", 0.85, Spannung, "s → D⁷"),
-        ("i64", 0.75, Spannung, "Quartsextvorhalt vor der Dominante"),
-        ("i", 0.65, Schluss, "Plagalschluss in Moll"),
-        ("N6", 0.45, Farbe, "s → sN: der Neapolitaner verschärft"),
-        ("V/V", 0.45, Spannung, "Doppeldominante"),
-        ("iv6", 0.42, Spannung, "Terz in den Bass: der Bass fällt danach einen Halbton zur Dominante (phrygisch)"),
-        ("VII", 0.40, Weiter, "s → dP"),
-        ("ii°", 0.35, Spannung, "s → s⁶"),
+        ("V", 0.90, Spannung, tk!("s → D: the core of the cadence")),
+        ("V7", 0.85, Spannung, tk!("s → D⁷")),
+        ("i64", 0.75, Spannung, tk!("Cadential six-four before the dominant")),
+        ("i", 0.65, Schluss, tk!("Plagal cadence in minor")),
+        ("N6", 0.45, Farbe, tk!("s → sN: the Neapolitan sharpens it")),
+        ("V/V", 0.45, Spannung, tk!("Double dominant")),
+        ("iv6", 0.42, Spannung, tk!("Third in the bass: afterwards the bass falls a semitone to the dominant (Phrygian)")),
+        ("VII", 0.40, Weiter, tk!("s → dP")),
+        ("ii°", 0.35, Spannung, tk!("s → s⁶")),
     ]),
     ("iv6", &[
-        ("V", 0.95, Spannung, "Phrygischer Halbschluss: Bass fällt einen Halbton zur Dominante"),
+        ("V", 0.95, Spannung, tk!("Phrygian half cadence: the bass falls a semitone to the dominant")),
     ]),
     ("v", &[
-        ("VI", 0.55, Weiter, "Moll-Dominante → tG"),
-        ("iv6", 0.50, Weiter, "Lamentobass weiter abwärts"),
-        ("iv", 0.45, Weiter, "Moll-Dominante → s"),
+        ("VI", 0.55, Weiter, tk!("Minor dominant → tG")),
+        ("iv6", 0.50, Weiter, tk!("Lament bass continues downward")),
+        ("iv", 0.45, Weiter, tk!("Minor dominant → s")),
     ]),
     ("v6", &[
-        ("iv6", 0.80, Weiter, "Lamentobass: weiter stufenweise abwärts"),
-        ("VI", 0.40, Weiter, "zum tG"),
+        ("iv6", 0.80, Weiter, tk!("Lament bass: continues stepwise downward")),
+        ("VI", 0.40, Weiter, tk!("to tG")),
     ]),
     ("V", &[
-        ("i", 0.95, Schluss, "Authentische Kadenz (Ganzschluss)"),
-        ("VI", 0.85, Schluss, "Trugschluss: D → tG"),
-        ("V7", 0.60, Spannung, "Septime dazu: verstärkt den Zug zur Tonika"),
-        ("I", 0.45, Farbe, "Picardische Terz: Schluss in Dur"),
+        ("i", 0.95, Schluss, tk!("Authentic cadence (perfect cadence)")),
+        ("VI", 0.85, Schluss, tk!("Deceptive cadence: D → tG")),
+        ("V7", 0.60, Spannung, tk!("Adding the seventh: strengthens the pull toward the tonic")),
+        ("I", 0.45, Farbe, tk!("Picardy third: ending in major")),
     ]),
     ("V7", &[
-        ("i", 0.95, Schluss, "Authentische Kadenz (Ganzschluss)"),
-        ("VI", 0.85, Schluss, "Trugschluss: D⁷ → tG"),
-        ("I", 0.45, Farbe, "Picardische Terz: Schluss in Dur"),
+        ("i", 0.95, Schluss, tk!("Authentic cadence (perfect cadence)")),
+        ("VI", 0.85, Schluss, tk!("Deceptive cadence: D⁷ → tG")),
+        ("I", 0.45, Farbe, tk!("Picardy third: ending in major")),
     ]),
     ("VI", &[
-        ("ii°6", 0.70, Spannung, "tG → s⁶: Quintfall zur Dominante"),
-        ("iv", 0.70, Weiter, "tG → s: Terzfall"),
-        ("V", 0.60, Spannung, "tG → D: Bass fällt einen Halbton"),
-        ("N6", 0.55, Farbe, "tG → Neapolitaner"),
-        ("III", 0.40, Weiter, "tG → tP"),
+        ("ii°6", 0.70, Spannung, tk!("tG → s⁶: falling fifth toward the dominant")),
+        ("iv", 0.70, Weiter, tk!("tG → s: falling third")),
+        ("V", 0.60, Spannung, tk!("tG → D: the bass falls a semitone")),
+        ("N6", 0.55, Farbe, tk!("tG → Neapolitan")),
+        ("III", 0.40, Weiter, tk!("tG → tP")),
     ]),
     ("VII", &[
-        ("III", 0.85, Weiter, "dP → tP: Quintfall (Dominante der Paralleltonart)"),
-        ("i", 0.35, Weiter, "zurück zur Tonika"),
-        ("VI", 0.30, Weiter, "Bass steigt ab"),
+        ("III", 0.85, Weiter, tk!("dP → tP: falling fifth (dominant of the relative key)")),
+        ("i", 0.35, Weiter, tk!("back to the tonic")),
+        ("VI", 0.30, Weiter, tk!("Bass descends")),
     ]),
     ("vii°7", &[
-        ("i", 0.95, Schluss, "Verminderter Septakkord löst sich auf"),
-        ("i64", 0.40, Spannung, "aufgehalten durch den Quartsextvorhalt"),
+        ("i", 0.95, Schluss, tk!("Diminished seventh chord resolves")),
+        ("i64", 0.40, Spannung, tk!("delayed by the cadential six-four")),
     ]),
     ("N6", &[
-        ("V", 0.85, Spannung, "Neapolitaner → Dominante"),
-        ("V7", 0.85, Spannung, "Neapolitaner → D⁷"),
-        ("i64", 0.80, Spannung, "Neapolitaner → Quartsextvorhalt"),
-        ("vii°7", 0.50, Spannung, "Neapolitaner → verminderter Septakkord"),
+        ("V", 0.85, Spannung, tk!("Neapolitan → dominant")),
+        ("V7", 0.85, Spannung, tk!("Neapolitan → D⁷")),
+        ("i64", 0.80, Spannung, tk!("Neapolitan → cadential six-four")),
+        ("vii°7", 0.50, Spannung, tk!("Neapolitan → diminished seventh chord")),
     ]),
     ("V/V", &[
-        ("V", 0.90, Spannung, "DD → D"),
-        ("V7", 0.85, Spannung, "DD → D⁷"),
-        ("i64", 0.70, Spannung, "DD → Quartsextvorhalt"),
+        ("V", 0.90, Spannung, tk!("DD → D")),
+        ("V7", 0.85, Spannung, tk!("DD → D⁷")),
+        ("i64", 0.70, Spannung, tk!("DD → cadential six-four")),
     ]),
     ("V7/V", &[
-        ("V", 0.90, Spannung, "DD⁷ → D"),
-        ("i64", 0.70, Spannung, "DD⁷ → Quartsextvorhalt"),
+        ("V", 0.90, Spannung, tk!("DD⁷ → D")),
+        ("i64", 0.70, Spannung, tk!("DD⁷ → cadential six-four")),
     ]),
-    ("V7/iv", &[("iv", 0.95, Weiter, "Zwischendominante löst sich in die s auf")]),
-    ("V7/III", &[("III", 0.95, Weiter, "Zwischendominante löst sich in die tP auf")]),
-    ("V7/VI", &[("VI", 0.95, Weiter, "Zwischendominante löst sich in den tG auf")]),
-    ("I", &[("iv", 0.50, Weiter, "Dur-Tonika wird Zwischendominante zur s")]),
+    ("V7/iv", &[("iv", 0.95, Weiter, tk!("Secondary dominant resolves to s"))]),
+    ("V7/III", &[("III", 0.95, Weiter, tk!("Secondary dominant resolves to tP"))]),
+    ("V7/VI", &[("VI", 0.95, Weiter, tk!("Secondary dominant resolves to tG"))]),
+    ("I", &[("iv", 0.50, Weiter, tk!("Major tonic becomes the secondary dominant of s"))]),
 ];
 
 /// Wie gut passt `prev` auf die Stufe der Regel? 0 = gar nicht.
@@ -1249,7 +1256,7 @@ fn common_tones(a: &Chord, b: &Chord) -> usize {
 fn to_key_of(ch: &Chord, key: &Key) -> Option<String> {
     let target = secondary_target(ch, key)?;
     let tq = diatonic_triad(target, key)?;
-    Some(key_with((key.tonic + target) % 12, tq.minor_third()).name_de())
+    Some(key_with((key.tonic + target) % 12, tq.minor_third()).name())
 }
 
 /// Fortsetzungen nach dem letzten Akkord von `history` (leer = Anfang),
@@ -1261,15 +1268,15 @@ pub fn suggest(key: &Key, history: &[Chord], limit: usize) -> Vec<Suggestion> {
     let make = |id: &str, w: f32, cat: Category, reason: &str| -> Option<Suggestion> {
         let ch = parse_roman(id, key)?;
         let mood = transition_mood(history.last(), &ch, key);
-        Some(Suggestion { info: describe(&ch, key), score: w, category: cat, reason: reason.to_string(), to_key: None, mood })
+        Some(Suggestion { info: describe(&ch, key), score: w, category: cat, reason: klang_i18n::translate(reason), to_key: None, mood })
     };
     let mut out: Vec<Suggestion> = Vec::new();
     let Some(prev) = history.last() else {
         let start: [(&str, f32, Category, &str); 4] = [
-            (tonic, 1.0, Weiter, "Mit der Tonika beginnen"),
-            (if key.minor { "iv" } else { "IV" }, 0.4, Weiter, "Mit der Subdominante beginnen"),
-            (if key.minor { "VI" } else { "vi" }, 0.35, Weiter, "Mit der Parallele beginnen"),
-            ("V", 0.3, Spannung, "Auftakt auf der Dominante"),
+            (tonic, 1.0, Weiter, tk!("Start with the tonic")),
+            (if key.minor { "iv" } else { "IV" }, 0.4, Weiter, tk!("Start with the subdominant")),
+            (if key.minor { "VI" } else { "vi" }, 0.35, Weiter, tk!("Start with the relative chord")),
+            ("V", 0.3, Spannung, tk!("Upbeat on the dominant")),
         ];
         return start.iter().filter_map(|&(id, w, c, r)| make(id, w, c, r)).collect();
     };
@@ -1299,17 +1306,17 @@ pub fn suggest(key: &Key, history: &[Chord], limit: usize) -> Vec<Suggestion> {
             let Some(ch) = parse_roman(id, key) else { continue };
             let step = (ch.root + 12 - prev.root) % 12;
             let (w, why) = match step {
-                5 => (0.70, "Quintfall: stärkster Grundtonschritt"),
-                2 => (0.50, "Sekundschritt aufwärts"),
-                8 | 9 => (0.45, "Terzfall"),
-                7 => (0.35, "Quintstieg"),
-                3 | 4 => (0.30, "Terzstieg"),
-                10 | 11 => (0.30, "Sekundschritt abwärts"),
-                _ => (0.15, "Wechsel"),
+                5 => (0.70, tk!("Falling fifth: the strongest root movement")),
+                2 => (0.50, tk!("Rising second")),
+                8 | 9 => (0.45, tk!("Falling third")),
+                7 => (0.35, tk!("Rising fifth")),
+                3 | 4 => (0.30, tk!("Rising third")),
+                10 | 11 => (0.30, tk!("Falling second")),
+                _ => (0.15, tk!("Change")),
             };
             let resolves = matches!(prev.quality, Major | Dom7) && step == 5;
             let (w, why, cat) = if resolves {
-                (0.85, "Auflösung: eine Quinte tiefer", Schluss)
+                (0.85, tk!("Resolution: a fifth down"), Schluss)
             } else {
                 (w, why, Weiter)
             };
@@ -1317,7 +1324,7 @@ pub fn suggest(key: &Key, history: &[Chord], limit: usize) -> Vec<Suggestion> {
                 out.push(s);
             }
         }
-        if let Some(s) = make(tonic, 0.5, Schluss, "zurück zur Tonika") {
+        if let Some(s) = make(tonic, 0.5, Schluss, tk!("back to the tonic")) {
             out.push(s);
         }
     }
@@ -1355,8 +1362,9 @@ pub fn suggest(key: &Key, history: &[Chord], limit: usize) -> Vec<Suggestion> {
 #[serde(rename_all = "camelCase")]
 pub struct CadenceTemplate {
     pub id: &'static str,
-    pub name: &'static str,
-    pub description: &'static str,
+    /// Name and description (translated).
+    pub name: String,
+    pub description: String,
     pub steps: Vec<ChordInfo>,
     /// Stimmung je Übergang (steps[i] → steps[i+1]).
     pub moods: Vec<Mood>,
@@ -1365,30 +1373,30 @@ pub struct CadenceTemplate {
 type Template = (&'static str, &'static str, &'static str, &'static [&'static str]);
 
 const MAJOR_CADENCES: &[Template] = &[
-    ("authentisch", "Authentische Kadenz", "Ganzschluss T – S – D⁷ – T: der klassische Schluss.", &["I", "IV", "V7", "I"]),
-    ("subdominantparallele", "Mit Subdominantparallele", "Sp mit Terz im Bass statt S – so schließt Bach viele Choräle.", &["I", "ii6", "V7", "I"]),
-    ("quartsext", "Mit Quartsextvorhalt", "Die Dominante wird durch den Quartsextakkord hinausgezögert.", &["I", "IV", "I64", "V7", "I"]),
-    ("plagal", "Plagalschluss", "S → T, der „Amen“-Schluss.", &["I", "IV", "I"]),
-    ("halbschluss", "Halbschluss", "Endet offen auf der Dominante – die Phrase verlangt eine Antwort.", &["I", "vi", "IV", "V"]),
-    ("trugschluss", "Trugschluss", "Die Dominante löst sich nicht in die Tonika, sondern in die Tp.", &["I", "IV", "V7", "vi"]),
-    ("doppeldominante", "Mit Doppeldominante", "Die Dominante der Dominante schärft den Zug.", &["I", "IV", "V7/V", "V7", "I"]),
-    ("neapolitaner", "Neapolitaner", "Der Neapolitanische Sextakkord färbt die Subdominante.", &["I", "N6", "V7", "I"]),
-    ("moll-plagal", "Moll-Plagalschluss", "Die Moll-Subdominante vor dem Schluss – weich und dunkel.", &["I", "IV", "iv", "I"]),
-    ("quintfall", "Quintfallsequenz", "Alle Grundtöne fallen in Quinten – barocke Sequenz.", &["I", "IV", "vii°", "iii", "vi", "ii", "V7", "I"]),
+    ("authentisch", tk!("Authentic cadence"), tk!("Perfect cadence T – S – D⁷ – T: the classic ending."), &["I", "IV", "V7", "I"]),
+    ("subdominantparallele", tk!("With subdominant relative"), tk!("Sp with the third in the bass instead of S – this is how Bach ends many chorales."), &["I", "ii6", "V7", "I"]),
+    ("quartsext", tk!("With cadential six-four"), tk!("The dominant is delayed by the cadential six-four chord."), &["I", "IV", "I64", "V7", "I"]),
+    ("plagal", tk!("Plagal cadence"), tk!("S → T, the \"Amen\" cadence."), &["I", "IV", "I"]),
+    ("halbschluss", tk!("Half cadence"), tk!("Ends open on the dominant – the phrase calls for an answer."), &["I", "vi", "IV", "V"]),
+    ("trugschluss", tk!("Deceptive cadence"), tk!("The dominant resolves not to the tonic but to Tp."), &["I", "IV", "V7", "vi"]),
+    ("doppeldominante", tk!("With double dominant"), tk!("The dominant of the dominant sharpens the pull."), &["I", "IV", "V7/V", "V7", "I"]),
+    ("neapolitaner", tk!("Neapolitan"), tk!("The Neapolitan sixth chord colors the subdominant."), &["I", "N6", "V7", "I"]),
+    ("moll-plagal", tk!("Minor plagal cadence"), tk!("The minor subdominant before the ending – soft and dark."), &["I", "IV", "iv", "I"]),
+    ("quintfall", tk!("Falling-fifths sequence"), tk!("All roots fall in fifths – a Baroque sequence."), &["I", "IV", "vii°", "iii", "vi", "ii", "V7", "I"]),
 ];
 
 const MINOR_CADENCES: &[Template] = &[
-    ("authentisch", "Authentische Kadenz", "Ganzschluss t – s – D⁷ – t.", &["i", "iv", "V7", "i"]),
-    ("sixte-ajoutee", "Mit s⁶₅", "Subdominante mit hinzugefügter Sexte vor der Dominante.", &["i", "iiø65", "V7", "i"]),
-    ("quartsext", "Mit Quartsextvorhalt", "Die Dominante wird durch den Quartsextakkord hinausgezögert.", &["i", "iv", "i64", "V7", "i"]),
-    ("plagal", "Plagalschluss", "s → t.", &["i", "iv", "i"]),
-    ("halbschluss", "Halbschluss", "Endet offen auf der Dominante.", &["i", "iv", "V"]),
-    ("phrygisch", "Phrygischer Halbschluss", "s mit Terz im Bass → D: Bass fällt einen Halbton – barocker Satzschluss.", &["i", "iv6", "V"]),
-    ("trugschluss", "Trugschluss", "Die Dominante löst sich in den tG statt in die Tonika.", &["i", "iv", "V7", "VI"]),
-    ("neapolitaner", "Neapolitaner", "Der Neapolitanische Sextakkord vor der Dominante.", &["i", "N6", "V7", "i"]),
-    ("picardie", "Picardische Terz", "Schluss in Dur – typisch für barocke Mollstücke.", &["i", "iv", "V7", "I"]),
-    ("lamento", "Lamentobass", "Der Bass fällt stufenweise von der Tonika zur Dominante.", &["i", "v6", "iv6", "V"]),
-    ("quintfall", "Quintfallsequenz", "Alle Grundtöne fallen in Quinten – barocke Sequenz.", &["i", "iv", "VII", "III", "VI", "ii°", "V7", "i"]),
+    ("authentisch", tk!("Authentic cadence"), tk!("Perfect cadence t – s – D⁷ – t."), &["i", "iv", "V7", "i"]),
+    ("sixte-ajoutee", tk!("With s⁶₅"), tk!("Subdominant with added sixth before the dominant."), &["i", "iiø65", "V7", "i"]),
+    ("quartsext", tk!("With cadential six-four"), tk!("The dominant is delayed by the cadential six-four chord."), &["i", "iv", "i64", "V7", "i"]),
+    ("plagal", tk!("Plagal cadence"), tk!("s → t."), &["i", "iv", "i"]),
+    ("halbschluss", tk!("Half cadence"), tk!("Ends open on the dominant."), &["i", "iv", "V"]),
+    ("phrygisch", tk!("Phrygian half cadence"), tk!("s with the third in the bass → D: the bass falls a semitone – a Baroque movement ending."), &["i", "iv6", "V"]),
+    ("trugschluss", tk!("Deceptive cadence"), tk!("The dominant resolves to tG instead of the tonic."), &["i", "iv", "V7", "VI"]),
+    ("neapolitaner", tk!("Neapolitan"), tk!("The Neapolitan sixth chord before the dominant."), &["i", "N6", "V7", "i"]),
+    ("picardie", tk!("Picardy third"), tk!("Ending in major – typical of Baroque minor-key pieces."), &["i", "iv", "V7", "I"]),
+    ("lamento", tk!("Lament bass"), tk!("The bass falls stepwise from the tonic to the dominant."), &["i", "v6", "iv6", "V"]),
+    ("quintfall", tk!("Falling-fifths sequence"), tk!("All roots fall in fifths – a Baroque sequence."), &["i", "iv", "VII", "III", "VI", "ii°", "V7", "i"]),
 ];
 
 pub fn cadences(key: &Key) -> Vec<CadenceTemplate> {
@@ -1398,8 +1406,8 @@ pub fn cadences(key: &Key) -> Vec<CadenceTemplate> {
             let chords: Vec<Chord> = steps.iter().filter_map(|s| parse_roman(s, key)).collect();
             CadenceTemplate {
                 id,
-                name,
-                description,
+                name: klang_i18n::translate(name),
+                description: klang_i18n::translate(description),
                 moods: chords.windows(2).map(|w| transition_mood(Some(&w[0]), &w[1], key)).collect(),
                 steps: chords.iter().map(|c| describe(c, key)).collect(),
             }
@@ -1733,8 +1741,8 @@ mod tests {
             assert_eq!(brk(x, y), None, "{x} → {y}");
         }
         // tonartfremd: Fis-Dur in C ist keine Zwischendominante und nicht entlehnt
-        assert_eq!(brk("C", "Fis"), Some("tonartfremd"));
-        assert_eq!(harmonic_break(None, &ch("Fis"), &k), Some("tonartfremd"));
+        assert_eq!(brk("C", "Fis"), Some("out of key"));
+        assert_eq!(harmonic_break(None, &ch("Fis"), &k), Some("out of key"));
         assert_eq!(harmonic_break(None, &ch("Cis"), &k), None, "Cis = Des = Neapolitaner");
         // Tritonus-Sprung ohne Dominante: F → h (beide leitereigen, h aber als Moll-Akkord fremd) …
         assert_eq!(brk("F", "H"), None, "H = V/iii ist erklärt");
@@ -1743,7 +1751,7 @@ mod tests {
         // a-Moll: d → As? As fremd; F → H-Dur: Zwischendominante zu e – erklärt
         assert_eq!(harmonic_break(Some(&cha("F")), &cha("H"), &ka), None);
         // C-Dur: a → Es (aus c-Moll entlehnt) ist ein Tritonus ohne Dominante → Bruch
-        assert_eq!(brk("a", "Es"), Some("Tritonus-Sprung"));
+        assert_eq!(brk("a", "Es"), Some("Tritone leap"));
     }
 
     #[test]
@@ -1827,7 +1835,7 @@ mod tests {
         let s = suggest(&k, &[Chord::new(0, Major), Chord::new(5, Major), g7], 8);
         assert_eq!(s[0].info.name, "C");
         assert_eq!(s[0].category, Category::Schluss);
-        assert!(s.iter().any(|x| x.info.name == "a" && x.reason.contains("Trugschluss")));
+        assert!(s.iter().any(|x| x.info.name == "a" && x.reason.contains("Deceptive cadence")));
         // Zwischendominante löst sich auf
         let e7 = parse_roman("V7/vi", &k).unwrap();
         let s = suggest(&k, &[Chord::new(0, Major), e7], 5);
@@ -1835,7 +1843,7 @@ mod tests {
         // Zwischendominante nennt die Ausweichtonart
         let s = suggest(&k, &[Chord::new(0, Major)], 20);
         let d7 = s.iter().find(|x| x.info.name == "D7").unwrap();
-        assert_eq!(d7.to_key.as_deref(), Some("G-Dur"));
+        assert_eq!(d7.to_key.as_deref(), Some("G major"));
         // Anfang
         assert_eq!(suggest(&a(), &[], 3)[0].info.name, "a");
         // fremder Akkord: Quintfall bevorzugt

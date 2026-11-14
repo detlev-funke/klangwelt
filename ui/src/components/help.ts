@@ -4,6 +4,7 @@
 
 import { h, icon } from "../dom.js";
 import { helpFor, type HelpTopic, type HelpView } from "../help.js";
+import { t } from "../i18n.js";
 import { showPanel, visiblePanels } from "../store.js";
 
 let pointer: { el: Element; x: number; y: number } | null = null;
@@ -89,10 +90,10 @@ const LOCK = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" w
 const UNLOCK = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 10.5V8a4 4 0 017.6-1.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
 
 const WELCOME: HelpTopic = {
-  title: "Hilfe",
+  title: t("Help"),
   text: [
-    "Zeig mit der Maus auf etwas – hier steht, was es tut und welche Tasten es gibt.",
-    "**F1** hält den Text fest, damit du in Ruhe lesen kannst (Schloss oben rechts). Noch einmal F1 auf demselben Element – oder ein Klick aufs Schloss – löst ihn wieder.",
+    t("Point at something with the mouse – this shows what it does and which keys it uses."),
+    t("**F1** pins the text so you can read it at your leisure (lock at top right). Press F1 again on the same element – or click the lock – to release it."),
   ],
 };
 
@@ -130,14 +131,14 @@ class KwHelp extends HTMLElement {
     this.#title.textContent = topic.title;
     this.#tip.textContent = v?.tip ?? "";
     this.#tip.hidden = !v?.tip;
-    this.#body.replaceChildren(...topic.text.map((t) => h("p", {}, ...rich(t))));
+    this.#body.replaceChildren(...topic.text.map((p) => h("p", {}, ...rich(p))));
     this.#keys.replaceChildren(...(topic.keys ?? []).flatMap(([k, what]) => [h("kbd", {}, k), h("span", {}, what)]));
     this.#keys.hidden = !topic.keys?.length;
     this.classList.toggle("frozen", !!frozen);
     this.#lock.innerHTML = frozen ? LOCK : UNLOCK;
     this.#lock.classList.toggle("on", !!frozen);
-    this.#lock.title = frozen ? "Festgehalten – Klick oder F1 löst den Text wieder" : "Folgt der Maus – F1 oder Klick hält den Text fest";
-    this.#foot.textContent = frozen ? "Festgehalten · F1 auf demselben Element löst" : "F1 hält den Text fest";
+    this.#lock.title = frozen ? t("Pinned – click or F1 releases the text") : t("Follows the mouse – F1 or click pins the text");
+    this.#foot.textContent = frozen ? t("Pinned · F1 on the same element releases it") : t("F1 pins the text");
   }
 }
 

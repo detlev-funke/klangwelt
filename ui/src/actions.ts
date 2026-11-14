@@ -6,6 +6,7 @@ import {
 } from "./store.js";
 import { heightDraft, heightLimits, noteKey, noteSel, rowHeight } from "./pianoroll.js";
 import { gridLabel, rangeLabel } from "./editmath.js";
+import { plural, t } from "./i18n.js";
 import type { ConvertTarget, Note, Track, TrackKind } from "./types.js";
 
 // ---------- Spurhöhe (Splitter) ----------
@@ -87,7 +88,9 @@ export function transposeSelectedNotes(delta: number): boolean {
   });
   noteSel.value = { trackId: s.trackId, clipId: s.clipId, keys: moved.map(noteKey) };
   if (moved[0]) void backend.previewNote(s.trackId, moved[0].pitch).catch(() => {});
-  const label = Math.abs(delta) === 12 ? `Noten eine Oktave ${delta > 0 ? "höher" : "tiefer"}` : `Noten transponieren (${delta > 0 ? "+" : "−"}${Math.abs(delta)} HT)`;
+  const label = Math.abs(delta) === 12
+    ? delta > 0 ? t("Notes up one octave") : t("Notes down one octave")
+    : t("Transpose notes ({delta} semitones)", { delta: `${delta > 0 ? "+" : "−"}${Math.abs(delta)}` });
   void run({ type: "batch", label, commands: [{ type: "setClipNotes", trackId: s.trackId, clipId: s.clipId, notes }] });
   return true;
 }
@@ -104,7 +107,10 @@ export async function quantizeSelectedNotes(grid: number, lengths: boolean): Pro
     const notes = clip?.source.type === "notes" ? clip.source.notes : [];
     noteSel.value = { trackId: s.trackId, clipId: s.clipId, keys: r.selected.flatMap((i) => (notes[i] ? [noteKey(notes[i])] : [])) };
     const unit = project()?.beatUnit ?? 4;
-    notify(`${indices.length} ${indices.length === 1 ? "Note" : "Noten"} am Raster ${gridLabel(grid, unit)} ausgerichtet${lengths ? " (Anfang und Länge)" : ""}`);
+    const vars = { grid: gridLabel(grid, unit) };
+    notify(lengths
+      ? plural(indices.length, "Snapped {n} note to the {grid} grid (start and length)", "Snapped {n} notes to the {grid} grid (start and length)", vars)
+      : plural(indices.length, "Snapped {n} note to the {grid} grid", "Snapped {n} notes to the {grid} grid", vars));
     return true;
   } catch (e) {
     notify(errorText(e), "error");
@@ -122,20 +128,20 @@ export async function deleteRange(): Promise<boolean> {
   noteSel.value = null;
   // gewählter Clip kann weggefallen sein
   if (!findClip(project(), selection.peek()) && selection.peek()?.clipId != null) selection.value = null;
-  notify(`${rangeLabel(r[0], r[1], bpb)} gelöscht – alles danach ist aufgerückt (Strg+Z holt es zurück)`);
+  notify(t("Deleted {range} – everything after it moved up to close the gap (Ctrl+Z brings it back)", { range: rangeLabel(r[0], r[1], bpb) }));
   return true;
 }
 
 /** Aufnahme in eine Melodie- oder Rhythmus-Spur umwandeln (`clipId` null: alle Audio-Clips der Spur). */
 export async function convertAudio(trackId: number, clipId: number | null, target: ConvertTarget): Promise<boolean> {
-  notify(target === "melodie" ? "Erkenne die Töne …" : "Erkenne die Anschläge …");
+  notify(target === "melodie" ? t("Detecting pitches…") : t("Detecting hits…"));
   try {
     const r = await backend.audioToNotes(trackId, clipId, target);
     snapshot.value = r.snapshot;
     selection.value = { trackId: r.trackId, clipId: null };
-    const name = r.snapshot.project.tracks.find((t) => t.id === r.trackId)?.name ?? "Neue Spur";
-    const how = target === "melodie" ? "auf Sechzehntel gerastert" : "Bassdrum, Snare und Hi-Hat";
-    notify(`„${name}“ angelegt: ${r.notes} ${r.notes === 1 ? "Note" : "Noten"} (${how})`);
+    const name = r.snapshot.project.tracks.find((t) => t.id === r.trackId)?.name ?? t("New track");
+    const how = target === "melodie" ? t("quantized to sixteenths") : t("kick, snare and hi-hat");
+    notify(plural(r.notes, "Created \"{name}\": {n} note ({how})", "Created \"{name}\": {n} notes ({how})", { name, how }));
     return true;
   } catch (e) {
     notify(errorText(e), "error");
@@ -166,7 +172,7 @@ export async function toggleLoop(): Promise<void> {
   const on = !snapshot.peek()?.engine.loopOn;
   if (await act(backend.setLoop(on))) {
     const range = snapshot.peek()?.engine.loopRange;
-    notify(on ? (range ? "Wiederholen: markierter Bereich" : "Wiederholen: am Ende wieder von vorn") : "Wiederholen aus");
+    notify(on ? (range ? t("Loop: selected range") : t("Loop: back to the start at the end")) : t("Loop off"));
   }
 }
 
@@ -179,7 +185,7 @@ export async function toggleRecord(): Promise<void> {
   if (!status.peek().recording) {
     await guarded(async () => {
       await backend.recordStart();
-      notify("Aufnahme läuft – erneut drücken (oder R) zum Beenden");
+      notify(t("Recording – press again (or R) to stop"));
     });
     return;
   }
@@ -190,7 +196,7 @@ export async function toggleRecord(): Promise<void> {
     selection.value = { trackId: r.trackId, clipId: r.clipId };
     showPanel("analyse");
     const key = r.analysis.key ? ` · ${r.analysis.key.name}` : "";
-    notify(`${r.analysis.notes.length} Noten erkannt${key}`);
+    notify(`${t("Detected {n} notes", { n: r.analysis.notes.length })}${key}`);
   });
 }
 
@@ -199,7 +205,7 @@ export const redo = () => act(backend.redo());
 
 export function addTrack(kind: TrackKind): void {
   const count = (project()?.tracks.filter((t) => t.kind === kind).length ?? 0) + 1;
-  const name = kind === "audio" ? `Audio ${count}` : `Instrument ${count}`;
+  const name = kind === "audio" ? t("Audio {n}", { n: count }) : t("Instrument {n}", { n: count });
   void run({ type: "addTrack", track: { id: 0, name, kind } });
 }
 
@@ -226,14 +232,14 @@ export function deleteSelection(): void {
 
 export async function loadDemo(): Promise<void> {
   if (await act(backend.createDemo())) {
-    notify("Demo geladen: Beat (96 BPM) und Arpeggio (128 BPM) laufen synchron mit 110 BPM");
+    notify(t("Demo loaded: beat (96 BPM) and arpeggio (128 BPM) play in sync at 110 BPM"));
   }
 }
 
 export async function analyzeSelected(): Promise<void> {
   const found = findClip(project(), selection.peek());
   if (!found || found.clip.source.type !== "audio") {
-    notify("Bitte zuerst einen Audio-Clip auswählen.");
+    notify(t("Please select an audio clip first."));
     return;
   }
   const assetId = found.clip.source.assetId;
@@ -252,12 +258,12 @@ export async function detectTempo(): Promise<void> {
     const a = await backend.analyzeAsset(assetId);
     analysis.value = a;
     if (!a.tempoEstimate) {
-      notify("Kein eindeutiges Tempo erkannt.");
+      notify(t("No clear tempo detected."));
       return;
     }
     const bpm = Math.round(a.tempoEstimate * 10) / 10;
     if (await run({ type: "setClip", trackId: track.id, clipId: clip.id, patch: { sourceBpm: bpm, warp: true } })) {
-      notify(`Quelltempo auf ${bpm} BPM gesetzt – der Clip läuft jetzt im Projekttempo`);
+      notify(t("Source tempo set to {bpm} BPM – the clip now plays at the project tempo", { bpm }));
     }
   });
 }
@@ -274,10 +280,10 @@ export async function melodyToTrack(): Promise<void> {
     }
   }
   if (!found || found.clip.source.type !== "audio") {
-    notify("Bitte einen Audio-Clip auswählen.");
+    notify(t("Please select an audio clip."));
     return;
   }
   if (await act(backend.createMelodyTrack(found.track.id, found.clip.id))) {
-    notify("Melodie als Instrumentspur angelegt (auf Sechzehntel quantisiert)");
+    notify(t("Melody created as an instrument track (quantized to sixteenths)"));
   }
 }

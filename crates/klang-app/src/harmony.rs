@@ -7,14 +7,27 @@ use crate::state::{lock, AppState, CmdResult, Snapshot};
 use klang_core::{Clip, ClipPatch, ClipSource, Command, Id, InstrumentKind, Note, Project, Track, TrackKind};
 use klang_dsp::synth::NoteSpec;
 use klang_dsp::util;
+use klang_i18n::tr;
 use klang_music::chordstats::{Follow, Rel, GROUPS};
 use klang_music::chordstats::ChordStats;
 use klang_music::harmony::{self, CadencePath, CadenceTemplate, Category, Chord, ChordInfo, CircleCell, Suggestion, TimedPitch};
 use klang_music::theory::{estimate_key_from_histogram, Key};
 use serde::Serialize;
 
-/// Spur, in die Akkordfolgen ohne ausdrückliches Ziel geschrieben werden.
+/// Track that chord progressions without an explicit target go to. Its name is
+/// how core and UI find it: a new one is called "Chords" in the chosen language
+/// ([`chord_track_name`]); older projects have "Akkorde".
 pub const CHORD_TRACK: &str = "Akkorde";
+
+/// Name of a new chord track (and its clips), in the chosen language.
+pub fn chord_track_name() -> String {
+    tr!("Chords")
+}
+
+/// Is this the chord track? Its German, English or current-language name.
+pub fn is_chord_track(name: &str) -> bool {
+    name == CHORD_TRACK || name == "Chords" || name == chord_track_name()
+}
 const MAX_CHORDS: usize = 64;
 
 fn melodic(t: &Track) -> bool {
@@ -53,30 +66,21 @@ pub fn project_key(p: &Project) -> Option<Key> {
     estimate_key_from_histogram(&hist)
 }
 
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KeyInfo {
     #[serde(flatten)]
     pub key: Key,
-    pub name: &'static str,
+    /// Name for display, in the chosen language.
+    pub name: String,
     /// „gewaehlt“ (von Hand), „geschaetzt“ (aus den Noten) oder „standard“ (C-Dur, keine Noten).
     pub source: &'static str,
-}
-
-fn leak_name(k: &Key) -> &'static str {
-    // 24 mögliche Namen – einmalig angelegt, damit KeyInfo `Copy` bleibt.
-    use std::sync::OnceLock;
-    static NAMES: OnceLock<Vec<String>> = OnceLock::new();
-    let names = NAMES.get_or_init(|| {
-        (0..24u8).map(|i| Key { tonic: i % 12, minor: i >= 12, confidence: 1.0 }.name_de()).collect()
-    });
-    &names[k.tonic as usize % 12 + if k.minor { 12 } else { 0 }]
 }
 
 /// KeyInfo zu einer Tonart mit Herkunft („gewaehlt“, „geschaetzt“, „standard“).
 pub fn key_info(key: Key, source: &'static str) -> KeyInfo {
     let key = Key { tonic: key.tonic % 12, minor: key.minor, confidence: key.confidence };
-    KeyInfo { key, name: leak_name(&key), source }
+    KeyInfo { key, name: key.name(), source }
 }
 
 /// Tonart: gewählt, sonst aus den Noten geschätzt, sonst C-Dur.
@@ -88,7 +92,7 @@ pub fn resolve_key(st: &AppState, chosen: Option<Key>) -> CmdResult<KeyInfo> {
             None => (Key { tonic: 0, minor: false, confidence: 0.0 }, "standard"),
         },
     };
-    Ok(KeyInfo { key, name: leak_name(&key), source })
+    Ok(KeyInfo { key, name: key.name(), source })
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -108,9 +112,9 @@ pub fn chords_in(st: &AppState, track_id: Option<Id>, clip_id: Option<Id>, key: 
     let mut notes = Vec::new();
     match track_id {
         Some(tid) => {
-            let t = p.track(tid).ok_or_else(|| format!("Spur {tid} nicht gefunden"))?;
+            let t = p.track(tid).ok_or_else(|| tr!("Track {id} not found", id = tid))?;
             if !melodic(t) {
-                return Err(format!("„{}“ ist keine Instrumentspur mit Tonhöhe", t.name));
+                return Err(tr!("\"{name}\" is not a pitched instrument track", name = t.name));
             }
             for c in t.clips.iter().filter(|c| clip_id.is_none_or(|id| c.id == id)) {
                 notes.extend(clip_pitches(t, c));
@@ -145,13 +149,13 @@ fn voiced(chords: &[Chord], key: &Key, before: Option<Chord>) -> Vec<Vec<u8>> {
 
 fn check_len(chords: &[Chord], bpc: f64) -> CmdResult<f64> {
     if chords.is_empty() {
-        return Err("Keine Akkorde angegeben".into());
+        return Err(tr!("No chords given"));
     }
     if chords.len() > MAX_CHORDS {
-        return Err(format!("Höchstens {MAX_CHORDS} Akkorde auf einmal"));
+        return Err(tr!("At most {max} chords at once", max = MAX_CHORDS));
     }
     if !(0.25..=32.0).contains(&bpc) {
-        return Err("Dauer je Akkord: 0,25 bis 32 Schläge".into());
+        return Err(tr!("Duration per chord: 0.25 to 32 beats"));
     }
     Ok(bpc)
 }
@@ -246,13 +250,13 @@ pub fn write_mode(
         let p = &mut s.project;
         let target = match track_id {
             Some(id) => {
-                let t = p.track(id).ok_or_else(|| format!("Spur {id} nicht gefunden"))?;
+                let t = p.track(id).ok_or_else(|| tr!("Track {id} not found", id = id))?;
                 if !melodic(t) {
-                    return Err(format!("„{}“ ist keine Instrumentspur mit Tonhöhe – Akkorde gehen nicht aufs Schlagzeug", t.name));
+                    return Err(tr!("\"{name}\" is not a pitched instrument track – chords can't go on drums", name = t.name));
                 }
                 Some(id)
             }
-            None => p.tracks.iter().find(|t| t.name == CHORD_TRACK && melodic(t)).map(|t| t.id),
+            None => p.tracks.iter().find(|t| is_chord_track(&t.name) && melodic(t)).map(|t| t.id),
         };
         let shift = target.and_then(|id| p.track(id)).map(shift_of).unwrap_or(0);
         // Einfügen: Platz schaffen – alles ab der Stelle rückt in allen Spuren nach hinten
@@ -307,7 +311,7 @@ pub fn write_mode(
             }
             // Einfügen ohne Clip an der Stelle: eigener Clip in der Lücke
             Some(tid) if insert => {
-                let clip = Clip { id: p.alloc_id(), name: "Akkorde".into(), start_beats: start, source: ClipSource::Notes { length_beats: len, notes: notes_at(0.0) } };
+                let clip = Clip { id: p.alloc_id(), name: chord_track_name(), start_beats: start, source: ClipSource::Notes { length_beats: len, notes: notes_at(0.0) } };
                 let w = Written { track_id: tid, clip_id: clip.id, start_beats: start, length_beats: len, voicings: voicings.clone() };
                 (Command::AddClip { track_id: tid, clip }, w)
             }
@@ -333,7 +337,7 @@ pub fn write_mode(
                         (Command::SetClipNotes { track_id: tid, clip_id: c.id, notes: kept, length_beats: Some(new_len) }, w)
                     }
                     None => {
-                        let clip = Clip { id: p.alloc_id(), name: "Akkorde".into(), start_beats: start, source: ClipSource::Notes { length_beats: len, notes: notes_at(0.0) } };
+                        let clip = Clip { id: p.alloc_id(), name: chord_track_name(), start_beats: start, source: ClipSource::Notes { length_beats: len, notes: notes_at(0.0) } };
                         let w = Written { track_id: tid, clip_id: clip.id, start_beats: start, length_beats: len, voicings: voicings.clone() };
                         (Command::AddClip { track_id: tid, clip }, w)
                     }
@@ -341,10 +345,10 @@ pub fn write_mode(
             }
             None => {
                 let id = p.alloc_id();
-                let mut track = Track::new(id, CHORD_TRACK, TrackKind::Instrument);
+                let mut track = Track::new(id, chord_track_name(), TrackKind::Instrument);
                 track.instrument = Some(sound::default_instrument(InstrumentKind::Pluck));
                 track.gain_db = -4.0;
-                let clip = Clip { id: p.alloc_id(), name: "Akkorde".into(), start_beats: start, source: ClipSource::Notes { length_beats: len, notes: notes_at(0.0) } };
+                let clip = Clip { id: p.alloc_id(), name: chord_track_name(), start_beats: start, source: ClipSource::Notes { length_beats: len, notes: notes_at(0.0) } };
                 let w = Written { track_id: id, clip_id: clip.id, start_beats: start, length_beats: len, voicings: voicings.clone() };
                 track.clips.push(clip);
                 (Command::AddTrack { track, index: None }, w)
@@ -406,7 +410,8 @@ pub struct LibSummary {
 pub struct GroupInfo {
     pub id: usize,
     pub key: &'static str,
-    pub label: &'static str,
+    /// Display name (translated; the names in `GROUPS` are keys).
+    pub label: String,
     pub scores: u32,
 }
 
@@ -418,6 +423,8 @@ pub struct SuggestResult {
     pub library: Option<LibSummary>,
     /// Hinweis, warum Häufigkeiten fehlen.
     pub hint: Option<String>,
+    /// The hint suggests re-indexing the library (index without chord statistics or without groups).
+    pub reindex: bool,
     /// Mehrschrittige Wege vom letzten Akkord zu den Schlüssen, bester zuerst.
     pub paths: Vec<PathView>,
 }
@@ -475,7 +482,8 @@ pub fn suggest_with_library(st: &AppState, key: &Key, chords: &[Chord], group: u
         return Ok(SuggestResult {
             suggestions: base.into_iter().map(|s| SuggestionView { suggestion: s, library: None }).collect(),
             library: None,
-            hint: Some("Keine Bibliothek geladen – Häufigkeiten kommen aus der Musikbibliothek.".into()),
+            hint: Some(tr!("No library loaded – the frequencies come from the music library.")),
+            reindex: false,
             paths: paths_for(key, chords, None),
         });
     };
@@ -483,7 +491,8 @@ pub fn suggest_with_library(st: &AppState, key: &Key, chords: &[Chord], group: u
         return Ok(SuggestResult {
             suggestions: base.into_iter().map(|s| SuggestionView { suggestion: s, library: None }).collect(),
             library: None,
-            hint: Some("Der Index hat noch keine Akkordstatistik – Bibliothek neu indizieren.".into()),
+            hint: Some(tr!("The index has no chord statistics yet – reindex the library.")),
+            reindex: true,
             paths: paths_for(key, chords, None),
         });
     }
@@ -491,19 +500,27 @@ pub fn suggest_with_library(st: &AppState, key: &Key, chords: &[Chord], group: u
     let groups: Vec<GroupInfo> = GROUPS
         .iter()
         .enumerate()
-        .filter_map(|(id, (k, label))| lib.index.chords_group(id).map(|s| GroupInfo { id, key: k, label, scores: s.scores[mode] }))
+        .filter_map(|(id, (k, label))| {
+            lib.index.chords_group(id).map(|s| GroupInfo { id, key: k, label: klang_i18n::translate(label), scores: s.scores[mode] })
+        })
         .collect();
     // Gruppe mit zu wenig Stücken in diesem Tongeschlecht: auf alle ausweichen
     let mut hint = None;
+    let mut reindex = false;
     let group = match groups.iter().find(|g| g.id == group) {
         Some(g) if g.scores >= 20 => group,
         Some(g) => {
-            hint = Some(format!("„{}“: nur {} {}stücke mit Akkordfolge – zeige alle Stücke.", g.label, g.scores, if key.minor { "Moll" } else { "Dur" }));
+            hint = Some(if key.minor {
+                tr!("\"{group}\": only {n} minor-key pieces with a chord progression – showing all pieces.", group = g.label, n = g.scores)
+            } else {
+                tr!("\"{group}\": only {n} major-key pieces with a chord progression – showing all pieces.", group = g.label, n = g.scores)
+            });
             0
         }
         None => {
             if group != 0 {
-                hint = Some("Dieser Index kennt noch keine Gruppen (Barock/Bach) – Bibliothek neu indizieren.".into());
+                hint = Some(tr!("This index doesn't know any groups yet (Baroque/Bach) – reindex the library."));
+                reindex = true;
             }
             0
         }
@@ -527,7 +544,7 @@ pub fn suggest_with_library(st: &AppState, key: &Key, chords: &[Chord], group: u
     };
     let paths = paths_for(key, chords, Some(stats));
     let Some(prev) = chords.last() else {
-        return Ok(SuggestResult { suggestions: base.into_iter().map(|s| SuggestionView { suggestion: s, library: None }).collect(), library: Some(summary), hint, paths });
+        return Ok(SuggestResult { suggestions: base.into_iter().map(|s| SuggestionView { suggestion: s, library: None }).collect(), library: Some(summary), hint, reindex, paths });
     };
     let prev_rel = Rel::of(prev, key);
     let mut out: Vec<SuggestionView> = base
@@ -552,14 +569,14 @@ pub fn suggest_with_library(st: &AppState, key: &Key, chords: &[Chord], group: u
                 info: harmony::describe(&ch, key),
                 score: ((0.2 + 0.6 * f.share) * 100.0).round() / 100.0,
                 category: Category::Haeufig,
-                reason: format!("in der Bibliothek häufig: {pct} % der Fortsetzungen"),
+                reason: tr!("common in the library: {pct}% of continuations", pct = pct),
                 to_key: None,
                 mood: harmony::transition_mood(Some(prev), &ch, key),
             },
             library: Some(view(f)),
         });
     }
-    Ok(SuggestResult { suggestions: out, library: Some(summary), hint, paths })
+    Ok(SuggestResult { suggestions: out, library: Some(summary), hint, reindex, paths })
 }
 
 /// Eine Beispielstelle der Bibliothek anspielen (alle Stimmen, Tempo der Partitur).
@@ -610,7 +627,7 @@ pub fn line(st: &AppState, chosen: Option<Key>) -> CmdResult<HarmonyLine> {
         .map(|p| {
             let ch = p.info.chord;
             let mood = harmony::transition_mood(prev.as_ref(), &ch, &info.key);
-            let bruch = harmony::harmonic_break(prev.as_ref(), &ch, &info.key).map(String::from);
+            let bruch = harmony::harmonic_break(prev.as_ref(), &ch, &info.key).map(klang_i18n::translate);
             prev = Some(ch);
             LineChord { start_beats: p.start_beats, length_beats: p.length_beats, info: p.info, mood, bruch }
         })

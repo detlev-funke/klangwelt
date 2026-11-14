@@ -3,14 +3,15 @@
 
 import { backend } from "../bridge.js";
 import { h, icon } from "../dom.js";
+import { language, t } from "../i18n.js";
 import { chat, errorText, notify, snapshot } from "../store.js";
 import type { ChatMessage } from "../types.js";
 import { webAgentPrompt } from "../web/agent-prompt.js";
 
-const STATUS: Record<string, string> = { neu: "wartet", inArbeit: "in Arbeit", erledigt: "erledigt" };
+const STATUS: Record<string, string> = { neu: t("waiting"), inArbeit: t("in progress"), erledigt: t("done") };
 
 function time(ms: number): string {
-  return new Date(ms).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+  return new Date(ms).toLocaleTimeString(language(), { hour: "2-digit", minute: "2-digit" });
 }
 
 function bubble(m: ChatMessage): HTMLElement {
@@ -18,7 +19,7 @@ function bubble(m: ChatMessage): HTMLElement {
     "div",
     { class: `msg ${m.from}` },
     h("div", { class: "msg-text" }, m.text),
-    m.kontext ? h("div", { class: "msg-context", title: "Geht mit der Nachricht an den Agenten" }, m.kontext) : null,
+    m.kontext ? h("div", { class: "msg-context", title: t("Sent to the agent along with the message") }, m.kontext) : null,
     h(
       "div",
       { class: "meta" },
@@ -36,20 +37,23 @@ function bubble(m: ChatMessage): HTMLElement {
 export function agentPrompt(url: string): string {
   const init = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"claude","version":"1"}}}`;
   const poll = `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"chat_poll","arguments":{"timeoutSeconds":280}}}`;
-  return `Klangwelt (eine Musik-App) läuft auf diesem Rechner. Steuere sie über ihren HTTP-Endpunkt ${url} – ohne ihn als MCP-Server einzurichten. Wo die Anweisungen der App von Werkzeugen sprechen, rufst du sie so auf wie hier beschrieben.
-
-So geht ein Aufruf: HTTP-POST an ${url} mit einer JSON-RPC-2.0-Nachricht im Body und dem Header Content-Type: application/json; die Antwort ist JSON. Am einfachsten mit curl in Bash (unter Windows Git Bash; in PowerShell curl.exe):
-curl -s ${url} -H "Content-Type: application/json" -d '${init}'
-Texte mit Umlauten (z. B. für chat_reply) – und in PowerShell jede Nachricht – als UTF-8-Datei schreiben und mit --data-binary @datei.json schicken. Den Kopf Mcp-Session-Id brauchst du nicht.
-
-1. Schick initialize (wie oben) und halte dich an result.instructions aus der Antwort.
-2. tools/list nennt alle Werkzeuge mit Beschreibung und Parametern. Aufruf eines Werkzeugs: {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_project","arguments":{}}} – das Ergebnis steht in result.structuredContent (als Text auch in result.content[0].text), result.isError meldet Fehler.
-3. Zuhören: Starte einen allgemeinen Subagenten im Hintergrund (keinen, der eingerichtete MCP-Werkzeuge voraussetzt) und gib ihm diese ganze Anleitung mit, damit du selbst ansprechbar bleibst. Er ruft in einer Schleife chat_poll auf, mit Shell-Timeout 300000 ms:
-curl -s --max-time 295 ${url} -H "Content-Type: application/json" -d '${poll}'
-Der Aufruf wartet, bis im Chat der App ein Auftrag kommt. Leere Liste: sofort wieder pollen. Jeden Auftrag mit den Werkzeugen ausführen, kurz auf Deutsch mit chat_reply antworten (replyTo = id des Auftrags), dann wieder pollen. Meldet die Antwort einen Abbruch, mit der genannten kürzeren Wartezeit weitermachen. Endet der Subagent, starte einen neuen.
-4. Antwortet der Server mit 401, frag mich nach dem Token und schick ihn als Header Authorization: Bearer <Token>.
-
-Sag kurz Bescheid, sobald du verbunden bist und zuhörst.`;
+  // paragraphs translated one by one; the curl lines are code and stay as they are
+  return [
+    t("Klangwelt (a music app) is running on this computer. Control it through its HTTP endpoint {url} – without setting it up as an MCP server. Wherever the app's instructions mention tools, call them as described here.", { url }),
+    "",
+    t("How to make a call: HTTP POST to {url} with a JSON-RPC 2.0 message in the body and the header Content-Type: application/json; the response is JSON. Easiest with curl in Bash (on Windows Git Bash; in PowerShell curl.exe):", { url }),
+    `curl -s ${url} -H "Content-Type: application/json" -d '${init}'`,
+    t("Write texts with non-ASCII characters (e.g. for chat_reply) – and in PowerShell every message – to a UTF-8 file and send it with --data-binary @file.json. You don't need the Mcp-Session-Id header."),
+    "",
+    t("1. Send initialize (as above) and follow result.instructions from the response."),
+    t("2. tools/list lists all tools with their descriptions and parameters. Calling a tool: {\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"get_project\",\"arguments\":{}}} – the result is in result.structuredContent (as text also in result.content[0].text), result.isError reports errors."),
+    t("3. Listening: start a general-purpose subagent in the background (not one that requires configured MCP tools) and give it these complete instructions, so you stay available yourself. It calls chat_poll in a loop, with a shell timeout of 300000 ms:"),
+    `curl -s --max-time 295 ${url} -H "Content-Type: application/json" -d '${poll}'`,
+    t("The call waits until a task arrives in the app's chat. Empty list: poll again right away. Carry out each task with the tools, reply briefly in English with chat_reply (replyTo = id of the task), then poll again. If the response reports a cancellation, continue with the shorter wait time it gives. If the subagent ends, start a new one."),
+    t("4. If the server responds with 401, ask me for the token and send it as the header Authorization: Bearer <token>."),
+    "",
+    t("Let me know once you're connected and listening."),
+  ].join("\n");
 }
 
 /** Ersatzweg, falls die Zwischenablage-API ablehnt (z. B. Fenster noch ohne Fokus). */
@@ -71,13 +75,13 @@ function copyFallback(text: string): boolean {
 /** Blauer Knopf, der `text` (oder den aktuellen Wert von `text()`) kopiert und kurz „Kopiert“ zeigt. */
 function copyButton(source: string | (() => string)): HTMLButtonElement {
   const get = typeof source === "string" ? () => source : source;
-  const btn = h("button", { class: "btn small blue", title: "In die Zwischenablage kopieren" }, icon("copy"), "Kopieren");
+  const btn = h("button", { class: "btn small blue", title: t("Copy to clipboard") }, icon("copy"), t("Copy"));
   const done = () => {
     btn.classList.add("done");
-    btn.replaceChildren(icon("check"), "Kopiert");
+    btn.replaceChildren(icon("check"), t("Copied"));
     setTimeout(() => {
       btn.classList.remove("done");
-      btn.replaceChildren(icon("copy"), "Kopieren");
+      btn.replaceChildren(icon("copy"), t("Copy"));
     }, 1600);
   };
   btn.addEventListener("click", () => {
@@ -85,7 +89,7 @@ function copyButton(source: string | (() => string)): HTMLButtonElement {
     navigator.clipboard
       .writeText(text)
       .then(done)
-      .catch(() => (copyFallback(text) ? done() : notify(`Kopieren nicht möglich – bitte markieren: ${text}`, "error")));
+      .catch(() => (copyFallback(text) ? done() : notify(t("Can't copy – please select it: {text}", { text }), "error")));
   });
   return btn;
 }
@@ -96,9 +100,9 @@ function connectBox(url: string): HTMLElement {
   return h(
     "div",
     { class: "connect" },
-    h("div", { class: "connect-row" }, h("span", { class: "connect-label" }, "Prompt für Claude Code (einfügen, fertig):"), copyButton(text)),
-    h("code", { class: "connect-cmd prose prompt", title: "Diesen Text in Claude Code einfügen" }, text),
-    h("div", { class: "connect-hint" }, "Claude Code bedient damit den Endpunkt der App direkt per HTTP – ohne MCP-Einrichtung – und startet einen Subagenten, der im Hintergrund zuhört. Claude Code bleibt frei."),
+    h("div", { class: "connect-row" }, h("span", { class: "connect-label" }, t("Prompt for Claude Code (just paste it):")), copyButton(text)),
+    h("code", { class: "connect-cmd prose prompt", title: t("Paste this text into Claude Code") }, text),
+    h("div", { class: "connect-hint" }, t("With this, Claude Code talks to the app's endpoint directly over HTTP – no MCP setup – and starts a subagent that listens in the background. Claude Code stays free.")),
   );
 }
 
@@ -109,17 +113,17 @@ function webConnectBox(): HTMLElement {
   return h(
     "div",
     { class: "connect" },
-    h("div", { class: "connect-row" }, h("span", { class: "connect-label" }, "Prompt für deinen Agenten (einfügen, fertig):"), copyButton(text)),
-    h("code", { class: "connect-cmd prose prompt connect-prompt", title: "Diesen Text deinem Agenten geben" }, text),
-    h("div", { class: "connect-hint" }, "Für Claude Desktop mit der Erweiterung „Claude in Chrome“ – oder einen anderen Agenten, der JavaScript in einem Browser-Tab ausführen kann. Er spricht mit dem MCP-Server in dieser Seite, ohne Netzwerk."),
+    h("div", { class: "connect-row" }, h("span", { class: "connect-label" }, t("Prompt for your agent (just paste it):")), copyButton(text)),
+    h("code", { class: "connect-cmd prose prompt connect-prompt", title: t("Give this text to your agent") }, text),
+    h("div", { class: "connect-hint" }, t("For Claude Desktop with the \"Claude in Chrome\" extension – or any other agent that can run JavaScript in a browser tab. It talks to the MCP server inside this page, without any network.")),
   );
 }
 
 const SUGGESTIONS = [
-  "Mach die Kick tiefer und punchiger",
-  "Stimm die Kick auf den Grundton des Basses",
-  "Mach den Bass wärmer mit mehr Sub",
-  "Schreib eine Basslinie in a-Moll für 4 Takte",
+  t("Make the kick deeper and punchier"),
+  t("Tune the kick to the bass's root note"),
+  t("Make the bass warmer with more sub"),
+  t("Write a 4-bar bass line in A minor"),
 ];
 
 export function chatPanel(): { el: HTMLElement; update(): void } {
@@ -127,19 +131,19 @@ export function chatPanel(): { el: HTMLElement; update(): void } {
   const status = h("div", { class: "chat-status" });
   const input = h("textarea", {
     class: "chat-input",
-    title: "Auftrag an den Agenten – er bekommt mit, welche Spuren zu hören sind und welcher Zeitraum markiert ist",
+    title: t("Task for the agent – it knows which tracks are audible and which time range is selected"),
     rows: 2,
-    placeholder: "Auftrag an den Agenten – z. B. „Mach die Kick tiefer und den Bass wärmer“ (Enter sendet, Shift+Enter neue Zeile)",
+    placeholder: t("Task for the agent – e.g. \"Make the kick deeper and the bass warmer\" (Enter sends, Shift+Enter adds a new line)"),
   });
   const send = async (text = input.value) => {
-    const t = text.trim();
-    if (!t) return;
+    const task = text.trim();
+    if (!task) return;
     input.value = "";
     try {
-      chat.value = await backend.chatSend(t);
+      chat.value = await backend.chatSend(task);
     } catch (e) {
       notify(errorText(e), "error");
-      input.value = t;
+      input.value = task;
     }
   };
   input.addEventListener("keydown", (e) => {
@@ -152,7 +156,7 @@ export function chatPanel(): { el: HTMLElement; update(): void } {
   const suggestions = h(
     "div",
     { class: "chat-suggest" },
-    ...SUGGESTIONS.map((s) => h("button", { class: "btn small ghost", title: "Diesen Auftrag an den Agenten schicken", onclick: () => void send(s) }, s)),
+    ...SUGGESTIONS.map((s) => h("button", { class: "btn small ghost", title: t("Send this task to the agent"), onclick: () => void send(s) }, s)),
   );
 
   const el = h(
@@ -160,7 +164,7 @@ export function chatPanel(): { el: HTMLElement; update(): void } {
     { class: "chat" },
     status,
     list,
-    h("div", { class: "chat-compose" }, input, h("button", { class: "btn primary", title: "Auftrag senden (Enter)", onclick: () => void send() }, "Senden")),
+    h("div", { class: "chat-compose" }, input, h("button", { class: "btn primary", title: t("Send task (Enter)"), onclick: () => void send() }, t("Send"))),
   );
 
   let rendered = "\u0000";
@@ -171,12 +175,12 @@ export function chatPanel(): { el: HTMLElement; update(): void } {
       const url = snapshot.peek()?.agent.url;
       if (c.agentListening) {
         status.className = "chat-status on";
-        status.replaceChildren(h("span", { class: "dot" }), h("span", { class: "status-text" }, "Agent hört zu – Aufträge werden sofort abgeholt."));
+        status.replaceChildren(h("span", { class: "dot" }), h("span", { class: "status-text" }, t("Agent is listening – tasks are picked up right away.")));
       } else {
         status.className = "chat-status";
         const text = c.agentConnected
-          ? "Ein Agent ist verbunden, hört aber nicht zu. Aufträge warten, bis er zuhört – der Prompt unten startet das Zuhören."
-          : "Kein Agent verbunden. Aufträge warten, bis einer sie abholt.";
+          ? t("An agent is connected but not listening. Tasks wait until it listens – the prompt below starts listening.")
+          : t("No agent connected. Tasks wait until one picks them up.");
         const parts: Node[] = [h("span", { class: "dot" }), h("span", { class: "status-text" }, text)];
         // Desktop: Prompt für den HTTP-Endpunkt; Browser (kein Port): Prompt für einen Agenten mit Browser-Werkzeug
         if (url) parts.push(connectBox(url));
@@ -188,7 +192,7 @@ export function chatPanel(): { el: HTMLElement; update(): void } {
       const sig = c.messages.map((m) => `${m.id}:${m.status ?? ""}`).join(",");
       if (sig !== rendered) {
         rendered = sig;
-        list.replaceChildren(...(c.messages.length ? c.messages.map(bubble) : [h("div", { class: "chat-empty" }, "Noch keine Nachrichten. Vorschläge:", suggestions)]));
+        list.replaceChildren(...(c.messages.length ? c.messages.map(bubble) : [h("div", { class: "chat-empty" }, t("No messages yet. Suggestions:"), suggestions)]));
         list.scrollTop = list.scrollHeight;
       }
     },

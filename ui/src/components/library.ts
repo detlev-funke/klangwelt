@@ -3,8 +3,10 @@
 // suchen, Partitur mit Stimmrollen anzeigen, Stimme als Spur übernehmen.
 
 import { backend } from "../bridge.js";
+import { chordsInput, chordsText } from "../spelling.js";
 import { isAudioPath } from "../files.js";
 import { fitCanvas, h, icon, noteName } from "../dom.js";
+import { language, plural, t } from "../i18n.js";
 import { highOnTop } from "../pianoroll.js";
 import { treeView } from "./libtree.js";
 import { effect, signal } from "../signals.js";
@@ -43,7 +45,7 @@ export function libraryTakesDrops(): boolean {
 
 function addToLibrary(paths: string[]): void {
   if (!state.info.peek()?.id) {
-    notify("Die Bibliothek wird noch geladen – gleich nochmal versuchen.", "error");
+    notify(t("The library is still loading – try again in a moment."), "error");
     return;
   }
   backend.libraryAdd(paths).then((i) => (state.info.value = i)).catch((e) => notify(errorText(e), "error"));
@@ -66,7 +68,7 @@ function ensureListening(): void {
     const scores = paths.filter((p) => /.(mxl|musicxml|xml)$/i.test(p) || !/.[a-z0-9]{1,8}$/i.test(p));
     if (!scores.length) {
       if (paths.some(isAudioPath)) return; // Audiodateien werden Spuren (filedrop.ts)
-      notify("Nur MusicXML-Dateien (.mxl, .musicxml, .xml) oder Ordner lassen sich zur Bibliothek hinzufügen.", "error");
+      notify(t("Only MusicXML files (.mxl, .musicxml, .xml) or folders can be added to the library."), "error");
       return;
     }
     addToLibrary(scores);
@@ -92,8 +94,8 @@ let libMode: "suchen" | "stoebern" = (() => {
   }
 })();
 
-const fmt = (n: number) => Math.round(n).toLocaleString("de-DE");
-const mb = (bytes: number) => `${(bytes / 1e6).toLocaleString("de-DE", { maximumFractionDigits: bytes < 1e8 ? 1 : 0 })} MB`;
+const fmt = (n: number) => Math.round(n).toLocaleString(language());
+const mb = (bytes: number) => `${(bytes / 1e6).toLocaleString(language(), { maximumFractionDigits: bytes < 1e8 ? 1 : 0 })} MB`;
 
 /** Katalog herunterladbarer Bibliotheken: je Sammlung ein aufklappbares Panel
  *  mit Karten (Größe, Format, Lizenz, Zielordner). */
@@ -106,16 +108,16 @@ function catalogView(onClose: () => void): { el: HTMLElement; refresh(): void; s
     "div",
     { class: "lib-catalog" },
     h("div", { class: "lib-catalog-head" },
-      h("b", {}, "Musikbibliothek herunterladen"),
-      h("span", { class: "muted" }, "Nach dem Laden wird es in die aktive Bibliothek übernommen. Für Bach, Mozart und Beethoven in guter Qualität: KernScores, OpenScore und DCML."),
-      h("button", { class: "btn small ghost", title: "Schließen", onclick: onClose }, icon("close"))),
+      h("b", {}, t("Download music library")),
+      h("span", { class: "muted" }, t("Once downloaded, it's added to the active library. For Bach, Mozart and Beethoven in good quality: KernScores, OpenScore and DCML.")),
+      h("button", { class: "btn small ghost", title: t("Close"), onclick: onClose }, icon("close"))),
     panels,
   );
   const sizeText = (v: number) =>
-    v >= 1000 ? `${(v / 1000).toLocaleString("de-DE", { maximumFractionDigits: 1 })} GB` : v < 1 ? "< 1 MB" : `${v} MB`;
+    v >= 1000 ? `${(v / 1000).toLocaleString(language(), { maximumFractionDigits: 1 })} GB` : v < 1 ? "< 1 MB" : `${v} MB`;
 
   const card = (c: CatalogEntry) => {
-    const folder = h("input", { class: "lib-input mono small", value: c.folder, title: "Ordner für die Partituren – kann geändert werden" });
+    const folder = h("input", { class: "lib-input mono small", value: c.folder, title: t("Folder for the scores – can be changed") });
     folder.addEventListener("keydown", (e) => e.stopPropagation());
     const isPdmx = c.group === "pdmx";
     /** Platz in der Warteschlange (für die aktive Bibliothek), -1 = wartet nicht. */
@@ -133,7 +135,7 @@ function catalogView(onClose: () => void): { el: HTMLElement; refresh(): void; s
       if (!c.installed && c.downloadMb >= 1000 && !confirmArmed) {
         confirmArmed = true;
         goBtn.classList.add("warn");
-        goBtn.replaceChildren(icon("download"), `Wirklich ${sizeText(c.downloadMb)} laden?`);
+        goBtn.replaceChildren(icon("download"), t("Really download {size}?", { size: sizeText(c.downloadMb) }));
         setTimeout(() => {
           confirmArmed = false;
           goBtn.classList.remove("warn");
@@ -147,19 +149,19 @@ function catalogView(onClose: () => void): { el: HTMLElement; refresh(): void; s
         .then((i) => {
           state.info.value = i;
           const pos = queuePos(i);
-          if (pos >= 0) notify(`„${c.name}“ wartet in der Warteschlange (Platz ${pos + 1}) – es startet, sobald der laufende Auftrag fertig ist.`);
+          if (pos >= 0) notify(t("\"{name}\" is waiting in the queue (position {pos}) – it starts as soon as the current job is done.", { name: c.name, pos: pos + 1 }));
         })
         .catch((e) => notify(errorText(e), "error"));
     };
     let confirmArmed = false;
     const withMeta = h("input", { type: "checkbox", checked: true });
-    const metaRow = h("label", { class: "check lib-meta", title: "Liest PDMX.csv (225 MB) und behält nur die Zeilen der geladenen Partituren – für die Baumansicht nach Genre, Komponist und Schwierigkeit." },
-      withMeta, "Genre & Komponist mitladen (+225 MB)");
+    const metaRow = h("label", { class: "check lib-meta", title: t("Reads PDMX.csv (225 MB) and keeps only the rows for the downloaded scores – for the tree view by genre, composer and difficulty.") },
+      withMeta, t("Also download genre & composer (+225 MB)"));
     const [label, tip, ico] = c.inLibrary
-      ? [`In „${c.inLibrary}“`, `Schon in der Bibliothek „${c.inLibrary}“`, "check"]
+      ? [t("In \"{library}\"", { library: c.inLibrary }), t("Already in the library \"{library}\"", { library: c.inLibrary }), "check"]
       : c.installed
-        ? ["Übernehmen", "Die Partituren liegen schon im Ordner – nur in die aktive Bibliothek übernehmen", "book"]
-        : ["Herunterladen", "Herunterladen und in die aktive Bibliothek übernehmen", "download"];
+        ? [t("Import"), t("The scores are already in the folder – just add them to the active library"), "book"]
+        : [t("Download"), t("Download and add to the active library"), "download"];
     const goBtn = h("button", { class: `btn small ${c.inLibrary || c.installed ? "" : "blue"}`, title: tip, disabled: !!c.inLibrary, onclick: go }, icon(ico), label);
     // Läuft gerade ein Auftrag, wird das Paket eingereiht statt gestartet.
     let shown = "";
@@ -174,16 +176,16 @@ function catalogView(onClose: () => void): { el: HTMLElement; refresh(): void; s
       goBtn.classList.remove("queued", "blue");
       goBtn.disabled = running;
       if (running) {
-        goBtn.replaceChildren(icon("download"), "Wird geladen …");
-        goBtn.title = "Dieses Paket wird gerade geladen bzw. übernommen";
+        goBtn.replaceChildren(icon("download"), t("Loading…"));
+        goBtn.title = t("This pack is being downloaded or added right now");
       } else if (pos >= 0) {
         goBtn.classList.add("queued");
-        goBtn.replaceChildren(icon("close"), `Wartet · Platz ${pos + 1}`);
-        goBtn.title = "In der Warteschlange – startet, sobald die Pakete davor fertig sind. Klick nimmt es wieder heraus.";
+        goBtn.replaceChildren(icon("close"), t("Waiting · position {pos}", { pos: pos + 1 }));
+        goBtn.title = t("In the queue – starts as soon as the packs ahead of it are done. Click to remove it.");
       } else if (busy) {
         if (!c.installed) goBtn.classList.add("blue");
-        goBtn.replaceChildren(icon("plus"), c.installed ? "Übernehmen einreihen" : "Einreihen");
-        goBtn.title = "Gerade läuft ein anderer Auftrag – das Paket kommt in die Warteschlange und wird danach geladen und übernommen";
+        goBtn.replaceChildren(icon("plus"), c.installed ? t("Queue import") : t("Add to queue"));
+        goBtn.title = t("Another job is running – the pack goes into the queue and will be downloaded and added afterwards");
       } else {
         if (!c.installed) goBtn.classList.add("blue");
         goBtn.replaceChildren(icon(ico), label);
@@ -195,11 +197,12 @@ function catalogView(onClose: () => void): { el: HTMLElement; refresh(): void; s
       "div",
       { class: `lib-card${c.inLibrary ? " installed" : ""}`, "data-id": c.id },
       h("div", { class: "lib-card-title" }, c.name,
-        c.inLibrary ? h("span", { class: "tag" }, `in „${c.inLibrary}“`) : c.installed ? h("span", { class: "tag local", title: "Die Partituren liegen schon im Ordner" }, "im Ordner") : null),
+        c.inLibrary ? h("span", { class: "tag" }, t("in \"{library}\"", { library: c.inLibrary })) : c.installed ? h("span", { class: "tag local", title: t("The scores are already in the folder") }, t("in folder")) : null),
       h("div", { class: "lib-card-tags" },
         h("span", { class: "chip" }, c.format),
-        c.expertHarmony ? h("span", { class: "chip expert", title: "Akkordanalyse von Fachleuten für jeden Takt – zählt in der Akkordstatistik statt der automatischen Erkennung" }, "Harmonieanalyse") : null),
-      h("div", { class: "lib-card-facts" }, `≈ ${fmt(c.scores)} ${c.scores === 1 ? "Partitur" : "Partituren"} · ${sizeText(c.downloadMb)} Download · ${sizeText(c.diskMb)} auf der Platte`),
+        c.expertHarmony ? h("span", { class: "chip expert", title: t("Expert chord analysis for every bar – used in the chord statistics instead of automatic detection") }, t("Harmonic analysis")) : null),
+      h("div", { class: "lib-card-facts" },
+        plural(c.scores, "≈ {n} score · {download} download · {disk} on disk", "≈ {n} scores · {download} download · {disk} on disk", { n: fmt(c.scores), download: sizeText(c.downloadMb), disk: sizeText(c.diskMb) })),
       h("div", { class: "lib-card-desc" }, c.description),
       c.inLibrary ? null : folder,
       c.inLibrary || c.installed || !isPdmx ? null : metaRow,
@@ -230,8 +233,8 @@ function catalogView(onClose: () => void): { el: HTMLElement; refresh(): void; s
               { class: `lib-panel lib-panel-${g.id}`, open: panelOpen(g.id) },
               h("summary", { class: "lib-panel-head" },
                 h("b", {}, g.name),
-                h("span", { class: "muted" }, `${g.items.length} ${g.items.length === 1 ? "Paket" : "Pakete"}`),
-                contained ? h("span", { class: "tag" }, `${contained} in „${libName}“`) : null),
+                h("span", { class: "muted" }, plural(g.items.length, "{n} pack", "{n} packs")),
+                contained ? h("span", { class: "tag" }, t("{n} in \"{library}\"", { n: contained, library: libName })) : null),
               h("div", { class: "lib-panel-desc" }, g.description),
               h("div", { class: "lib-cards" }, ...g.items.map(card)),
             ) as HTMLDetailsElement;
@@ -241,7 +244,7 @@ function catalogView(onClose: () => void): { el: HTMLElement; refresh(): void; s
         );
         for (const s of syncs) s(lastInfo);
       })
-      .catch(() => panels.replaceChildren(h("div", { class: "lib-empty" }, "Herunterladen gibt es nur in der Desktop-App.")));
+      .catch(() => panels.replaceChildren(h("div", { class: "lib-empty" }, t("Downloading is only available in the desktop app."))));
   };
   const sync = (info: LibraryInfo | null) => {
     lastInfo = info;
@@ -254,13 +257,13 @@ function catalogView(onClose: () => void): { el: HTMLElement; refresh(): void; s
  *  anlegen, umbenennen, löschen (nur den Index, nie Partituren). */
 function manageView(onClose: () => void): { el: HTMLElement; refresh(): void } {
   const list = h("div", { class: "lib-libs" });
-  const newName = h("input", { class: "lib-input", placeholder: "Name der neuen Bibliothek" });
+  const newName = h("input", { class: "lib-input", placeholder: t("Name of the new library") });
   const err = (e: unknown) => notify(errorText(e), "error");
   let current: LibEntry[] = [];
 
   const create = () => {
     const name = newName.value.trim();
-    if (!name) return notify("Bitte einen Namen eingeben.", "error");
+    if (!name) return notify(t("Please enter a name."), "error");
     backend
       .libraryCreate(name)
       .then((libs) => {
@@ -279,16 +282,16 @@ function manageView(onClose: () => void): { el: HTMLElement; refresh(): void } {
 
   const row = (l: LibEntry) => {
     const name = h("span", { class: "n" }, l.name);
-    const title = h("div", { class: "lib-lib-name" }, name, l.active ? h("span", { class: "tag" }, "aktiv") : null);
+    const title = h("div", { class: "lib-lib-name" }, name, l.active ? h("span", { class: "tag" }, t("active")) : null);
     const facts = [
-      `${fmt(l.scores)} ${l.scores === 1 ? "Partitur" : "Partituren"}`,
-      l.packs.length ? `${l.packs.length === 1 ? "Paket" : "Pakete"}: ${l.packs.join("; ")}` : "",
-      l.paths.length ? `${l.paths.length} ${l.paths.length === 1 ? "Ordner/Datei" : "Ordner/Dateien"}` : "",
-      l.bytes >= 1e5 ? mb(l.bytes) : l.bytes ? "< 0,1 MB" : "",
+      plural(l.scores, "{n} score", "{n} scores", { n: fmt(l.scores) }),
+      l.packs.length ? plural(l.packs.length, "Pack: {packs}", "Packs: {packs}", { packs: l.packs.join("; ") }) : "",
+      l.paths.length ? plural(l.paths.length, "{n} folder/file", "{n} folders/files") : "",
+      l.bytes >= 1e5 ? mb(l.bytes) : l.bytes ? t("< 0.1 MB") : "",
     ].filter(Boolean).join(" · ");
     const actions = h("div", { class: "lib-lib-actions" });
     if (!l.active) {
-      actions.append(h("button", { class: "btn small blue", title: "In dieser Bibliothek suchen – Downloads und Hinzugefügtes landen dann hier", onclick: () => backend.librarySwitch(l.id).then(render).catch(err) }, "Wechseln"));
+      actions.append(h("button", { class: "btn small blue", title: t("Search this library – downloads and added scores will then go here"), onclick: () => backend.librarySwitch(l.id).then(render).catch(err) }, t("Switch")));
     }
     const rename = () => {
       const input = h("input", { class: "lib-input small", value: l.name });
@@ -306,27 +309,27 @@ function manageView(onClose: () => void): { el: HTMLElement; refresh(): void } {
       input.focus();
       input.select();
     };
-    actions.append(h("button", { class: "btn small", onclick: rename }, "Umbenennen"));
+    actions.append(h("button", { class: "btn small", onclick: rename }, t("Rename")));
     if (!l.standard) {
       let armed = false;
       const del = h("button", {
         class: "btn small",
-        title: "Löscht nur den Index dieser Bibliothek – die Partituren bleiben auf der Platte.",
+        title: t("Deletes only this library's index – the scores stay on disk."),
         onclick: () => {
           if (!armed) {
             armed = true;
             del.classList.add("warn");
-            del.replaceChildren(icon("trash"), "Wirklich löschen?");
+            del.replaceChildren(icon("trash"), t("Really delete?"));
             setTimeout(() => {
               armed = false;
               del.classList.remove("warn");
-              del.replaceChildren(icon("trash"), "Löschen");
+              del.replaceChildren(icon("trash"), t("Delete"));
             }, 5000);
             return;
           }
           backend.libraryDelete(l.id).then(render).catch(err);
         },
-      }, icon("trash"), "Löschen");
+      }, icon("trash"), t("Delete"));
       actions.append(del);
     }
     const el = h("div", { class: `lib-lib${l.active ? " active" : ""}` }, title, h("div", { class: "lib-lib-facts" }, facts), actions);
@@ -336,18 +339,18 @@ function manageView(onClose: () => void): { el: HTMLElement; refresh(): void } {
 
   const render = (libs: LibEntry[]) => {
     current = libs;
-    list.replaceChildren(...(libs.length ? libs.map(row) : [h("div", { class: "lib-empty" }, "Bibliotheken gibt es nur in der Desktop-App.")]));
+    list.replaceChildren(...(libs.length ? libs.map(row) : [h("div", { class: "lib-empty" }, t("Libraries are only available in the desktop app."))]));
   };
   const el = h(
     "div",
     { class: "lib-manage" },
     h("div", { class: "lib-catalog-head" },
-      h("b", {}, "Bibliotheken"),
-      h("span", { class: "muted" }, "Jede Bibliothek ist ein eigener Index – gesucht wird nur in der aktiven. Heruntergeladene und hinzugefügte Partituren landen in der aktiven."),
-      h("button", { class: "btn small ghost", title: "Schließen", onclick: onClose }, icon("close"))),
+      h("b", {}, t("Libraries")),
+      h("span", { class: "muted" }, t("Each library is a separate index – only the active one is searched. Downloaded and added scores go into the active one.")),
+      h("button", { class: "btn small ghost", title: t("Close"), onclick: onClose }, icon("close"))),
     h("div", { class: "lib-manage-body" },
       list,
-      h("div", { class: "lib-new" }, newName, h("button", { class: "btn small blue", onclick: create }, icon("plus"), "Neu anlegen"))),
+      h("div", { class: "lib-new" }, newName, h("button", { class: "btn small blue", onclick: create }, icon("plus"), t("Create new")))),
   );
   const refresh = () => {
     backend.libraryList().then(render).catch(() => render([]));
@@ -404,7 +407,8 @@ const voicePairs = (s: ScoreView, idx: number[]): Array<[string, string]> =>
 
 /** Viertel je Takt der Partitur. */
 const barQuarters = (s: ScoreView) => (s.timeSignature ? (s.timeSignature[0] * 4) / s.timeSignature[1] : 4) || 4;
-const barLabel = (s: ScoreView, [a, b]: [number, number]) => `T. ${Math.floor(a / barQuarters(s)) + 1}–${Math.ceil(b / barQuarters(s) - 1e-6)}`;
+const barLabel = (s: ScoreView, [a, b]: [number, number]) =>
+  t("Bars {from}–{to}", { from: Math.floor(a / barQuarters(s)) + 1, to: Math.ceil(b / barQuarters(s) - 1e-6) });
 
 /** Sichtbarer Ausschnitt der Notenrolle: Pixel je Viertel und linker Rand (Inhaltspixel). */
 interface RollView {
@@ -537,16 +541,16 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
   ensureListening();
 
   // Aktive Bibliothek: Name, Stand, Fortschritt
-  const libName = h("button", { class: "btn small ghost lib-name", title: "Bibliotheken verwalten: wechseln, neu anlegen, umbenennen, löschen" }, icon("book"), h("b", {}, "…"));
+  const libName = h("button", { class: "btn small ghost lib-name", title: t("Manage libraries: switch, create, rename, delete") }, icon("book"), h("b", {}, "…"));
   const status = h("div", { class: "lib-status" });
   const progress = h("div", { class: "lib-progress" }, h("i"));
 
   // Hinzufügen: Dateien oder Ordner in die aktive Bibliothek (auch per Ziehen aufs Fenster)
-  const addInput = h("input", { class: "lib-input mono", placeholder: "Pfad einer MusicXML/MXL-Datei oder eines Ordners – mehrere mit ; trennen" });
+  const addInput = h("input", { class: "lib-input mono", placeholder: t("Path to a MusicXML/MXL file or a folder – separate several with ;") });
   const addBox = h("div", { class: "lib-addbox" }) as HTMLDivElement;
   const doAdd = () => {
     const paths = addInput.value.split(/[;\n]/).map((p) => p.trim().replace(/^"|"$/g, "")).filter(Boolean);
-    if (!paths.length) return notify("Pfad einer MusicXML-Datei (oder eines Ordners) eingeben – oder die Dateien aufs Fenster ziehen.", "error");
+    if (!paths.length) return notify(t("Enter the path of a MusicXML file (or a folder) – or drag the files onto the window."), "error");
     addToLibrary(paths);
     addInput.value = "";
     setAddBox(false);
@@ -560,22 +564,22 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
   addBox.append(
     addTarget,
     addInput,
-    h("button", { class: "btn small blue", onclick: doAdd }, icon("plus"), "Hinzufügen"),
-    h("button", { class: "btn small ghost", title: "Schließen", onclick: () => setAddBox(false) }, icon("close")),
+    h("button", { class: "btn small blue", onclick: doAdd }, icon("plus"), t("Add")),
+    h("button", { class: "btn small ghost", title: t("Close"), onclick: () => setAddBox(false) }, icon("close")),
   );
   const setAddBox = (open: boolean) => {
     addBox.hidden = !open;
     addBtn.classList.toggle("on", open);
     if (open) {
-      addTarget.textContent = `In „${state.info.peek()?.name ?? "…"}“ aufnehmen (oder Dateien aufs Fenster ziehen):`;
+      addTarget.textContent = t("Add to \"{library}\" (or drag files onto the window):", { library: state.info.peek()?.name ?? "…" });
       addInput.focus();
     }
   };
   const addBtn = h("button", {
     class: "btn small",
-    title: "MusicXML/MXL-Dateien oder ganze Ordner in die aktive Bibliothek aufnehmen – oder einfach aufs Fenster ziehen.",
+    title: t("Add MusicXML/MXL files or whole folders to the active library – or just drag them onto the window."),
     onclick: () => setAddBox(!!addBox.hidden),
-  }, icon("plus"), "Hinzufügen");
+  }, icon("plus"), t("Add"));
   setAddBox(false);
 
   // Bibliotheken verwalten (Panel an Stelle der Suche, wie der Katalog)
@@ -593,8 +597,8 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
   setManage(false);
 
   // Suche
-  const text = h("input", { class: "lib-input", placeholder: "Titel, Komponist, Instrument …", value: state.text });
-  const melody = h("input", { class: "lib-input mono", placeholder: "Melodie: C4 D4 E4 F4 G4 (H = h, B = b, Fis/Es …) oder 60 62 64 – Dauer z. B. G4:2", value: state.melody });
+  const text = h("input", { class: "lib-input", placeholder: t("Title, composer, instrument…"), value: state.text });
+  const melody = h("input", { class: "lib-input mono", placeholder: t("Melody: C4 D4 E4 F4 G4 (F♯ or F#, B♭ or Bb …) or 60 62 64 – duration e.g. G4:2"), value: state.melody });
   for (const i of [text, melody]) {
     i.addEventListener("keydown", (e) => {
       e.stopPropagation();
@@ -608,17 +612,17 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
     if (fromSelection) {
       const sel = selection.peek();
       if (!findClip(project(), sel)) {
-        notify("Bitte zuerst einen Clip in der Zeitleiste auswählen.");
+        notify(t("Please select a clip in the timeline first."));
         return;
       }
       q.trackId = sel!.trackId;
       q.clipId = sel!.clipId!;
     } else {
-      q.melody = melody.value;
+      q.melody = chordsInput(melody.value); // the core reads German note names
     }
     try {
       state.hits.value = await backend.librarySearch(q);
-      if (!state.hits.peek().length) notify("Keine Treffer.");
+      if (!state.hits.peek().length) notify(t("No matches."));
     } catch (e) {
       notify(errorText(e), "error");
     }
@@ -629,9 +633,9 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
   // Notenrolle mit Zeitleiste: eine breite Inhaltsfläche sorgt für den Bildlauf,
   // Zeitleiste und Rolle bleiben als sichtbarer Ausschnitt stehen (position: sticky)
   // und zeichnen nur, was zu sehen ist – auch sehr lange Stücke in jedem Zoom.
-  const ruler = h("canvas", { class: "lib-ruler", title: "Ziehen: in der Zeit wandern · Klick: Cursor setzen · Umschalt/Strg+Ziehen: Zeitfenster markieren · Strg+Mausrad: Zoom" });
-  const canvas = h("canvas", { class: "lib-roll", title: "Noten der gewählten Partitur – Mausrad: scrollen · Strg+Mausrad: zoomen · mittlere Maustaste: ziehen" });
-  const cursorEl = h("div", { class: "lib-cursor", title: "Ab hier wird vorgespielt" });
+  const ruler = h("canvas", { class: "lib-ruler", title: t("Drag: move through time · Click: set cursor · Shift/Ctrl+drag: select a time range · Ctrl+mouse wheel: zoom") });
+  const canvas = h("canvas", { class: "lib-roll", title: t("Notes of the selected score – mouse wheel: scroll · Ctrl+mouse wheel: zoom · middle mouse button: drag") });
+  const cursorEl = h("div", { class: "lib-cursor", title: t("Playback starts here") });
   const headEl = h("div", { class: "lib-playhead" });
   headEl.hidden = true;
   const content = h("div", { class: "lib-roll-content" }, ruler, canvas, cursorEl, headEl);
@@ -891,13 +895,13 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
   const downloadBtn = h("button", {
     class: "btn small blue",
     "data-help": "lib-herunterladen",
-    title: "Musikbibliothek herunterladen – PDMX, OpenScore, KernScores (Bach, Mozart, Beethoven) und DCML mit Harmonieanalyse",
+    title: t("Download music library – PDMX, OpenScore, KernScores (Bach, Mozart, Beethoven) and DCML with harmonic analysis"),
     onclick: () => {
       catalogTouched = true;
       setCatalog(!catalogOpen);
     },
-  }, icon("download"), "Herunterladen");
-  const cancel = h("button", { class: "btn small", title: "Download bzw. Indizieren abbrechen", onclick: () => void backend.libraryCancel() }, "Abbrechen");
+  }, icon("download"), t("Download"));
+  const cancel = h("button", { class: "btn small", title: t("Cancel download or indexing"), onclick: () => void backend.libraryCancel() }, t("Cancel"));
   setCatalog(false);
 
   // Warteschlange: beauftragte Pakete, die nach dem laufenden Auftrag drankommen.
@@ -912,25 +916,25 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
     queueSig = sig;
     queueRow.hidden = !q.length;
     cancel.title = q.length
-      ? "Laufenden Auftrag abbrechen – danach geht es mit der Warteschlange weiter"
-      : "Download bzw. Indizieren abbrechen";
+      ? t("Cancel the current job – the queue continues afterwards")
+      : t("Cancel download or indexing");
     queueRow.replaceChildren(
       ...(q.length
         ? [
-            h("span", { class: "lib-queue-label" }, `Warteschlange (${q.length})`),
+            h("span", { class: "lib-queue-label" }, t("Queue ({n})", { n: q.length })),
             ...q.map((x, i) =>
               h("span", {
                 class: "lib-queue-item",
                 "data-id": x.id,
-                title: `Platz ${i + 1}: wird nach dem laufenden Auftrag geladen und in „${x.libraryName}“ übernommen`,
+                title: t("Position {pos}: will be downloaded after the current job and added to \"{library}\"", { pos: i + 1, library: x.libraryName }),
               },
               h("b", {}, `${i + 1}.`),
               x.name,
               x.library !== info?.id ? h("span", { class: "muted" }, `→ ${x.libraryName}`) : null,
-              h("button", { class: "lib-queue-x", title: "Aus der Warteschlange nehmen", onclick: () => void dequeue(x.id, x.library) }, icon("close"))),
+              h("button", { class: "lib-queue-x", title: t("Remove from queue"), onclick: () => void dequeue(x.id, x.library) }, icon("close"))),
             ),
             ...(q.length > 1
-              ? [h("button", { class: "btn small ghost lib-queue-clear", title: "Alle wartenden Pakete herausnehmen – der laufende Auftrag läuft weiter", onclick: () => void dequeue(null, null) }, "Alle herausnehmen")]
+              ? [h("button", { class: "btn small ghost lib-queue-clear", title: t("Remove all waiting packs – the current job keeps running"), onclick: () => void dequeue(null, null) }, t("Remove all"))]
               : []),
           ]
         : []),
@@ -945,14 +949,14 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
       .catch((e) => notify(errorText(e), "error"));
   });
   // Vorsingen: Mikrofon aufnehmen (nicht ins Projekt), Melodie erkennen, suchen
-  const micLabel = h("span", {}, "Vorsingen");
+  const micLabel = h("span", {}, t("Sing it"));
   const micLevel = h("i", { class: "mic-level" });
   const mic = h("button", {
     class: "btn small mic-btn",
-    title: "Melodie vorsingen oder pfeifen – nach „Stopp“ wird danach gesucht (Tonart und Tempo egal)",
+    title: t("Sing or whistle a melody – after \"Stop\" it gets searched for (key and tempo don't matter)"),
     onclick: () => void toggleListen(),
   }, icon("mic"), micLabel, micLevel);
-  const micCancel = h("button", { class: "btn small ghost", title: "Aufnahme verwerfen", hidden: true, onclick: () => void stopListen(true) }, icon("close"));
+  const micCancel = h("button", { class: "btn small ghost", title: t("Discard recording"), hidden: true, onclick: () => void stopListen(true) }, icon("close"));
   let tick = 0;
   const showListening = () => {
     const on = listen.active;
@@ -966,7 +970,7 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
     tick = window.setInterval(() => {
       if (!mic.isConnected || !listen.active) return clearInterval(tick);
       const secs = (performance.now() - listen.since) / 1000;
-      micLabel.textContent = `Stopp · ${Math.floor(secs)} s`;
+      micLabel.textContent = t("Stop · {secs} s", { secs: Math.floor(secs) });
       // Pegel des Mikrofons (Spitzenwert seit dem letzten Statusbericht)
       micLevel.style.width = `${Math.round(Math.min(1, Math.sqrt(engineStatus.peek().peakIn) * 1.4) * 100)}%`;
       if (secs >= LISTEN_MAX_SECS) void stopListen(false);
@@ -983,34 +987,41 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
     listen.active = true;
     listen.since = performance.now();
     showListening();
-    notify("Sing oder pfeif die Melodie (mindestens 5 Töne) – dann „Stopp“.");
+    notify(t("Sing or whistle the melody (at least 5 notes) – then \"Stop\"."));
   };
   const stopListen = async (cancel: boolean) => {
     if (!listen.active) return;
     listen.active = false;
     showListening();
-    micLabel.textContent = cancel ? "Vorsingen" : "Werte aus …";
+    micLabel.textContent = cancel ? t("Sing it") : t("Analyzing…");
     mic.disabled = true;
     try {
       const r = await backend.libraryListenStop(text.value.trim() || null, cancel);
       if (!cancel) {
-        melody.value = r.melody;
-        state.melody = r.melody;
+        melody.value = chordsText(r.melody);
+        state.melody = melody.value;
         state.hits.value = r.hits;
-        notify(`${r.notes} Töne erkannt${r.key ? ` (${r.key})` : ""}${r.hits.length ? "" : " – keine Treffer"}. Im Melodiefeld lassen sie sich korrigieren.`);
+        const key = r.key ?? "";
+        notify(r.key
+          ? r.hits.length
+            ? plural(r.notes, "Detected {n} note ({key}). You can correct it in the melody field.", "Detected {n} notes ({key}). You can correct them in the melody field.", { key })
+            : plural(r.notes, "Detected {n} note ({key}) – no matches. You can correct it in the melody field.", "Detected {n} notes ({key}) – no matches. You can correct them in the melody field.", { key })
+          : r.hits.length
+            ? plural(r.notes, "Detected {n} note. You can correct it in the melody field.", "Detected {n} notes. You can correct them in the melody field.")
+            : plural(r.notes, "Detected {n} note – no matches. You can correct it in the melody field.", "Detected {n} notes – no matches. You can correct them in the melody field."));
       }
     } catch (e) {
       notify(errorText(e), "error");
     } finally {
       mic.disabled = false;
-      micLabel.textContent = "Vorsingen";
+      micLabel.textContent = t("Sing it");
     }
   };
   if (listen.active) showListening();
 
   const searchGroup = h("div", { class: "lib-search" }, icon("search"), text, melody,
-    h("button", { class: "btn small primary", onclick: () => void search() }, "Suchen"),
-    h("button", { class: "btn small", title: "Melodie des ausgewählten Clips suchen (Noten oder Aufnahme)", onclick: () => void search(true) }, "Auswahl suchen"),
+    h("button", { class: "btn small primary", onclick: () => void search() }, t("Search")),
+    h("button", { class: "btn small", title: t("Search for the melody of the selected clip (notes or recording)"), onclick: () => void search(true) }, t("Search selection")),
     mic, micCancel);
   const modeSeg = h("div", { class: "seg mini lib-mode" });
   const left = h("div", { class: "lib-left" }, results, tree.el);
@@ -1027,7 +1038,7 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
     results.hidden = m !== "suchen";
     tree.el.hidden = m !== "stoebern";
   };
-  for (const [m, name, tip] of [["suchen", "Suchen", "Nach Titel oder Melodie suchen"], ["stoebern", "Stöbern", "Baum nach Genre, Komponist, Stimmung, Besetzung …"]] as const) {
+  for (const [m, name, tip] of [["suchen", t("Search"), t("Search by title or melody")], ["stoebern", t("Browse"), t("Tree by genre, composer, mood, instrumentation…")]] as const) {
     const b = h("button", { class: "seg-btn", title: tip, onclick: () => setMode(m) }, name);
     b.dataset.m = m;
     modeSeg.append(b);
@@ -1065,32 +1076,38 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
       const merging = info?.merging ?? null;
       if (dl && dl.phase === "Kategorien") {
         frac = dl.bytes / dl.totalBytes;
-        status.textContent = info?.message ?? `${dl.name}: Genre & Komponist … ${mb(dl.bytes)} von ${mb(dl.totalBytes)}`;
+        status.textContent = info?.message ?? t("{name}: genre & composer… {done} of {total}", { name: dl.name, done: mb(dl.bytes), total: mb(dl.totalBytes) });
       } else if (dl) {
         // Pakete: Fortschritt nach Partituren; ohne Grenze nach geladenen Bytes.
         frac = dl.target ? dl.files / dl.target : dl.bytes / dl.totalBytes;
         status.textContent = info?.message
-          ?? `${dl.name}: ${fmt(dl.files)}${dl.target ? ` / ${fmt(dl.target)}` : ""} Partituren · ${mb(dl.bytes)}${dl.target ? "" : ` von ${mb(dl.totalBytes)}`}`;
+          ?? (dl.target
+            ? t("{name}: {files} / {target} scores · {bytes}", { name: dl.name, files: fmt(dl.files), target: fmt(dl.target), bytes: mb(dl.bytes) })
+            : t("{name}: {files} scores · {bytes} of {total}", { name: dl.name, files: fmt(dl.files), bytes: mb(dl.bytes), total: mb(dl.totalBytes) }));
       } else if (merging != null) {
         frac = merging;
-        status.textContent = info?.message ?? `Übernehme in „${name ?? "…"}“ … ${Math.round(merging * 100)} %`;
+        status.textContent = info?.message ?? t("Adding to \"{library}\"… {percent}%", { library: name ?? "…", percent: Math.round(merging * 100) });
       } else if (info?.building) {
-        const [d, t] = info.building;
-        frac = t ? d / t : 0.02;
-        status.textContent = `${info.message && /Indiziere/.test(info.message) ? info.message.replace(/Indiziere.*$/, "") : ""}Indiziere … ${fmt(d)} / ${fmt(t)} Dateien`;
+        const [done, total] = info.building;
+        frac = total ? done / total : 0.02;
+        // message of the desktop shell: "<prefix>Indexing {what}…" – keep the prefix, append the progress here
+        const marker = t("Indexing {what}…").split("{what}")[0]!.trim();
+        const at = info.message && marker ? info.message.indexOf(marker) : -1;
+        const lead = at >= 0 ? info.message!.slice(0, at) : "";
+        status.textContent = `${lead}${t("Indexing… {done} / {total} files", { done: fmt(done), total: fmt(total) })}`;
       } else if (info?.adding) {
         frac = 0.3;
-        status.textContent = info.message ?? "Füge hinzu …";
+        status.textContent = info.message ?? t("Adding…");
       } else if (info?.loading) {
         frac = 0.05;
-        status.textContent = info.message ?? "Lade die Bibliothek …";
+        status.textContent = info.message ?? t("Loading the library…");
       } else {
         status.textContent = info
           ? info.message ?? (info.id
             ? info.scores
-              ? `${fmt(info.scores)} Partituren · ${fmt(info.voices)} Stimmen`
-              : "Noch leer – „Herunterladen“ oder Partituren hinzufügen."
-            : "Keine Bibliothek geladen.")
+              ? t("{scores} scores · {voices} voices", { scores: fmt(info.scores), voices: fmt(info.voices) })
+              : t("Still empty – \"Download\" or add scores.")
+            : t("No library loaded."))
           : "";
       }
       status.title = dl?.folder ?? "";
@@ -1123,13 +1140,13 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
                 h(
                   "button",
                   { class: "lib-hit", onclick: () => void open(hit), title: hit.source },
-                  h("div", { class: "t" }, hit.title || "(ohne Titel)", hit.composer ? h("span", {}, ` – ${hit.composer}`) : null),
-                  h("div", { class: "s" }, `${hit.part || "Stimme"} · ${hit.voice}`,
-                    hit.score != null ? h("b", {}, `${Math.round(hit.score * 100)} %`) : h("b", {}, `${hit.noteCount} Noten`)),
+                  h("div", { class: "t" }, hit.title || t("(untitled)"), hit.composer ? h("span", {}, ` – ${hit.composer}`) : null),
+                  h("div", { class: "s" }, `${hit.part || t("Voice")} · ${hit.voice}`,
+                    hit.score != null ? h("b", {}, `${Math.round(hit.score * 100)} %`) : h("b", {}, plural(hit.noteCount, "{n} note", "{n} notes"))),
                   hit.score != null ? h("i", { style: `width:${Math.round(hit.score * 100)}%` }) : null,
                 ),
               )
-            : [h("div", { class: "lib-empty" }, "Suche nach Titel oder Melodie – oder wähle einen Clip und klicke „Auswahl suchen“.")]),
+            : [h("div", { class: "lib-empty" }, t("Search by title or melody – or select a clip and click \"Search selection\"."))]),
         );
       }
 
@@ -1145,7 +1162,7 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
         renderedScore = s;
         renderedVoices = sel;
         if (!s) {
-          detail.replaceChildren(h("div", { class: "lib-empty" }, "Treffer anklicken, um die Partitur zu sehen."));
+          detail.replaceChildren(h("div", { class: "lib-empty" }, t("Click a match to see the score.")));
           content.style.width = "0px";
           if (libPlay.which) stopPlay();
           updateSel = () => {};
@@ -1153,18 +1170,24 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
           const n = s.voices.length;
           const allIdx = s.voices.map((_, i) => i);
           const all = sel.length === n;
-          const names = (idx: number[]) => idx.map((i) => s.voices[i]?.part || s.voices[i]?.label || "Stimme");
-          const whoLabel = all ? (n > 1 ? "alle Stimmen" : names(sel)[0]!) : sel.length === 1 ? names(sel)[0]! : `${sel.length} Stimmen`;
+          const names = (idx: number[]) => idx.map((i) => s.voices[i]?.part || s.voices[i]?.label || t("Voice"));
+          const whoLabel = all ? (n > 1 ? t("all voices") : names(sel)[0]!) : sel.length === 1 ? names(sel)[0]! : plural(sel.length, "{n} voice", "{n} voices");
           const takeLabel = h("span", {}, "");
           const take = h("button", {
             class: "btn small primary",
             disabled: !sel.length,
             onclick: () => {
               const win = state.window.peek();
-              const who = sel.length === 1 ? `„${names(sel)[0]}“` : `${sel.length} Stimmen`;
-              const t = tempoNow();
-              void act(backend.libraryToTrack(s.doc, voicePairs(s, sel), win, t)).then((ok) =>
-                ok && notify(`${who}${win ? ` (${barLabel(s, win)})` : ""} als ${sel.length === 1 ? "Spur" : "Spuren"} übernommen – klingt im Projekttempo wie ♩ = ${Math.round(t)}`));
+              const bpm = tempoNow();
+              const vars = { voice: names(sel)[0] ?? "", n: sel.length, bars: win ? barLabel(s, win) : "", bpm: Math.round(bpm) };
+              const msg = sel.length === 1
+                ? win
+                  ? t("Added \"{voice}\" ({bars}) as a track – at the project tempo it sounds like ♩ = {bpm}", vars)
+                  : t("Added \"{voice}\" as a track – at the project tempo it sounds like ♩ = {bpm}", vars)
+                : win
+                  ? t("Added {n} voices ({bars}) as tracks – at the project tempo they sound like ♩ = {bpm}", vars)
+                  : t("Added {n} voices as tracks – at the project tempo they sound like ♩ = {bpm}", vars);
+              void act(backend.libraryToTrack(s.doc, voicePairs(s, sel), win, bpm)).then((ok) => ok && notify(msg));
             },
           }, icon("plus"), takeLabel);
           // Tempo: gewählt oder das der Partitur – gilt fürs Anhören und fürs Übernehmen
@@ -1194,15 +1217,15 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
           // Klick spielt die gewählten Stimmen, nochmal Klick (dann „Stopp“) beendet
           const toggle = () => (libPlay.which ? stopPlay() : startPlay(state.cursor.peek()));
           // Tempo ändern: läuft es, an der aktuellen Stelle im neuen Tempo weiter
-          const setTempo = (t: number | null) => {
-            state.tempo.value = t == null ? null : Math.max(TEMPO_MIN, Math.min(TEMPO_MAX, Math.round(t)));
+          const setTempo = (bpm: number | null) => {
+            state.tempo.value = bpm == null ? null : Math.max(TEMPO_MIN, Math.min(TEMPO_MAX, Math.round(bpm)));
             updateTempo();
             const pos = playPos();
             if (libPlay.which) startPlay(pos ?? state.cursor.peek());
           };
           const tempoIn = h("input", {
             type: "number", class: "lib-tempo-in", min: String(TEMPO_MIN), max: String(TEMPO_MAX), step: "1",
-            title: "Tempo in Vierteln je Minute – fürs Anhören und fürs Übernehmen",
+            title: t("Tempo in quarter notes per minute – for listening and for adding"),
           }) as HTMLInputElement;
           tempoIn.addEventListener("keydown", (e) => {
             e.stopPropagation();
@@ -1214,54 +1237,67 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
             else updateTempo();
           });
           const step = (d: number) => h("button", {
-            class: "btn small ghost", title: `${d > 0 ? "Schneller" : "Langsamer"} (${d > 0 ? "+" : "−"}${Math.abs(d)} %)`,
+            class: "btn small ghost", title: d > 0 ? t("Faster (+{pct}%)", { pct: Math.abs(d) }) : t("Slower (−{pct}%)", { pct: Math.abs(d) }),
             onclick: () => setTempo(tempoNow() * (1 + d / 100)),
           }, d > 0 ? "+" : "−");
-          const original = h("button", { class: "btn small ghost lib-tempo-orig", onclick: () => setTempo(null) }, "Original");
+          const original = h("button", { class: "btn small ghost lib-tempo-orig", onclick: () => setTempo(null) }, t("Original"));
           const toProject = h("button", {
             class: "btn small ghost lib-tempo-proj",
-            title: "Tempo des Projekts übernehmen – dann wird beim Übernehmen jedes Viertel genau ein Schlag",
+            title: t("Use the project's tempo – then each quarter note becomes exactly one beat when adding"),
             onclick: () => setTempo(project()?.tempoBpm ?? 120),
-          }, "Projekt");
+          }, t("Project"));
           const tempoBox = h("span", { class: "lib-tempo" }, h("span", { class: "lbl" }, "♩ ="), step(-10), tempoIn, step(10), original, toProject);
           const updateTempo = () => {
-            const t = tempoNow();
-            if (document.activeElement !== tempoIn) tempoIn.value = String(Math.round(t));
+            const bpm = tempoNow();
+            if (document.activeElement !== tempoIn) tempoIn.value = String(Math.round(bpm));
             const orig = scoreTempo(s);
-            original.hidden = state.tempo.peek() == null || Math.round(t) === Math.round(orig);
-            original.title = `Zurück zum Tempo der Partitur (♩ = ${Math.round(orig)}${s.tempoBpm ? "" : ", keine Angabe"})`;
+            original.hidden = state.tempo.peek() == null || Math.round(bpm) === Math.round(orig);
+            original.title = s.tempoBpm
+              ? t("Back to the score's tempo (♩ = {bpm})", { bpm: Math.round(orig) })
+              : t("Back to the score's tempo (♩ = {bpm}, not specified)", { bpm: Math.round(orig) });
             const pb = project()?.tempoBpm ?? 120;
-            tempoBox.classList.toggle("changed", Math.round(t) !== Math.round(orig));
-            tempoBox.title = `Anhören in ♩ = ${Math.round(t)}; beim Übernehmen so gestreckt, dass es im Projekttempo (${Math.round(pb)} BPM) genauso schnell klingt${Math.round(t) === Math.round(pb) ? " – ein Viertel je Schlag" : ` – ein Viertel = ${Math.round((pb / t) * 100) / 100} Schläge`}`;
+            tempoBox.classList.toggle("changed", Math.round(bpm) !== Math.round(orig));
+            tempoBox.title = Math.round(bpm) === Math.round(pb)
+              ? t("Listen at ♩ = {bpm}; when added, it's stretched so it sounds just as fast at the project tempo ({projectBpm} BPM) – one quarter note per beat",
+                { bpm: Math.round(bpm), projectBpm: Math.round(pb) })
+              : t("Listen at ♩ = {bpm}; when added, it's stretched so it sounds just as fast at the project tempo ({projectBpm} BPM) – one quarter note = {beats} beats",
+                { bpm: Math.round(bpm), projectBpm: Math.round(pb), beats: Math.round((pb / bpm) * 100) / 100 });
           };
           updateTempo();
-          let playText = "Anhören";
+          let playText = t("Listen");
           const playIcon = h("span", { class: "ico" }, icon("play"));
           const playLabel = h("span", {}, playText);
           const play = h("button", { class: "btn small", onclick: toggle }, playIcon, playLabel);
           updatePlay = () => {
             const on = !!libPlay.which;
             playIcon.replaceChildren(icon(on ? "stop" : "play"));
-            playLabel.textContent = on ? "Stopp" : playText;
+            playLabel.textContent = on ? t("Stop") : playText;
             play.classList.toggle("playing", on);
           };
           const selInfo = h("span", { class: "lib-selinfo" });
-          const clear = h("button", { class: "btn small ghost", title: "Markierung aufheben", onclick: () => setWindow(null) }, icon("close"));
+          const clear = h("button", { class: "btn small ghost", title: t("Clear selection"), onclick: () => setWindow(null) }, icon("close"));
           updateSel = () => {
             const win = state.window.peek();
             const bar = Math.floor(state.cursor.peek() / barQuarters(s)) + 1;
-            playText = `${win ? "Markierung" : `Ab T. ${bar}`} · ${whoLabel}`;
+            playText = `${win ? t("Marked range") : t("From bar {bar}", { bar })} · ${whoLabel}`;
             updatePlay();
-            const where = win ? `${barLabel(s, win)} immer wieder` : `Ab dem Cursor (T. ${bar}) bis zum Ende`;
-            play.title = `${where} vorspielen – ${all ? "alle Stimmen" : names(sel).join(", ")}\nKlick in die Notenrolle setzt den Cursor · Klick hier während es klingt: Stopp`;
+            const voices = all ? t("all voices") : names(sel).join(", ");
+            play.title = win
+              ? t("Loop {bars} – {voices}\nClick in the note roll to set the cursor · Click here while playing: stop", { bars: barLabel(s, win), voices })
+              : t("Play from the cursor (bar {bar}) to the end – {voices}\nClick in the note roll to set the cursor · Click here while playing: stop", { bar, voices });
             selInfo.textContent = win
-              ? `Markiert: ${barLabel(s, win)} · ${Math.round((win[1] - win[0]) * 100) / 100} Viertel`
-              : "Zeitleiste ziehen: in der Zeit wandern · Strg+Mausrad: Zoom · Notenrolle: Klick setzt den Cursor, Ziehen markiert einen Bereich zum Wiederholen (Umschalt: ganze Takte)";
+              ? t("Selected: {bars} · {quarters} quarter notes", { bars: barLabel(s, win), quarters: Math.round((win[1] - win[0]) * 100) / 100 })
+              : t("Drag the timeline: move through time · Ctrl+mouse wheel: zoom · Note roll: click sets the cursor, dragging selects a range to loop (Shift: whole bars)");
             selInfo.classList.toggle("on", !!win);
             clear.hidden = !win;
             const many = sel.length > 1;
-            takeLabel.textContent = `${win ? "Abschnitt" : many ? `${sel.length} Stimmen` : "Stimme"} als ${many ? "Spuren" : "Spur"}`;
-            take.title = `${win ? `Nur ${barLabel(s, win)} – ` : ""}${many ? `je Stimme eine Spur: ${names(sel).join(", ")}` : `„${names(sel)[0] ?? ""}“ als Spur übernehmen`}`;
+            takeLabel.textContent = win
+              ? many ? t("Section as tracks") : t("Section as track")
+              : many ? t("{n} voices as tracks", { n: sel.length }) : t("Voice as track");
+            const pickVars = { bars: win ? barLabel(s, win) : "", voices: names(sel).join(", "), voice: names(sel)[0] ?? "" };
+            take.title = win
+              ? many ? t("Only {bars} – one track per voice: {voices}", pickVars) : t("Only {bars} – add \"{voice}\" as a track", pickVars)
+              : many ? t("one track per voice: {voices}", pickVars) : t("Add \"{voice}\" as a track", pickVars);
           };
           updateSel();
           // Klick: nur diese Stimme · Strg/Umschalt+Klick: hinzunehmen bzw. abwählen (mindestens eine bleibt)
@@ -1279,25 +1315,25 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
             h("div", { class: "lib-facts" },
               [s.keyName, s.timeSignature ? `${s.timeSignature[0]}/${s.timeSignature[1]}` : null, s.tempoBpm ? `${Math.round(s.tempoBpm)} BPM` : null, s.mood]
                 .filter(Boolean).join(" · ")),
-            h("div", { class: "lib-voices", title: "Klick: eine Stimme · Strg+Klick: mehrere Stimmen wählen" },
+            h("div", { class: "lib-voices", title: t("Click: one voice · Ctrl+click: select several voices") },
               // Alle Stimmen auf einmal wählen – Anhören und Übernehmen gelten dann für den ganzen Satz
               n > 1
                 ? h("button", {
                     class: `btn small lib-allvoices${all ? " on" : ""}`,
-                    title: all ? "Alle Stimmen sind gewählt – Klick: zurück zur Treffer-Stimme" : "Alle Stimmen wählen (für Anhören und Übernehmen)",
+                    title: all ? t("All voices are selected – click: back to the matching voice") : t("Select all voices (for listening and adding)"),
                     onclick: () => {
                       const hitIdx = s.voices.findIndex((v) => v.isHit);
                       state.voices.value = all ? [Math.max(0, hitIdx)] : allIdx;
                     },
-                  }, h("i"), "Alle Stimmen")
+                  }, h("i"), t("All voices"))
                 : null,
               ...s.voices.map((v, i) =>
                 h("button", {
                   class: `lib-voice${sel.includes(i) ? " on" : ""}`,
                   style: `--vc:${VOICE_COLORS[i % VOICE_COLORS.length]}`,
                   onclick: (e: MouseEvent) => pick(i, e),
-                  title: `${v.label}\nKlick: nur diese Stimme · Strg+Klick: dazunehmen/abwählen`,
-                }, h("i"), v.part || v.label, v.role ? h("span", {}, v.role) : null, v.isHit ? h("b", {}, "Treffer") : null),
+                  title: `${v.label}\n${t("Click: only this voice · Ctrl+click: add/remove")}`,
+                }, h("i"), v.part || v.label, v.role ? h("span", {}, v.role) : null, v.isHit ? h("b", {}, t("Match")) : null),
               ),
               take),
             h("div", { class: "lib-selbar" }, play, tempoBox, selInfo, clear),
@@ -1338,7 +1374,8 @@ export async function searchLibraryFor(q: { trackId: number; clipId: number; tex
     state.hits.value = await backend.librarySearch({ trackId: q.trackId, clipId: q.clipId, text: q.text ?? "" });
     state.text = q.text ?? "";
     showPanel("bibliothek");
-    notify(state.hits.peek().length ? `${state.hits.peek().length} ähnliche Stellen gefunden` : "Keine ähnlichen Themen gefunden.");
+    const found = state.hits.peek().length;
+    notify(found ? plural(found, "Found {n} similar passage", "Found {n} similar passages") : t("No similar subjects found."));
   } catch (e) {
     notify(errorText(e), "error");
   }

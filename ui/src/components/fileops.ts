@@ -8,9 +8,18 @@ import { loadDemo } from "../actions.js";
 import { exportDialog } from "./export.js";
 import { endTour, tourRunning } from "./tour.js";
 import { dropdown, h, icon, modal } from "../dom.js";
+import { language, t, tk } from "../i18n.js";
 import { effect } from "../signals.js";
 import { errorText, notify, snapshot } from "../store.js";
 import type { ProjectFile } from "../types.js";
+
+/** The core's name for a new project (an identifier – German for historical reasons). */
+export const DEFAULT_PROJECT = "Neues Projekt";
+
+/** Project name for display: the default name in the UI language. */
+export function projectLabel(name: string): string {
+  return name === DEFAULT_PROJECT ? t("New project") : name;
+}
 
 const fileName = (path: string | null | undefined) => (path ? path.split(/[\\/]/).pop()!.replace(/\.klangwelt$/i, "") : null);
 
@@ -26,7 +35,7 @@ export async function saveProject(): Promise<boolean> {
   if (!snapshot.peek()?.file) return saveAs();
   try {
     snapshot.value = await backend.projectSave(null);
-    notify(`Gespeichert: ${fileName(snapshot.peek()?.file)}`);
+    notify(t("Saved: {name}", { name: fileName(snapshot.peek()?.file) ?? "" }));
     return true;
   } catch (e) {
     notify(errorText(e), "error");
@@ -46,36 +55,36 @@ export async function saveAs(): Promise<boolean> {
   }
   const name = stopKeys(h("input", {
     class: "lib-input modal-input",
-    value: fileName(snap?.file) ?? (snap?.project.name && snap.project.name !== "Neues Projekt" ? snap.project.name : ""),
-    placeholder: "Name des Projekts (oder vollständiger Pfad)",
+    value: fileName(snap?.file) ?? (snap?.project.name && snap.project.name !== DEFAULT_PROJECT ? snap.project.name : ""),
+    placeholder: t("Project name (or full path)"),
   }));
   const hint = h("div", { class: "modal-hint" });
   const update = () => {
     const v = name.value.trim();
     const clash = existing.find((p) => p.name.toLowerCase() === v.toLowerCase());
     hint.textContent = /[\\/:]/.test(v)
-      ? "Wird unter diesem Pfad gespeichert."
+      ? t("Will be saved to this path.")
       : clash
-        ? `„${clash.name}“ gibt es schon – wird überschrieben.`
-        : `Wird in ${dir || "Dokumente/Klangwelt/Projekte"} gespeichert.`;
+        ? t("\"{name}\" already exists – it will be overwritten.", { name: clash.name })
+        : t("Will be saved in {dir}.", { dir: dir || t("Documents/Klangwelt/Projekte") });
     hint.classList.toggle("warn", !!clash);
   };
   name.addEventListener("input", update);
   update();
   setTimeout(() => name.select(), 0);
-  const choice = await modal("Projekt speichern", [name, hint], [
-    { label: "Speichern", value: "save", kind: "blue" },
-    { label: "Abbrechen", value: "cancel", kind: "ghost" },
+  const choice = await modal(t("Save project"), [name, hint], [
+    { label: t("Save"), value: "save", kind: "blue" },
+    { label: t("Cancel"), value: "cancel", kind: "ghost" },
   ], name);
   if (choice !== "save") return false;
   const target = name.value.trim();
   if (!target) {
-    notify("Bitte einen Namen eingeben.", "error");
+    notify(t("Please enter a name."), "error");
     return saveAs();
   }
   try {
     snapshot.value = await backend.projectSave(target);
-    notify(`Gespeichert: ${fileName(snapshot.peek()?.file)}`);
+    notify(t("Saved: {name}", { name: fileName(snapshot.peek()?.file) ?? "" }));
     return true;
   } catch (e) {
     notify(errorText(e), "error");
@@ -83,27 +92,36 @@ export async function saveAs(): Promise<boolean> {
   }
 }
 
+/** Question per occasion – whole sentences, so they can be translated.
+ *  The table keys are internal ids (not shown, not translated). */
+const DISCARD_QUESTION = {
+  new: tk("\"{name}\" has unsaved changes. Save before creating a new project?"),
+  demo: tk("\"{name}\" has unsaved changes. Save before loading the demo?"),
+  open: tk("\"{name}\" has unsaved changes. Save before opening?"),
+  close: tk("\"{name}\" has unsaved changes. Save before closing?"),
+};
+
 /**
  * Bei ungespeicherten Änderungen nachfragen. Liefert true, wenn es weitergehen
  * darf (gespeichert oder verworfen).
  */
-export async function confirmDiscard(action: string): Promise<boolean> {
+export async function confirmDiscard(action: keyof typeof DISCARD_QUESTION): Promise<boolean> {
   const snap = snapshot.peek();
   if (!snap?.dirty) return true;
-  const name = fileName(snap.file) ?? snap.project.name;
-  const choice = await modal("Ungespeicherte Änderungen", [
-    h("p", {}, `„${name}“ hat ungespeicherte Änderungen. Vor dem ${action} speichern?`),
+  const name = fileName(snap.file) ?? projectLabel(snap.project.name);
+  const choice = await modal(t("Unsaved changes"), [
+    h("p", {}, t(DISCARD_QUESTION[action], { name })),
   ], [
-    { label: "Speichern", value: "save", kind: "blue" },
-    { label: "Nicht speichern", value: "discard", kind: "danger" },
-    { label: "Abbrechen", value: "cancel", kind: "ghost" },
+    { label: t("Save"), value: "save", kind: "blue" },
+    { label: t("Don't save"), value: "discard", kind: "danger" },
+    { label: t("Cancel"), value: "cancel", kind: "ghost" },
   ]);
   if (choice === "save") return saveProject();
   return choice === "discard";
 }
 
 export async function newProject(): Promise<void> {
-  if (!(await confirmDiscard("Neuanlegen"))) return;
+  if (!(await confirmDiscard("new"))) return;
   try {
     snapshot.value = await backend.projectNew();
   } catch (e) {
@@ -113,7 +131,7 @@ export async function newProject(): Promise<void> {
 
 /** Neues Projekt mit den Demo-Spuren (Beat, Arpeggio, Melodie). */
 async function demoProject(): Promise<void> {
-  if (!(await confirmDiscard("Laden der Demo"))) return;
+  if (!(await confirmDiscard("demo"))) return;
   try {
     snapshot.value = await backend.projectNew();
   } catch (e) {
@@ -125,10 +143,10 @@ async function demoProject(): Promise<void> {
 
 /** Projekt öffnen – fragt bei ungespeicherten Änderungen (auch für Doppelklick auf eine Datei). */
 export async function openPath(path: string): Promise<void> {
-  if (!(await confirmDiscard("Öffnen"))) return;
+  if (!(await confirmDiscard("open"))) return;
   try {
     snapshot.value = await backend.projectOpen(path);
-    notify(`Geöffnet: ${fileName(snapshot.peek()?.file)}`);
+    notify(t("Opened: {name}", { name: fileName(snapshot.peek()?.file) ?? "" }));
   } catch (e) {
     notify(errorText(e), "error");
   }
@@ -145,8 +163,8 @@ export async function openDialog(): Promise<void> {
     return;
   }
   let picked: string | null = null;
-  const fmtDate = (ms: number) => new Date(ms).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
-  const size = (b: number) => (b > 1e6 ? `${(b / 1e6).toLocaleString("de-DE", { maximumFractionDigits: 1 })} MB` : `${Math.max(1, Math.round(b / 1e3))} kB`);
+  const fmtDate = (ms: number) => new Date(ms).toLocaleString(language(), { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const size = (b: number) => (b > 1e6 ? `${(b / 1e6).toLocaleString(language(), { maximumFractionDigits: 1 })} MB` : `${Math.max(1, Math.round(b / 1e3))} kB`);
   const list = h("div", { class: "proj-list" },
     ...(files.length
       ? files.map((f) => {
@@ -162,16 +180,16 @@ export async function openDialog(): Promise<void> {
           });
           return row;
         })
-      : [h("div", { class: "lib-empty" }, `Noch keine Projekte in ${dir}.`)]));
-  const path = stopKeys(h("input", { class: "lib-input mono modal-input", placeholder: "… oder Pfad zu einer .klangwelt-Datei" }));
-  const choice = await modal("Projekt öffnen", [h("div", { class: "modal-hint" }, dir), list, path], [
-    { label: "Öffnen", value: "open", kind: "blue" },
-    { label: "Abbrechen", value: "cancel", kind: "ghost" },
+      : [h("div", { class: "lib-empty" }, t("No projects in {dir} yet.", { dir }))]));
+  const path = stopKeys(h("input", { class: "lib-input mono modal-input", placeholder: t("… or path to a .klangwelt file") }));
+  const choice = await modal(t("Open project"), [h("div", { class: "modal-hint" }, dir), list, path], [
+    { label: t("Open"), value: "open", kind: "blue" },
+    { label: t("Cancel"), value: "cancel", kind: "ghost" },
   ]);
   const target = path.value.trim() || picked;
   if (choice !== "open") return;
   if (!target) {
-    notify("Bitte ein Projekt auswählen.", "error");
+    notify(t("Please select a project."), "error");
     return;
   }
   await openPath(target);
@@ -197,28 +215,28 @@ function uploadProject(): void {
 
 /** Knopf „Speichern“ + Menü „Datei“ für die Transportleiste. */
 export function fileControls(): HTMLElement {
-  const saveBtn = h("button", { class: "btn save-btn", onclick: () => void saveProject() }, icon("save"), "Speichern", h("i", { class: "dirty-dot" }));
-  const menuBtn = h("button", { class: "btn", "data-help": "datei", title: "Neu, Öffnen, Speichern unter, Exportieren" }, icon("folder"), "Datei ▾");
+  const saveBtn = h("button", { class: "btn save-btn", onclick: () => void saveProject() }, icon("save"), t("Save"), h("i", { class: "dirty-dot" }));
+  const menuBtn = h("button", { class: "btn", "data-help": "datei", title: t("New, Open, Save as, Export") }, icon("folder"), `${t("File")} ▾`);
   const menu = dropdown(menuBtn, "file-menu", (m, close) => {
     const item = (label: string, keys: string, fn: () => void) =>
       h("button", { class: "menu-item", onclick: () => { close(); fn(); } }, label, h("span", {}, keys));
     m.replaceChildren(
-      item("Neues Projekt", "Strg+N", () => void newProject()),
-      item("Öffnen …", "Strg+O", () => void openDialog()),
+      item(t("New project"), t("Ctrl+N"), () => void newProject()),
+      item(t("Open…"), t("Ctrl+O"), () => void openDialog()),
       h("div", { class: "menu-sep" }),
-      item("Speichern", "Strg+S", () => void saveProject()),
-      item("Speichern unter …", "Strg+Umschalt+S", () => void saveAs()),
-      item("Exportieren …", "Strg+E", () => void exportDialog()),
+      item(t("Save"), t("Ctrl+S"), () => void saveProject()),
+      item(t("Save as…"), t("Ctrl+Shift+S"), () => void saveAs()),
+      item(t("Export…"), t("Ctrl+E"), () => void exportDialog()),
       // Browser: Projekte liegen im Speicher des Browsers – als Datei mitnehmen bzw. hereinholen
       ...(backend.platform === "web"
         ? [
             h("div", { class: "menu-sep" }),
-            item("Projektdatei herunterladen", "", () => void downloadProject()),
-            item("Projektdatei hochladen …", "", () => uploadProject()),
+            item(t("Download project file"), "", () => void downloadProject()),
+            item(t("Upload project file…"), "", () => uploadProject()),
           ]
         : []),
       h("div", { class: "menu-sep" }),
-      item("Demo-Projekt laden", "", () => void demoProject()),
+      item(t("Load demo project"), "", () => void demoProject()),
     );
   });
   effect(() => {
@@ -226,10 +244,12 @@ export function fileControls(): HTMLElement {
     const name = fileName(s?.file);
     saveBtn.classList.toggle("dirty", !!s?.dirty);
     saveBtn.title = name
-      ? `${name}${s?.dirty ? " – ungespeicherte Änderungen" : " – gespeichert"} (Strg+S)`
-      : "Projekt speichern (Strg+S)";
+      ? s?.dirty
+        ? t("{name} – unsaved changes (Ctrl+S)", { name })
+        : t("{name} – saved (Ctrl+S)", { name })
+      : t("Save project (Ctrl+S)");
   });
-  const exportBtn = h("button", { class: "btn export-btn", title: "Als WAV, FLAC, Opus, Stems oder MIDI exportieren (Strg+E)", onclick: () => void exportDialog() }, icon("download"), "Exportieren");
+  const exportBtn = h("button", { class: "btn export-btn", title: t("Export as WAV, FLAC, Opus, stems or MIDI (Ctrl+E)"), onclick: () => void exportDialog() }, icon("download"), t("Export"));
   return h("div", { class: "file-controls" }, menu, saveBtn, exportBtn);
 }
 
@@ -270,15 +290,15 @@ export function handleCloseRequests(): void {
       info = { ...info, dirty: !!snapshot.peek()?.dirty };
     }
     if (info.busy) {
-      const choice = await modal("Bibliothek wird noch bearbeitet", [
+      const choice = await modal(t("Library is still being processed"), [
         h("p", {}, `${info.busy}.`),
-        h("p", { class: "modal-hint" }, "Beim nächsten Start geht es automatisch an dieser Stelle weiter – trotzdem jetzt schließen?"),
+        h("p", { class: "modal-hint" }, t("Next time you start the app, it will pick up from here automatically – close anyway?")),
       ], [
-        { label: "Weiterlaufen lassen", value: "stay", kind: "blue" },
-        { label: "Trotzdem schließen", value: "close", kind: "danger" },
+        { label: t("Keep running"), value: "stay", kind: "blue" },
+        { label: t("Close anyway"), value: "close", kind: "danger" },
       ]);
       if (choice !== "close") return;
     }
-    if (!info.dirty || (await confirmDiscard("Schließen"))) await backend.appClose();
+    if (!info.dirty || (await confirmDiscard("close"))) await backend.appClose();
   });
 }

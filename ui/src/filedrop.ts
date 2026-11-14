@@ -8,6 +8,7 @@
 import { backend } from "./bridge.js";
 import { libraryTakesDrops } from "./components/library.js";
 import { baseName, isAudioPath, isScorePath } from "./files.js";
+import { language, t } from "./i18n.js";
 import { signal } from "./signals.js";
 import { errorText, notify, selection, snapshot } from "./store.js";
 
@@ -43,23 +44,25 @@ export function dropTargetAt(x: number, y: number): DropTarget {
 }
 
 function secs(s: number): string {
-  if (s < 60) return `${s.toLocaleString("de-DE", { maximumFractionDigits: 1 })} s`;
+  if (s < 60) return `${s.toLocaleString(language(), { maximumFractionDigits: 1 })} s`;
   const m = Math.floor(s / 60);
   return `${m}:${String(Math.round(s - m * 60)).padStart(2, "0")} min`;
 }
 
 /** Dateien einfügen und Bescheid sagen (auch für den Agenten-freien Weg über Tests). */
 export async function importAudio(paths: string[], target: DropTarget): Promise<boolean> {
-  notify(paths.length === 1 ? `Lese „${baseName(paths[0]!)}“ …` : `Lese ${paths.length} Dateien …`);
+  notify(paths.length === 1 ? t("Reading \"{name}\"…", { name: baseName(paths[0]!) }) : t("Reading {n} files…", { n: paths.length }));
   try {
     const r = await backend.audioImport(paths, target.trackId, target.startBeats);
     snapshot.value = r.snapshot;
     const first = r.imported[0];
     if (first) selection.value = { trackId: first.trackId, clipId: first.clipId };
     const what = r.imported.length === 1 && first
-      ? `„${first.name}“ eingefügt (${first.format}, ${secs(first.seconds)}${first.channels > 1 ? ", zu mono gemittelt" : ""})`
-      : `${r.imported.length} Audiodateien eingefügt`;
-    notify(r.errors.length ? `${what} – nicht gelesen: ${r.errors.join(" · ")}` : what, r.errors.length ? "error" : "info");
+      ? first.channels > 1
+        ? t("Inserted \"{name}\" ({format}, {duration}, mixed down to mono)", { name: first.name, format: first.format, duration: secs(first.seconds) })
+        : t("Inserted \"{name}\" ({format}, {duration})", { name: first.name, format: first.format, duration: secs(first.seconds) })
+      : t("Inserted {n} audio files", { n: r.imported.length });
+    notify(r.errors.length ? t("{what} – couldn't read: {errors}", { what, errors: r.errors.join(" · ") }) : what, r.errors.length ? "error" : "info");
     return true;
   } catch (e) {
     notify(errorText(e), "error");
@@ -88,8 +91,8 @@ export function initFileDrop(): void {
     if (paths.length && !(paths.some(isScorePath) && libraryTakesDrops())) {
       notify(
         paths.some(isScorePath)
-          ? "MusicXML-Dateien nimmt die Bibliothek auf – dafür das Fenster „Bibliothek“ öffnen."
-          : "Diese Dateien kann Klangwelt nicht einfügen: Audiodateien (WAV, AIFF, FLAC, Opus) werden Spuren, MusicXML kommt in die Bibliothek.",
+          ? t("MusicXML files go into the library – open the \"Library\" window for that.")
+          : t("Klangwelt can't insert these files: audio files (WAV, AIFF, FLAC, Opus) become tracks, MusicXML goes into the library."),
         "error",
       );
     }

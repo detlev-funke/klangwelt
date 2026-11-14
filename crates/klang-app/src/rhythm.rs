@@ -13,6 +13,7 @@ use crate::state::{lock, AppState, CmdResult, Snapshot};
 use klang_core::{Clip, ClipPatch, ClipSource, Command, Id, InstrumentKind, Note, ProjectPatch, Track, TrackKind};
 use klang_dsp::drums;
 use klang_dsp::util;
+use klang_i18n::{tid, tk, tr};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -21,30 +22,31 @@ pub const STEPS_PER_BAR: usize = 16;
 const STEP_BEATS: f64 = 0.25;
 pub const MAX_BARS: usize = 4;
 
-/// Zeilen des Rasters: Kennung, Name, Taste; `main` = immer sichtbar.
+/// Rows of the grid: id, name (a key, translated on output), key; `main` = always visible.
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Row {
     pub key: &'static str,
+    #[serde(serialize_with = "crate::sound::ser_tr")]
     pub label: &'static str,
     pub midi: u8,
     pub main: bool,
 }
 
 pub const ROWS: [Row; 13] = [
-    Row { key: "kick", label: "Kick", midi: drums::KICK, main: true },
-    Row { key: "snare", label: "Snare", midi: drums::SNARE, main: true },
-    Row { key: "clap", label: "Clap", midi: drums::CLAP, main: true },
-    Row { key: "rim", label: "Rim", midi: drums::RIM, main: true },
-    Row { key: "hhc", label: "Hi-Hat zu", midi: drums::HAT_CLOSED, main: true },
-    Row { key: "hho", label: "Hi-Hat offen", midi: drums::HAT_OPEN, main: true },
-    Row { key: "crash", label: "Crash", midi: drums::CRASH, main: false },
-    Row { key: "ride", label: "Ride", midi: drums::RIDE, main: false },
-    Row { key: "cow", label: "Cowbell", midi: drums::COWBELL, main: false },
-    Row { key: "tomh", label: "Tom hoch", midi: drums::TOM_HIGH, main: false },
-    Row { key: "tomm", label: "Tom mittel", midi: drums::TOM_MID, main: false },
-    Row { key: "toml", label: "Tom tief", midi: drums::TOM_LOW, main: false },
-    Row { key: "shk", label: "Shaker", midi: drums::SHAKER, main: false },
+    Row { key: "kick", label: tk!("Kick"), midi: drums::KICK, main: true },
+    Row { key: "snare", label: tk!("Snare"), midi: drums::SNARE, main: true },
+    Row { key: "clap", label: tk!("Clap"), midi: drums::CLAP, main: true },
+    Row { key: "rim", label: tk!("Rim"), midi: drums::RIM, main: true },
+    Row { key: "hhc", label: tk!("Closed hi-hat"), midi: drums::HAT_CLOSED, main: true },
+    Row { key: "hho", label: tk!("Open hi-hat"), midi: drums::HAT_OPEN, main: true },
+    Row { key: "crash", label: tk!("Crash"), midi: drums::CRASH, main: false },
+    Row { key: "ride", label: tk!("Ride"), midi: drums::RIDE, main: false },
+    Row { key: "cow", label: tk!("Cowbell"), midi: drums::COWBELL, main: false },
+    Row { key: "tomh", label: tk!("High tom"), midi: drums::TOM_HIGH, main: false },
+    Row { key: "tomm", label: tk!("Mid tom"), midi: drums::TOM_MID, main: false },
+    Row { key: "toml", label: tk!("Low tom"), midi: drums::TOM_LOW, main: false },
+    Row { key: "shk", label: tk!("Shaker"), midi: drums::SHAKER, main: false },
 ];
 
 fn row(key: &str) -> Option<&'static Row> {
@@ -71,19 +73,23 @@ fn row_of(midi: u8) -> Option<&'static Row> {
 // ---------------------------------------------------------------- Muster
 
 struct PatternDef {
+    /// Proper name (stays untranslated)
     name: &'static str,
     bpm: u16,
     /// empfohlener Swing in Prozent
     swing: u8,
+    /// Key, translated on output
     tip: &'static str,
     /// Kürzel wie im Heft (BD, SN, CL, RS, CH, OH, CY, CB, HT, MT, LT, SH), Schritte 1–16
     rows: &'static [(&'static str, &'static [u8])],
 }
 
 struct GenreDef {
+    /// Key, translated on output ([`find_pattern`] also knows both versions)
+    /// – an identifier (`tid!`): find_pattern matches the agent's genre against this value.
     name: &'static str,
     blurb: &'static str,
-    /// Startpunkt im Charakter-Feld für eine neue Schlagzeug-Spur
+    /// Starting point in the character field for a new drum track (an identifier, stays German)
     sound: &'static str,
     patterns: &'static [PatternDef],
 }
@@ -93,134 +99,134 @@ const ALL16: &[u8] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
 const GENRES: &[GenreDef] = &[
     GenreDef {
-        name: "Grundlagen",
-        blurb: "Hier fängt alles an: Die Kick gibt den Puls, die Snare sitzt auf Zählzeit 2 und 4 (der Backbeat), die Hi-Hat läuft in Achteln durch.",
+        name: tid!("Grundlagen"),
+        blurb: tk!("This is where it all starts: the kick sets the pulse, the snare sits on beats 2 and 4 (the backbeat), the hi-hat runs through in eighths."),
         sound: "Rock",
         patterns: &[
-            PatternDef { name: "Boots ’n’ Cats", bpm: 118, swing: 0, tip: "Der Klassiker zum Üben – mitsprechen: „boots and cats and boots and cats“. Kick, Hi-Hat, Snare, Hi-Hat.", rows: &[("BD", &[1, 9]), ("SN", &[5, 13]), ("CH", E8)] },
-            PatternDef { name: "Four on the Floor", bpm: 122, swing: 0, tip: "Kick auf jeder Viertel – das Fundament fast aller Tanzmusik. Offene Hi-Hat auf dem „und“.", rows: &[("BD", &[1, 5, 9, 13]), ("OH", &[3, 7, 11, 15])] },
-            PatternDef { name: "Pop Backbeat", bpm: 110, swing: 0, tip: "Snare auf 2 und 4 – das Herz jedes Pop- und Rocksongs.", rows: &[("BD", &[1, 4, 7, 11]), ("SN", &[5, 13]), ("CH", E8)] },
+            PatternDef { name: "Boots ’n’ Cats", bpm: 118, swing: 0, tip: tk!("The classic for practicing – say it along: \"boots and cats and boots and cats\". Kick, hi-hat, snare, hi-hat."), rows: &[("BD", &[1, 9]), ("SN", &[5, 13]), ("CH", E8)] },
+            PatternDef { name: "Four on the Floor", bpm: 122, swing: 0, tip: tk!("Kick on every quarter – the foundation of almost all dance music. Open hi-hat on the \"and\"."), rows: &[("BD", &[1, 5, 9, 13]), ("OH", &[3, 7, 11, 15])] },
+            PatternDef { name: "Pop Backbeat", bpm: 110, swing: 0, tip: tk!("Snare on 2 and 4 – the heart of every pop and rock song."), rows: &[("BD", &[1, 4, 7, 11]), ("SN", &[5, 13]), ("CH", E8)] },
         ],
     },
     GenreDef {
-        name: "House",
-        blurb: "Kick auf jeder Viertel, Clap auf 2 und 4 und die typischen offenen Hi-Hats auf dem Offbeat. 120–126 BPM.",
+        name: tid!("House"),
+        blurb: tk!("Kick on every quarter, clap on 2 and 4 and the typical open hi-hats on the offbeat. 120–126 BPM."),
         sound: "House",
         patterns: &[
-            PatternDef { name: "Classic House", bpm: 124, swing: 0, tip: "Das „tss“ der offenen Hi-Hat zwischen den Kicks macht den House-Groove.", rows: &[("BD", &[1, 5, 9, 13]), ("CL", &[5, 13]), ("OH", &[3, 7, 11, 15])] },
-            PatternDef { name: "Deep House", bpm: 122, swing: 0, tip: "Weicher und rollender: zusätzliche geschlossene Hi-Hats bringen Bewegung.", rows: &[("BD", &[1, 5, 9, 13]), ("CL", &[5, 13]), ("CH", &[2, 8, 10]), ("OH", &[3, 7, 11, 15])] },
-            PatternDef { name: "French House", bpm: 123, swing: 0, tip: "Durchgehende Hi-Hats plus Offbeat-Hats, der Shaker treibt zusätzlich.", rows: &[("BD", &[1, 5, 9, 13]), ("CL", &[5, 13]), ("CH", E8), ("OH", &[3, 7, 11, 15]), ("SH", &[1, 5, 9, 13])] },
+            PatternDef { name: "Classic House", bpm: 124, swing: 0, tip: tk!("The \"tss\" of the open hi-hat between the kicks makes the house groove."), rows: &[("BD", &[1, 5, 9, 13]), ("CL", &[5, 13]), ("OH", &[3, 7, 11, 15])] },
+            PatternDef { name: "Deep House", bpm: 122, swing: 0, tip: tk!("Softer and rolling: extra closed hi-hats add movement."), rows: &[("BD", &[1, 5, 9, 13]), ("CL", &[5, 13]), ("CH", &[2, 8, 10]), ("OH", &[3, 7, 11, 15])] },
+            PatternDef { name: "French House", bpm: 123, swing: 0, tip: tk!("Continuous hi-hats plus offbeat hats, with the shaker driving things further."), rows: &[("BD", &[1, 5, 9, 13]), ("CL", &[5, 13]), ("CH", E8), ("OH", &[3, 7, 11, 15]), ("SH", &[1, 5, 9, 13])] },
         ],
     },
     GenreDef {
-        name: "Techno",
-        blurb: "Treibend und hypnotisch: Kick auf jeder Viertel, dazu ein Extra-Kick kurz vor Schluss. 130–138 BPM.",
+        name: tid!("Techno"),
+        blurb: tk!("Driving and hypnotic: kick on every quarter, plus an extra kick just before the end. 130–138 BPM."),
         sound: "Techno",
         patterns: &[
-            PatternDef { name: "Techno", bpm: 134, swing: 0, tip: "Der Kick auf Schritt 15 schiebt in den nächsten Takt.", rows: &[("BD", &[1, 5, 9, 13, 15]), ("OH", &[3, 7, 11, 15]), ("CH", &[10])] },
-            PatternDef { name: "Peak-Time Techno", bpm: 136, swing: 0, tip: "Stampfend: Kick durch, Clap auf 2 und 4, Hi-Hats auf allen Zwischenschritten.", rows: &[("BD", &[1, 5, 9, 13]), ("CL", &[5, 13]), ("OH", &[3, 7, 11, 15]), ("CH", &[2, 4, 6, 8, 10, 12, 14, 16])] },
+            PatternDef { name: "Techno", bpm: 134, swing: 0, tip: tk!("The kick on step 15 pushes into the next bar."), rows: &[("BD", &[1, 5, 9, 13, 15]), ("OH", &[3, 7, 11, 15]), ("CH", &[10])] },
+            PatternDef { name: "Peak-Time Techno", bpm: 136, swing: 0, tip: tk!("Stomping: kick throughout, clap on 2 and 4, hi-hats on all the steps in between."), rows: &[("BD", &[1, 5, 9, 13]), ("CL", &[5, 13]), ("OH", &[3, 7, 11, 15]), ("CH", &[2, 4, 6, 8, 10, 12, 14, 16])] },
         ],
     },
     GenreDef {
-        name: "Electro",
-        blurb: "Synkopierte Kicks statt Four on the Floor, aber eine gerade Snare auf 2 und 4. Rund 128 BPM.",
+        name: tid!("Electro"),
+        blurb: tk!("Syncopated kicks instead of four on the floor, but a straight snare on 2 and 4. Around 128 BPM."),
         sound: "808",
         patterns: &[
-            PatternDef { name: "Electro", bpm: 128, swing: 0, tip: "Die Kick springt (1, 7, 11, 14) – das gibt den nervösen Electro-Bounce.", rows: &[("BD", &[1, 7, 11, 14]), ("SN", &[5, 13]), ("CH", E8)] },
-            PatternDef { name: "Miami Bass", bpm: 126, swing: 0, tip: "Kick und Snare wie beim Electro, Hi-Hats mit Sechzehntel-Betonungen.", rows: &[("BD", &[1, 7, 11, 14]), ("SN", &[5, 13]), ("CH", &[1, 3, 4, 5, 7, 8, 9, 11, 12, 13, 15, 16])] },
+            PatternDef { name: "Electro", bpm: 128, swing: 0, tip: tk!("The kick jumps around (1, 7, 11, 14) – that gives the nervous electro bounce."), rows: &[("BD", &[1, 7, 11, 14]), ("SN", &[5, 13]), ("CH", E8)] },
+            PatternDef { name: "Miami Bass", bpm: 126, swing: 0, tip: tk!("Kick and snare as in electro, hi-hats with sixteenth-note accents."), rows: &[("BD", &[1, 7, 11, 14]), ("SN", &[5, 13]), ("CH", &[1, 3, 4, 5, 7, 8, 9, 11, 12, 13, 15, 16])] },
         ],
     },
     GenreDef {
-        name: "Hip-Hop / Boom Bap",
-        blurb: "Entspanntes Tempo (85–95 BPM), satte Kick-Snare-Grooves, oft leicht geswingt.",
+        name: tid!("Hip-Hop / Boom Bap"),
+        blurb: tk!("Relaxed tempo (85–95 BPM), punchy kick-snare grooves, often slightly swung."),
         sound: "Lo-Fi",
         patterns: &[
-            PatternDef { name: "Boom Bap", bpm: 88, swing: 20, tip: "Harte Kick auf 1, Snare auf 2 und 4 – mit etwas Swing sofort zum Mitnicken.", rows: &[("BD", &[1, 7, 11]), ("SN", &[5, 13]), ("CH", E8)] },
-            PatternDef { name: "Hip Hop Groove", bpm: 90, swing: 20, tip: "Mehr Kicks (1, 3, 7, 8, 15) machen den Groove gesprächiger.", rows: &[("BD", &[1, 3, 7, 8, 15]), ("SN", &[5, 13]), ("CH", E8)] },
-            PatternDef { name: "Lo-Fi", bpm: 82, swing: 35, tip: "Langsam und verschleppt – Swing hochdrehen.", rows: &[("BD", &[1, 8, 11]), ("SN", &[5, 13]), ("CH", &[1, 4, 5, 8, 9, 12, 13, 16]), ("OH", &[7])] },
+            PatternDef { name: "Boom Bap", bpm: 88, swing: 20, tip: tk!("Hard kick on 1, snare on 2 and 4 – add a little swing and heads start nodding."), rows: &[("BD", &[1, 7, 11]), ("SN", &[5, 13]), ("CH", E8)] },
+            PatternDef { name: "Hip Hop Groove", bpm: 90, swing: 20, tip: tk!("More kicks (1, 3, 7, 8, 15) make the groove chattier."), rows: &[("BD", &[1, 3, 7, 8, 15]), ("SN", &[5, 13]), ("CH", E8)] },
+            PatternDef { name: "Lo-Fi", bpm: 82, swing: 35, tip: tk!("Slow and dragging – turn up the swing."), rows: &[("BD", &[1, 8, 11]), ("SN", &[5, 13]), ("CH", &[1, 4, 5, 8, 9, 12, 13, 16]), ("OH", &[7])] },
         ],
     },
     GenreDef {
-        name: "Trap",
-        blurb: "Halftime: Snare bzw. Clap erst auf Zählzeit 3, schnelle Hi-Hats. Rund 140 BPM, fühlt sich halb so schnell an.",
+        name: tid!("Trap"),
+        blurb: tk!("Halftime: snare or clap only on beat 3, fast hi-hats. Around 140 BPM, but feels half as fast."),
         sound: "Trap",
         patterns: &[
-            PatternDef { name: "Trap", bpm: 140, swing: 0, tip: "Clap erst in der Mitte = Halftime; Kick sparsam, Hi-Hats mit kleinen Rolls.", rows: &[("BD", &[1, 7, 13]), ("CL", &[9]), ("CH", &[1, 3, 5, 7, 9, 10, 11, 13, 15, 16])] },
-            PatternDef { name: "Drill", bpm: 142, swing: 0, tip: "Rutschende Kicks (3, 5, 11) und der verschobene Clap.", rows: &[("BD", &[3, 5, 11]), ("CL", &[9]), ("CH", E8)] },
+            PatternDef { name: "Trap", bpm: 140, swing: 0, tip: tk!("Clap only in the middle = halftime; sparse kick, hi-hats with little rolls."), rows: &[("BD", &[1, 7, 13]), ("CL", &[9]), ("CH", &[1, 3, 5, 7, 9, 10, 11, 13, 15, 16])] },
+            PatternDef { name: "Drill", bpm: 142, swing: 0, tip: tk!("Sliding kicks (3, 5, 11) and the shifted clap."), rows: &[("BD", &[3, 5, 11]), ("CL", &[9]), ("CH", E8)] },
         ],
     },
     GenreDef {
-        name: "Drum & Bass / Jungle",
-        blurb: "Sehr schnell (160–176 BPM), durch die Snare auf 2 und 4 aber halb so schnell gefühlt. Der Amen-Break ist das Herzstück.",
+        name: tid!("Drum & Bass / Jungle"),
+        blurb: tk!("Very fast (160–176 BPM), but the snare on 2 and 4 makes it feel half as fast. The Amen break is the centerpiece."),
         sound: "Rock",
         patterns: &[
-            PatternDef { name: "Amen Break", bpm: 174, swing: 0, tip: "Die vielen Snares (5, 8, 10, 13, 16) machen das rollende Durcheinander.", rows: &[("BD", &[1, 3, 11, 12]), ("SN", &[5, 8, 10, 13, 16]), ("CH", E8)] },
-            PatternDef { name: "Jungle", bpm: 162, swing: 0, tip: "Kantig und roh: verschobene Kicks, leise Zwischen-Snares, offene Hi-Hat auf 1.", rows: &[("BD", &[1, 3, 11]), ("SN", &[5, 8, 10, 15]), ("CH", E8), ("OH", &[1])] },
-            PatternDef { name: "Liquid D&B", bpm: 174, swing: 0, tip: "Klarer Two-Step aus Kick und Snare – gut zum Hineinhören.", rows: &[("BD", &[1, 4, 8, 10, 11, 16]), ("SN", &[5, 13]), ("CH", E8)] },
+            PatternDef { name: "Amen Break", bpm: 174, swing: 0, tip: tk!("The many snares (5, 8, 10, 13, 16) create the rolling chaos."), rows: &[("BD", &[1, 3, 11, 12]), ("SN", &[5, 8, 10, 13, 16]), ("CH", E8)] },
+            PatternDef { name: "Jungle", bpm: 162, swing: 0, tip: tk!("Edgy and raw: shifted kicks, quiet in-between snares, open hi-hat on 1."), rows: &[("BD", &[1, 3, 11]), ("SN", &[5, 8, 10, 15]), ("CH", E8), ("OH", &[1])] },
+            PatternDef { name: "Liquid D&B", bpm: 174, swing: 0, tip: tk!("A clear two-step of kick and snare – good for getting into the style."), rows: &[("BD", &[1, 4, 8, 10, 11, 16]), ("SN", &[5, 13]), ("CH", E8)] },
         ],
     },
     GenreDef {
-        name: "Funk / Breakbeat",
-        blurb: "Der Groove lebt von leisen Zwischen-Snares (Ghost Notes) und synkopierten Kicks. 95–130 BPM, etwas Swing hilft.",
+        name: tid!("Funk / Breakbeat"),
+        blurb: tk!("The groove lives on quiet in-between snares (ghost notes) and syncopated kicks. 95–130 BPM; a little swing helps."),
         sound: "Disco",
         patterns: &[
-            PatternDef { name: "Funky Drummer", bpm: 100, swing: 15, tip: "Die vielen leisen Snares zwischen den Backbeats machen den Zauber.", rows: &[("BD", &[1, 3, 7, 11, 14]), ("SN", &[5, 8, 10, 12, 13, 16]), ("CH", &[1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 15, 16]), ("OH", &[8, 14])] },
-            PatternDef { name: "Impeach the President", bpm: 95, swing: 15, tip: "Schlicht und trocken, offene Hi-Hat auf 11 als Erkennungszeichen.", rows: &[("BD", &[1, 8, 9, 15]), ("SN", &[5, 13]), ("CH", &[1, 3, 5, 7, 8, 9, 13, 15]), ("OH", &[11])] },
-            PatternDef { name: "Big Beat", bpm: 128, swing: 0, tip: "Fett und breit: Kick vorn, Hi-Hat nur auf 2 und 4.", rows: &[("BD", &[1, 4, 7, 9]), ("SN", &[5, 13]), ("CH", &[5, 13])] },
+            PatternDef { name: "Funky Drummer", bpm: 100, swing: 15, tip: tk!("The many quiet snares between the backbeats work the magic."), rows: &[("BD", &[1, 3, 7, 11, 14]), ("SN", &[5, 8, 10, 12, 13, 16]), ("CH", &[1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 15, 16]), ("OH", &[8, 14])] },
+            PatternDef { name: "Impeach the President", bpm: 95, swing: 15, tip: tk!("Simple and dry, with the open hi-hat on 11 as its signature."), rows: &[("BD", &[1, 8, 9, 15]), ("SN", &[5, 13]), ("CH", &[1, 3, 5, 7, 8, 9, 13, 15]), ("OH", &[11])] },
+            PatternDef { name: "Big Beat", bpm: 128, swing: 0, tip: tk!("Fat and wide: kick up front, hi-hat only on 2 and 4."), rows: &[("BD", &[1, 4, 7, 9]), ("SN", &[5, 13]), ("CH", &[5, 13])] },
         ],
     },
     GenreDef {
-        name: "Rock / Pop",
-        blurb: "Gerader Backbeat, durchlaufende Achtel-Hi-Hats, Crash auf die 1. 110–130 BPM.",
+        name: tid!("Rock / Pop"),
+        blurb: tk!("Straight backbeat, steady eighth-note hi-hats, crash on the 1. 110–130 BPM."),
         sound: "Rock",
         patterns: &[
-            PatternDef { name: "Rock", bpm: 120, swing: 0, tip: "Der Standard: Kick auf 1, Snare auf 2 und 4, Crash zu Beginn.", rows: &[("BD", &[1, 8, 9, 11]), ("SN", &[5, 13]), ("CH", E8), ("CY", &[1])] },
-            PatternDef { name: "Pop", bpm: 110, swing: 0, tip: "Etwas mehr Bewegung in der Kick – die Basis unzähliger Hits.", rows: &[("BD", &[1, 2, 4, 8, 11]), ("SN", &[5, 13]), ("CH", E8)] },
-            PatternDef { name: "Disco", bpm: 120, swing: 0, tip: "Four on the Floor mit offenen Hi-Hats auf dem Offbeat – der Vorläufer von House.", rows: &[("BD", &[1, 5, 9, 13]), ("SN", &[5, 13]), ("OH", &[3, 7, 11, 15]), ("CH", ALL16)] },
+            PatternDef { name: "Rock", bpm: 120, swing: 0, tip: tk!("The standard: kick on 1, snare on 2 and 4, crash at the start."), rows: &[("BD", &[1, 8, 9, 11]), ("SN", &[5, 13]), ("CH", E8), ("CY", &[1])] },
+            PatternDef { name: "Pop", bpm: 110, swing: 0, tip: tk!("A bit more movement in the kick – the basis of countless hits."), rows: &[("BD", &[1, 2, 4, 8, 11]), ("SN", &[5, 13]), ("CH", E8)] },
+            PatternDef { name: "Disco", bpm: 120, swing: 0, tip: tk!("Four on the floor with open hi-hats on the offbeat – the forerunner of house."), rows: &[("BD", &[1, 5, 9, 13]), ("SN", &[5, 13]), ("OH", &[3, 7, 11, 15]), ("CH", ALL16)] },
         ],
     },
     GenreDef {
-        name: "Reggaeton / Dancehall",
-        blurb: "Der Dembow: Kick auf den Vierteln, Snare synkopiert auf 4, 7, 12, 15. 90–100 BPM.",
+        name: tid!("Reggaeton / Dancehall"),
+        blurb: tk!("The dembow: kick on the quarters, snare syncopated on 4, 7, 12, 15. 90–100 BPM."),
         sound: "808",
         patterns: &[
-            PatternDef { name: "Reggaeton (Dembow)", bpm: 95, swing: 0, tip: "Das Snare-Muster 4·7 / 12·15 ist der Dembow-Rhythmus.", rows: &[("BD", &[1, 5, 9, 13]), ("SN", &[4, 7, 12, 15]), ("CH", E8)] },
-            PatternDef { name: "Dancehall", bpm: 98, swing: 0, tip: "Verwandt, aber sparsamer in der Kick; der Rim gibt den holzigen Akzent.", rows: &[("BD", &[1, 9]), ("SN", &[4, 7, 12, 15]), ("RS", &[3, 11]), ("CH", E8)] },
+            PatternDef { name: "Reggaeton (Dembow)", bpm: 95, swing: 0, tip: tk!("The snare pattern 4·7 / 12·15 is the dembow rhythm."), rows: &[("BD", &[1, 5, 9, 13]), ("SN", &[4, 7, 12, 15]), ("CH", E8)] },
+            PatternDef { name: "Dancehall", bpm: 98, swing: 0, tip: tk!("Related, but sparser in the kick; the rim adds the woody accent."), rows: &[("BD", &[1, 9]), ("SN", &[4, 7, 12, 15]), ("RS", &[3, 11]), ("CH", E8)] },
         ],
     },
     GenreDef {
-        name: "Reggae / Dub",
-        blurb: "Entspannt, 70–80 BPM. Der One Drop lässt die 1 weg: Kick und Snare fallen zusammen auf Zählzeit 3.",
+        name: tid!("Reggae / Dub"),
+        blurb: tk!("Relaxed, 70–80 BPM. The one drop leaves out the 1: kick and snare land together on beat 3."),
         sound: "Lo-Fi",
         patterns: &[
-            PatternDef { name: "One Drop", bpm: 75, swing: 0, tip: "Keine Kick auf 1 – Kick und Snare gemeinsam auf der 3.", rows: &[("BD", &[9]), ("SN", &[9]), ("CH", E8)] },
-            PatternDef { name: "Steppers", bpm: 78, swing: 0, tip: "Treibender: Kick auf jeder Viertel, Snare weiter auf der 3.", rows: &[("BD", &[1, 5, 9, 13]), ("SN", &[9]), ("CH", E8)] },
+            PatternDef { name: "One Drop", bpm: 75, swing: 0, tip: tk!("No kick on 1 – kick and snare together on the 3."), rows: &[("BD", &[9]), ("SN", &[9]), ("CH", E8)] },
+            PatternDef { name: "Steppers", bpm: 78, swing: 0, tip: tk!("More driving: kick on every quarter, snare still on the 3."), rows: &[("BD", &[1, 5, 9, 13]), ("SN", &[9]), ("CH", E8)] },
         ],
     },
     GenreDef {
-        name: "Latin / Afro-Cuban",
-        blurb: "Alles dreht sich um die Clave – ein 3-2-Muster auf dem Rim, darüber Ride und eine tanzende Kick. 100–130 BPM.",
+        name: tid!("Latin / Afro-Cuban"),
+        blurb: tk!("Everything revolves around the clave – a 3-2 pattern on the rim, with ride and a dancing kick on top. 100–130 BPM."),
         sound: "Disco",
         patterns: &[
-            PatternDef { name: "Bossa Nova", bpm: 130, swing: 0, tip: "Die Rim-Clave (1, 4, 7, 11, 14) ist das Rückgrat, die Ride läuft durch.", rows: &[("RS", &[1, 4, 7, 11, 14]), ("BD", &[1, 4, 5, 8, 9, 12, 13, 16]), ("CY", ALL16)] },
-            PatternDef { name: "Son Clave (3-2)", bpm: 100, swing: 0, tip: "Die klassische 3-2-Clave auf dem Rim: X··X··X···X·X···", rows: &[("RS", &[1, 4, 7, 11, 13]), ("BD", &[1, 9]), ("CH", E8)] },
-            PatternDef { name: "Songo", bpm: 110, swing: 0, tip: "Kubanischer Groove: die Cowbell führt, Kick synkopiert.", rows: &[("BD", &[1, 5, 9, 13, 15]), ("RS", &[3, 4, 7, 8, 11, 12, 15, 16]), ("CB", &[1, 4, 7, 11, 15])] },
+            PatternDef { name: "Bossa Nova", bpm: 130, swing: 0, tip: tk!("The rim clave (1, 4, 7, 11, 14) is the backbone; the ride runs through."), rows: &[("RS", &[1, 4, 7, 11, 14]), ("BD", &[1, 4, 5, 8, 9, 12, 13, 16]), ("CY", ALL16)] },
+            PatternDef { name: "Son Clave (3-2)", bpm: 100, swing: 0, tip: tk!("The classic 3-2 clave on the rim: X··X··X···X·X···"), rows: &[("RS", &[1, 4, 7, 11, 13]), ("BD", &[1, 9]), ("CH", E8)] },
+            PatternDef { name: "Songo", bpm: 110, swing: 0, tip: tk!("Cuban groove: the cowbell leads, the kick is syncopated."), rows: &[("BD", &[1, 5, 9, 13, 15]), ("RS", &[3, 4, 7, 8, 11, 12, 15, 16]), ("CB", &[1, 4, 7, 11, 15])] },
         ],
     },
     GenreDef {
-        name: "UK Garage",
-        blurb: "Synkopiert und mit viel Swing: verschobene Kicks, Clap auf 2 und 4, kantige Hi-Hats. 130–138 BPM.",
+        name: tid!("UK Garage"),
+        blurb: tk!("Syncopated and heavily swung: shifted kicks, clap on 2 and 4, edgy hi-hats. 130–138 BPM."),
         sound: "House",
         patterns: &[
-            PatternDef { name: "2-Step Garage", bpm: 135, swing: 40, tip: "Kick nur auf 1 und 11 – der „Skip“. Swing um 40 % für das echte Garage-Gefühl.", rows: &[("BD", &[1, 11]), ("CL", &[5, 13]), ("CH", &[3, 4, 7, 11, 15, 16]), ("RS", &[2, 8, 14]), ("MT", &[6, 12])] },
+            PatternDef { name: "2-Step Garage", bpm: 135, swing: 40, tip: tk!("Kick only on 1 and 11 – the \"skip\". Swing around 40% for that real garage feel."), rows: &[("BD", &[1, 11]), ("CL", &[5, 13]), ("CH", &[3, 4, 7, 11, 15, 16]), ("RS", &[2, 8, 14]), ("MT", &[6, 12])] },
         ],
     },
     GenreDef {
-        name: "Dubstep",
-        blurb: "Halftime wie Trap, aber härter: Snare auf Zählzeit 3, sparsame Kicks, viel Platz für den Bass. Rund 140 BPM.",
+        name: tid!("Dubstep"),
+        blurb: tk!("Halftime like trap, but harder: snare on beat 3, sparse kicks, lots of room for the bass. Around 140 BPM."),
         sound: "Trap",
         patterns: &[
-            PatternDef { name: "Dubstep", bpm: 140, swing: 0, tip: "Kick auf 1, Snare auf der 3 – dazwischen ist Platz für den Bass.", rows: &[("BD", &[1, 11]), ("SN", &[9]), ("CH", &[2, 3, 7, 12, 15]), ("OH", &[5, 14])] },
+            PatternDef { name: "Dubstep", bpm: 140, swing: 0, tip: tk!("Kick on 1, snare on the 3 – in between there's room for the bass."), rows: &[("BD", &[1, 11]), ("SN", &[9]), ("CH", &[2, 3, 7, 12, 15]), ("OH", &[5, 14])] },
         ],
     },
 ];
@@ -256,11 +262,11 @@ impl Grid {
     /// Prüft Zeilen und Länge (1–4 Takte); Schritte sortiert, doppelte entfernt.
     pub fn checked(mut self) -> Result<Grid, String> {
         if self.steps == 0 || self.steps % STEPS_PER_BAR != 0 || self.steps > MAX_BARS * STEPS_PER_BAR {
-            return Err(format!("Länge {} Schritte – erlaubt sind 16, 32, 48 oder 64", self.steps));
+            return Err(tr!("Length of {steps} steps – allowed: 16, 32, 48 or 64", steps = self.steps));
         }
         for (k, v) in self.rows.iter_mut() {
             if row(k).is_none() {
-                return Err(format!("Unbekannte Trommel „{k}“ (erlaubt: {})", ROWS.iter().map(|r| r.key).collect::<Vec<_>>().join(", ")));
+                return Err(tr!("Unknown drum \"{key}\" (allowed: {list})", key = k, list = ROWS.iter().map(|r| r.key).collect::<Vec<_>>().join(", ")));
             }
             v.sort_unstable();
             v.dedup();
@@ -316,28 +322,29 @@ fn pattern_view(p: &PatternDef) -> PatternView {
         rows.entry(code_row(code, steps).to_string()).or_default().extend(steps.iter().map(|&s| s as usize - 1));
     }
     let grid = Grid { steps: STEPS_PER_BAR, rows }.checked().expect("Muster sind gültig");
-    PatternView { name: p.name.into(), bpm: p.bpm, swing: p.swing, tip: p.tip.into(), grid }
+    PatternView { name: p.name.into(), bpm: p.bpm, swing: p.swing, tip: klang_i18n::translate(p.tip), grid }
+}
+
+fn genre_view(g: &GenreDef) -> GenreView {
+    GenreView { name: klang_i18n::translate(g.name), blurb: klang_i18n::translate(g.blurb), sound: g.sound.into(), patterns: g.patterns.iter().map(pattern_view).collect() }
 }
 
 pub fn info() -> RhythmInfo {
-    RhythmInfo {
-        rows: ROWS.to_vec(),
-        genres: GENRES
-            .iter()
-            .map(|g| GenreView { name: g.name.into(), blurb: g.blurb.into(), sound: g.sound.into(), patterns: g.patterns.iter().map(pattern_view).collect() })
-            .collect(),
-    }
+    RhythmInfo { rows: ROWS.to_vec(), genres: GENRES.iter().map(genre_view).collect() }
 }
 
-/// Muster nach Genre und Name (ohne Groß-/Kleinschreibung; das Genre darf fehlen).
+/// Pattern by genre and name (case-insensitive; the genre may be missing,
+/// it counts in German – the identifier – or in the chosen language).
 pub fn find_pattern(genre: Option<&str>, name: &str) -> Result<(GenreView, PatternView), String> {
     let all = info().genres;
     let eq = |a: &str, b: &str| a.to_lowercase() == b.trim().to_lowercase();
     let genres: Vec<&GenreView> = match genre {
         Some(g) => {
-            let found: Vec<&GenreView> = all.iter().filter(|x| eq(&x.name, g) || x.name.to_lowercase().contains(&g.trim().to_lowercase())).collect();
+            let want = g.trim().to_lowercase();
+            let matches = |n: &str| eq(n, g) || n.to_lowercase().contains(&want);
+            let found: Vec<&GenreView> = all.iter().zip(GENRES).filter(|(x, d)| matches(&x.name) || matches(d.name)).map(|(x, _)| x).collect();
             if found.is_empty() {
-                return Err(format!("Kein Genre „{g}“ (vorhanden: {})", all.iter().map(|x| x.name.as_str()).collect::<Vec<_>>().join(", ")));
+                return Err(tr!("No genre \"{genre}\" (available: {list})", genre = g, list = all.iter().map(|x| x.name.as_str()).collect::<Vec<_>>().join(", ")));
             }
             found
         }
@@ -355,7 +362,7 @@ pub fn find_pattern(genre: Option<&str>, name: &str) -> Result<(GenreView, Patte
         }
     }
     let names: Vec<String> = genres.iter().flat_map(|g| g.patterns.iter().map(move |p| format!("{} ({})", p.name, g.name))).collect();
-    Err(format!("Kein Muster „{name}“. Vorhanden: {}", names.join(", ")))
+    Err(tr!("No pattern \"{name}\". Available: {list}", name = name, list = names.join(", ")))
 }
 
 // ---------------------------------------------------------------- Raster ↔ Noten
@@ -446,7 +453,7 @@ pub fn grid_from_notes(notes: &[Note], steps: usize) -> (Grid, usize) {
 
 /// Setzt oder löscht einen Schritt; andere Noten bleiben, wie sie sind.
 pub fn toggle(notes: &[Note], row_key: &str, step: usize, on: bool, swing: f64, steps: usize) -> Result<Vec<Note>, String> {
-    let r = row(row_key).ok_or_else(|| format!("Unbekannte Trommel „{row_key}“"))?;
+    let r = row(row_key).ok_or_else(|| tr!("Unknown drum \"{key}\"", key = row_key))?;
     let here = |n: &Note| row_of(n.pitch).map(|x| x.key) == Some(r.key) && step_of(n.start_beats) == Some(step);
     let mut out: Vec<Note> = notes.iter().filter(|n| !here(n)).cloned().collect();
     if on {
@@ -506,12 +513,12 @@ pub struct Written {
 
 fn drum_clip(st: &AppState, track_id: Id, clip_id: Id) -> CmdResult<(Track, Clip, Vec<Note>, f64)> {
     let s = lock(&st.session)?;
-    let t = s.project.track(track_id).ok_or_else(|| format!("Spur {track_id} nicht gefunden"))?;
+    let t = s.project.track(track_id).ok_or_else(|| tr!("Track {id} not found", id = track_id))?;
     if t.instrument.as_ref().map(|i| i.kind) != Some(InstrumentKind::Drums) {
-        return Err(format!("„{}“ ist keine Schlagzeug-Spur", t.name));
+        return Err(tr!("\"{name}\" is not a drum track", name = t.name));
     }
-    let c = t.clips.iter().find(|c| c.id == clip_id).ok_or_else(|| format!("Clip {clip_id} nicht gefunden"))?;
-    let ClipSource::Notes { length_beats, notes } = &c.source else { return Err("Kein Noten-Clip".into()) };
+    let c = t.clips.iter().find(|c| c.id == clip_id).ok_or_else(|| tr!("Clip {id} not found", id = clip_id))?;
+    let ClipSource::Notes { length_beats, notes } = &c.source else { return Err(tr!("Not a note clip")) };
     Ok((t.clone(), c.clone(), notes.clone(), *length_beats))
 }
 
@@ -529,18 +536,22 @@ impl AppState {
         let (track, _, notes, len) = drum_clip(self, track_id, clip_id)?;
         let steps = ((len / STEP_BEATS).round() as usize).max(STEPS_PER_BAR);
         if step >= steps {
-            return Err(format!("Schritt {} liegt hinter dem Clip ({steps} Schritte)", step + 1));
+            return Err(tr!("Step {step} is beyond the end of the clip ({steps} steps)", step = step + 1, steps = steps));
         }
         let notes = toggle(&notes, row_key, step, on, swing, steps)?;
-        let what = row(row_key).map(|r| r.label).unwrap_or(row_key);
-        let label = format!("Rhythmus „{}“: {what} {} {}", track.name, if on { "auf" } else { "weg bei" }, step + 1);
+        let what = row(row_key).map(|r| klang_i18n::translate(r.label)).unwrap_or_else(|| row_key.to_string());
+        let label = if on {
+            tr!("Rhythm \"{track}\": {drum} on {step}", track = track.name, drum = what, step = step + 1)
+        } else {
+            tr!("Rhythm \"{track}\": {drum} removed at {step}", track = track.name, drum = what, step = step + 1)
+        };
         self.execute(Command::Batch { label, commands: vec![Command::SetClipNotes { track_id, clip_id, notes, length_beats: None }] }, false)
     }
 
     /// Swing eines Schlagzeug-Clips ändern (`merge`: Teil einer Reglerbewegung).
     pub fn rhythm_swing(&self, track_id: Id, clip_id: Id, swing: f64, merge: bool) -> CmdResult<Snapshot> {
         let (track, _, notes, _) = drum_clip(self, track_id, clip_id)?;
-        let label = format!("Rhythmus „{}“: Swing {} %", track.name, swing.round());
+        let label = tr!("Rhythm \"{track}\": swing {swing}%", track = track.name, swing = swing.round());
         self.execute(
             Command::Batch { label, commands: vec![Command::SetClipNotes { track_id, clip_id, notes: apply_swing(&notes, swing), length_beats: None }] },
             merge,
@@ -566,7 +577,7 @@ impl AppState {
         let grid = grid.checked()?;
         let len = grid.steps as f64 * STEP_BEATS;
         let notes = grid_notes(&grid, swing);
-        let name = if name.trim().is_empty() { "Beat".to_string() } else { name.trim().to_string() };
+        let name = if name.trim().is_empty() { tr!("Beat") } else { name.trim().to_string() };
         let mut commands = Vec::new();
         if let Some(bpm) = tempo {
             commands.push(Command::SetProject { patch: ProjectPatch { tempo_bpm: Some(bpm.clamp(20.0, 300.0)), ..Default::default() } });
@@ -576,32 +587,32 @@ impl AppState {
             let p = &mut s.project;
             match (track_id, clip_id) {
                 (Some(tid), Some(cid)) => {
-                    let t = p.track(tid).ok_or_else(|| format!("Spur {tid} nicht gefunden"))?;
+                    let t = p.track(tid).ok_or_else(|| tr!("Track {id} not found", id = tid))?;
                     if t.instrument.as_ref().map(|i| i.kind) != Some(InstrumentKind::Drums) {
-                        return Err(format!("„{}“ ist keine Schlagzeug-Spur", t.name));
+                        return Err(tr!("\"{name}\" is not a drum track", name = t.name));
                     }
                     if !t.clips.iter().any(|c| c.id == cid && matches!(c.source, ClipSource::Notes { .. })) {
-                        return Err(format!("Clip {cid} nicht gefunden"));
+                        return Err(tr!("Clip {id} not found", id = cid));
                     }
                     commands.push(Command::SetClipNotes { track_id: tid, clip_id: cid, notes, length_beats: Some(len) });
                     commands.push(Command::SetClip { track_id: tid, clip_id: cid, patch: ClipPatch { name: Some(name.clone()), ..Default::default() } });
-                    (tid, cid, format!("{label_prefix}Rhythmus „{name}“ in „{}“", t.name))
+                    (tid, cid, tr!("{prefix}Rhythm \"{name}\" in \"{track}\"", prefix = label_prefix, name = name, track = t.name))
                 }
                 (Some(tid), None) => {
-                    let t = p.track(tid).ok_or_else(|| format!("Spur {tid} nicht gefunden"))?;
+                    let t = p.track(tid).ok_or_else(|| tr!("Track {id} not found", id = tid))?;
                     if t.instrument.as_ref().map(|i| i.kind) != Some(InstrumentKind::Drums) {
-                        return Err(format!("„{}“ ist keine Schlagzeug-Spur", t.name));
+                        return Err(tr!("\"{name}\" is not a drum track", name = t.name));
                     }
                     let tname = t.name.clone();
                     let clip = Clip { id: p.alloc_id(), name: name.clone(), start_beats: start_beats.max(0.0), source: ClipSource::Notes { length_beats: len, notes } };
                     let cid = clip.id;
                     commands.push(Command::AddClip { track_id: tid, clip });
-                    (tid, cid, format!("{label_prefix}Rhythmus „{name}“ in „{tname}“"))
+                    (tid, cid, tr!("{prefix}Rhythm \"{name}\" in \"{track}\"", prefix = label_prefix, name = name, track = tname))
                 }
                 (None, _) => {
                     let count = p.tracks.iter().filter(|t| t.instrument.as_ref().map(|i| i.kind) == Some(InstrumentKind::Drums)).count();
                     let tname = match count {
-                        0 => sound::kind_name(InstrumentKind::Drums).to_string(),
+                        0 => sound::kind_name(InstrumentKind::Drums),
                         n => format!("{} {}", sound::kind_name(InstrumentKind::Drums), n + 1),
                     };
                     let tid = p.alloc_id();
@@ -617,7 +628,7 @@ impl AppState {
                     let cid = p.alloc_id();
                     track.clips.push(Clip { id: cid, name: name.clone(), start_beats: start_beats.max(0.0), source: ClipSource::Notes { length_beats: len, notes } });
                     commands.push(Command::AddTrack { track, index: None });
-                    (tid, cid, format!("{label_prefix}Rhythmus „{name}“ in neuer Spur „{tname}“"))
+                    (tid, cid, tr!("{prefix}Rhythm \"{name}\" in new track \"{track}\"", prefix = label_prefix, name = name, track = tname))
                 }
             }
         };
@@ -650,7 +661,7 @@ impl AppState {
                 };
                 (inst, track.map(|t| t.gain_db).unwrap_or(0.0), grid_notes(&grid, swing), grid.steps as f64 * STEP_BEATS)
             }
-            _ => return Err("Raster oder Clip angeben".into()),
+            _ => return Err(tr!("Specify a grid or a clip")),
         };
         // kurze Muster zweimal, damit man den Kreis hört
         let reps = if len <= 4.0 + 1e-9 { 2 } else { 1 };
@@ -703,9 +714,9 @@ pub fn grid_from_json(rows: &serde_json::Value, steps: usize) -> Result<Grid, St
             serde_json::Value::String(s) => s.chars().filter(|c| !c.is_whitespace() && *c != '|').enumerate().filter(|(_, c)| matches!(c, 'x' | 'X' | '1' | '*')).map(|(i, _)| i).collect(),
             serde_json::Value::Array(a) => a
                 .iter()
-                .map(|x| x.as_u64().filter(|&n| n >= 1).map(|n| n as usize - 1).ok_or_else(|| format!("„{k}“: Schritte ab 1")))
+                .map(|x| x.as_u64().filter(|&n| n >= 1).map(|n| n as usize - 1).ok_or_else(|| tr!("\"{key}\": steps start at 1", key = k)))
                 .collect::<Result<_, _>>()?,
-            _ => return Err(format!("„{k}“: Text wie \"x...x...\" oder Schritte wie [1, 9]")),
+            _ => return Err(tr!("\"{key}\": text like \"x...x...\" or steps like [1, 9]", key = k)),
         };
         out.insert(k.clone(), list);
     }
@@ -735,7 +746,7 @@ mod tests {
         assert_eq!(bossa.grid.rows["ride"].len(), 16);
         let (g, p) = find_pattern(Some("house"), "").unwrap();
         assert_eq!((g.name.as_str(), p.name.as_str()), ("House", "Classic House"));
-        assert!(find_pattern(Some("Polka"), "x").unwrap_err().contains("Kein Genre"));
+        assert!(find_pattern(Some("Polka"), "x").unwrap_err().contains("No genre"));
     }
 
     #[test]

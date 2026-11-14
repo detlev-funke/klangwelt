@@ -7,6 +7,7 @@
 use crate::melody::{features, skyline, Feature, MelodyNote};
 use crate::score::{Score, Voice};
 use crate::theory::{estimate_key_from_histogram, key_from_fifths_guess, Key};
+use klang_i18n::{tid, tk};
 use serde::Serialize;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -21,14 +22,15 @@ pub enum VoiceRole {
 }
 
 impl VoiceRole {
+    /// Label (a key for `klang_i18n::translate`).
     pub fn label_de(self) -> &'static str {
         match self {
-            VoiceRole::MainTheme => "Hauptthema",
-            VoiceRole::CounterMelody => "Gegenstimme",
-            VoiceRole::InnerVoice => "Mittelstimme",
-            VoiceRole::Accompaniment => "Begleitfigur",
-            VoiceRole::Ostinato => "Ostinato",
-            VoiceRole::Bass => "Bassstimme",
+            VoiceRole::MainTheme => tk!("Main theme"),
+            VoiceRole::CounterMelody => tk!("Countermelody"),
+            VoiceRole::InnerVoice => tk!("Inner voice"),
+            VoiceRole::Accompaniment => tk!("Accompaniment figure"),
+            VoiceRole::Ostinato => tk!("Ostinato"),
+            VoiceRole::Bass => tk!("Bass line"),
         }
     }
 }
@@ -57,7 +59,8 @@ pub struct VoiceProfile {
     pub rhythmic_variety: f32,
     pub salience: f32,
     pub role: VoiceRole,
-    pub role_label: &'static str,
+    /// Label of the role for display (translated).
+    pub role_label: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -87,6 +90,8 @@ pub struct Mood {
     pub valence: f32,
     /// −1 (ruhig) … +1 (energisch)
     pub arousal: f32,
+    /// German keyword – stored like this in the index facets (an identifier for
+    /// `klang_i18n::translate`).
     pub label: &'static str,
 }
 
@@ -94,6 +99,8 @@ pub struct Mood {
 #[serde(rename_all = "camelCase")]
 pub struct ScoreAnalysis {
     pub key: Option<Key>,
+    /// German name of the key ("Es-Dur") – stored like this in the facets of the
+    /// index; for display `key.map(|k| k.name())`.
     pub key_name: Option<String>,
     pub tempo_bpm: Option<f64>,
     pub duration_quarters: f64,
@@ -258,7 +265,7 @@ pub fn analyze_score_with(score: &Score, with_cadences: bool) -> ScoreAnalysis {
                 rhythmic_variety: entropy_norm(r.feats.iter().map(|f| f.rhythm)),
                 salience: 0.0,
                 role: VoiceRole::InnerVoice,
-                role_label: "",
+                role_label: String::new(),
             }
         })
         .collect();
@@ -314,7 +321,7 @@ pub fn analyze_score_with(score: &Score, with_cadences: bool) -> ScoreAnalysis {
         profiles[0].role = VoiceRole::MainTheme;
     }
     for p in &mut profiles {
-        p.role_label = p.role.label_de();
+        p.role_label = klang_i18n::translate(p.role.label_de());
     }
 
     // Kadenzen aus Bass- und Hauptstimme.
@@ -361,11 +368,13 @@ pub fn analyze_score_with(score: &Score, with_cadences: bool) -> ScoreAnalysis {
     };
     let valence = (0.6 * mode + 0.2 * ((avg_pitch - 64.0) / 12.0) + 0.2 * ((tempo - 100.0) / 60.0) - 0.3 * chromaticism).clamp(-1.0, 1.0);
     let arousal = (0.5 * ((tempo - 100.0) / 50.0) + 0.5 * ((density - 2.0) / 2.0)).clamp(-1.0, 1.0);
+    // tid!: persisted as the "stimmung" facet in the score index and compared
+    // with the order in `facets::DIMENSIONS`.
     let label = match (valence >= 0.0, arousal >= 0.0) {
-        (true, true) => "fröhlich · energisch",
-        (true, false) => "heiter · ruhig",
-        (false, true) => "dramatisch · aufgewühlt",
-        (false, false) => "melancholisch · ruhig",
+        (true, true) => tid!("fröhlich · energisch"),
+        (true, false) => tid!("heiter · ruhig"),
+        (false, true) => tid!("dramatisch · aufgewühlt"),
+        (false, false) => tid!("melancholisch · ruhig"),
     };
 
     ScoreAnalysis {

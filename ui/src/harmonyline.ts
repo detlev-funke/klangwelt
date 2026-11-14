@@ -4,6 +4,7 @@
 // eingeschaltet oder solange man im Harmonie-Fenster arbeitet.
 
 import { backend } from "./bridge.js";
+import { t } from "./i18n.js";
 import { effect, signal } from "./signals.js";
 import { snapshot } from "./store.js";
 import type { HarmonyLine, KeySpec, Mood } from "./types.js";
@@ -45,11 +46,11 @@ export const MOOD_COLORS: Record<Mood, string> = {
   dunkel: "#6f9bff",
 };
 export const MOOD_LABELS: Record<Mood, string> = {
-  loesend: "lösend",
-  spannend: "spannend",
-  ueberraschend: "überraschend",
-  hell: "hell",
-  dunkel: "dunkel",
+  loesend: t("resolving"),
+  spannend: t("tense"),
+  ueberraschend: t("surprising"),
+  hell: t("bright"),
+  dunkel: t("dark"),
 };
 
 let installed = false;

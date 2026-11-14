@@ -13,6 +13,7 @@
 use crate::sound;
 use crate::state::{AppState, CmdResult, Snapshot};
 use klang_core::{Command, Id, Instrument, InstrumentKind, TrackPatch};
+use klang_i18n::tr;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -58,7 +59,8 @@ pub struct SoundEntry {
     pub id: String,
     pub name: String,
     pub kind: InstrumentKind,
-    pub kind_name: &'static str,
+    /// Instrument name in the chosen language
+    pub kind_name: String,
     /// Stellung in den Feldern in Worten, z. B. „Trap · dunkel, rau · breit, fern“
     pub summary: String,
     pub created: u64,
@@ -84,14 +86,14 @@ pub fn file(st: &AppState) -> PathBuf {
 fn read(path: &Path) -> Result<Store, String> {
     match crate::vfs::read(path) {
         Ok(bytes) => serde_json::from_slice(&bytes)
-            .map_err(|e| format!("Die Klang-Bibliothek {} ist nicht lesbar ({e}) – sie bleibt unverändert.", path.display())),
+            .map_err(|e| tr!("The sound library {path} can't be read ({error}) – it stays unchanged.", path = path.display(), error = e)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Store::default()),
         Err(e) => Err(format!("{}: {e}", path.display())),
     }
 }
 
 fn write(path: &Path, store: &Store) -> Result<(), String> {
-    let dir = path.parent().ok_or("Kein Ordner für die Klang-Bibliothek")?;
+    let dir = path.parent().ok_or_else(|| tr!("No folder for the sound library"))?;
     crate::vfs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let tmp = path.with_extension("json.neu");
     crate::vfs::write(&tmp, &serde_json::to_vec_pretty(store).map_err(|e| e.to_string())?).map_err(|e| format!("{}: {e}", tmp.display()))?;
@@ -105,10 +107,10 @@ fn now_ms() -> u64 {
 fn clean_name(name: &str) -> Result<String, String> {
     let n = name.split_whitespace().collect::<Vec<_>>().join(" ");
     if n.is_empty() {
-        return Err("Der Klang braucht einen Namen.".into());
+        return Err(tr!("The sound needs a name."));
     }
     if n.chars().count() > MAX_NAME {
-        return Err(format!("Der Name ist zu lang (höchstens {MAX_NAME} Zeichen)."));
+        return Err(tr!("The name is too long (at most {max} characters).", max = MAX_NAME));
     }
     Ok(n)
 }
@@ -151,22 +153,24 @@ pub fn normalize(inst: &Instrument) -> Instrument {
 
 /// Stellung in den drei Feldern in Worten – beim Charakter der Startpunkt,
 /// wenn er gewählt ist; beim Synth dazu die Verlaufsvorlage, wenn sie passt.
+/// For display only, so in the chosen language (starting point and words
+/// are keys from the description of the instruments).
 pub fn summary(inst: &Instrument) -> String {
     let inst = normalize(inst);
-    fn word(words: &[&'static str; 4], v: f32) -> &'static str {
-        words[((v * 4.0).floor() as i64).clamp(0, 3) as usize]
+    fn word(words: &[&'static str; 4], v: f32) -> String {
+        klang_i18n::translate(words[((v * 4.0).floor() as i64).clamp(0, 3) as usize])
     }
     let mut parts: Vec<String> = sound::fields(inst.kind)
         .iter()
         .map(|f| match f.presets.iter().find(|p| f.key == "charakter" && p.name == inst.preset) {
-            Some(p) => p.name.to_string(),
+            Some(p) => klang_i18n::translate(p.name),
             None => format!("{}, {}", word(&f.x.words, inst.param(f.x.param, 0.5)), word(&f.y.words, inst.param(f.y.param, 0.5))),
         })
         .collect();
     if inst.kind == InstrumentKind::Synth {
         let spec = sound::spec(inst.kind);
         if let Some(v) = spec.verlauf.iter().find(|v| inst.curves.get("laut") == Some(&v.laut) && inst.curves.get("hell") == Some(&v.hell)) {
-            parts.push(format!("Verlauf {}", v.name));
+            parts.push(tr!("Envelope {name}", name = klang_i18n::translate(v.name)));
         }
     }
     parts.join(" · ")
@@ -235,9 +239,9 @@ pub fn rename(path: &Path, id: &str, name: &str) -> Result<Vec<SoundEntry>, Stri
     let name = clean_name(name)?;
     let _g = guard();
     let mut store = read(path)?;
-    let kind = store.sounds.iter().find(|s| s.id == id).map(|s| s.instrument.kind).ok_or_else(|| format!("Klang „{id}“ nicht gefunden"))?;
+    let kind = store.sounds.iter().find(|s| s.id == id).map(|s| s.instrument.kind).ok_or_else(|| tr!("Sound \"{id}\" not found", id = id))?;
     if store.sounds.iter().any(|s| s.id != id && s.instrument.kind == kind && same_name(&s.name, &name)) {
-        return Err(format!("Es gibt schon einen Klang „{name}“ für {}.", sound::kind_name(kind)));
+        return Err(tr!("There's already a sound \"{name}\" for {instrument}.", name = name, instrument = sound::kind_name(kind)));
     }
     let s = store.sounds.iter_mut().find(|s| s.id == id).expect("eben gefunden");
     s.name = name;
@@ -252,7 +256,7 @@ pub fn delete(path: &Path, id: &str) -> Result<Vec<SoundEntry>, String> {
     let before = store.sounds.len();
     store.sounds.retain(|s| s.id != id);
     if store.sounds.len() == before {
-        return Err(format!("Klang „{id}“ nicht gefunden"));
+        return Err(tr!("Sound \"{id}\" not found", id = id));
     }
     write(path, &store)?;
     Ok(entries(&store))
@@ -272,17 +276,17 @@ pub fn find(path: &Path, key: &str, prefer: Option<InstrumentKind>) -> Result<Sa
         [] => {
             let names: Vec<String> = entries(&store).iter().map(|e| format!("{} ({})", e.name, e.kind_name)).collect();
             Err(if names.is_empty() {
-                "Die Klang-Bibliothek ist leer – erst einen Klang sichern.".into()
+                tr!("The sound library is empty – save a sound first.")
             } else {
-                format!("Kein Klang „{key}“. Vorhanden: {}", names.join(", "))
+                tr!("No sound \"{name}\". Available: {list}", name = key, list = names.join(", "))
             })
         }
         [one] => Ok((*one).clone()),
         many => match many.iter().find(|s| Some(s.instrument.kind) == prefer) {
             Some(s) => Ok((*s).clone()),
-            None => Err(format!(
-                "„{key}“ gibt es bei mehreren Instrumenten ({}) – bitte die Kennung angeben.",
-                many.iter().map(|s| format!("{}: {}", sound::kind_name(s.instrument.kind), s.id)).collect::<Vec<_>>().join(", ")
+            None => Err(tr!("\"{name}\" exists for several instruments ({list}) – please specify the ID.",
+                name = key,
+                list = many.iter().map(|s| format!("{}: {}", sound::kind_name(s.instrument.kind), s.id)).collect::<Vec<_>>().join(", ")
             )),
         },
     }
@@ -293,7 +297,7 @@ impl AppState {
     /// ein Klang eines anderen Instruments wechselt dabei das Instrument.
     pub fn load_sound(&self, track_id: Id, saved: &SavedSound, label_prefix: &str) -> CmdResult<Snapshot> {
         let track = self.instrument_track(track_id)?;
-        let label = format!("{label_prefix}Klang „{}“: „{}“ laden", track.name, saved.name);
+        let label = tr!("{prefix}Sound \"{track}\": load \"{sound}\"", prefix = label_prefix, track = track.name, sound = saved.name);
         self.execute(
             Command::Batch {
                 label,
@@ -357,14 +361,14 @@ mod tests {
         assert!(l[1].summary.starts_with("House"), "{}", l[1].summary);
         // umbenennen; ein Name, den das Instrument schon hat, geht nicht
         save(&f, "Zweiter", &drums("Rock")).unwrap();
-        assert!(rename(&f, &a.id, "zweiter").unwrap_err().contains("schon"));
+        assert!(rename(&f, &a.id, "zweiter").unwrap_err().contains("already"));
         let l = rename(&f, &a.id, "Disco-Groove").unwrap();
         assert!(l.iter().any(|e| e.name == "Disco-Groove"));
         // finden nach Name (mehrdeutig → Instrument der Spur entscheidet)
         save(&f, "Disco-Groove", &sound::default_instrument(InstrumentKind::Bass)).unwrap();
-        assert!(find(&f, "disco-groove", None).unwrap_err().contains("mehreren"));
+        assert!(find(&f, "disco-groove", None).unwrap_err().contains("several"));
         assert_eq!(find(&f, "disco-groove", Some(InstrumentKind::Drums)).unwrap().id, a.id);
-        assert!(find(&f, "Nichts", None).unwrap_err().contains("Vorhanden"));
+        assert!(find(&f, "Nichts", None).unwrap_err().contains("Available"));
         // löschen
         let l = delete(&f, &a.id).unwrap();
         assert!(l.iter().all(|e| e.id != a.id));
@@ -398,14 +402,14 @@ mod tests {
         let mut i = drums("Trap");
         sound::apply_field(&mut i, "klangfarbe", 0.1, 0.9).unwrap();
         sound::apply_field(&mut i, "raum", 0.6, 0.95).unwrap();
-        assert_eq!(summary(&i), "Trap · dunkel, rau · breit, fern");
+        assert_eq!(summary(&i), "Trap · dark, rough · wide, far");
         // ohne Startpunkt die Wörter der Achsen (Trap liegt bei x 0,95, y 0,55)
         i.preset = "eigen".into();
         let f = &sound::fields(InstrumentKind::Drums)[0];
-        assert_eq!(summary(&i), format!("{}, {} · dunkel, rau · breit, fern", f.x.words[3], f.y.words[2]));
+        assert_eq!(summary(&i), format!("{}, {} · dark, rough · wide, far", f.x.words[3], f.y.words[2]));
         let mut s = sound::default_instrument(InstrumentKind::Synth);
         sound::apply_verlauf(&mut s, "Glocke").unwrap();
-        assert!(summary(&s).ends_with("Verlauf Glocke"), "{}", summary(&s));
+        assert!(summary(&s).ends_with("Envelope Glocke"), "{}", summary(&s));
     }
 
     #[test]
@@ -413,7 +417,7 @@ mod tests {
         let f = tmp("kaputt");
         std::fs::create_dir_all(f.parent().unwrap()).unwrap();
         std::fs::write(&f, b"{ kaputt").unwrap();
-        assert!(save(&f, "Neu", &drums("Trap")).unwrap_err().contains("nicht lesbar"));
+        assert!(save(&f, "Neu", &drums("Trap")).unwrap_err().contains("can't be read"));
         assert_eq!(std::fs::read(&f).unwrap(), b"{ kaputt");
         let _ = std::fs::remove_dir_all(f.parent().unwrap().parent().unwrap());
     }

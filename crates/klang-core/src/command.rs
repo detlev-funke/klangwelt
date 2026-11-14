@@ -1,4 +1,5 @@
 use crate::model::{Clip, ClipSource, Id, Instrument, Note, Project, Track, TrackKind, TrackView, TRACK_COLORS};
+use klang_i18n::tr;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -12,8 +13,8 @@ pub enum CoreError {
 impl fmt::Display for CoreError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            CoreError::TrackNotFound(id) => write!(f, "Spur {id} nicht gefunden"),
-            CoreError::ClipNotFound(id) => write!(f, "Clip {id} nicht gefunden"),
+            CoreError::TrackNotFound(id) => f.write_str(&tr!("Track {id} not found", id = id)),
+            CoreError::ClipNotFound(id) => f.write_str(&tr!("Clip {id} not found", id = id)),
             CoreError::Invalid(msg) => f.write_str(msg),
         }
     }
@@ -121,22 +122,22 @@ impl ProjectPatch {
     fn validate(&self) -> Result<(), CoreError> {
         if let Some(n) = &self.name {
             if n.trim().is_empty() {
-                return invalid("Der Projektname darf nicht leer sein");
+                return invalid(tr!("The project name can't be empty"));
             }
         }
         if let Some(t) = self.tempo_bpm {
             if !(20.0..=400.0).contains(&t) {
-                return invalid(format!("Tempo {t} BPM liegt außerhalb von 20–400"));
+                return invalid(tr!("Tempo {t} BPM is outside 20–400", t = t));
             }
         }
         if let Some(b) = self.beats_per_bar {
             if !(1..=32).contains(&b) {
-                return invalid("Schläge pro Takt müssen zwischen 1 und 32 liegen");
+                return invalid(tr!("Beats per bar must be between 1 and 32"));
             }
         }
         if let Some(u) = self.beat_unit {
             if ![1, 2, 4, 8, 16, 32].contains(&u) {
-                return invalid("Ungültige Notenwert-Einheit für die Taktart");
+                return invalid(tr!("Invalid beat unit for the time signature"));
             }
         }
         Ok(())
@@ -172,32 +173,38 @@ impl TrackPatch {
     }
 
     fn validate(&self) -> Result<(), CoreError> {
-        let check = |v: Option<f32>, lo: f32, hi: f32, what: &str| -> Result<(), CoreError> {
-            match v {
-                Some(x) if !x.is_finite() || x < lo || x > hi => {
-                    invalid(format!("{what} muss zwischen {lo} und {hi} liegen"))
-                }
-                _ => Ok(()),
-            }
-        };
-        check(self.gain_db, -60.0, 12.0, "Lautstärke (dB)")?;
-        check(self.pan, -1.0, 1.0, "Panorama")?;
-        check(self.pitch_semitones, -24.0, 24.0, "Tonhöhe (Halbtöne)")?;
-        for (v, what) in [(self.compact_height, "Höhe (kompakt)"), (self.notes_height, "Höhe (Notenansicht)")] {
+        let outside = |v: Option<f32>, lo: f32, hi: f32| matches!(v, Some(x) if !x.is_finite() || x < lo || x > hi);
+        let (lo, hi) = (-60.0f32, 12.0f32);
+        if outside(self.gain_db, lo, hi) {
+            return invalid(tr!("Volume (dB) must be between {lo} and {hi}", lo = lo, hi = hi));
+        }
+        let (lo, hi) = (-1.0f32, 1.0f32);
+        if outside(self.pan, lo, hi) {
+            return invalid(tr!("Pan must be between {lo} and {hi}", lo = lo, hi = hi));
+        }
+        let (lo, hi) = (-24.0f32, 24.0f32);
+        if outside(self.pitch_semitones, lo, hi) {
+            return invalid(tr!("Pitch (semitones) must be between {lo} and {hi}", lo = lo, hi = hi));
+        }
+        for (v, compact) in [(self.compact_height, true), (self.notes_height, false)] {
             if let Some(h) = v {
                 if !h.is_finite() || (h != 0.0 && !(40.0..=1200.0).contains(&h)) {
-                    return invalid(format!("{what} muss 0 (Standard) oder 40–1200 Pixel sein"));
+                    return invalid(if compact {
+                        tr!("Height (compact) must be 0 (default) or 40–1200 pixels")
+                    } else {
+                        tr!("Height (piano roll) must be 0 (default) or 40–1200 pixels")
+                    });
                 }
             }
         }
         if let Some(n) = &self.name {
             if n.trim().is_empty() {
-                return invalid("Der Spurname darf nicht leer sein");
+                return invalid(tr!("The track name can't be empty"));
             }
         }
         if let Some(i) = &self.instrument {
             if i.params.values().any(|v| !v.is_finite()) {
-                return invalid("Instrumentparameter müssen endliche Zahlen sein");
+                return invalid(tr!("Instrument parameters must be finite numbers"));
             }
         }
         Ok(())
@@ -217,20 +224,20 @@ impl ClipPatch {
     fn validate(&self, clip: &Clip) -> Result<(), CoreError> {
         if let Some(s) = self.start_beats {
             if !s.is_finite() || s < 0.0 {
-                return invalid("Clipstart muss ≥ 0 sein");
+                return invalid(tr!("Clip start must be ≥ 0"));
             }
         }
         let is_audio = matches!(clip.source, ClipSource::Audio { .. });
         if let Some(b) = self.source_bpm {
             if !is_audio {
-                return invalid("Quelltempo gibt es nur bei Audio-Clips");
+                return invalid(tr!("Source tempo only exists for audio clips"));
             }
             if !(20.0..=400.0).contains(&b) {
-                return invalid(format!("Quelltempo {b} BPM liegt außerhalb von 20–400"));
+                return invalid(tr!("Source tempo {b} BPM is outside 20–400", b = b));
             }
         }
         if self.warp.is_some() && !is_audio {
-            return invalid("Warp gibt es nur bei Audio-Clips");
+            return invalid(tr!("Warp only exists for audio clips"));
         }
         Ok(())
     }
@@ -240,33 +247,32 @@ impl Command {
     /// Beschriftung für die Undo-Historie.
     pub fn label(&self) -> String {
         match self {
-            Command::SetProject { patch } if patch.tempo_bpm.is_some() => "Tempo ändern",
-            Command::SetProject { .. } => "Projekt ändern",
-            Command::AddTrack { .. } => "Spur hinzufügen",
-            Command::RemoveTrack { .. } => "Spur löschen",
-            Command::MoveTrack { .. } => "Spur verschieben",
+            Command::SetProject { patch } if patch.tempo_bpm.is_some() => tr!("Change tempo"),
+            Command::SetProject { .. } => tr!("Change project"),
+            Command::AddTrack { .. } => tr!("Add track"),
+            Command::RemoveTrack { .. } => tr!("Delete track"),
+            Command::MoveTrack { .. } => tr!("Move track"),
             Command::SetTrack { patch, .. } => {
-                if patch.gain_db.is_some() { "Lautstärke ändern" }
-                else if patch.pan.is_some() { "Panorama ändern" }
-                else if patch.pitch_semitones.is_some() { "Tonhöhe ändern" }
-                else if patch.mute.is_some() { "Stummschalten" }
-                else if patch.solo.is_some() { "Solo" }
-                else if patch.instrument.is_some() { "Klang ändern" }
-                else if patch.name.is_some() { "Spur umbenennen" }
-                else if patch.view.is_some() || patch.compact_height.is_some() || patch.notes_height.is_some() { "Ansicht ändern" }
-                else { "Spur ändern" }
+                if patch.gain_db.is_some() { tr!("Change volume") }
+                else if patch.pan.is_some() { tr!("Change pan") }
+                else if patch.pitch_semitones.is_some() { tr!("Change pitch") }
+                else if patch.mute.is_some() { tr!("Mute") }
+                else if patch.solo.is_some() { tr!("Solo") }
+                else if patch.instrument.is_some() { tr!("Change sound") }
+                else if patch.name.is_some() { tr!("Rename track") }
+                else if patch.view.is_some() || patch.compact_height.is_some() || patch.notes_height.is_some() { tr!("Change view") }
+                else { tr!("Change track") }
             }
-            Command::AddClip { .. } => "Clip hinzufügen",
-            Command::RemoveClip { .. } => "Clip löschen",
+            Command::AddClip { .. } => tr!("Add clip"),
+            Command::RemoveClip { .. } => tr!("Delete clip"),
             Command::SetClip { patch, .. } => {
-                if patch.start_beats.is_some() { "Clip verschieben" }
-                else if patch.source_bpm.is_some() || patch.warp.is_some() { "Clip-Sync ändern" }
-                else { "Clip ändern" }
+                if patch.start_beats.is_some() { tr!("Move clip") }
+                else if patch.source_bpm.is_some() || patch.warp.is_some() { tr!("Change clip sync") }
+                else { tr!("Change clip") }
             }
-            Command::SetClipNotes { .. } => "Noten bearbeiten",
-            Command::Batch { label, .. } => return label.clone(),
+            Command::SetClipNotes { .. } => tr!("Edit notes"),
+            Command::Batch { label, .. } => label.clone(),
         }
-        .to_string()
     }
 
     /// Gleiche Schlüssel dürfen zu einem Undo-Schritt verschmelzen
@@ -293,30 +299,31 @@ impl Command {
 
 fn validate_notes(notes: &[Note]) -> Result<(), CoreError> {
     if notes.len() > 20_000 {
-        return invalid("Zu viele Noten in einem Clip (max. 20 000)");
+        return invalid(tr!("Too many notes in one clip (max. 20,000)"));
     }
     for (i, n) in notes.iter().enumerate() {
+        let nr = i + 1;
         if n.pitch > 127 {
-            return invalid(format!("Note {}: Tonhöhe {} liegt außerhalb von 0–127", i + 1, n.pitch));
+            return invalid(tr!("Note {nr}: pitch {pitch} is outside 0–127", nr = nr, pitch = n.pitch));
         }
         if !n.start_beats.is_finite() || n.start_beats < 0.0 {
-            return invalid(format!("Note {}: Start muss ≥ 0 sein", i + 1));
+            return invalid(tr!("Note {nr}: start must be ≥ 0", nr = nr));
         }
         if !n.length_beats.is_finite() || n.length_beats <= 0.0 {
-            return invalid(format!("Note {}: Länge muss > 0 sein", i + 1));
+            return invalid(tr!("Note {nr}: length must be > 0", nr = nr));
         }
         if n.velocity == 0 || n.velocity > 127 {
-            return invalid(format!("Note {}: Anschlagstärke muss zwischen 1 und 127 liegen", i + 1));
+            return invalid(tr!("Note {nr}: velocity must be between 1 and 127", nr = nr));
         }
         let range = |v: f32, lo: f32, hi: f32| v.is_finite() && (lo..=hi).contains(&v);
         if !range(n.vibrato, 0.0, 1.0) {
-            return invalid(format!("Note {}: Vibrato muss zwischen 0 und 1 (Halbton) liegen", i + 1));
+            return invalid(tr!("Note {nr}: vibrato must be between 0 and 1 (semitone)", nr = nr));
         }
         if !range(n.brightness, -1.0, 1.0) {
-            return invalid(format!("Note {}: Helligkeit muss zwischen −1 und +1 liegen", i + 1));
+            return invalid(tr!("Note {nr}: brightness must be between −1 and +1", nr = nr));
         }
         if !range(n.bend, -12.0, 12.0) {
-            return invalid(format!("Note {}: Biegung muss zwischen −12 und +12 Halbtönen liegen", i + 1));
+            return invalid(tr!("Note {nr}: bend must be between −12 and +12 semitones", nr = nr));
         }
     }
     Ok(())
@@ -343,7 +350,7 @@ pub fn apply(project: &mut Project, cmd: Command) -> Result<Command, CoreError> 
             if track.id == Id::NEW {
                 track.id = project.alloc_id();
             } else if project.track(track.id).is_some() {
-                return invalid(format!("Spur-ID {} ist bereits vergeben", track.id));
+                return invalid(tr!("Track ID {id} is already taken", id = track.id));
             } else {
                 project.reserve_id(track.id);
             }
@@ -396,12 +403,12 @@ pub fn apply(project: &mut Project, cmd: Command) -> Result<Command, CoreError> 
                 return Err(CoreError::TrackNotFound(track_id));
             }
             if !clip.start_beats.is_finite() || clip.start_beats < 0.0 {
-                return invalid("Clipstart muss ≥ 0 sein");
+                return invalid(tr!("Clip start must be ≥ 0"));
             }
             if clip.id == Id::NEW {
                 clip.id = project.alloc_id();
             } else if project.tracks.iter().flat_map(|t| &t.clips).any(|c| c.id == clip.id) {
-                return invalid(format!("Clip-ID {} ist bereits vergeben", clip.id));
+                return invalid(tr!("Clip ID {id} is already taken", id = clip.id));
             } else {
                 project.reserve_id(clip.id);
             }
@@ -438,13 +445,13 @@ pub fn apply(project: &mut Project, cmd: Command) -> Result<Command, CoreError> 
             validate_notes(&notes)?;
             if let Some(l) = length_beats {
                 if !l.is_finite() || l <= 0.0 {
-                    return invalid("Cliplänge muss > 0 sein");
+                    return invalid(tr!("Clip length must be > 0"));
                 }
             }
             let track = project.track_mut(track_id).ok_or(CoreError::TrackNotFound(track_id))?;
             let clip = track.clips.iter_mut().find(|c| c.id == clip_id).ok_or(CoreError::ClipNotFound(clip_id))?;
             let ClipSource::Notes { length_beats: len, notes: current } = &mut clip.source else {
-                return invalid("Noten gibt es nur in Instrument-Clips");
+                return invalid(tr!("Only instrument clips contain notes"));
             };
             notes.sort_by(|a, b| a.start_beats.total_cmp(&b.start_beats).then(a.pitch.cmp(&b.pitch)));
             let old_len = *len;

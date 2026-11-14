@@ -1,5 +1,7 @@
 // Reine Rechenhilfen der Zeitleiste (ohne DOM) – auch direkt in Node testbar.
 
+import { language, plural, t } from "./i18n.js";
+
 /** Auf ein Raster runden; Raster 0 = frei. */
 export const snapTo = (v: number, grid: number): number => (grid ? Math.round(v / grid) * grid : v);
 
@@ -11,8 +13,8 @@ export function fmtShift(beats: number, bpb: number): string {
   const bars = Math.floor(a / bpb + 1e-9);
   const rest = Math.round((a - bars * bpb) * 1000) / 1000;
   const parts: string[] = [];
-  if (bars) parts.push(`${bars} ${bars === 1 ? "Takt" : "Takte"}`);
-  if (rest > 1e-6) parts.push(`${rest.toLocaleString("de-DE")} ${rest === 1 ? "Schlag" : "Schläge"}`);
+  if (bars) parts.push(plural(bars, "{n} bar", "{n} bars"));
+  if (rest > 1e-6) parts.push(plural(rest, "{n} beat", "{n} beats", { n: rest.toLocaleString(language()) }));
   return `${sign}${parts.join(" ")}`;
 }
 
@@ -46,7 +48,7 @@ export function barBeat(beats: number, beatsPerBar: number): string {
   const bpb = Math.max(1, beatsPerBar);
   const bar = Math.floor(beats / bpb + 1e-9);
   const beat = Math.round((beats - bar * bpb + 1) * 1000) / 1000;
-  return `${bar + 1}.${beat.toLocaleString("de-DE")}`;
+  return `${bar + 1}.${beat.toLocaleString(language())}`;
 }
 
 /** Zeitbereich lesbar: ganze Takte als „Takt 2“ / „Takt 2–3“, sonst „Takt 1.3 – 2.2“. */
@@ -56,16 +58,16 @@ export function rangeLabel(start: number, end: number, beatsPerBar: number): str
   if (whole(start) && whole(end)) {
     const a = Math.round(start / bpb) + 1;
     const z = Math.round(end / bpb);
-    return z <= a ? `Takt ${a}` : `Takt ${a}–${z}`;
+    return z <= a ? t("Bar {bar}", { bar: a }) : t("bars {from}–{to}", { from: a, to: z });
   }
-  return `Takt ${barBeat(start, bpb)} – ${barBeat(end, bpb)}`;
+  return t("bars {from} – {to}", { from: barBeat(start, bpb), to: barBeat(end, bpb) });
 }
 
 /** Raster (in Schlägen) als Notenwert: „1/8“; Schlag-Einheit aus der Taktart (4 = Viertel). */
 export function gridLabel(grid: number, beatUnit: number): string {
   const d = beatUnit / grid;
   if (d >= 1 && Math.abs(d - Math.round(d)) < 1e-6) return `1/${Math.round(d)}`;
-  return `${grid.toLocaleString("de-DE")} Schläge`;
+  return plural(grid, "{n} beat", "{n} beats", { n: grid.toLocaleString(language()) });
 }
 
 /** Raster eines Notenwerts 1/`d` in Schlägen (4/4: 1/4 = 1, 1/8 = 0,5; 6/8: 1/8 = 1). */

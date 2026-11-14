@@ -12,6 +12,7 @@
 import { seekBeats, stopToStart } from "../actions.js";
 import { backend } from "../bridge.js";
 import { h } from "../dom.js";
+import { t } from "../i18n.js";
 import { act, analysis, type PanelId, panelEmphasis, selection, showPanel, snapshot, visiblePanels } from "../store.js";
 import { helpShow } from "./help.js";
 
@@ -27,12 +28,15 @@ interface Demo {
 
 function findDemo(d: Demo): void {
   const tracks = snapshot.peek()?.project.tracks ?? [];
-  for (const t of tracks) {
-    for (const c of t.clips) {
-      if (!d.melody && t.kind === "instrument" && t.instrument?.kind !== "drums" && c.source.type === "notes" && c.source.notes.length >= 4) {
-        d.melody = { trackId: t.id, clipId: c.id };
+  // track name of the demo in the language it was loaded in (the core translates with the same dictionary)
+  const arp = t("Arpeggio").toLowerCase();
+  for (const track of tracks) {
+    for (const c of track.clips) {
+      if (!d.melody && track.kind === "instrument" && track.instrument?.kind !== "drums" && c.source.type === "notes" && c.source.notes.length >= 4) {
+        d.melody = { trackId: track.id, clipId: c.id };
       }
-      if (c.source.type === "audio" && (!d.audio || /arpeggio/i.test(t.name))) d.audio = { trackId: t.id, clipId: c.id, assetId: c.source.assetId };
+      const isArp = /arpeggio/i.test(track.name) || track.name.toLowerCase().includes(arp);
+      if (c.source.type === "audio" && (!d.audio || isArp)) d.audio = { trackId: track.id, clipId: c.id, assetId: c.source.assetId };
     }
   }
 }
@@ -67,40 +71,40 @@ const select = (v: { trackId: number; clipId: number } | null) => {
 
 const STEPS: Step[] = [
   {
-    title: "Willkommen in Klangwelt",
-    text: "Ein kurzer Rundgang durch alle Fenster – jedes Mal ist eins hervorgehoben, Zettel erklären die wichtigsten Funktionen. Damit es etwas zu sehen gibt, ist die Demo geladen. Weiter mit → oder Enter, zurück mit ←, Esc beendet die Tour jederzeit.",
+    title: t("Welcome to Klangwelt"),
+    text: t("A short tour of all windows – one is highlighted at a time, and notes explain the most important features. The demo is loaded so there's something to see. Continue with → or Enter, go back with ←, Esc ends the tour at any time."),
   },
   {
     target: "kw-transport",
-    title: "Die Leiste oben",
-    text: "Projekt und Wiedergabe: Speichern, Exportieren, Abspielen, Aufnehmen, Tempo und Takt, Metronom und Wiederholen, Rückgängig. Rechts Fenster, Einstellungen, Pegel und die Verbindung zum Agenten.",
+    title: t("The top bar"),
+    text: t("Project and playback: save, export, play, record, tempo and time signature, metronome and loop, undo. On the right: windows, settings, levels and the connection to the agent."),
     notes: [
-      { sel: ".file-controls", text: "Datei, Speichern und Exportieren – als WAV, FLAC, Opus, Stems oder MIDI (Strg+E)." },
-      { sel: "kw-transport .btn.big.primary", text: "Leertaste: abspielen. Ist ein Zeitraum markiert, genau den." },
-      { sel: "[data-help=tempo]", text: "Tempo in BPM – alles folgt sofort." },
-      { sel: "[data-help=fenster]", text: "Fenster ein- und ausblenden, Layout zurücksetzen." },
+      { sel: ".file-controls", text: t("File, save and export – as WAV, FLAC, Opus, stems or MIDI (Ctrl+E).") },
+      { sel: "kw-transport .btn.big.primary", text: t("Space: play. If a time range is selected, exactly that.") },
+      { sel: "[data-help=tempo]", text: t("Tempo in BPM – everything follows instantly.") },
+      { sel: "[data-help=fenster]", text: t("Show and hide windows, reset the layout.") },
     ],
   },
   {
     panel: "spuren",
     target: panelArea("spuren"),
     prepare: () => select(null),
-    title: "Spuren",
-    text: "Das Hauptfenster: links die Spurköpfe (Name, Stumm/Solo, Pegel, Ansicht), rechts die Zeitleiste mit den Clips. Die Demo hat zwei Aufnahmen (Beat, Arpeggio) und eine Melodie als Noten – Alt+Klick setzt eine Note.",
+    title: t("Tracks"),
+    text: t("The main window: track headers on the left (name, mute/solo, level, view), the timeline with the clips on the right. The demo has two recordings (beat, arpeggio) and a melody as notes – Alt+click adds a note."),
     notes: [
-      { sel: "[data-help=neue-instrumentspur]", text: "Neue Spur: Zupfer, Orgel, Cembalo, Bass, Synth oder Schlagzeug." },
-      { sel: ".track-row .toggle.m", text: "Stumm und Solo – gilt auch für den Export." },
-      { sel: ".track-row.notes canvas.keys", text: "Klaviatur: Klick spielt einen Ton, Mausrad verschiebt." },
-      { sel: ".empty-hint .row", text: "Schnellstart: Demo, ganzer Song, Beat oder Aufnahme." },
+      { sel: "[data-help=neue-instrumentspur]", text: t("New track: pluck, organ, harpsichord, bass, synth or drums.") },
+      { sel: ".track-row .toggle.m", text: t("Mute and solo – also apply to the export.") },
+      { sel: ".track-row.notes canvas.keys", text: t("Keyboard: click plays a note, mouse wheel scrolls.") },
+      { sel: ".empty-hint .row", text: t("Quick start: demo, complete song, beat or recording.") },
     ],
   },
   {
     panel: "clip",
     target: panelArea("clip"),
     prepare: (d) => select(d.melody),
-    title: "Clip",
-    text: "Eigenschaften des gewählten Clips – hier das „Thema“ der Melodie mit seinen Vortragszeichen: pp … ff, Crescendo, Staccato, Vibrato. Bei Aufnahmen: Tempo erkennen, analysieren, die Melodie als Noten übernehmen.",
-    notes: [{ sel: "kw-panel[tab=clip] .mark.dyn", text: "Dynamik für die gewählten Noten – ohne Auswahl für alle." }],
+    title: t("Clip"),
+    text: t("Properties of the selected clip – here the melody clip \"Thema\" with its performance markings: pp … ff, crescendo, staccato, vibrato. For recordings: detect tempo, analyze, turn the melody into notes."),
+    notes: [{ sel: "kw-panel[tab=clip] .mark.dyn", text: t("Dynamics for the selected notes – with nothing selected, for all of them.") }],
   },
   {
     panel: "analyse",
@@ -116,39 +120,39 @@ const STEPS: Step[] = [
         /* ohne Analyse zeigt das Fenster seinen Hinweis */
       }
     },
-    title: "Analyse",
-    text: "Was in einer Aufnahme steckt – hier im Arpeggio der Demo: Tonhöhenkurve, erkannte Noten, Tempo und Tonart. Doppelklick auf einen Audio-Clip öffnet sie.",
+    title: t("Analysis"),
+    text: t("What's inside a recording – here the demo's arpeggio: pitch curve, detected notes, tempo and key. Double-click an audio clip to open it."),
   },
   {
     panel: "klang",
     target: panelArea("klang"),
     prepare: (d) => select(d.melody),
-    title: "Klang – die Soundwerkstatt",
-    text: "Der Klang der Melodie (ein Zupfer) in drei Feldern: Charakter, Klangfarbe und Raum. Punkt ziehen oder einen benannten Startpunkt anklicken; im Feinschliff stehen alle Regler. Unter „Meine Klänge“ sicherst du Einstellungen für alle Projekte.",
+    title: t("Sound – the sound workshop"),
+    text: t("The melody's sound (a pluck) in three fields: character, timbre and space. Drag the dot or click a named starting point; fine-tuning has all the controls. Under \"My sounds\" you save settings for all projects."),
     notes: [
-      { sel: "kw-panel[tab=klang] .snd-kinds", text: "Instrument wechseln – die Noten bleiben." },
-      { sel: "kw-panel[tab=klang] .snd-field[data-field=charakter] .snd-mark", text: "Startpunkte: ein Klick setzt das ganze Feld." },
+      { sel: "kw-panel[tab=klang] .snd-kinds", text: t("Switch instrument – the notes stay.") },
+      { sel: "kw-panel[tab=klang] .snd-field[data-field=charakter] .snd-mark", text: t("Starting points: one click sets the whole field.") },
     ],
   },
   {
     panel: "rhythmus",
     target: panelArea("rhythmus"),
     prepare: () => select(null),
-    title: "Rhythmus",
-    text: "Beats zum Schnelleinstieg: Muster aus 14 Genres und ein Schritt-Raster – eine Zeile je Trommel, ein Klick setzt einen Schlag. „In Spur schreiben“ legt den Beat an.",
+    title: t("Rhythm"),
+    text: t("Beats for a quick start: patterns from 14 genres and a step grid – one row per drum, a click sets a hit. \"Write to track\" creates the beat."),
     notes: [
-      { sel: ".rh-genre", text: "Genres von House bis Dubstep – jedes mit Tempo und Tipp." },
-      { sel: ".rh-step", text: "Klick setzt oder löscht einen Schlag." },
+      { sel: ".rh-genre", text: t("Genres from house to dubstep – each with a tempo and a tip.") },
+      { sel: ".rh-step", text: t("Click sets or clears a hit.") },
     ],
   },
   {
     panel: "song",
     target: panelArea("song"),
-    title: "Song",
-    text: "Ganze Stücke aus Vorlagen. Spalten sind Abschnitte (Intro, Aufbau, Höhepunkt …), Zeilen Rollen (Fläche, Bass, Kick …), jede Zelle aus, sparsam oder voll. „Song erzeugen“ schreibt alle Spuren.",
+    title: t("Song"),
+    text: t("Complete pieces from templates. Columns are sections (intro, build-up, peak…), rows are roles (pad, bass, kick…), each cell off, sparse or full. \"Generate song\" writes all the tracks."),
     notes: [
-      { sel: ".song-tpl", text: "Vorlagen: Trance, Ambient, Deep House, Synthwave, Lo-Fi." },
-      { sel: ".song-cell", text: "Klick: mehr · Umschalt+Klick: weniger." },
+      { sel: ".song-tpl", text: t("Templates: Trance, Ambient, Deep House, Synthwave, Lo-Fi.") },
+      { sel: ".song-cell", text: t("Click: more · Shift+click: less.") },
     ],
   },
   {
@@ -169,11 +173,11 @@ const STEPS: Step[] = [
       const cat = document.querySelector<HTMLElement>("kw-panel[tab=bibliothek] .lib-catalog");
       if (cat && !cat.hidden) document.querySelector<HTMLButtonElement>("kw-panel[tab=bibliothek] [data-help=lib-herunterladen]")?.click();
     },
-    title: "Bibliothek",
-    text: "Partituren zum Suchen, Anhören und Übernehmen. Unter „Herunterladen“ stehen die Pakete: Bach-Choräle, OpenScore, KernScores, PDMX mit über 250 000 Stücken – jedes mit Umfang und Lizenz. Die Melodiesuche findet Stücke zu Noten oder einer gesungenen Aufnahme.",
+    title: t("Library"),
+    text: t("Scores to search, listen to and add. Under \"Download\" you'll find the packs: Bach chorales, OpenScore, KernScores, PDMX with over 250,000 pieces – each with its size and license. Melody search finds pieces from notes or a sung recording."),
     notes: [
-      { sel: "kw-panel[tab=bibliothek] [data-help=lib-herunterladen]", text: "Katalog der Musikbibliotheken auf- und zuklappen." },
-      { sel: "kw-panel[tab=bibliothek] .lib-cards", text: "Ein Klick auf ein Paket lädt es herunter – im Hintergrund." },
+      { sel: "kw-panel[tab=bibliothek] [data-help=lib-herunterladen]", text: t("Expand and collapse the catalog of music libraries.") },
+      { sel: "kw-panel[tab=bibliothek] .lib-cards", text: t("Clicking a pack downloads it – in the background.") },
     ],
   },
   {
@@ -189,9 +193,9 @@ const STEPS: Step[] = [
         sel.dispatchEvent(new Event("change"));
       }
     },
-    title: "Fuge",
-    text: "Kontrapunkt-Werkzeuge, hier mit dem „Thema“ der Demo: Antwort, Umkehrung, Krebs, Engführungen, Gegensätze und ein ganzer Fugenplan. Der Prüfer markiert Parallelen und Dissonanzen in der Zeitleiste.",
-    notes: [{ sel: "kw-panel[tab=fuge] .fg-subject", text: "Das Thema: ein Noten-Clip mit 2–4 Takten." }],
+    title: t("Fugue"),
+    text: t("Counterpoint tools, here with the demo clip \"Thema\": answer, inversion, retrograde, strettos, countersubjects and a complete fugue plan. The checker marks parallels and dissonances in the timeline."),
+    notes: [{ sel: "kw-panel[tab=fuge] .fg-subject", text: t("The subject: a note clip of 2–4 bars.") }],
   },
   {
     panel: "harmonie",
@@ -203,19 +207,19 @@ const STEPS: Step[] = [
       const body = document.querySelector<HTMLElement>("kw-panel[tab=harmonie] .tab-body");
       if (body) body.scrollTop = 0;
     },
-    title: "Harmonie",
-    text: "Der Quintenzirkel folgt der Abspielposition – hier Takt 2 der Demo. Rechts die Wege zum Schluss: mehrschrittige Kadenzen vom aktuellen Akkord aus; die Zahl unter jedem Pfeil ist die Übergangswahrscheinlichkeit – wie oft genau dieser Schritt in den Stücken der Bibliothek folgt. Darunter die Fortsetzungen nach Rang, ebenfalls mit Wahrscheinlichkeit. Klick spielt einen Übergang, Doppelklick übernimmt ihn.",
+    title: t("Harmony"),
+    text: t("The circle of fifths follows the playback position – here bar 2 of the demo. On the right, the paths to a cadence: multi-step cadences from the current chord; the number under each arrow is the transition probability – how often exactly this step follows in the library's pieces. Below that, the continuations by rank, also with their probability. Click plays a transition, double-click adds it."),
     notes: [
-      { sel: "kw-panel[tab=harmonie] .hc-paths", text: "Wege zum Schluss – unter den Pfeilen: Übergangswahrscheinlichkeit aus der Bibliothek." },
-      { sel: "kw-panel[tab=harmonie] .hc-pick", text: "Fortsetzung mit Rang – der Balken zeigt, wie oft sie in der Bibliothek folgt." },
+      { sel: "kw-panel[tab=harmonie] .hc-paths", text: t("Paths to a cadence – under the arrows: transition probability from the library.") },
+      { sel: "kw-panel[tab=harmonie] .hc-pick", text: t("Continuation with rank – the bar shows how often it follows in the library.") },
     ],
   },
   {
     panel: "agent",
     target: panelArea("agent"),
-    title: "Agent",
-    text: "Aufträge an einen KI-Agenten wie Claude – „Mach die Kick tiefer“, „Schreib eine Basslinie für die markierten Takte“. Er sieht, welche Spuren hörbar sind und welcher Zeitraum markiert ist.",
-    notes: [{ sel: ".chat-input", text: "Auftrag eintippen, Enter sendet." }],
+    title: t("Agent"),
+    text: t("Tasks for an AI agent like Claude – \"Make the kick deeper\", \"Write a bass line for the selected bars\". It sees which tracks are audible and which time range is selected."),
+    notes: [{ sel: ".chat-input", text: t("Type a task, Enter sends it.") }],
   },
   {
     panel: "hilfe",
@@ -224,12 +228,12 @@ const STEPS: Step[] = [
       const play = document.querySelector("kw-transport .btn.big.primary");
       if (play) helpShow(play);
     },
-    title: "Hilfe",
-    text: "Dieses kleine Fenster erklärt, worauf die Maus gerade zeigt – hier den Abspielknopf. F1 hält den Text fest und holt das Fenster zurück, wenn du es geschlossen hast.",
+    title: t("Help"),
+    text: t("This small window explains what the mouse is pointing at – here the play button. F1 pins the text and brings the window back if you've closed it."),
   },
   {
-    title: "Viel Spaß!",
-    text: "Fenster lassen sich an ihren Reitern verschieben, andocken und schweben lassen; „Fenster ▾“ setzt das Layout zurück. Mit „Fertig“ verschwindet die Demo wieder – oder du behältst sie zum Ausprobieren.",
+    title: t("Have fun!"),
+    text: t("Windows can be moved, docked and floated by their tabs; \"Windows ▾\" resets the layout. \"Done\" removes the demo again – or keep it to experiment with."),
   },
 ];
 
@@ -251,7 +255,7 @@ export function startTour(): void {
   const demo: Demo = { loaded: false, melody: null, audio: null, analysed: false, catalogOpened: false };
   let index = 0;
   let seq = 0;
-  const root = h("div", { class: "tour", role: "dialog", "aria-label": "Intro-Tour" });
+  const root = h("div", { class: "tour", role: "dialog", "aria-label": t("Intro tour") });
   document.body.append(root);
 
   /** Ende der Tour; `keep`: die Demo bleibt geladen. */
@@ -266,7 +270,7 @@ export function startTour(): void {
     return (async () => {
       if (demo.loaded && !keep) {
         // nur die eigene Demo zurücknehmen – hat sich inzwischen etwas anderes getan, bleibt alles
-        if (snapshot.peek()?.undoLabel === "Demo laden") await act(backend.undo());
+        if (isDemoUndo()) await act(backend.undo());
         if (demo.analysed) analysis.value = null;
         selection.value = null;
         await stopToStart();
@@ -307,14 +311,17 @@ export function startTour(): void {
     }, 350);
   };
 
-  /** Demo laden (nur im leeren Projekt), dann der erste Schritt. */
+  /** Is the last step loading the demo? (label from the core, translated with the same dictionary) */
+const isDemoUndo = () => [t("Load demo"), "Load demo"].includes(snapshot.peek()?.undoLabel ?? "");
+
+/** Load the demo (only in an empty project), then the first step. */
   const begin = async () => {
     if (!snapshot.peek()?.project.tracks.length) {
       root.append(h("div", { class: "tour-shade" }));
       demo.loaded = await act(backend.createDemo());
       if (!running) {
         // während des Ladens beendet: die Demo gleich wieder zurücknehmen
-        if (demo.loaded && snapshot.peek()?.undoLabel === "Demo laden") await act(backend.undo());
+        if (demo.loaded && isDemoUndo()) await act(backend.undo());
         return;
       }
     }
@@ -403,17 +410,17 @@ export function startTour(): void {
     }
 
     // Hauptzettel
-    const back = h("button", { class: "tour-btn ghost", onclick: () => void go(index - 1) }, "← Zurück");
+    const back = h("button", { class: "tour-btn ghost", onclick: () => void go(index - 1) }, `← ${t("Back")}`);
     back.disabled = index === 0;
     const last = index === STEPS.length - 1;
-    const next = h("button", { class: "tour-btn primary", onclick: () => void go(index + 1) }, last ? "Fertig" : "Weiter →");
-    const keep = last && demo.loaded ? h("button", { class: "tour-btn ghost keep", title: "Die Demo-Spuren bleiben im Projekt", onclick: () => void stop(true) }, "Demo behalten") : null;
+    const next = h("button", { class: "tour-btn primary", onclick: () => void go(index + 1) }, last ? t("Done") : `${t("Next")} →`);
+    const keep = last && demo.loaded ? h("button", { class: "tour-btn ghost keep", title: t("The demo tracks stay in the project"), onclick: () => void stop(true) }, t("Keep demo")) : null;
     const card = h("div", { class: "tour-card" },
       h("div", { class: "tour-count" }, `${index + 1} / ${STEPS.length}`),
       h("div", { class: "tour-title" }, s.title),
       h("div", { class: "tour-text" }, s.text),
       h("div", { class: "tour-actions" },
-        h("button", { class: "tour-btn ghost end", onclick: () => void stop() }, "Beenden"),
+        h("button", { class: "tour-btn ghost end", onclick: () => void stop() }, t("End tour")),
         back,
         keep,
         next));

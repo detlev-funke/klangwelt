@@ -95,7 +95,8 @@ pub fn analyze_with(asset_id: &str, samples: &[f32], sample_rate: u32, yin: &Yin
         onsets: onsets.onsets,
         hits,
         tempo_estimate,
-        key: key.map(|k| KeyInfo { name: k.name_de(), tonic: k.tonic, minor: k.minor, confidence: k.confidence }),
+        // name for display (in the language chosen at the time of the analysis)
+        key: key.map(|k| KeyInfo { name: k.name(), tonic: k.tonic, minor: k.minor, confidence: k.confidence }),
     }
 }
 
@@ -136,7 +137,7 @@ mod tests {
         assert_eq!(got, vec![60, 64, 67, 72, 71, 72, 67, 69, 65, 64, 62, 60], "{:?}", a.notes);
         assert_eq!(a.notes[5].raw_midi, 73, "unsauberer Ton sollte als cis erkannt und korrigiert werden");
         let key = a.key.expect("Tonart");
-        assert_eq!(key.name, "C-Dur");
+        assert_eq!(key.name, "C major");
         assert!(a.pitch.iter().any(|p| p.1.is_some()));
     }
 }

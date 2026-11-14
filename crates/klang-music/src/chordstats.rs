@@ -18,7 +18,8 @@ use std::io;
 pub const MAX_EXAMPLES: usize = 5;
 
 /// Statistik-Gruppen im Index: alle Stücke, Barock, Bach.
-pub const GROUPS: [(&str, &str); 3] = [("alle", "Alle Stücke"), ("barock", "Barock"), ("bach", "Bach")];
+/// The labels are keys: translate them for display with `klang_i18n::translate`.
+pub const GROUPS: [(&str, &str); 3] = [("alle", klang_i18n::tk!("All pieces")), ("barock", klang_i18n::tk!("Baroque")), ("bach", "Bach")];
 
 const BAROQUE: &[&str] = &[
     "bach", "händel", "handel", "haendel", "telemann", "vivaldi", "corelli", "buxtehude", "pachelbel", "scarlatti", "rameau",
@@ -431,7 +432,7 @@ impl ChordStats {
 }
 
 fn bad() -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, "Harmonik-Abschnitt beschädigt")
+    io::Error::new(io::ErrorKind::InvalidData, klang_i18n::tr!("Harmony section corrupted"))
 }
 
 struct Cursor<'a> {

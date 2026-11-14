@@ -12,7 +12,9 @@
 //! MP3, AAC/M4A, Ogg Vorbis und WMA werden am Dateianfang erkannt und mit einer
 //! klaren Meldung abgelehnt (Dekoder dafür gibt es noch nicht).
 
-/// Für Meldungen: was sich öffnen lässt.
+use klang_i18n::tr;
+
+/// For messages: what can be opened (spelled out in the messages below).
 pub const SUPPORTED: &str = "WAV, AIFF, FLAC und Opus";
 
 /// Dekodiertes Audio (mono).
@@ -32,21 +34,25 @@ impl Decoded {
     }
 }
 
+/// `what`: the format (a name like "MP3" or an already translated description).
 fn unsupported(what: &str) -> String {
-    format!("{what} kann Klangwelt noch nicht lesen – unterstützt sind {SUPPORTED}. Tipp: in einem anderen Programm als WAV oder FLAC speichern.")
+    tr!(
+        "Klangwelt can't read {what} yet – supported formats are WAV, AIFF, FLAC and Opus. Tip: save the file as WAV or FLAC in another program.",
+        what = what
+    )
 }
 
 /// Erkennt das Format am Inhalt (nicht an der Endung) und dekodiert.
 pub fn decode(bytes: &[u8]) -> Result<Decoded, String> {
     let b = bytes;
     if b.len() < 12 {
-        return Err("Die Datei ist leer oder zu kurz.".into());
+        return Err(tr!("The file is empty or too short."));
     }
     if &b[..4] == b"RIFF" && &b[8..12] == b"WAVE" {
         return wav(b);
     }
     if &b[..4] == b"RF64" {
-        return Err(unsupported("WAV im RF64-Format (über 4 GB)"));
+        return Err(unsupported(&tr!("WAV in RF64 format (over 4 GB)")));
     }
     if &b[..4] == b"FORM" && (&b[8..12] == b"AIFF" || &b[8..12] == b"AIFC") {
         return aiff(b);
@@ -76,7 +82,7 @@ pub fn decode(bytes: &[u8]) -> Result<Decoded, String> {
         // Rahmen-Synchronwort: Layer-Bits 00 = AAC (ADTS), sonst MPEG-Audio (MP3)
         return Err(unsupported(if b[1] & 0x06 == 0 { "AAC (ADTS)" } else { "MP3" }));
     }
-    Err(format!("Unbekanntes Dateiformat – Klangwelt liest {SUPPORTED}."))
+    Err(tr!("Unknown file format – Klangwelt reads WAV, AIFF, FLAC and Opus."))
 }
 
 fn mono(frames: impl Iterator<Item = f32>, channels: usize) -> Vec<f32> {
@@ -115,7 +121,7 @@ fn pcm(data: &[u8], bytes: usize, float: bool, big: bool, unsigned8: bool) -> Re
         }
     };
     if !matches!((float, bytes), (true, 4) | (true, 8) | (false, 1..=4)) {
-        return Err("Sample-Format nicht unterstützt".into());
+        return Err(tr!("Sample format not supported"));
     }
     Ok(data.chunks_exact(bytes).map(get).collect())
 }
@@ -146,22 +152,22 @@ fn wav(b: &[u8]) -> Result<Decoded, String> {
             None => break,
         };
     }
-    let (tag, channels, rate, align, bits) = fmt.ok_or("WAV: Formatangabe (fmt) fehlt")?;
-    let data = data.ok_or("WAV: keine Audiodaten (data)")?;
+    let (tag, channels, rate, align, bits) = fmt.ok_or_else(|| tr!("WAV: format chunk (fmt) missing"))?;
+    let data = data.ok_or_else(|| tr!("WAV: no audio data (data)"))?;
     let container = (align as usize / channels as usize).max(1);
     let float = match tag {
         1 => false,
         3 => true,
-        0x55 => return Err(unsupported("MP3 in einer WAV-Datei")),
-        2 | 0x11 => return Err(unsupported("ADPCM-komprimiertes WAV")),
+        0x55 => return Err(unsupported(&tr!("MP3 in a WAV file"))),
+        2 | 0x11 => return Err(unsupported(&tr!("ADPCM-compressed WAV"))),
         6 | 7 => return Err(unsupported("A-law/µ-law-WAV")),
-        t => return Err(format!("WAV-Kodierung {t:#x} wird nicht unterstützt (nur PCM und Gleitkomma).")),
+        t => return Err(tr!("WAV encoding {code} is not supported (only PCM and floating point).", code = format!("{t:#x}"))),
     };
     if rate == 0 {
-        return Err("WAV: Abtastrate 0".into());
+        return Err(tr!("WAV: sample rate 0"));
     }
-    let frames = pcm(data, container, float, false, true).map_err(|e| format!("WAV: {e} ({bits} Bit)"))?;
-    let format = format!("WAV {}{} Bit", if float { "Gleitkomma " } else { "" }, bits);
+    let frames = pcm(data, container, float, false, true).map_err(|e| tr!("WAV: {error} ({bits}-bit)", error = e, bits = bits))?;
+    let format = if float { tr!("WAV {bits}-bit float", bits = bits) } else { tr!("WAV {bits}-bit", bits = bits) };
     Ok(Decoded { samples: mono(frames.into_iter(), channels as usize), sample_rate: rate, channels, format })
 }
 
@@ -208,8 +214,8 @@ fn aiff(b: &[u8]) -> Result<Decoded, String> {
             None => break,
         };
     }
-    let (channels, bits, rate, comp) = comm.ok_or("AIFF: Formatangabe (COMM) fehlt")?;
-    let data = ssnd.ok_or("AIFF: keine Audiodaten (SSND)")?;
+    let (channels, bits, rate, comp) = comm.ok_or_else(|| tr!("AIFF: format chunk (COMM) missing"))?;
+    let data = ssnd.ok_or_else(|| tr!("AIFF: no audio data (SSND)"))?;
     let bytes = (bits as usize).div_ceil(8).max(1);
     let frames = match &comp {
         b"NONE" | b"twos" => pcm(data, bytes, false, true, false),
@@ -217,13 +223,14 @@ fn aiff(b: &[u8]) -> Result<Decoded, String> {
         b"raw " => pcm(data, 1, false, false, true),
         b"fl32" | b"FL32" => pcm(data, 4, true, true, false),
         b"fl64" | b"FL64" => pcm(data, 8, true, true, false),
-        other => return Err(unsupported(&format!("AIFC mit Kompression „{}“", String::from_utf8_lossy(other)))),
+        other => return Err(unsupported(&tr!("AIFC with \"{name}\" compression", name = String::from_utf8_lossy(other)))),
     }
     .map_err(|e| format!("AIFF: {e}"))?;
     if !(rate.is_finite() && rate >= 1.0) {
-        return Err("AIFF: ungültige Abtastrate".into());
+        return Err(tr!("AIFF: invalid sample rate"));
     }
-    Ok(Decoded { samples: mono(frames.into_iter(), channels as usize), sample_rate: rate.round() as u32, channels, format: format!("AIFF {bits} Bit") })
+    let format = tr!("AIFF {bits}-bit", bits = bits);
+    Ok(Decoded { samples: mono(frames.into_iter(), channels as usize), sample_rate: rate.round() as u32, channels, format })
 }
 
 // ---------------------------------------------------------------- FLAC
@@ -257,7 +264,7 @@ impl<'a> BitReader<'a> {
             return Ok(0);
         }
         if self.pos + n as usize > self.d.len() * 8 {
-            return Err("Datei endet mitten im Block".into());
+            return Err(tr!("File ends in the middle of a block"));
         }
         let w = self.window(self.pos / 8) << (self.pos % 8);
         self.pos += n as usize;
@@ -278,7 +285,7 @@ impl<'a> BitReader<'a> {
         loop {
             let byte = self.pos / 8;
             if byte >= self.d.len() {
-                return Err("Datei endet mitten im Block".into());
+                return Err(tr!("File ends in the middle of a block"));
             }
             let off = (self.pos % 8) as u32;
             let w = self.window(byte) << off;
@@ -313,12 +320,12 @@ fn flac(b: &[u8]) -> Result<Decoded, String> {
     let mut info = None;
     loop {
         if i + 4 > b.len() {
-            return Err("FLAC: Metadaten abgeschnitten".into());
+            return Err(tr!("FLAC: metadata truncated"));
         }
         let last = b[i] & 0x80 != 0;
         let kind = b[i] & 0x7f;
         let len = ((b[i + 1] as usize) << 16) | ((b[i + 2] as usize) << 8) | b[i + 3] as usize;
-        let body = b.get(i + 4..i + 4 + len).ok_or("FLAC: Metadaten abgeschnitten")?;
+        let body = b.get(i + 4..i + 4 + len).ok_or_else(|| tr!("FLAC: metadata truncated"))?;
         if kind == 0 && len >= 18 {
             let rate = ((body[10] as u32) << 12) | ((body[11] as u32) << 4) | (body[12] as u32 >> 4);
             let channels = ((body[12] >> 1) & 0x07) as usize + 1;
@@ -330,7 +337,7 @@ fn flac(b: &[u8]) -> Result<Decoded, String> {
             break;
         }
     }
-    let info = info.ok_or("FLAC: STREAMINFO fehlt")?;
+    let info = info.ok_or_else(|| tr!("FLAC: STREAMINFO missing"))?;
     let mut out: Vec<f32> = Vec::new();
     let mut r = BitReader::new(&b[i..]);
     let mut bps_seen = info.bps;
@@ -362,18 +369,19 @@ fn flac(b: &[u8]) -> Result<Decoded, String> {
         }
     }
     if out.is_empty() {
-        return Err("FLAC: keine Audiodaten".into());
+        return Err(tr!("FLAC: no audio data"));
     }
     if rate == 0 {
-        return Err("FLAC: Abtastrate unbekannt".into());
+        return Err(tr!("FLAC: unknown sample rate"));
     }
-    Ok(Decoded { samples: out, sample_rate: rate, channels: info.channels as u16, format: format!("FLAC {bps_seen} Bit") })
+    let format = tr!("FLAC {bits}-bit", bits = bps_seen);
+    Ok(Decoded { samples: out, sample_rate: rate, channels: info.channels as u16, format })
 }
 
 /// Ein FLAC-Block → mono an `out` anhängen; liefert (Abtastrate, Bits) des Blocks.
 fn flac_frame(r: &mut BitReader, info: &StreamInfo, out: &mut Vec<f32>) -> Result<(u32, u32), String> {
     if r.read(14)? != 0x3FFE {
-        return Err("Synchronwort fehlt".into());
+        return Err(tr!("Sync code missing"));
     }
     r.read(2)?; // reserviert, Blockart
     let bs_code = r.read(4)?;
@@ -391,13 +399,13 @@ fn flac_frame(r: &mut BitReader, info: &StreamInfo, out: &mut Vec<f32>) -> Resul
         0xF8..=0xFB => 4,
         0xFC..=0xFD => 5,
         0xFE => 6,
-        _ => return Err("ungültige Blocknummer".into()),
+        _ => return Err(tr!("invalid block number")),
     };
     for _ in 0..extra {
         r.read(8)?;
     }
     let block = match bs_code {
-        0 => return Err("reservierte Blockgröße".into()),
+        0 => return Err(tr!("reserved block size")),
         1 => 192,
         2..=5 => 576 << (bs_code - 2),
         6 => r.read(8)? as usize + 1,
@@ -420,7 +428,7 @@ fn flac_frame(r: &mut BitReader, info: &StreamInfo, out: &mut Vec<f32>) -> Resul
         12 => r.read(8)? as u32 * 1000,
         13 => r.read(16)? as u32,
         14 => r.read(16)? as u32 * 10,
-        _ => return Err("ungültige Abtastrate".into()),
+        _ => return Err(tr!("invalid sample rate")),
     };
     let bps = match ss_code {
         0 => info.bps,
@@ -430,13 +438,13 @@ fn flac_frame(r: &mut BitReader, info: &StreamInfo, out: &mut Vec<f32>) -> Resul
         5 => 20,
         6 => 24,
         7 => 32,
-        _ => return Err("ungültige Bittiefe".into()),
+        _ => return Err(tr!("invalid bit depth")),
     };
     r.read(8)?; // CRC-8 des Kopfs
     let channels = match ch_code {
         0..=7 => ch_code as usize + 1,
         8..=10 => 2,
-        _ => return Err("ungültige Kanalbelegung".into()),
+        _ => return Err(tr!("invalid channel assignment")),
     };
     let mut chans: Vec<Vec<i64>> = Vec::with_capacity(channels);
     for c in 0..channels {
@@ -476,18 +484,18 @@ fn flac_frame(r: &mut BitReader, info: &StreamInfo, out: &mut Vec<f32>) -> Resul
 
 fn flac_subframe(r: &mut BitReader, block: usize, bps: u32) -> Result<Vec<i64>, String> {
     if r.read(1)? != 0 {
-        return Err("Teilblock: Füllbit gesetzt".into());
+        return Err(tr!("Subframe: padding bit set"));
     }
     let kind = r.read(6)? as u32;
     let wasted = if r.read(1)? == 1 { r.unary()? + 1 } else { 0 };
-    let bps = bps.checked_sub(wasted).filter(|&b| b > 0).ok_or("Teilblock: zu viele ungenutzte Bits")?;
+    let bps = bps.checked_sub(wasted).filter(|&b| b > 0).ok_or_else(|| tr!("Subframe: too many wasted bits"))?;
     let mut s: Vec<i64> = match kind {
         0 => vec![r.signed(bps)?; block],
         1 => (0..block).map(|_| r.signed(bps)).collect::<Result<_, _>>()?,
         8..=12 => {
             let order = (kind - 8) as usize;
             if order > block {
-                return Err("Teilblock: Ordnung größer als Block".into());
+                return Err(tr!("Subframe: order larger than block"));
             }
             let mut s: Vec<i64> = (0..order).map(|_| r.signed(bps)).collect::<Result<_, _>>()?;
             let res = flac_residual(r, block, order)?;
@@ -508,16 +516,16 @@ fn flac_subframe(r: &mut BitReader, block: usize, bps: u32) -> Result<Vec<i64>, 
         32..=63 => {
             let order = (kind & 31) as usize + 1;
             if order > block {
-                return Err("Teilblock: Ordnung größer als Block".into());
+                return Err(tr!("Subframe: order larger than block"));
             }
             let mut s: Vec<i64> = (0..order).map(|_| r.signed(bps)).collect::<Result<_, _>>()?;
             let precision = r.read(4)? as u32 + 1;
             if precision == 16 {
-                return Err("Teilblock: ungültige Koeffizienten-Genauigkeit".into());
+                return Err(tr!("Subframe: invalid coefficient precision"));
             }
             let shift = r.signed(5)?;
             if shift < 0 {
-                return Err("Teilblock: negative Verschiebung".into());
+                return Err(tr!("Subframe: negative shift"));
             }
             let coef: Vec<i64> = (0..order).map(|_| r.signed(precision)).collect::<Result<_, _>>()?;
             let res = flac_residual(r, block, order)?;
@@ -529,7 +537,7 @@ fn flac_subframe(r: &mut BitReader, block: usize, bps: u32) -> Result<Vec<i64>, 
             }
             s
         }
-        _ => return Err(format!("Teilblock: unbekannte Art {kind}")),
+        _ => return Err(tr!("Subframe: unknown type {kind}", kind = kind)),
     };
     if wasted > 0 {
         s.iter_mut().for_each(|v| *v <<= wasted);
@@ -541,12 +549,12 @@ fn flac_residual(r: &mut BitReader, block: usize, order: usize) -> Result<Vec<i6
     let (param_bits, escape) = match r.read(2)? {
         0 => (4, 15),
         1 => (5, 31),
-        _ => return Err("Rest: unbekannte Kodierung".into()),
+        _ => return Err(tr!("Residual: unknown coding")),
     };
     let part_order = r.read(4)? as u32;
     let parts = 1usize << part_order;
     if block % parts != 0 || (block >> part_order) < order {
-        return Err("Rest: ungültige Partitionen".into());
+        return Err(tr!("Residual: invalid partitions"));
     }
     let mut out = Vec::with_capacity(block - order);
     for p in 0..parts {
@@ -575,7 +583,7 @@ fn ogg_packets(b: &[u8]) -> Result<(Vec<Vec<u8>>, u64), String> {
     let (mut pos, mut packets, mut cur, mut serial, mut granule) = (0usize, Vec::new(), Vec::new(), None, 0u64);
     while pos + 27 <= b.len() {
         if &b[pos..pos + 4] != b"OggS" {
-            return Err(format!("Ogg: Seite bei Byte {pos} beschädigt"));
+            return Err(tr!("Ogg: page at byte {pos} is corrupted", pos = pos));
         }
         let gp = u64::from_le_bytes(b[pos + 6..pos + 14].try_into().unwrap());
         let ser = u32le(b, pos + 14);
@@ -606,19 +614,19 @@ fn ogg_packets(b: &[u8]) -> Result<(Vec<Vec<u8>>, u64), String> {
 
 fn ogg(b: &[u8]) -> Result<Decoded, String> {
     let (packets, granule) = ogg_packets(b)?;
-    let head = packets.first().ok_or("Ogg: leer")?;
+    let head = packets.first().ok_or_else(|| tr!("Ogg: empty"))?;
     if head.starts_with(b"\x01vorbis") {
         return Err(unsupported("Ogg Vorbis"));
     }
     if head.starts_with(b"\x7fFLAC") {
-        return Err(unsupported("FLAC im Ogg-Container"));
+        return Err(unsupported(&tr!("FLAC in an Ogg container")));
     }
     if !head.starts_with(b"OpusHead") || head.len() < 19 {
-        return Err(unsupported("Dieses Ogg-Format"));
+        return Err(unsupported(&tr!("this Ogg format")));
     }
     let channels = head[9] as u16;
     if channels > 2 {
-        return Err(unsupported("Opus mit mehr als zwei Kanälen"));
+        return Err(unsupported(&tr!("Opus with more than two channels")));
     }
     let pre_skip = u16le(head, 10) as usize;
     let gain_db = i16::from_le_bytes([head[16], head[17]]) as f32 / 256.0;
@@ -639,7 +647,7 @@ fn ogg(b: &[u8]) -> Result<Decoded, String> {
         frames.truncate(total);
     }
     if frames.is_empty() {
-        return Err("Opus: keine Audiodaten".into());
+        return Err(tr!("Opus: no audio data"));
     }
     Ok(Decoded { samples: frames, sample_rate: 48_000, channels: channels.max(1), format: "Opus".into() })
 }
@@ -694,7 +702,7 @@ mod tests {
         let d = decode(&riff(&f, &data)).unwrap();
         assert_eq!((d.sample_rate, d.channels, d.samples.len()), (8000, 2, 400));
         assert!(d.samples.iter().zip(&x).all(|(a, b)| (a - b / 2.0).abs() < 1e-5));
-        assert_eq!(d.format, "WAV 24 Bit");
+        assert_eq!(d.format, "WAV 24-bit");
         // 8 Bit (vorzeichenlos), 32 Bit PCM, 64 Bit Gleitkomma
         let d8 = decode(&riff(&fmt(1, 1, 8000, 8), &x.iter().map(|v| (v * 127.0 + 128.0) as u8).collect::<Vec<_>>())).unwrap();
         assert!(d8.samples.iter().zip(&x).all(|(a, b)| (a - b).abs() < 0.02));
@@ -754,7 +762,7 @@ mod tests {
             let want = (l[k] + r[k]) as f32 / 2.0 / 32_768.0;
             assert!((d.samples[k] - want).abs() < 1e-6, "Sample {k}");
         }
-        assert_eq!(d.format, "FLAC 16 Bit");
+        assert_eq!(d.format, "FLAC 16-bit");
     }
 
     /// Kleiner Bitschreiber für handgebaute FLAC-Blöcke.
@@ -860,14 +868,14 @@ mod tests {
     fn unsupported_formats_are_named() {
         let mut mp3 = vec![0xFF, 0xFB, 0x90, 0x64];
         mp3.extend(vec![0; 20]);
-        assert!(decode(&mp3).unwrap_err().starts_with("MP3 kann Klangwelt noch nicht lesen"));
+        assert!(decode(&mp3).unwrap_err().starts_with("Klangwelt can't read MP3 yet"));
         let mut id3 = b"ID3\x04\0\0\0\0\0\x02".to_vec();
         id3.extend(vec![0; 30]);
-        assert!(decode(&id3).unwrap_err().starts_with("MP3"));
+        assert!(decode(&id3).unwrap_err().starts_with("Klangwelt can't read MP3"));
         let mut m4a = b"\0\0\0\x20ftypM4A ".to_vec();
         m4a.extend(vec![0; 20]);
         assert!(decode(&m4a).unwrap_err().contains("AAC/M4A"));
-        assert!(decode(b"hallo welt, keine musik").unwrap_err().starts_with("Unbekanntes Dateiformat"));
+        assert!(decode(b"hallo welt, keine musik").unwrap_err().starts_with("Unknown file format"));
         assert!(decode(b"").is_err());
     }
 }

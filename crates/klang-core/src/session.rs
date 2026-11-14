@@ -116,7 +116,7 @@ mod tests {
         let tid = s.project.tracks[0].id;
         s.execute(Command::AddClip { track_id: tid, clip: audio_clip(4.0) }, false).unwrap();
         let after = s.project.clone();
-        assert_eq!(s.undo_label(), Some("Clip hinzufügen"));
+        assert_eq!(s.undo_label(), Some("Add clip"));
 
         assert!(s.undo().unwrap());
         assert!(s.undo().unwrap());
@@ -140,7 +140,7 @@ mod tests {
         assert_eq!(s.project.tracks[0].gain_db, -6.0);
         s.undo().unwrap();
         assert_eq!(s.project.tracks[0].gain_db, 0.0);
-        assert_eq!(s.undo_label(), Some("Spur hinzufügen"));
+        assert_eq!(s.undo_label(), Some("Add track"));
         // dasselbe mit eigener Beschriftung (Stapel aus einem Befehl)
         for (i, db) in [-1.0, -4.0].into_iter().enumerate() {
             let patch = TrackPatch { gain_db: Some(db), ..Default::default() };
@@ -242,7 +242,7 @@ mod tests {
         let (notes, len) = clip_notes(&s);
         assert_eq!(notes.iter().map(|n| n.pitch).collect::<Vec<_>>(), vec![60, 64, 67]);
         assert_eq!(len, 8.0);
-        assert_eq!(s.undo_label(), Some("Noten bearbeiten"));
+        assert_eq!(s.undo_label(), Some("Edit notes"));
 
         let bad = Command::SetClipNotes { track_id: tid, clip_id: cid, notes: vec![note(60, -1.0, 1.0)], length_beats: None };
         assert!(s.execute(bad, false).is_err());
@@ -266,7 +266,7 @@ mod tests {
         // Ansicht mit anderer Änderung zusammen ist dagegen ein normaler Schritt.
         let mixed = Command::SetTrack { track_id: tid, patch: TrackPatch { view: Some(TrackView::Notes), gain_db: Some(-3.0), ..Default::default() } };
         s.execute(mixed, false).unwrap();
-        assert_eq!(s.undo_label(), Some("Lautstärke ändern"));
+        assert_eq!(s.undo_label(), Some("Change volume"));
         let json: Command = serde_json::from_str(r#"{"type":"setTrack","trackId":1,"patch":{"view":"notes"}}"#).unwrap();
         assert!(json.is_view_only());
 
@@ -275,7 +275,7 @@ mod tests {
         assert!(height.is_view_only());
         s.execute(height, false).unwrap();
         assert_eq!(s.project.tracks[0].notes_height, 420.0);
-        assert_eq!(s.undo_label(), Some("Lautstärke ändern"));
+        assert_eq!(s.undo_label(), Some("Change volume"));
         let too_small = Command::SetTrack { track_id: tid, patch: TrackPatch { compact_height: Some(5.0), ..Default::default() } };
         assert!(s.execute(too_small, false).is_err());
         let reset = Command::SetTrack { track_id: tid, patch: TrackPatch { notes_height: Some(0.0), ..Default::default() } };

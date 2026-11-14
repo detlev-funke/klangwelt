@@ -7,6 +7,7 @@ use klang_core::{Clip, ClipSource, Command, Id, InstrumentKind, Note, Project, S
 use klang_dsp::synth::NoteSpec;
 use klang_dsp::{stretch, util};
 use klang_engine::{Arrangement, Engine, PlacedClip};
+use klang_i18n::tr;
 use klang_music::diskindex::AnyIndex;
 use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
@@ -18,7 +19,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 pub type CmdResult<T> = Result<T, String>;
 
 pub fn lock<T>(m: &Mutex<T>) -> CmdResult<MutexGuard<'_, T>> {
-    m.lock().map_err(|_| "Interner Fehler: Zustand ist blockiert".to_string())
+    m.lock().map_err(|_| tr!("Internal error: state is locked"))
 }
 
 pub struct Asset {
@@ -108,11 +109,42 @@ pub const AGENT_GRACE: std::time::Duration = std::time::Duration::from_secs(2 * 
 pub const SETTING_OUTPUT: &str = "ausgabegeraet";
 pub const SETTING_INPUT: &str = "eingabegeraet";
 
+/// Why a remembered device wasn't used at start.
+#[derive(Clone)]
+enum DeviceProblem {
+    /// Nicht angeschlossen (Name).
+    Missing(String),
+    /// Couldn't be opened or chosen (name, error).
+    Failed(String, String),
+}
+
 /// Hinweis, wenn ein gemerktes Gerät beim Start fehlte (die Wahl bleibt gemerkt).
+/// The text is made only when asked for – at start the UI hasn't set its
+/// language yet.
 #[derive(Default, Clone)]
 pub struct AudioNotice {
-    pub output: Option<String>,
-    pub input: Option<String>,
+    output: Option<DeviceProblem>,
+    input: Option<DeviceProblem>,
+}
+
+impl AudioNotice {
+    fn output_text(&self) -> Option<String> {
+        self.output.as_ref().map(|p| match p {
+            DeviceProblem::Missing(n) => tr!("Output device \"{name}\" is not connected – Klangwelt plays through the system default.", name = n),
+            DeviceProblem::Failed(n, e) => {
+                tr!("Output device \"{name}\" couldn't be opened ({error}) – Klangwelt plays through the system default.", name = n, error = e)
+            }
+        })
+    }
+
+    fn input_text(&self) -> Option<String> {
+        self.input.as_ref().map(|p| match p {
+            DeviceProblem::Missing(n) => tr!("Input device \"{name}\" is not connected – Klangwelt records from the system default.", name = n),
+            DeviceProblem::Failed(n, e) => {
+                tr!("Input device \"{name}\" couldn't be selected ({error}) – Klangwelt records from the system default.", name = n, error = e)
+            }
+        })
+    }
 }
 
 /// Audiogeräte für die Auswahl (Oberfläche und Agent).
@@ -322,11 +354,13 @@ impl AppState {
     }
 
     pub fn engine(&self) -> CmdResult<&Engine> {
-        self.engine.as_ref().ok_or_else(|| {
-            self.engine_error
-                .clone()
-                .unwrap_or_else(|| "Audio-Engine nicht verfügbar".into())
-        })
+        self.engine.as_ref().ok_or_else(|| self.engine_error_text().unwrap_or_else(|| tr!("Audio engine not available")))
+    }
+
+    /// Why the engine is missing. Made at start, before the UI has set its
+    /// language – fixed messages of the engine are translated here.
+    fn engine_error_text(&self) -> Option<String> {
+        self.engine_error.as_deref().map(klang_i18n::translate)
     }
 
     pub fn snapshot(&self) -> CmdResult<Snapshot> {
@@ -356,12 +390,12 @@ impl AppState {
             redo_label: s.redo_label().map(str::to_string),
             engine: EngineInfoDto {
                 available: self.engine.is_some(),
-                error: self.engine_error.clone(),
+                error: self.engine_error_text(),
                 output_device: info.as_ref().map(|i| i.output_device.clone()),
                 output_choice: info.as_ref().and_then(|i| i.output_choice.clone()),
                 input_choice: info.as_ref().and_then(|i| i.input_choice.clone()),
-                output_notice: notice.output,
-                input_notice: notice.input,
+                output_notice: notice.output_text(),
+                input_notice: notice.input_text(),
                 sample_rate: info.as_ref().map(|i| i.sample_rate).unwrap_or(48_000),
                 metronome: self.metronome.load(Ordering::Relaxed),
                 loop_on: looping.on,
@@ -398,7 +432,7 @@ impl AppState {
                 })
                 .collect()
         };
-        crate::project::save(path, &project, &audio).map_err(|e| format!("Speichern nach {} fehlgeschlagen: {e}", path.display()))?;
+        crate::project::save(path, &project, &audio).map_err(|e| tr!("Saving to {path} failed: {error}", path = path.display(), error = e))?;
         *lock(&self.saved_hash)? = project_hash(&project);
         *lock(&self.project_file)? = Some(path.to_path_buf());
         Ok(())
@@ -456,27 +490,29 @@ impl AppState {
         let solo: Vec<&Track> = p.tracks.iter().filter(|t| t.solo).collect();
         let mut parts = Vec::new();
         if p.tracks.is_empty() {
-            parts.push("Spuren: keine".to_string());
+            parts.push(tr!("Tracks: none"));
         } else {
-            parts.push(format!("Hörbare Spuren: {}", if audible.is_empty() { "keine".into() } else { list(audible) }));
+            parts.push(if audible.is_empty() { tr!("Audible tracks: none") } else { tr!("Audible tracks: {list}", list = list(audible)) });
             if !solo.is_empty() {
-                parts.push(format!("Solo: {}", list(solo)));
+                parts.push(tr!("Solo: {list}", list = list(solo)));
             }
             if !muted.is_empty() {
-                parts.push(format!("Stumm: {}", list(muted)));
+                parts.push(tr!("Muted: {list}", list = list(muted)));
             }
         }
         let bpb = p.beats_per_bar.max(1) as f64;
         parts.push(match looping.range {
-            Some((a, b)) => format!(
-                "Markierter Zeitraum: Takt {}–{} (Schlag {} bis {}){}",
-                (a / bpb).floor() as i64 + 1,
-                ((b / bpb) - 1e-9).ceil().max(1.0) as i64,
-                (a * 100.0).round() / 100.0,
-                (b * 100.0).round() / 100.0,
-                if looping.on { ", Wiederholen an" } else { "" }
-            ),
-            None => "Kein Zeitraum markiert".to_string(),
+            Some((a, b)) => {
+                let from = (a / bpb).floor() as i64 + 1;
+                let to = ((b / bpb) - 1e-9).ceil().max(1.0) as i64;
+                let (start, end) = ((a * 100.0).round() / 100.0, (b * 100.0).round() / 100.0);
+                if looping.on {
+                    tr!("Selected range: bars {from}–{to} (beats {start} to {end}), loop on", from = from, to = to, start = start, end = end)
+                } else {
+                    tr!("Selected range: bars {from}–{to} (beats {start} to {end})", from = from, to = to, start = start, end = end)
+                }
+            }
+            None => tr!("No time range selected"),
         });
         Ok(parts.join(" · "))
     }
@@ -533,12 +569,16 @@ impl AppState {
     /// `name` None (oder leer/„Systemstandard“) = Systemstandard. Wirkt sofort
     /// und gilt auch beim nächsten Start.
     pub fn set_audio_device(&self, kind: &str, name: Option<String>) -> CmdResult<Snapshot> {
-        let name = name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty() && !n.eq_ignore_ascii_case("Systemstandard"));
+        // "system default" as the agent reads it: German, English or in the chosen language
+        let default = tr!("System default");
+        let name = name.map(|n| n.trim().to_string()).filter(|n| {
+            !n.is_empty() && !n.eq_ignore_ascii_case("Systemstandard") && !n.eq_ignore_ascii_case("System default") && !n.eq_ignore_ascii_case(&default)
+        });
         let engine = self.engine()?;
         let output = match kind {
             "output" | "ausgabe" => true,
             "input" | "eingabe" => false,
-            other => return Err(format!("Unbekannte Geräteart „{other}“ (erlaubt: ausgabe, eingabe)")),
+            other => return Err(tr!("Unknown device type \"{kind}\" (allowed: output, input)", kind = other)),
         };
         if output {
             engine.set_output_device(name.clone()).map_err(|e| e.to_string())?;
@@ -576,19 +616,19 @@ impl AppState {
                 Ok(()) => {
                     let _ = self.sync_engine();
                 }
-                Err(e) if e.is_empty() => notice.output = Some(format!("Ausgabegerät „{n}“ ist nicht angeschlossen – Klangwelt spielt über den Systemstandard.")),
-                Err(e) => notice.output = Some(format!("Ausgabegerät „{n}“ ließ sich nicht öffnen ({e}) – Klangwelt spielt über den Systemstandard.")),
+                Err(e) if e.is_empty() => notice.output = Some(DeviceProblem::Missing(n)),
+                Err(e) => notice.output = Some(DeviceProblem::Failed(n, e)),
             }
         }
         if let Some(n) = inp {
             let res = if devices.inputs.contains(&n) { engine.set_input_device(Some(n.clone())).map(|_| ()).map_err(|e| e.to_string()) } else { Err(String::new()) };
             match res {
                 Ok(()) => {}
-                Err(e) if e.is_empty() => notice.input = Some(format!("Aufnahmegerät „{n}“ ist nicht angeschlossen – Klangwelt nimmt über den Systemstandard auf.")),
-                Err(e) => notice.input = Some(format!("Aufnahmegerät „{n}“ ließ sich nicht wählen ({e}) – Klangwelt nimmt über den Systemstandard auf.")),
+                Err(e) if e.is_empty() => notice.input = Some(DeviceProblem::Missing(n)),
+                Err(e) => notice.input = Some(DeviceProblem::Failed(n, e)),
             }
         }
-        for n in [&notice.output, &notice.input].into_iter().flatten() {
+        for n in [notice.output_text(), notice.input_text()].into_iter().flatten() {
             eprintln!("{n}");
         }
         if let Ok(mut g) = self.audio_notice.lock() {
@@ -678,7 +718,7 @@ impl AppState {
                 }
             }
             "rewind" => engine.seek_frames(0),
-            other => return Err(format!("Unbekannte Transport-Aktion: {other} (erlaubt: play, stop, toggle, rewind)")),
+            other => return Err(tr!("Unknown transport action: {action} (allowed: play, stop, toggle, rewind)", action = other)),
         }
         Ok(())
     }
@@ -739,7 +779,7 @@ impl AppState {
             if let Some(a) = pool.analyses.get(asset_id) {
                 return Ok(a.clone());
             }
-            let asset = pool.get(asset_id).ok_or("Audiodatei nicht gefunden")?;
+            let asset = pool.get(asset_id).ok_or_else(|| tr!("Audio file not found"))?;
             (asset.samples.clone(), asset.sample_rate)
         };
         let a = analysis::analyze(asset_id, &samples, sr);
@@ -757,14 +797,14 @@ impl AppState {
             .project
             .clip(track_id, clip_id)
             .cloned()
-            .ok_or_else(|| format!("Clip {clip_id} auf Spur {track_id} nicht gefunden"))
+            .ok_or_else(|| tr!("Clip {clip} not found on track {track}", clip = clip_id, track = track_id))
     }
 
     /// Analyse eines Audio-Clips.
     pub fn clip_analysis(&self, track_id: Id, clip_id: Id) -> CmdResult<(Clip, Analysis)> {
         let clip = self.clip(track_id, clip_id)?;
         let ClipSource::Audio { asset_id, .. } = &clip.source else {
-            return Err("Nur Audio-Clips lassen sich analysieren.".into());
+            return Err(tr!("Only audio clips can be analyzed."));
         };
         let a = self.analysis_for(asset_id)?;
         Ok((clip, a))
@@ -779,9 +819,9 @@ impl AppState {
 
     pub fn instrument_track(&self, track_id: Id) -> CmdResult<Track> {
         let s = lock(&self.session)?;
-        let t = s.project.track(track_id).ok_or_else(|| format!("Spur {track_id} nicht gefunden"))?;
+        let t = s.project.track(track_id).ok_or_else(|| tr!("Track {id} not found", id = track_id))?;
         if t.kind != TrackKind::Instrument {
-            return Err(format!("„{}“ ist eine Audiospur – Klanggestaltung gibt es nur für Instrumentspuren.", t.name));
+            return Err(tr!("\"{name}\" is an audio track – sound design is only available for instrument tracks.", name = t.name));
         }
         Ok(t.clone())
     }
@@ -829,7 +869,7 @@ impl AppState {
         let (x, y) = match (preset, xy) {
             (Some(name), _) => sound::field_preset(inst.kind, field, name)?,
             (None, Some(xy)) => xy,
-            (None, None) => return Err("Punkt (x, y) oder Startpunkt fehlt".into()),
+            (None, None) => return Err(tr!("Point (x, y) or starting point missing")),
         };
         sound::apply_field(&mut inst, field, x, y)?;
         inst.preset = match (field, preset) {
@@ -837,11 +877,11 @@ impl AppState {
             ("charakter", None) => "eigen".into(),
             _ => inst.preset,
         };
-        let label = format!("Klang „{}“: {}", track.name, match field {
-            "charakter" => "Charakter",
-            "klangfarbe" => "Klangfarbe",
-            _ => "Raum",
-        });
+        let label = match field {
+            "charakter" => tr!("Sound \"{name}\": Character", name = track.name),
+            "klangfarbe" => tr!("Sound \"{name}\": Timbre", name = track.name),
+            _ => tr!("Sound \"{name}\": Space", name = track.name),
+        };
         self.execute(
             Command::Batch { label, commands: vec![Command::SetTrack { track_id, patch: TrackPatch { instrument: Some(inst), ..Default::default() } }] },
             merge,
@@ -870,7 +910,7 @@ impl AppState {
             track.instrument = Some(sound::default_instrument(kind));
             track.clips.push(Clip {
                 id: p.alloc_id(),
-                name: "Muster".into(),
+                name: tr!("Pattern"),
                 start_beats: 0.0,
                 source: ClipSource::Notes { length_beats: 4.0 * bpb, notes: sound::pattern_bars(kind, 4, bpb) },
             });
@@ -891,7 +931,7 @@ impl AppState {
         let start = (end / bpb).ceil() * bpb;
         let clip = Clip {
             id: Id::NEW,
-            name: "Muster".into(),
+            name: tr!("Pattern"),
             start_beats: start,
             source: ClipSource::Notes { length_beats: 4.0, notes: sound::pattern(kind) },
         };
@@ -901,7 +941,7 @@ impl AppState {
     /// Aufnahme starten (die Wiedergabe läuft mit).
     pub fn record_start(&self) -> CmdResult<()> {
         if crate::library::LISTENING.load(Ordering::SeqCst) {
-            return Err("Gerade läuft das Vorsingen für die Bibliothekssuche – erst dort beenden.".into());
+            return Err(tr!("Sing-to-search for the library is currently running – stop it there first."));
         }
         let engine = self.engine()?;
         engine.start_recording().map_err(|e| e.to_string())?;
@@ -912,18 +952,18 @@ impl AppState {
     /// Aufnahme beenden: als Audiospur ins Projekt (ein Rückgängig-Schritt), mit Analyse.
     pub fn record_stop(&self) -> CmdResult<RecordResult> {
         if crate::library::LISTENING.load(Ordering::SeqCst) {
-            return Err("Das ist die Vorsing-Aufnahme der Bibliothek – dort mit „Stopp“ beenden.".into());
+            return Err(tr!("This is the library's sing-to-search recording – stop it there with \"Stop\"."));
         }
         let engine = self.engine()?;
         let rec = engine.stop_recording().map_err(|e| e.to_string())?;
         engine.stop();
         let out_sr = engine.info().sample_rate as f64;
         if rec.samples.len() < (rec.sample_rate as usize) / 4 {
-            return Err("Die Aufnahme war zu kurz.".into());
+            return Err(tr!("The recording was too short."));
         }
 
         let n = self.record_counter.fetch_add(1, Ordering::Relaxed) + 1;
-        let name = format!("Aufnahme {n}");
+        let name = tr!("Recording {n}", n = n);
         let duration_secs = rec.samples.len() as f64 / rec.sample_rate as f64;
         let mut samples = rec.samples;
         // Leise Aufnahmen auf brauchbaren Pegel bringen (nur anheben, nie absenken).
@@ -949,7 +989,7 @@ impl AppState {
                 start_beats: rec.start_frame as f64 / out_sr * bpm / 60.0,
                 source: ClipSource::Audio { asset_id, source_bpm: bpm, warp: true, duration_secs },
             });
-            (Command::Batch { label: "Aufnahme".into(), commands: vec![Command::AddTrack { track, index: None }] }, track_id, clip_id)
+            (Command::Batch { label: tr!("Recording"), commands: vec![Command::AddTrack { track, index: None }] }, track_id, clip_id)
         };
         let snapshot = self.execute(cmd, false)?;
         Ok(RecordResult { snapshot, analysis, track_id, clip_id })
@@ -958,7 +998,7 @@ impl AppState {
     /// Übersicht einer Aufnahme für die Wellenform (`buckets` Werte).
     pub fn waveform(&self, asset_id: &str, buckets: usize) -> CmdResult<Vec<f32>> {
         let pool = lock(&self.pool)?;
-        let asset = pool.get(asset_id).ok_or("Audiodatei nicht gefunden")?;
+        let asset = pool.get(asset_id).ok_or_else(|| tr!("Audio file not found"))?;
         Ok(util::overview(&asset.samples, buckets.clamp(16, 20_000)))
     }
 

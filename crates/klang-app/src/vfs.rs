@@ -138,7 +138,7 @@ mod imp {
     }
 
     fn not_found(path: &Path) -> io::Error {
-        io::Error::new(io::ErrorKind::NotFound, format!("{} gibt es nicht", path.display()))
+        io::Error::new(io::ErrorKind::NotFound, klang_i18n::tr!("{path} doesn't exist", path = path.display()))
     }
 
     fn add_parents(t: &mut Tree, path: &Path) {

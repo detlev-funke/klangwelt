@@ -13,6 +13,7 @@
 // diese Hülle selbst (`SHELL`).
 
 import type { CoreLink } from "../bridge.js";
+import { t } from "../i18n.js";
 
 /** Antwort des Workers auf einen Befehl. */
 type Reply = { id: number; ok: true; json?: string; bytes?: ArrayBuffer } | { id: number; ok: false; error: string };
@@ -40,10 +41,11 @@ declare global {
   }
 }
 
-const AGENT_HINT =
-  "Im Browser gibt es keinen Agent-Server (MCP) – eine Webseite kann keinen Port öffnen. Ein Agent kann Klangwelt trotzdem bedienen: über eine Browser-Erweiterung oder das Chrome-DevTools-Protokoll, siehe docs/WEB.md.";
+const AGENT_HINT = t(
+  "There's no agent server (MCP) in the browser – a web page can't open a port. An agent can still operate Klangwelt: via a browser extension or the Chrome DevTools Protocol, see docs/WEB.md.",
+);
 
-const NOT_IN_BROWSER = "Im Browser noch nicht verfügbar – siehe docs/WEB.md.";
+const NOT_IN_BROWSER = t("Not yet available in the browser – see docs/WEB.md.");
 
 /** Ordner im Dateibaum des Kerns, in den hereingezogene Dateien kommen. */
 const IMPORT_DIR = "/Klangwelt/Import";
@@ -81,7 +83,7 @@ export function createWebLink(): CoreLink {
         }
         else onReply(m);
       };
-      worker!.onerror = (e) => reject(new Error(`Web-Kern: ${e.message}`));
+      worker!.onerror = (e) => reject(new Error(t("Web core: {message}", { message: e.message })));
     });
     const init = { sampleRate: audio.ctx?.sampleRate ?? 48000, audio: !!port, agentHint: AGENT_HINT, port };
     worker.postMessage({ init }, port ? [port] : []);
@@ -137,12 +139,12 @@ export function createWebLink(): CoreLink {
   /** Mikrofon an den Eingang des Worklets (einmal freigeben, dann bleibt es verbunden). */
   async function ensureMic(): Promise<void> {
     if (mic) return;
-    if (!audio.ctx || !audio.node) throw audio.error ?? "Kein Audio im Browser";
-    if (!navigator.mediaDevices?.getUserMedia) throw "Dieser Browser gibt kein Mikrofon frei (nur über https oder localhost).";
+    if (!audio.ctx || !audio.node) throw audio.error ?? t("No audio in the browser");
+    if (!navigator.mediaDevices?.getUserMedia) throw t("This browser doesn't allow microphone access (only via https or localhost).");
     try {
       mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
     } catch (e) {
-      throw `Mikrofon nicht freigegeben: ${(e as Error).message ?? e}`;
+      throw t("Microphone access denied: {error}", { error: String((e as Error).message ?? e) });
     }
     audio.ctx.createMediaStreamSource(mic).connect(audio.node);
     await audio.ctx.resume();
@@ -272,7 +274,7 @@ async function startAudio(audio: WebAudioInfo): Promise<MessagePort | null> {
     audio.node = node;
     return channel.port2;
   } catch (e) {
-    audio.error = `Kein Audio im Browser: ${(e as Error).message ?? e}`;
+    audio.error = t("No audio in the browser: {error}", { error: String((e as Error).message ?? e) });
     console.warn(audio.error);
     return null;
   }
@@ -287,7 +289,9 @@ function registerServiceWorker(): void {
     void navigator.serviceWorker.getRegistrations().then((rs) => rs.forEach((r) => void r.unregister()));
     return;
   }
-  window.addEventListener("load", () => {
+  const register = () =>
     void navigator.serviceWorker.register(new URL("../sw.js", import.meta.url), { scope: "./", type: "module" }).catch((e) => console.warn("Service Worker:", e));
-  });
+  // the app loads after the dictionary (main.ts awaits it) – "load" may have fired already
+  if (document.readyState === "complete") register();
+  else window.addEventListener("load", register);
 }

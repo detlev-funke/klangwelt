@@ -13,6 +13,7 @@
 //! Kontrapunkt der Oktave (vertauscht) brauchbar bleibt.
 
 use crate::theory::Key;
+use klang_i18n::tr;
 use serde::{Deserialize, Serialize};
 
 /// Note einer Stimme; Zeiten in Schlägen.
@@ -71,16 +72,16 @@ pub struct Issue {
 /// Üblicher Umfang (MIDI) einer Stimme – nach Namen, sonst nach Lage im Satz.
 pub fn voice_range(name: &str, rank: usize, count: usize) -> (u8, u8) {
     let n = name.to_lowercase();
-    if n.contains("sopran") || n.contains("soprano") || n.contains("ober") {
+    if n.contains("sopran") || n.contains("ober") || n.contains("upper") {
         return (60, 81);
     }
     if n.contains("alt") {
         return (53, 74);
     }
-    if n.contains("tenor") {
+    if n.contains("tenor") || n.contains("ténor") {
         return (48, 69);
     }
-    if n.contains("bass") || n.contains("unter") || n.contains("pedal") {
+    if n.contains("bass") || n.contains("unter") || n.contains("lower") || n.contains("pedal") {
         return (36, 62);
     }
     match (count, rank) {
@@ -100,13 +101,13 @@ pub fn voice_range(name: &str, rank: usize, count: usize) -> (u8, u8) {
 /// Rang nach Stimmnamen (0 = oben), None = unbekannt.
 fn name_rank(name: &str) -> Option<u8> {
     let n = name.to_lowercase();
-    if n.contains("sopran") || n.contains("soprano") || n.contains("ober") {
+    if n.contains("sopran") || n.contains("ober") || n.contains("upper") {
         Some(0)
     } else if n.contains("alt") {
         Some(1)
-    } else if n.contains("tenor") {
+    } else if n.contains("tenor") || n.contains("ténor") {
         Some(2)
-    } else if n.contains("bass") || n.contains("unter") || n.contains("pedal") {
+    } else if n.contains("bass") || n.contains("unter") || n.contains("lower") || n.contains("pedal") {
         Some(3)
     } else {
         None
@@ -114,8 +115,9 @@ fn name_rank(name: &str) -> Option<u8> {
 }
 
 const NAMES: [&str; 12] = ["c", "cis", "d", "es", "e", "f", "fis", "g", "gis", "a", "b", "h"];
+/// Note name for messages ("cis4" in German, "c♯4" in English).
 fn pname(p: u8) -> String {
-    format!("{}{}", NAMES[p as usize % 12], p as i32 / 12 - 1)
+    crate::theory::display_name(&format!("{}{}", NAMES[p as usize % 12], p as i32 / 12 - 1))
 }
 
 /// Klingende Note einer (nach Einsatz sortierten) Stimme zur Zeit t.
@@ -172,7 +174,7 @@ pub fn check(voices: &[Vec<VNote>], names: &[String], key: Option<&Key>, beats_p
         order.sort_by(|&a, &b| mean(&v[b]).total_cmp(&mean(&v[a])));
     }
     let rank = |i: usize| order.iter().position(|&x| x == i).unwrap_or(0);
-    let label = |i: usize| names.get(i).cloned().filter(|s| !s.is_empty()).unwrap_or_else(|| format!("Stimme {}", i + 1));
+    let label = |i: usize| names.get(i).cloned().filter(|s| !s.is_empty()).unwrap_or_else(|| tr!("Voice {n}", n = i + 1));
     let mut out: Vec<Issue> = Vec::new();
     let push = |out: &mut Vec<Issue>, kind, severity, start: f64, end: f64, voices: Vec<usize>, message: String| {
         // gleiche Meldung direkt anschließend zusammenfassen
@@ -198,7 +200,7 @@ pub fn check(voices: &[Vec<VNote>], names: &[String], key: Option<&Key>, beats_p
                 // Stimmkreuzung
                 if na.pitch < nb.pitch {
                     push(&mut out, IssueKind::Stimmkreuzung, Severity::Warnung, t, na.end().min(nb.end()), vec![a, b],
-                        format!("{} liegt unter {} ({} < {})", label(a), label(b), pname(na.pitch), pname(nb.pitch)));
+                        tr!("{a} is below {b} ({pa} < {pb})", a = label(a), b = label(b), pa = pname(na.pitch), pb = pname(nb.pitch)));
                 }
                 // Parallelen: Vergleich mit dem vorigen Ereignis
                 if w > 0 {
@@ -212,20 +214,26 @@ pub fn check(voices: &[Vec<VNote>], names: &[String], key: Option<&Key>, beats_p
                         if moved_a && moved_b && ma.signum() == mb.signum() {
                             if i0.rem_euclid(12) == 7 && i1.rem_euclid(12) == 7 && i0.abs() >= 7 && i1.abs() >= 7 {
                                 push(&mut out, IssueKind::Quintparallele, Severity::Fehler, tp, na.end().min(nb.end()), vec![a, b],
-                                    format!("Quintparallele {} / {}: {}–{} → {}–{}", label(a), label(b), pname(pa.pitch), pname(pb.pitch), pname(na.pitch), pname(nb.pitch)));
+                                    tr!("Parallel fifths {a} / {b}: {a1}–{b1} → {a2}–{b2}", a = label(a), b = label(b), a1 = pname(pa.pitch), b1 = pname(pb.pitch), a2 = pname(na.pitch), b2 = pname(nb.pitch)));
                             } else if i0.rem_euclid(12) == 0 && i1.rem_euclid(12) == 0 {
                                 push(&mut out, IssueKind::Oktavparallele, Severity::Fehler, tp, na.end().min(nb.end()), vec![a, b],
-                                    format!("{} {} / {}: {}–{} → {}–{}", if i1 == 0 { "Einklangsparallele" } else { "Oktavparallele" },
-                                        label(a), label(b), pname(pa.pitch), pname(pb.pitch), pname(na.pitch), pname(nb.pitch)));
+                                    if i1 == 0 {
+                                        tr!("Parallel unisons {a} / {b}: {a1}–{b1} → {a2}–{b2}", a = label(a), b = label(b), a1 = pname(pa.pitch), b1 = pname(pb.pitch), a2 = pname(na.pitch), b2 = pname(nb.pitch))
+                                    } else {
+                                        tr!("Parallel octaves {a} / {b}: {a1}–{b1} → {a2}–{b2}", a = label(a), b = label(b), a1 = pname(pa.pitch), b1 = pname(pb.pitch), a2 = pname(na.pitch), b2 = pname(nb.pitch))
+                                    });
                             } else if ai == 0
                                 && Some(b) == order.last().copied()
                                 && matches!(i1.rem_euclid(12), 0 | 7)
                                 && ma.abs() > 2
                                 && i0.rem_euclid(12) != i1.rem_euclid(12)
                             {
-                                let what = if i1.rem_euclid(12) == 0 { "Oktave" } else { "Quinte" };
-                                push(&mut out, IssueKind::VerdeckteParallele, Severity::Warnung, tp, na.end().min(nb.end()), vec![a, b],
-                                    format!("Verdeckte {what} der Außenstimmen (Sprung in {} in die {what})", label(a)));
+                                let message = if i1.rem_euclid(12) == 0 {
+                                    tr!("Hidden octave in the outer voices (leap in {voice} into the octave)", voice = label(a))
+                                } else {
+                                    tr!("Hidden fifth in the outer voices (leap in {voice} into the fifth)", voice = label(a))
+                                };
+                                push(&mut out, IssueKind::VerdeckteParallele, Severity::Warnung, tp, na.end().min(nb.end()), vec![a, b], message);
                             }
                         }
                     }
@@ -240,14 +248,14 @@ pub fn check(voices: &[Vec<VNote>], names: &[String], key: Option<&Key>, beats_p
                 if !dissonant(interval, Some(b) == lowest) {
                     continue;
                 }
-                let iname = match interval {
-                    1 => "kleine Sekunde/None",
-                    2 => "große Sekunde/None",
-                    5 => "Quarte gegen den Bass",
-                    6 => "Tritonus",
-                    10 => "kleine Septime",
-                    _ => "große Septime",
-                };
+                let iname = klang_i18n::translate(match interval {
+                    1 => klang_i18n::tk!("minor second/ninth"),
+                    2 => klang_i18n::tk!("major second/ninth"),
+                    5 => klang_i18n::tk!("fourth against the bass"),
+                    6 => klang_i18n::tk!("tritone"),
+                    10 => klang_i18n::tk!("minor seventh"),
+                    _ => klang_i18n::tk!("major seventh"),
+                });
                 if is_strong(t, beats_per_bar) {
                     // vorbereitet: eine Note lag schon (Vorhalt) und löst sich stufenweise abwärts auf
                     let held = if !starts_a { Some((a, na)) } else if !starts_b { Some((b, nb)) } else { None };
@@ -258,7 +266,7 @@ pub fn check(voices: &[Vec<VNote>], names: &[String], key: Option<&Key>, beats_p
                     });
                     if !(resolved || restruck) {
                         push(&mut out, IssueKind::Dissonanz, Severity::Warnung, t, na.end().min(nb.end()), vec![a, b],
-                            format!("Unvorbereitete Dissonanz auf schwerer Zeit ({iname}) zwischen {} und {}", label(a), label(b)));
+                            tr!("Unprepared dissonance on a strong beat ({iname}) between {a} and {b}", iname = iname, a = label(a), b = label(b)));
                     }
                 } else {
                     // leichte Zeit: Durchgang/Wechselnote – stufenweise erreicht oder verlassen
@@ -269,7 +277,7 @@ pub fn check(voices: &[Vec<VNote>], names: &[String], key: Option<&Key>, beats_p
                         let step = |y: Option<VNote>| y.is_some_and(|y| (1..=2).contains(&(y.pitch as i32 - x.pitch as i32).abs()));
                         if !step(prev_before(&v[i], &x)) && !step(next_after(&v[i], &x)) {
                             push(&mut out, IssueKind::Dissonanz, Severity::Hinweis, t, x.end(), vec![a, b],
-                                format!("Freie Dissonanz ({iname}) in {}: weder stufenweise erreicht noch verlassen", label(i)));
+                                tr!("Free dissonance ({iname}) in {voice}: neither approached nor left by step", iname = iname, voice = label(i)));
                         }
                     }
                 }
@@ -284,7 +292,7 @@ pub fn check(voices: &[Vec<VNote>], names: &[String], key: Option<&Key>, beats_p
             if let (Some(na), Some(nb)) = (now[a], now[b]) {
                 if na.pitch as i32 - nb.pitch as i32 > 12 && ((na.start - t).abs() < EPS || (nb.start - t).abs() < EPS) {
                     push(&mut out, IssueKind::Lage, Severity::Hinweis, t, na.end().min(nb.end()), vec![a, b],
-                        format!("Mehr als eine Oktave zwischen {} und {}", label(a), label(b)));
+                        tr!("More than an octave between {a} and {b}", a = label(a), b = label(b)));
                 }
             }
         }
@@ -292,12 +300,13 @@ pub fn check(voices: &[Vec<VNote>], names: &[String], key: Option<&Key>, beats_p
 
     // je Stimme: Umfang und Sprünge
     for i in 0..n {
-        let (lo, hi) = voice_range(&label(i), rank(i), order.len());
+        // range by the name passed in (not translated)
+        let (lo, hi) = voice_range(names.get(i).map(String::as_str).unwrap_or(""), rank(i), order.len());
         for (k, x) in v[i].iter().enumerate() {
             if x.pitch + 2 < lo || x.pitch > hi + 2 {
                 let sev = if x.pitch + 5 < lo || x.pitch > hi + 5 { Severity::Warnung } else { Severity::Hinweis };
                 push(&mut out, IssueKind::Umfang, sev, x.start, x.end(), vec![i],
-                    format!("{} {} außerhalb des Umfangs ({}–{})", label(i), pname(x.pitch), pname(lo), pname(hi)));
+                    tr!("{voice} {pitch} outside the range ({lo}–{hi})", voice = label(i), pitch = pname(x.pitch), lo = pname(lo), hi = pname(hi)));
             }
             if k == 0 {
                 continue;
@@ -314,11 +323,11 @@ pub fn check(voices: &[Vec<VNote>], names: &[String], key: Option<&Key>, beats_p
                 }
             });
             if d > 12 {
-                push(&mut out, IssueKind::Sprung, Severity::Warnung, p.start, x.end(), vec![i], format!("Sprung über eine Oktave in {} ({} → {})", label(i), pname(p.pitch), pname(x.pitch)));
+                push(&mut out, IssueKind::Sprung, Severity::Warnung, p.start, x.end(), vec![i], tr!("Leap of more than an octave in {voice} ({from} → {to})", voice = label(i), from = pname(p.pitch), to = pname(x.pitch)));
             } else if d == 6 {
-                push(&mut out, IssueKind::Sprung, Severity::Hinweis, p.start, x.end(), vec![i], format!("Tritonussprung in {} ({} → {})", label(i), pname(p.pitch), pname(x.pitch)));
+                push(&mut out, IssueKind::Sprung, Severity::Hinweis, p.start, x.end(), vec![i], tr!("Tritone leap in {voice} ({from} → {to})", voice = label(i), from = pname(p.pitch), to = pname(x.pitch)));
             } else if aug2 && d == 3 {
-                push(&mut out, IssueKind::Sprung, Severity::Hinweis, p.start, x.end(), vec![i], format!("Übermäßige Sekunde in {} ({} → {})", label(i), pname(p.pitch), pname(x.pitch)));
+                push(&mut out, IssueKind::Sprung, Severity::Hinweis, p.start, x.end(), vec![i], tr!("Augmented second in {voice} ({from} → {to})", voice = label(i), from = pname(p.pitch), to = pname(x.pitch)));
             }
         }
     }

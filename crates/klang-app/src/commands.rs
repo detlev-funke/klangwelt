@@ -15,6 +15,7 @@
 use crate::state::{AppState, CmdResult};
 use crate::{export, fugue, harmony, library, project, rhythm, song, sound, sound_library};
 use klang_core::{Command, Id, InstrumentKind};
+use klang_i18n::{tr, trn};
 use klang_music::counterpoint::VNote;
 use klang_music::fugue::{FugueOptions, Transform};
 use klang_music::harmony::Chord;
@@ -24,6 +25,7 @@ use serde_json::Value;
 
 /// Alle Befehle des Kerns.
 pub const COMMANDS: &[&str] = &[
+    "set_language",
     "get_state",
     "execute",
     "undo",
@@ -115,13 +117,13 @@ macro_rules! args {
         struct A {
             $($name: $ty),*
         }
-        let A { $($name),* } = A::deserialize($v).map_err(|e| format!("Ungültige Angaben: {e}"))?;
+        let A { $($name),* } = A::deserialize($v).map_err(|e| tr!("Invalid input: {error}", error = e))?;
         ($($name,)*)
     }};
 }
 
 fn json<T: Serialize>(v: T) -> CmdResult<String> {
-    serde_json::to_string(&v).map_err(|e| format!("Antwort nicht darstellbar: {e}"))
+    serde_json::to_string(&v).map_err(|e| tr!("Couldn't serialize response: {error}", error = e))
 }
 
 /// Führt einen Befehl aus. `args` ist das JSON-Objekt der Oberfläche (oder
@@ -130,6 +132,12 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
     let empty = Value::Object(Default::default());
     let a = if args.is_null() { &empty } else { args };
     match cmd {
+        // ------------------------------------------------ Language (the UI's dictionary)
+        "set_language" => {
+            let (lang, dict) = args!(a; lang: String, dict: Option<std::collections::HashMap<String, String>>);
+            klang_i18n::set_language(&lang, dict.unwrap_or_default());
+            json(())
+        }
         // ------------------------------------------------ Projekt, Undo, Transport
         "get_state" => json(st.snapshot()?),
         "execute" => {
@@ -182,7 +190,7 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
         // Erkannte Melodie eines Audio-Clips als Instrumentspur (quantisiert auf Sechzehntel)
         "create_melody_track" => {
             let (track_id, clip_id) = args!(a; track_id: u64, clip_id: u64);
-            json(st.melody_to_track(Id(track_id), Id(clip_id), "Melodie übernehmen")?.0)
+            json(st.melody_to_track(Id(track_id), Id(clip_id), &tr!("Import melody"))?.0)
         }
         // Audiodateien (Drag & Drop) als Spuren einfügen – gelesen über das Dateisystem des
         // Kerns (Desktop: die Platte; Browser: hereingezogene Dateien unter /Klangwelt/Import)
@@ -191,7 +199,7 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
             let files = paths
                 .into_iter()
                 .map(|p| {
-                    let bytes = crate::vfs::read(std::path::Path::new(&p)).map_err(|e| format!("Datei lässt sich nicht lesen ({e})"));
+                    let bytes = crate::vfs::read(std::path::Path::new(&p)).map_err(|e| tr!("Can't read file ({error})", error = e));
                     (p, bytes)
                 })
                 .collect();
@@ -201,10 +209,10 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
         "audio_to_notes" => {
             let (track_id, clip_id, target) = args!(a; track_id: u64, clip_id: Option<u64>, target: crate::convert::Target);
             let label = match target {
-                crate::convert::Target::Melodie => "In Melodie-Spur umwandeln",
-                crate::convert::Target::Rhythmus => "In Rhythmus-Spur umwandeln",
+                crate::convert::Target::Melodie => tr!("Convert to melody track"),
+                crate::convert::Target::Rhythmus => tr!("Convert to rhythm track"),
             };
-            json(st.audio_to_notes(Id(track_id), clip_id.map(Id), target, label)?)
+            json(st.audio_to_notes(Id(track_id), clip_id.map(Id), target, &label)?)
         }
         // Zeitbereich aus allen Spuren löschen, alles danach rückt auf
         "delete_range" => {
@@ -270,7 +278,7 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
         "instrument_specs" => json(sound::specs()),
         "create_instrument_track" => {
             let (kind,) = args!(a; kind: InstrumentKind);
-            json(st.create_instrument_track(kind, "Spur hinzufügen")?.0)
+            json(st.create_instrument_track(kind, &tr!("Add track"))?.0)
         }
         "insert_pattern" => {
             let (track_id,) = args!(a; track_id: u64);
@@ -292,7 +300,7 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
             let (path,) = args!(a; path: Option<String>);
             let target = match path.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
                 Some(p) => project::resolve(p, &st.host().projects_dir()),
-                None => crate::lock(&st.project_file)?.clone().ok_or("Noch kein Dateiname – bitte „Speichern unter“.")?,
+                None => crate::lock(&st.project_file)?.clone().ok_or_else(|| tr!("No file name yet – please use \"Save as\"."))?,
             };
             st.save_project(&target)?;
             json(st.snapshot()?)
@@ -377,7 +385,8 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
         "harmony_view" => {
             let (key,) = args!(a; key: Option<Key>);
             let info = harmony::resolve_key(st, key)?;
-            json(harmony::HarmonyView { key: info, circle: klang_music::harmony::circle(&info.key), cadences: klang_music::harmony::cadences(&info.key) })
+            let (circle, cadences) = (klang_music::harmony::circle(&info.key), klang_music::harmony::cadences(&info.key));
+            json(harmony::HarmonyView { key: info, circle, cadences })
         }
         "harmony_suggest" => {
             let (key, chords, group) = args!(a; key: Key, chords: Vec<Chord>, group: Option<usize>);
@@ -406,7 +415,7 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
                 key: Key, chords: Vec<Chord>, beats_per_chord: f64, start_beats: f64, track_id: Option<u64>, before: Option<Chord>, mode: Option<String>);
             let n = chords.len();
             let insert = mode.as_deref() == Some("einfuegen");
-            let label = format!("{n} Akkord{} {}", if n == 1 { "" } else { "e" }, if insert { "einfügen" } else { "schreiben" });
+            let label = if insert { trn!(n, "Insert {n} chord", "Insert {n} chords") } else { trn!(n, "Write {n} chord", "Write {n} chords") };
             json(harmony::write_mode(st, track_id.map(Id), start_beats, &chords, &key, beats_per_chord, before, &label, insert)?.0)
         }
         "harmony_timeline" => {
@@ -456,7 +465,7 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
             json(export::run(&export::export_dir(st), st, &options)?)
         }
 
-        other => Err(format!("Unbekannter Befehl: {other}")),
+        other => Err(tr!("Unknown command: {cmd}", cmd = other)),
     }
 }
 
@@ -477,10 +486,10 @@ mod tests {
         for cmd in COMMANDS {
             // Mit kaputten Angaben antwortet jeder Befehl – aber nie „unbekannt“.
             if let Err(e) = call(&st, cmd, &serde_json::json!({ "kaputt": true })) {
-                assert!(!e.starts_with("Unbekannter Befehl"), "{cmd}: {e}");
+                assert!(!e.starts_with("Unknown command"), "{cmd}: {e}");
             }
         }
-        assert!(call(&st, "gibt_es_nicht", &Value::Null).unwrap_err().starts_with("Unbekannter Befehl"));
+        assert!(call(&st, "gibt_es_nicht", &Value::Null).unwrap_err().starts_with("Unknown command"));
     }
 
     /// Aufwand der Befehlstabelle gegenüber dem direkten Aufruf derselben

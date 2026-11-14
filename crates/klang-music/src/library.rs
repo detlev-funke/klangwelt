@@ -106,9 +106,9 @@ pub fn gather(paths: &[PathBuf]) -> (Vec<PathBuf>, HashMap<String, PdmxMeta>, Ve
             }
             files.push(p.clone());
         } else if p.is_file() {
-            missing.push(format!("{}: keine Partitur (MusicXML, MXL, **kern)", p.display()));
+            missing.push(klang_i18n::tr!("{path}: not a score (MusicXML, MXL, **kern)", path = p.display()));
         } else {
-            missing.push(format!("{}: nicht gefunden", p.display()));
+            missing.push(klang_i18n::tr!("{path}: not found", path = p.display()));
         }
     }
     let mut seen = std::collections::HashSet::new();
@@ -212,7 +212,7 @@ pub fn build_files_to(files: &[PathBuf], meta: &HashMap<String, PdmxMeta>, out: 
     }
     if cancel.load(Ordering::Relaxed) {
         let _ = std::fs::remove_dir_all(&tmp);
-        return Err(std::io::Error::new(std::io::ErrorKind::Interrupted, "abgebrochen"));
+        return Err(std::io::Error::new(std::io::ErrorKind::Interrupted, klang_i18n::tr!("canceled")));
     }
     let written = index.finish(out, cancel)?;
     stats.grams = written.keys as usize;

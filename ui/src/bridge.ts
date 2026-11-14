@@ -40,6 +40,8 @@ export interface Backend {
   /** Echter Kern (Desktop oder Browser) – nicht die Attrappe. */
   readonly native: boolean;
   readonly platform: Platform;
+  /** Set the core's language: code and dictionary (flat, see `coreDictionary` in i18n.ts). */
+  setLanguage(lang: string, dict: Record<string, string>): Promise<void>;
   getState(): Promise<Snapshot>;
   execute(command: Command, merge?: boolean): Promise<Snapshot>;
   undo(): Promise<Snapshot>;
@@ -197,6 +199,7 @@ function coreBackend(link: CoreLink, platform: "desktop" | "web"): Backend {
   return {
     native: true,
     platform,
+    setLanguage: (lang, dict) => call("set_language", { lang, dict }),
     getState: () => call("get_state"),
     execute: (command, merge = false) => call("execute", { command, merge }),
     undo: () => call("undo"),

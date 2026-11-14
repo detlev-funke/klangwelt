@@ -73,14 +73,14 @@ fn safe_relative(p: &Path, strip: Option<&str>) -> Option<PathBuf> {
 }
 
 fn interrupted() -> io::Error {
-    io::Error::new(io::ErrorKind::Interrupted, "abgebrochen")
+    io::Error::new(io::ErrorKind::Interrupted, klang_i18n::tr!("canceled"))
 }
 
 /// Abbruch innerhalb eines Datenstroms (`Read`): bewusst nicht `Interrupted` –
 /// das werten `read_exact`/`read_to_end` als „gleich nochmal lesen“ und hingen
 /// dann fest. Wer den Strom verarbeitet, macht daraus wieder [`interrupted`].
 fn cancelled() -> io::Error {
-    io::Error::new(io::ErrorKind::ConnectionAborted, "abgebrochen")
+    io::Error::new(io::ErrorKind::ConnectionAborted, klang_i18n::tr!("canceled"))
 }
 
 /// Entpackt Partituren aus einem `.tar.gz`-Datenstrom nach `dest`.
@@ -187,12 +187,12 @@ fn curl_at(url: &str, from: u64) -> io::Result<(Child, ChildStdout)> {
     }
     let mut child = cmd.spawn().map_err(|e| {
         if e.kind() == io::ErrorKind::NotFound {
-            io::Error::new(io::ErrorKind::NotFound, "curl wurde nicht gefunden (unter Windows ab Version 10 dabei, unter macOS/Linux bitte installieren)")
+            io::Error::new(io::ErrorKind::NotFound, klang_i18n::tr!("curl was not found (included in Windows 10 and later; on macOS/Linux, please install it)"))
         } else {
             e
         }
     })?;
-    let stdout = child.stdout.take().ok_or_else(|| io::Error::other("curl ohne Ausgabe"))?;
+    let stdout = child.stdout.take().ok_or_else(|| io::Error::other(klang_i18n::tr!("curl returned no output")))?;
     Ok((child, stdout))
 }
 
@@ -269,7 +269,7 @@ impl<'a> ResumingDownload<'a> {
     fn finish(&mut self, kill: bool) -> (bool, Option<i32>, String) {
         self.stdout = None;
         let child = self.slot.lock().unwrap_or_else(|e| e.into_inner()).take();
-        let Some(mut c) = child else { return (false, None, "abgebrochen".into()) };
+        let Some(mut c) = child else { return (false, None, klang_i18n::tr!("canceled")) };
         if kill {
             let _ = c.kill();
         }
@@ -327,7 +327,7 @@ impl Read for ResumingDownload<'_> {
                         self.done = true;
                         return Ok(0);
                     }
-                    (code, if text.is_empty() { "Verbindung beendet".to_string() } else { text })
+                    (code, if text.is_empty() { klang_i18n::tr!("Connection closed") } else { text })
                 }
                 Some(Ok(n)) => {
                     self.pos += n as u64;
@@ -345,8 +345,12 @@ impl Read for ResumingDownload<'_> {
             self.fruitless = if self.pos > self.start_pos { 0 } else { self.fruitless + 1 };
             let reason = reason.strip_prefix("curl: ").unwrap_or(&reason).to_string();
             if !Self::retryable(code, &reason) || self.fruitless >= MAX_FRUITLESS || self.connections >= MAX_CONNECTIONS {
-                let tries = if self.connections > 1 { format!(" (nach {} Verbindungen)", self.connections) } else { String::new() };
-                return Err(io::Error::other(format!("{reason}{tries}")));
+                let msg = if self.connections > 1 {
+                    klang_i18n::tr!("{reason} (after {n} connections)", reason = reason, n = self.connections)
+                } else {
+                    reason
+                };
+                return Err(io::Error::other(msg));
             }
             // erst melden, dann kurz warten – so steht die Meldung während der Pause
             (self.on_resume)(self.pos, self.connections + 1, &reason);
@@ -385,12 +389,16 @@ pub struct RemoteFile {
 /// Dateien (Pfad, Größe) eines GitHub-Repositoriums aus der Antwort von
 /// `GET /repos/{repo}/git/trees/{branch}?recursive=1`.
 pub fn parse_github_tree(json: &[u8]) -> io::Result<Vec<(String, u64)>> {
-    let v: serde_json::Value = serde_json::from_slice(json).map_err(|e| io::Error::other(format!("Dateiliste unlesbar: {e}")))?;
+    let v: serde_json::Value = serde_json::from_slice(json).map_err(|e| io::Error::other(klang_i18n::tr!("File list unreadable: {e}", e = e)))?;
     if let Some(msg) = v.get("message").and_then(|m| m.as_str()) {
-        let hint = if msg.contains("rate limit") { " – GitHub erlaubt rund 60 Abfragen pro Stunde; bitte später noch einmal versuchen" } else { "" };
-        return Err(io::Error::other(format!("GitHub: {msg}{hint}")));
+        let text = if msg.contains("rate limit") {
+            klang_i18n::tr!("GitHub: {msg} – GitHub allows about 60 requests per hour; please try again later", msg = msg)
+        } else {
+            format!("GitHub: {msg}")
+        };
+        return Err(io::Error::other(text));
     }
-    let tree = v.get("tree").and_then(|t| t.as_array()).ok_or_else(|| io::Error::other("Dateiliste ohne Einträge"))?;
+    let tree = v.get("tree").and_then(|t| t.as_array()).ok_or_else(|| io::Error::other(klang_i18n::tr!("File list has no entries")))?;
     Ok(tree
         .iter()
         .filter(|e| e.get("type").and_then(|t| t.as_str()) == Some("blob"))
@@ -433,7 +441,7 @@ pub fn github_tree(repo: &str, branch: &str) -> io::Result<Vec<(String, u64)>> {
         if let Some(mut e) = child.stderr.take() {
             let _ = e.read_to_string(&mut err);
         }
-        return Err(io::Error::other(format!("Dateiliste von {repo} nicht geladen: {}", err.trim())));
+        return Err(io::Error::other(klang_i18n::tr!("Couldn't load the file list of {repo}: {err}", repo = repo, err = err.trim())));
     }
     parse_github_tree(&body)
 }
@@ -567,16 +575,16 @@ pub fn fetch_files(
             }
             let child = cmd.spawn().map_err(|e| {
                 if e.kind() == io::ErrorKind::NotFound {
-                    io::Error::new(io::ErrorKind::NotFound, "curl wurde nicht gefunden (unter Windows ab Version 10 dabei, unter macOS/Linux bitte installieren)")
+                    io::Error::new(io::ErrorKind::NotFound, klang_i18n::tr!("curl was not found (included in Windows 10 and later; on macOS/Linux, please install it)"))
                 } else {
                     e
                 }
             })?;
-            *slot.lock().map_err(|_| io::Error::other("Sperre"))? = Some(child);
+            *slot.lock().map_err(|_| io::Error::other(klang_i18n::tr!("Lock")))? = Some(child);
             // Warten, ohne die Sperre zu halten (ein Abbruch beendet den Prozess über `slot`).
             let (status, mut child) = loop {
                 std::thread::sleep(std::time::Duration::from_millis(100));
-                let mut g = slot.lock().map_err(|_| io::Error::other("Sperre"))?;
+                let mut g = slot.lock().map_err(|_| io::Error::other(klang_i18n::tr!("Lock")))?;
                 let Some(c) = g.as_mut() else { return Err(interrupted()) };
                 if let Some(st) = c.try_wait()? {
                     break (st, g.take().expect("Prozess"));
@@ -759,7 +767,7 @@ mod tests {
         let json = br#"{"sha":"x","tree":[{"path":"kern","type":"tree"},{"path":"kern/chor001.krn","type":"blob","size":3106},{"path":"scores/Holm\u00e8s,_Augusta/Song/lc1.mxl","type":"blob","size":9}],"truncated":false}"#;
         let t = parse_github_tree(json).unwrap();
         assert_eq!(t, vec![("kern/chor001.krn".to_string(), 3106), ("scores/Holmès,_Augusta/Song/lc1.mxl".to_string(), 9)]);
-        assert!(parse_github_tree(br#"{"message":"API rate limit exceeded for 1.2.3.4."}"#).unwrap_err().to_string().contains("60 Abfragen"));
+        assert!(parse_github_tree(br#"{"message":"API rate limit exceeded for 1.2.3.4."}"#).unwrap_err().to_string().contains("60 requests"));
         assert_eq!(
             github_raw_url("OpenScore/Lieder", "main", "scores/Holmès,_A/x y.mxl"),
             "https://raw.githubusercontent.com/OpenScore/Lieder/main/scores/Holm%C3%A8s%2C_A/x%20y.mxl"

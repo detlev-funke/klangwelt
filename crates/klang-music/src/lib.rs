@@ -37,12 +37,13 @@ pub enum MusicError {
 
 impl fmt::Display for MusicError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            MusicError::Io(e) => write!(f, "Dateifehler: {e}"),
-            MusicError::Xml(e) => write!(f, "XML-Fehler: {e}"),
-            MusicError::Zip(e) => write!(f, "MXL-Archivfehler: {e}"),
-            MusicError::Unsupported(e) => write!(f, "Nicht unterstützt: {e}"),
-        }
+        use klang_i18n::tr;
+        f.write_str(&match self {
+            MusicError::Io(e) => tr!("File error: {e}", e = e),
+            MusicError::Xml(e) => tr!("XML error: {e}", e = e),
+            MusicError::Zip(e) => tr!("MXL archive error: {e}", e = e),
+            MusicError::Unsupported(e) => tr!("Not supported: {e}", e = e),
+        })
     }
 }
 

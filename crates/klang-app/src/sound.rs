@@ -15,8 +15,24 @@ use klang_dsp::pad::{render_synth, SynthParams, Verlauf, VERLAUF_PRESETS};
 use klang_dsp::pitch::{detect_pitch, hit_pitches, YinConfig};
 use klang_dsp::synth::{render_notes, NoteSpec, PluckParams};
 use klang_dsp::util::median;
-use serde::Serialize;
+use klang_i18n::{tid, tk, tr, trn};
+use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;
+
+// ---------------------------------------------------------------- translation
+//
+// The description of the instruments is written as keys (`tk!`, English) in
+// tables; it is translated only on output to the UI and the agent. Names that
+// are identifiers as well (groups, starting points, envelopes) stay German (`tid!`).
+
+/// Serde: translate the key on output.
+pub(crate) fn ser_tr<S: Serializer>(key: &&str, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_str(&klang_i18n::translate(key))
+}
+
+fn ser_tr_words<S: Serializer>(words: &[&str; 4], s: S) -> Result<S::Ok, S::Error> {
+    s.collect_seq(words.iter().map(|w| klang_i18n::translate(w)))
+}
 
 // ---------------------------------------------------------------- Beschreibung
 
@@ -24,16 +40,20 @@ use std::collections::BTreeMap;
 #[serde(rename_all = "camelCase")]
 pub struct ParamSpec {
     pub key: &'static str,
+    #[serde(serialize_with = "ser_tr")]
     pub label: &'static str,
-    /// Gruppe im Klang-Tab (z. B. „Bassdrum“).
+    /// Group in the sound tab (e.g. "Bassdrum") – also an identifier in the UI, stays German.
     pub group: &'static str,
     pub min: f32,
     pub max: f32,
     pub default: f32,
+    #[serde(serialize_with = "ser_tr")]
     pub left: &'static str,
+    #[serde(serialize_with = "ser_tr")]
     pub right: &'static str,
     /// Wert ist ein MIDI-Ton (Anzeige als Notenname).
     pub note: bool,
+    #[serde(serialize_with = "ser_tr")]
     pub meaning: &'static str,
     /// Kein eigener Regler (Feld-Stellung, Verlauf).
     pub hidden: bool,
@@ -41,6 +61,7 @@ pub struct ParamSpec {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct PresetSpec {
+    /// Identifier (starting point in the character field), stays German.
     pub name: &'static str,
     pub params: BTreeMap<&'static str, f32>,
 }
@@ -48,6 +69,7 @@ pub struct PresetSpec {
 #[derive(Clone, Debug, Serialize)]
 pub struct PreviewSpec {
     pub key: &'static str,
+    #[serde(serialize_with = "ser_tr")]
     pub label: &'static str,
 }
 
@@ -56,6 +78,7 @@ pub struct PreviewSpec {
 pub struct KeySpec {
     pub midi: u8,
     pub short: &'static str,
+    #[serde(serialize_with = "ser_tr")]
     pub name: &'static str,
 }
 
@@ -63,7 +86,9 @@ pub struct KeySpec {
 #[serde(rename_all = "camelCase")]
 pub struct InstrumentSpec {
     pub kind: InstrumentKind,
+    #[serde(serialize_with = "ser_tr")]
     pub name: &'static str,
+    #[serde(serialize_with = "ser_tr")]
     pub description: &'static str,
     pub params: Vec<ParamSpec>,
     pub presets: Vec<PresetSpec>,
@@ -83,7 +108,7 @@ fn p(key: &'static str, label: &'static str, group: &'static str, default: f32, 
 
 #[allow(clippy::too_many_arguments)]
 fn pn(key: &'static str, label: &'static str, group: &'static str, min: f32, max: f32, default: f32, meaning: &'static str) -> ParamSpec {
-    ParamSpec { key, label, group, min, max, default, left: "tief", right: "hoch", note: true, meaning, hidden: false }
+    ParamSpec { key, label, group, min, max, default, left: tk!("low"), right: tk!("high"), note: true, meaning, hidden: false }
 }
 
 /// Standardwert eines Parameters laut Beschreibung des Instruments.
@@ -110,13 +135,16 @@ fn pv(key: &'static str, label: &'static str) -> PreviewSpec {
 pub struct AxisSpec {
     /// Regler, den die Achse setzt (beim Charakter `charakter.x`/`charakter.y`).
     pub param: &'static str,
+    #[serde(serialize_with = "ser_tr")]
     pub label: &'static str,
     /// Vier Wörter von links nach rechts bzw. unten nach oben.
+    #[serde(serialize_with = "ser_tr_words")]
     pub words: [&'static str; 4],
 }
 
 #[derive(Clone, Debug, Serialize)]
 pub struct FieldPreset {
+    /// Identifier (named by the UI, the agent, templates and the instrument preset), stays German.
     pub name: &'static str,
     pub x: f32,
     pub y: f32,
@@ -127,6 +155,7 @@ pub struct FieldPreset {
 pub struct FieldSpec {
     /// „charakter“, „klangfarbe“ oder „raum“
     pub key: &'static str,
+    #[serde(serialize_with = "ser_tr")]
     pub name: &'static str,
     pub x: AxisSpec,
     pub y: AxisSpec,
@@ -139,7 +168,9 @@ pub struct FieldSpec {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VerlaufSpec {
+    /// Identifier (named by the agent and song templates), stays German.
     pub name: &'static str,
+    #[serde(serialize_with = "ser_tr")]
     pub beschreibung: &'static str,
     pub laut: Vec<[f32; 2]>,
     pub hell: Vec<[f32; 2]>,
@@ -159,39 +190,41 @@ fn axis(param: &'static str, label: &'static str, words: [&'static str; 4]) -> A
     AxisSpec { param, label, words }
 }
 
-/// Achsen und Startpunkte des Charakter-Felds je Instrument.
+/// Axes and starting points of the character field per instrument. The names of
+/// the starting points are identifiers and are not translated; `tid!` still makes
+/// them keys, so that the UI can translate them for display.
 fn charakter_field(kind: InstrumentKind) -> (AxisSpec, AxisSpec, Vec<FieldPreset>) {
     let (x, y) = (CHARAKTER_X, CHARAKTER_Y);
     match kind {
         InstrumentKind::Drums => (
-            axis(x, "Gewicht", ["knackig", "saftig", "voll", "mächtig"]),
-            axis(y, "Komplexität", ["schlicht", "griffig", "vielschichtig", "komplex"]),
-            vec![fp("Techno", 0.22, 0.42), fp("House", 0.42, 0.28), fp("Lo-Fi", 0.33, 0.08), fp("Rock", 0.58, 0.62), fp("Disco", 0.48, 0.45), fp("808", 0.84, 0.18), fp("Trap", 0.95, 0.55), fp("Hardstyle", 1.0, 0.92)],
+            axis(x, tk!("Weight"), [tk!("crisp"), tk!("juicy"), tk!("full"), tk!("powerful")]),
+            axis(y, tk!("Complexity"), [tk!("simple"), tk!("catchy"), tk!("layered"), tk!("complex")]),
+            vec![fp(tid!("Techno"), 0.22, 0.42), fp(tid!("House"), 0.42, 0.28), fp(tid!("Lo-Fi"), 0.33, 0.08), fp(tid!("Rock"), 0.58, 0.62), fp(tid!("Disco"), 0.48, 0.45), fp(tid!("808"), 0.84, 0.18), fp(tid!("Trap"), 0.95, 0.55), fp(tid!("Hardstyle"), 1.0, 0.92)],
         ),
         InstrumentKind::Synth => (
-            axis(x, "Fülle", ["zart", "weich", "breit", "mächtig"]),
-            axis(y, "Komplexität", ["rein", "lebendig", "schimmernd", "schillernd"]),
-            vec![fp("Glas", 0.15, 0.75), fp("Wärme", 0.5, 0.2), fp("Puls", 0.3, 0.62), fp("Streicher", 0.6, 0.45), fp("Chor", 0.62, 0.68), fp("Ozean", 0.82, 0.58), fp("Kathedrale", 0.92, 0.4), fp("Nebel", 0.78, 0.92)],
+            axis(x, tk!("Fullness"), [tk!("delicate"), tk!("soft"), tk!("wide"), tk!("powerful")]),
+            axis(y, tk!("Complexity"), [tk!("pure"), tk!("lively"), tk!("shimmering"), tk!("iridescent")]),
+            vec![fp(tid!("Glas"), 0.15, 0.75), fp(tid!("Wärme"), 0.5, 0.2), fp(tid!("Puls"), 0.3, 0.62), fp(tid!("Streicher"), 0.6, 0.45), fp(tid!("Chor"), 0.62, 0.68), fp(tid!("Ozean"), 0.82, 0.58), fp(tid!("Kathedrale"), 0.92, 0.4), fp(tid!("Nebel"), 0.78, 0.92)],
         ),
         InstrumentKind::Pluck => (
-            axis(x, "Fülle", ["kurz", "zart", "voll", "tragend"]),
-            axis(y, "Glanz", ["weich", "rund", "hell", "brillant"]),
-            vec![fp("Gedämpft", 0.12, 0.15), fp("Warm", 0.72, 0.32), fp("Harfe", 0.85, 0.55), fp("Hell", 0.35, 0.82), fp("Kristall", 0.6, 0.97)],
+            axis(x, tk!("Fullness"), [tk!("short"), tk!("delicate"), tk!("full"), tk!("sustained")]),
+            axis(y, tk!("Shine"), [tk!("soft"), tk!("round"), tk!("bright"), tk!("brilliant")]),
+            vec![fp(tid!("Gedämpft"), 0.12, 0.15), fp(tid!("Warm"), 0.72, 0.32), fp(tid!("Harfe"), 0.85, 0.55), fp(tid!("Hell"), 0.35, 0.82), fp(tid!("Kristall"), 0.6, 0.97)],
         ),
         InstrumentKind::Organ => (
-            axis(x, "Gewicht", ["zart", "still", "kräftig", "Plenum"]),
-            axis(y, "Obertöne", ["grundtönig", "rund", "obertönig", "glänzend"]),
-            vec![fp("Flöten", 0.25, 0.3), fp("Prinzipal", 0.5, 0.12), fp("Cornet", 0.6, 0.65), fp("Pedal", 0.92, 0.1), fp("Plenum", 0.95, 0.9)],
+            axis(x, tk!("Weight"), [tk!("delicate"), tk!("quiet"), tk!("strong"), tk!("Plenum")]),
+            axis(y, tk!("Overtones"), [tk!("fundamental"), tk!("round"), tk!("overtone-rich"), tk!("gleaming")]),
+            vec![fp(tid!("Flöten"), 0.25, 0.3), fp(tid!("Prinzipal"), 0.5, 0.12), fp(tid!("Cornet"), 0.6, 0.65), fp(tid!("Pedal"), 0.92, 0.1), fp(tid!("Plenum"), 0.95, 0.9)],
         ),
         InstrumentKind::Harpsichord => (
-            axis(x, "Fülle", ["gedämpft", "schlank", "voll", "prächtig"]),
-            axis(y, "Brillanz", ["weich", "rund", "spitz", "brillant"]),
-            vec![fp("Laute", 0.08, 0.25), fp("8′", 0.43, 0.5), fp("8′+4′", 0.8, 0.6), fp("Brillant", 0.75, 0.95)],
+            axis(x, tk!("Fullness"), [tk!("muted"), tk!("lean"), tk!("full"), tk!("majestic")]),
+            axis(y, tk!("Brilliance"), [tk!("soft"), tk!("round"), tk!("pointed"), tk!("brilliant")]),
+            vec![fp(tid!("Laute"), 0.08, 0.25), fp("8′", 0.43, 0.5), fp("8′+4′", 0.8, 0.6), fp(tid!("Brillant"), 0.75, 0.95)],
         ),
         InstrumentKind::Bass => (
-            axis(x, "Gewicht", ["knackig", "straff", "satt", "mächtig"]),
-            axis(y, "Biss", ["sauber", "rund", "bissig", "aggressiv"]),
-            vec![fp("Finger", 0.4, 0.3), fp("Pluck-Bass", 0.22, 0.6), fp("Acid", 0.3, 0.92), fp("Growl", 0.82, 0.8), fp("Sub-Bass", 0.95, 0.06)],
+            axis(x, tk!("Weight"), [tk!("crisp"), tk!("tight"), tk!("rich"), tk!("powerful")]),
+            axis(y, tk!("Bite"), [tk!("clean"), tk!("round"), tk!("biting"), tk!("aggressive")]),
+            vec![fp(tid!("Finger"), 0.4, 0.3), fp(tid!("Pluck-Bass"), 0.22, 0.6), fp(tid!("Acid"), 0.3, 0.92), fp(tid!("Growl"), 0.82, 0.8), fp(tid!("Sub-Bass"), 0.95, 0.06)],
         ),
     }
 }
@@ -284,21 +317,21 @@ pub fn fields(kind: InstrumentKind) -> Vec<FieldSpec> {
     let (cx, cy, cp) = charakter_field(kind);
     let sets = charakter_params(kind, 0.5, 0.5).into_iter().map(|(k, _)| k).collect();
     vec![
-        FieldSpec { key: "charakter", name: "Charakter", x: cx, y: cy, presets: cp, sets },
+        FieldSpec { key: "charakter", name: tk!("Character"), x: cx, y: cy, presets: cp, sets },
         FieldSpec {
             key: "klangfarbe",
-            name: "Klangfarbe",
-            x: axis("farbe", "Farbe", ["dunkel", "warm", "klar", "hell"]),
-            y: axis("rauheit", "Rauheit", ["glatt", "samtig", "körnig", "rau"]),
-            presets: vec![fp("Samt", 0.25, 0.12), fp("Neutral", 0.5, 0.04), fp("Glanz", 0.85, 0.1), fp("Röhre", 0.4, 0.45), fp("Staub", 0.18, 0.72), fp("Kante", 0.75, 0.62), fp("Fuzz", 0.55, 0.95)],
+            name: tk!("Timbre"),
+            x: axis("farbe", tk!("Color"), [tk!("dark"), tk!("warm"), tk!("clear"), tk!("bright")]),
+            y: axis("rauheit", tk!("Roughness"), [tk!("smooth"), tk!("velvety"), tk!("grainy"), tk!("rough")]),
+            presets: vec![fp(tid!("Samt"), 0.25, 0.12), fp(tid!("Neutral"), 0.5, 0.04), fp(tid!("Glanz"), 0.85, 0.1), fp(tid!("Röhre"), 0.4, 0.45), fp(tid!("Staub"), 0.18, 0.72), fp(tid!("Kante"), 0.75, 0.62), fp(tid!("Fuzz"), 0.55, 0.95)],
             sets: vec!["farbe", "rauheit"],
         },
         FieldSpec {
             key: "raum",
-            name: "Raum",
-            x: axis("breite", "Breite", ["schmal", "mittig", "breit", "weit"]),
-            y: axis("raum", "Entfernung", ["nah", "direkt", "räumlich", "fern"]),
-            presets: vec![fp("Mono", 0.0, 0.05), fp("Studio", 0.3, 0.12), fp("Bühne", 0.55, 0.35), fp("Saal", 0.75, 0.6), fp("Kirche", 0.85, 0.9), fp("Weit", 1.0, 0.45)],
+            name: tk!("Room"),
+            x: axis("breite", tk!("Width"), [tk!("narrow"), tk!("centered"), tk!("wide"), tk!("vast")]),
+            y: axis("raum", tk!("Distance"), [tk!("near"), tk!("direct"), tk!("spacious"), tk!("far")]),
+            presets: vec![fp(tid!("Mono"), 0.0, 0.05), fp(tid!("Studio"), 0.3, 0.12), fp(tid!("Bühne"), 0.55, 0.35), fp(tid!("Saal"), 0.75, 0.6), fp(tid!("Kirche"), 0.85, 0.9), fp(tid!("Weit"), 1.0, 0.45)],
             sets: vec!["breite", "raum"],
         },
     ]
@@ -323,19 +356,21 @@ pub fn apply_field(inst: &mut Instrument, field: &str, x: f32, y: f32) -> Result
             inst.params.insert("breite".into(), x);
             inst.params.insert("raum".into(), y);
         }
-        _ => return Err(format!("Unbekanntes Feld „{field}“ (charakter, klangfarbe, raum)")),
+        _ => return Err(tr!("Unknown field \"{field}\" (charakter, klangfarbe, raum)", field = field)),
     }
     Ok(())
 }
 
 /// Startpunkt eines Felds nach Namen (ohne Groß-/Kleinschreibung).
 pub fn field_preset(kind: InstrumentKind, field: &str, name: &str) -> Result<(f32, f32), String> {
-    let f = fields(kind).into_iter().find(|f| f.key == field).ok_or_else(|| format!("Unbekanntes Feld „{field}“"))?;
-    f.presets
-        .iter()
-        .find(|p| p.name.eq_ignore_ascii_case(name.trim()))
-        .map(|p| (p.x, p.y))
-        .ok_or_else(|| format!("Kein Startpunkt „{name}“ im Feld {} (vorhanden: {})", f.name, f.presets.iter().map(|p| p.name).collect::<Vec<_>>().join(", ")))
+    let f = fields(kind).into_iter().find(|f| f.key == field).ok_or_else(|| tr!("Unknown field \"{field}\"", field = field))?;
+    f.presets.iter().find(|p| p.name.eq_ignore_ascii_case(name.trim())).map(|p| (p.x, p.y)).ok_or_else(|| {
+        tr!("No starting point \"{name}\" in field {field} (available: {list})",
+            name = name,
+            field = klang_i18n::translate(f.name),
+            list = f.presets.iter().map(|p| p.name).collect::<Vec<_>>().join(", ")
+        )
+    })
 }
 
 fn verlauf_specs() -> Vec<VerlaufSpec> {
@@ -348,12 +383,11 @@ fn verlauf_specs() -> Vec<VerlaufSpec> {
 /// Setzt eine Verlaufsvorlage (nur Synth): Kurven und Verlaufs-Regler.
 pub fn apply_verlauf(inst: &mut Instrument, name: &str) -> Result<(), String> {
     if inst.kind != InstrumentKind::Synth {
-        return Err("Verläufe gibt es nur beim Synth.".into());
+        return Err(tr!("Envelopes are only available for the synth."));
     }
-    let p = VERLAUF_PRESETS
-        .iter()
-        .find(|p| p.name.eq_ignore_ascii_case(name.trim()))
-        .ok_or_else(|| format!("Kein Verlauf „{name}“ (vorhanden: {})", VERLAUF_PRESETS.iter().map(|p| p.name).collect::<Vec<_>>().join(", ")))?;
+    let p = VERLAUF_PRESETS.iter().find(|p| p.name.eq_ignore_ascii_case(name.trim())).ok_or_else(|| {
+        tr!("No envelope \"{name}\" (available: {list})", name = name, list = VERLAUF_PRESETS.iter().map(|p| p.name).collect::<Vec<_>>().join(", "))
+    })?;
     inst.curves.insert("laut".into(), p.laut.to_vec());
     inst.curves.insert("hell".into(), p.hell.to_vec());
     inst.params.insert("verlauf.ausklang".into(), p.ausklang);
@@ -367,16 +401,16 @@ pub fn validate_curves(given: &BTreeMap<String, Vec<[f32; 2]>>) -> Result<BTreeM
     let mut out = BTreeMap::new();
     for (k, pts) in given {
         if k != "laut" && k != "hell" {
-            return Err(format!("Unbekannte Kurve „{k}“ (laut, hell)"));
+            return Err(tr!("Unknown curve \"{curve}\" (laut, hell)", curve = k));
         }
         if pts.len() < 2 || pts.len() > 24 {
-            return Err(format!("Kurve „{k}“: 2 bis 24 Punkte"));
+            return Err(tr!("Curve \"{curve}\": 2 to 24 points", curve = k));
         }
         let mut last = -1.0f32;
         let mut clean = Vec::with_capacity(pts.len());
         for [t, v] in pts {
             if !t.is_finite() || !v.is_finite() {
-                return Err(format!("Kurve „{k}“: nur Zahlen"));
+                return Err(tr!("Curve \"{curve}\": numbers only", curve = k));
             }
             let t = t.clamp(0.0, 12.0).max(last);
             last = t;
@@ -393,8 +427,8 @@ pub fn validate_curves(given: &BTreeMap<String, Vec<[f32; 2]>>) -> Result<BTreeM
 /// und Entfernung (Raum) – dieselben Regler überall, damit man sie sich merkt.
 fn shaping(waerme: f32, schwebung: f32, raum: f32, breite: f32) -> Vec<ParamSpec> {
     let mut v = vec![
-        p("waerme", "Wärme", "Klangformung", waerme, "klar", "warm", "Fülle in den unteren Mitten, weichere Höhen und sanfte Röhren-Sättigung"),
-        p("schwebung", "Schwebung", "Klangformung", schwebung, "rein", "schwebend", "Leicht verstimmte Kopien (Chorus): breiter und lebendiger, wie mehrere Saiten"),
+        p("waerme", tk!("Warmth"), tid!("Klangformung"), waerme, tk!("clear"), tk!("warm"), tk!("Fullness in the low mids, softer highs and gentle tube saturation")),
+        p("schwebung", tk!("Detuning"), tid!("Klangformung"), schwebung, tk!("pure"), tk!("wavering"), tk!("Slightly detuned copies (chorus): wider and livelier, like several strings")),
     ];
     v.extend(colour_and_space(raum, breite));
     v
@@ -403,39 +437,39 @@ fn shaping(waerme: f32, schwebung: f32, raum: f32, breite: f32) -> Vec<ParamSpec
 /// Klangfarbe und Raum (auch beim Schlagzeug).
 fn colour_and_space(raum: f32, breite: f32) -> Vec<ParamSpec> {
     vec![
-        p("farbe", "Farbe", "Klangfarbe", 0.5, "dunkel", "hell", "Kippfilter: dunkel senkt die Höhen, hell hebt sie (Mitte = neutral)"),
-        p("rauheit", "Rauheit", "Klangfarbe", 0.0, "glatt", "rau", "Schnelles Flattern der Lautstärke, Sättigung und Körnung – sauber ↔ dreckig"),
-        p("breite", "Breite", "Raum", breite, "schmal", "breit", "Stereo-Breite; die Tiefen bleiben in der Mitte"),
-        p("raum", "Entfernung", "Raum", raum, "nah", "fern", "Anteil im Hall, aus der Ferne auch leiser und dumpfer – vom Studio bis zur Kirche"),
+        p("farbe", tk!("Color"), tid!("Klangfarbe"), 0.5, tk!("dark"), tk!("bright"), tk!("Tilt filter: dark lowers the highs, bright raises them (center = neutral)")),
+        p("rauheit", tk!("Roughness"), tid!("Klangfarbe"), 0.0, tk!("smooth"), tk!("rough"), tk!("Fast flutter of volume, saturation and grain – clean ↔ dirty")),
+        p("breite", tk!("Width"), tid!("Raum"), breite, tk!("narrow"), tk!("wide"), tk!("Stereo width; the lows stay in the center")),
+        p("raum", tk!("Distance"), tid!("Raum"), raum, tk!("near"), tk!("far"), tk!("Amount of reverb; from a distance also quieter and duller – from studio to church")),
     ]
 }
 
 /// Unsichtbare Regler: Punkt im Charakter-Feld.
 fn karte(kind: InstrumentKind) -> Vec<ParamSpec> {
     let (x, y) = charakter_default(kind);
-    let mut a = p(CHARAKTER_X, "Charakter waagrecht", "Karte", x, "", "", "Waagrechte Stellung im Charakter-Feld");
-    let mut b = p(CHARAKTER_Y, "Charakter senkrecht", "Karte", y, "", "", "Senkrechte Stellung im Charakter-Feld");
+    let mut a = p(CHARAKTER_X, tk!("Character (horizontal)"), tid!("Karte"), x, "", "", tk!("Horizontal position in the Character field"));
+    let mut b = p(CHARAKTER_Y, tk!("Character (vertical)"), tid!("Karte"), y, "", "", tk!("Vertical position in the Character field"));
     a.hidden = true;
     b.hidden = true;
     vec![a, b]
 }
 
 fn hidden(key: &'static str, label: &'static str, min: f32, max: f32, default: f32, meaning: &'static str) -> ParamSpec {
-    ParamSpec { key, label, group: "Verlauf", min, max, default, left: "", right: "", note: false, meaning, hidden: true }
+    ParamSpec { key, label, group: tid!("Verlauf"), min, max, default, left: "", right: "", note: false, meaning, hidden: true }
 }
 
 /// Instrument-Beschreibung ohne Felder (Regler, Vorhören, Tasten).
 fn base_spec(kind: InstrumentKind) -> InstrumentSpec {
-    let keyboard_previews = || vec![pv("akkord", "Akkord"), pv("tonleiter", "Tonleiter"), pv("einzelton", "Einzelton")];
+    let keyboard_previews = || vec![pv("akkord", tk!("Chord")), pv("tonleiter", tk!("Scale")), pv("einzelton", tk!("Single note"))];
     let (name, description, params, previews, keys): (&'static str, &'static str, Vec<ParamSpec>, Vec<PreviewSpec>, Vec<KeySpec>) = match kind {
         InstrumentKind::Pluck => (
-            "Zupfer",
-            "Gezupfte Saite (Karplus-Strong): Gitarre, Harfe, Fingerbass",
+            tk!("Pluck"),
+            tk!("Plucked string (Karplus-Strong): guitar, harp, finger bass"),
             [
-                p("helligkeit", "Helligkeit", "Klang", 0.55, "dunkel", "hell", "Dämpfung der hohen Teiltöne in der Saite"),
-                p("abklingen", "Ausklingen", "Klang", 0.5, "kurz", "lang", "Wie lange der Ton nachklingt"),
-                p("koerper", "Körper", "Klang", 0.4, "dünn", "warm", "Stärke der Korpusresonanzen (Luft, Holz, Glanz)"),
-                p("anschlag", "Anschlag", "Klang", 0.5, "weich", "hart", "Anregung: Finger/Filz zur Saitenmitte ↔ Plektrum nah am Steg"),
+                p("helligkeit", tk!("Brightness"), tid!("Klang"), 0.55, tk!("dark"), tk!("bright"), tk!("Damping of the high partials in the string")),
+                p("abklingen", tk!("Decay"), tid!("Klang"), 0.5, tk!("short"), tk!("long"), tk!("How long the note rings out")),
+                p("koerper", tk!("Body"), tid!("Klang"), 0.4, tk!("thin"), tk!("warm"), tk!("Strength of the body resonances (air, wood, sheen)")),
+                p("anschlag", tk!("Velocity"), tid!("Klang"), 0.5, tk!("soft"), tk!("hard"), tk!("Excitation: finger/felt at the middle of the string ↔ pick close to the bridge")),
             ]
             .into_iter()
             .chain(shaping(0.35, 0.25, 0.3, 0.35))
@@ -444,72 +478,73 @@ fn base_spec(kind: InstrumentKind) -> InstrumentSpec {
             vec![],
         ),
         InstrumentKind::Drums => (
-            "Schlagzeug",
-            "Synthetisches Schlagzeug – jede Taste eine Trommel (C1 Bassdrum, D1 Snare, D♯1 Clap, F♯1/A♯1 Hi-Hat, F1/A1/C2 Toms)",
+            tk!("Drums"),
+            tk!("Synthetic drum kit – each key is a drum (C1 kick drum, D1 snare, D♯1 clap, F♯1/A♯1 hi-hat, F1/A1/C2 toms)"),
             [
-                pn("kick.grundton", "Grundton", "Bassdrum", 24.0, 52.0, 33.0, "Ton, auf den die Bassdrum ausklingt – passend zur Tonart des Basses wählen"),
-                p("kick.punch", "Punch", "Bassdrum", 0.6, "weich", "punchig", "Stärke und Tempo des Tonhöhenabfalls"),
-                p("kick.laenge", "Länge", "Bassdrum", 0.5, "kurz", "lang", "Ausklingzeit"),
-                p("kick.klick", "Klick", "Bassdrum", 0.4, "rund", "klickig", "Anschlaggeräusch des Schlägels"),
-                p("kick.waerme", "Wärme", "Bassdrum", 0.3, "sauber", "angezerrt", "Sättigung"),
-                pn("snare.kessel", "Kesselton", "Snare", 45.0, 67.0, 54.0, "Stimmung des Snare-Kessels"),
-                p("snare.teppich", "Teppich", "Snare", 0.6, "trocken", "rasselnd", "Anteil des Rasselns der Snare-Saiten"),
-                p("snare.laenge", "Länge", "Snare", 0.4, "kurz", "lang", "Ausklingzeit"),
-                p("snare.schaerfe", "Schärfe", "Snare", 0.5, "dumpf", "scharf", "Frequenzlage des Rasselns"),
-                p("clap.helligkeit", "Helligkeit", "Clap", 0.5, "dunkel", "hell", "Klangfarbe des Klatschens"),
-                p("clap.laenge", "Länge", "Clap", 0.4, "kurz", "lang", "Ausklang/Raum"),
-                p("hat.helligkeit", "Helligkeit", "Hi-Hat", 0.6, "dunkel", "hell", "Klangfarbe der Becken"),
-                p("hat.laenge", "Länge zu", "Hi-Hat", 0.3, "kurz", "lang", "Geschlossene Hi-Hat"),
-                p("hat.offen", "Länge offen", "Hi-Hat", 0.5, "kurz", "lang", "Offene Hi-Hat (wird von der nächsten Hi-Hat abgewürgt)"),
-                pn("tom.grundton", "Grundton", "Toms", 36.0, 55.0, 43.0, "Tiefe Tom; mittlere +5, hohe +10 Halbtöne"),
-                p("tom.laenge", "Länge", "Toms", 0.5, "kurz", "lang", "Ausklingzeit der Toms"),
+                pn("kick.grundton", tk!("Fundamental"), tid!("Bassdrum"), 24.0, 52.0, 33.0, tk!("Pitch the kick drum settles on – choose one that fits the key of the bass")),
+                p("kick.punch", tk!("Punch"), tid!("Bassdrum"), 0.6, tk!("soft"), tk!("punchy"), tk!("Amount and speed of the pitch drop")),
+                p("kick.laenge", tk!("Length"), tid!("Bassdrum"), 0.5, tk!("short"), tk!("long"), tk!("Decay time")),
+                p("kick.klick", tk!("Click"), tid!("Bassdrum"), 0.4, tk!("round"), tk!("clicky"), tk!("Attack noise of the beater")),
+                p("kick.waerme", tk!("Warmth"), tid!("Bassdrum"), 0.3, tk!("clean"), tk!("driven"), tk!("Saturation")),
+                pn("snare.kessel", tk!("Shell tone"), tid!("Snare"), 45.0, 67.0, 54.0, tk!("Tuning of the snare shell")),
+                p("snare.teppich", tk!("Snare wires"), tid!("Snare"), 0.6, tk!("dry"), tk!("rattling"), tk!("Amount of rattle from the snare wires")),
+                p("snare.laenge", tk!("Length"), tid!("Snare"), 0.4, tk!("short"), tk!("long"), tk!("Decay time")),
+                p("snare.schaerfe", tk!("Sharpness"), tid!("Snare"), 0.5, tk!("dull"), tk!("sharp"), tk!("Frequency range of the rattle")),
+                p("clap.helligkeit", tk!("Brightness"), tid!("Clap"), 0.5, tk!("dark"), tk!("bright"), tk!("Timbre of the clap")),
+                p("clap.laenge", tk!("Length"), tid!("Clap"), 0.4, tk!("short"), tk!("long"), tk!("Decay/room")),
+                p("hat.helligkeit", tk!("Brightness"), tid!("Hi-Hat"), 0.6, tk!("dark"), tk!("bright"), tk!("Timbre of the cymbals")),
+                p("hat.laenge", tk!("Length closed"), tid!("Hi-Hat"), 0.3, tk!("short"), tk!("long"), tk!("Closed hi-hat")),
+                p("hat.offen", tk!("Length open"), tid!("Hi-Hat"), 0.5, tk!("short"), tk!("long"), tk!("Open hi-hat (choked by the next hi-hat)")),
+                pn("tom.grundton", tk!("Fundamental"), tid!("Toms"), 36.0, 55.0, 43.0, tk!("Low tom; mid +5, high +10 semitones")),
+                p("tom.laenge", tk!("Length"), tid!("Toms"), 0.5, tk!("short"), tk!("long"), tk!("Decay time of the toms")),
             ]
             .into_iter()
             .chain(colour_and_space(0.12, 0.15))
             .collect(),
             vec![
-                pv("beat", "Beat"), pv("kick", "Bassdrum"), pv("snare", "Snare"), pv("clap", "Clap"),
-                pv("hihat", "Hi-Hat"), pv("hihat-offen", "Hi-Hat offen"), pv("toms", "Toms"),
+                pv("beat", tk!("Beat")), pv("kick", tk!("Kick drum")), pv("snare", tk!("Snare")), pv("clap", tk!("Clap")),
+                pv("hihat", tk!("Hi-hat")), pv("hihat-offen", tk!("Open hi-hat")), pv("toms", tk!("Toms")),
             ],
             [
                 drums::KICK, drums::RIM, drums::SNARE, drums::CLAP, drums::TOM_LOW, drums::HAT_CLOSED, drums::TOM_MID, drums::HAT_OPEN, drums::TOM_HIGH,
                 drums::CRASH, drums::RIDE, drums::COWBELL, drums::SHAKER,
             ]
                 .iter()
+                // names like "Kick", "Closed hi-hat": their keys are in the preview patterns and rhythm rows
                 .filter_map(|&m| drums::piece_name(m).map(|(short, name)| KeySpec { midi: m, short, name }))
                 .collect(),
         ),
         InstrumentKind::Bass => (
-            "Bass",
-            "Bass-Synthesizer: Oszillator, Sub-Oszillator, resonanter Tiefpass mit Hüllkurve, Sättigung, Glide",
+            tk!("Bass"),
+            tk!("Bass synthesizer: oscillator, sub-oscillator, resonant low-pass with envelope, saturation, glide"),
             [
-                p("wellenform", "Wellenform", "Oszillator", 0.5, "rund", "scharf", "Sinus ↔ Sägezahn ↔ Rechteck"),
-                p("sub", "Sub", "Oszillator", 0.4, "dünn", "tief", "Sinus eine Oktave tiefer"),
-                p("filter", "Filter", "Filter", 0.35, "dunkel", "hell", "Grenzfrequenz des Tiefpasses"),
-                p("resonanz", "Resonanz", "Filter", 0.3, "weich", "quäkig", "Betonung an der Grenzfrequenz"),
-                p("anschlag", "Anschlag", "Hüllkurve", 0.5, "weich", "knackig", "Filter-Hüllkurve und Einschwingen"),
-                p("abklingen", "Ausklingen", "Hüllkurve", 0.5, "kurz", "lang", "Abklingzeit und Haltepegel"),
-                p("biss", "Biss", "Charakter", 0.2, "sauber", "verzerrt", "Sättigung/Verzerrung"),
-                p("glide", "Glide", "Charakter", 0.0, "aus", "gleitend", "Gleiten zwischen gebundenen Noten"),
+                p("wellenform", tk!("Waveform"), tid!("Oszillator"), 0.5, tk!("round"), tk!("sharp"), tk!("Sine ↔ saw ↔ square")),
+                p("sub", tk!("Sub"), tid!("Oszillator"), 0.4, tk!("thin"), tk!("low"), tk!("Sine one octave lower")),
+                p("filter", tk!("Filter"), tid!("Filter"), 0.35, tk!("dark"), tk!("bright"), tk!("Cutoff frequency of the low-pass")),
+                p("resonanz", tk!("Resonance"), tid!("Filter"), 0.3, tk!("soft"), tk!("quacky"), tk!("Emphasis at the cutoff frequency")),
+                p("anschlag", tk!("Velocity"), tid!("Hüllkurve"), 0.5, tk!("soft"), tk!("crisp"), tk!("Filter envelope and attack")),
+                p("abklingen", tk!("Decay"), tid!("Hüllkurve"), 0.5, tk!("short"), tk!("long"), tk!("Decay time and sustain level")),
+                p("biss", tk!("Bite"), tid!("Charakter"), 0.2, tk!("clean"), tk!("distorted"), tk!("Saturation/distortion")),
+                p("glide", tk!("Glide"), tid!("Charakter"), 0.0, tk!("off"), tk!("gliding"), tk!("Glide between legato notes")),
             ]
             .into_iter()
             .chain(shaping(0.3, 0.0, 0.05, 0.0))
             .collect(),
-            vec![pv("basslinie", "Basslinie"), pv("einzelton", "Einzelton")],
+            vec![pv("basslinie", tk!("Bassline")), pv("einzelton", tk!("Single note"))],
             vec![],
         ),
         InstrumentKind::Organ => (
-            "Orgel",
-            "Pfeifenorgel (additiv): Register 16′, 8′, 4′, 2⅔′, 2′ und Mixtur, Pfeifenansprache, Tremulant – für Choral und Fuge",
+            tk!("Organ"),
+            tk!("Pipe organ (additive): stops 16′, 8′, 4′, 2⅔′, 2′ and mixture, pipe speech, tremulant – for chorales and fugues"),
             [
-                p("subbass", "Subbass 16′", "Register", 0.0, "aus", "voll", "Register eine Oktave tiefer – das Fundament im Pedal"),
-                p("prinzipal", "Prinzipal 8′", "Register", 0.8, "aus", "voll", "Grundregister der Orgel: kräftiger Ton mit Obertönen"),
-                p("floete", "Flöte 4′", "Register", 0.5, "aus", "voll", "Weiche Flöte eine Oktave höher"),
-                p("quinte", "Quinte 2⅔′", "Register", 0.0, "aus", "voll", "Dritter Teilton – färbt hornartig"),
-                p("oktave", "Oktave 2′", "Register", 0.3, "aus", "voll", "Zwei Oktaven höher – Glanz"),
-                p("mixtur", "Mixtur", "Register", 0.0, "aus", "glänzend", "Hohe Obertonreihe – die Krone des Plenums"),
-                p("chiff", "Anblasen", "Ansprache", 0.4, "weich", "spuckend", "Anblasgeräusch beim Ansprechen der Pfeifen"),
-                p("tremulant", "Tremulant", "Ansprache", 0.0, "ruhig", "bebend", "Schwankung des Winds (leichtes Beben)"),
+                p("subbass", tk!("Subbass 16′"), tid!("Register"), 0.0, tk!("off"), tk!("full"), tk!("Stop one octave lower – the foundation in the pedal")),
+                p("prinzipal", tk!("Principal 8′"), tid!("Register"), 0.8, tk!("off"), tk!("full"), tk!("The organ's foundation stop: strong tone with overtones")),
+                p("floete", tk!("Flute 4′"), tid!("Register"), 0.5, tk!("off"), tk!("full"), tk!("Soft flute one octave higher")),
+                p("quinte", tk!("Quint 2⅔′"), tid!("Register"), 0.0, tk!("off"), tk!("full"), tk!("Third partial – adds a horn-like color")),
+                p("oktave", tk!("Octave 2′"), tid!("Register"), 0.3, tk!("off"), tk!("full"), tk!("Two octaves higher – shine")),
+                p("mixtur", tk!("Mixture"), tid!("Register"), 0.0, tk!("off"), tk!("gleaming"), tk!("High overtone series – the crown of the plenum")),
+                p("chiff", tk!("Chiff"), tid!("Ansprache"), 0.4, tk!("soft"), tk!("chiffy"), tk!("Breath noise as the pipes start to speak")),
+                p("tremulant", tk!("Tremulant"), tid!("Ansprache"), 0.0, tk!("calm"), tk!("trembling"), tk!("Fluctuation of the wind (gentle trembling)")),
             ]
             .into_iter()
             .chain(shaping(0.2, 0.15, 0.5, 0.45))
@@ -518,14 +553,14 @@ fn base_spec(kind: InstrumentKind) -> InstrumentSpec {
             vec![],
         ),
         InstrumentKind::Harpsichord => (
-            "Cembalo",
-            "Kielinstrument: gezupfte Saiten mit 8′- und 4′-Chor und Lautenzug – der Klang des Wohltemperierten Klaviers",
+            tk!("Harpsichord"),
+            tk!("Quill instrument: plucked strings with 8′ and 4′ choirs and a lute stop – the sound of the Well-Tempered Clavier"),
             [
-                p("achtfuss", "8′-Chor", "Register", 1.0, "aus", "voll", "Saitenchor in Normallage"),
-                p("vierfuss", "4′-Chor", "Register", 0.0, "aus", "voll", "Saitenchor eine Oktave höher – silbriger, voller"),
-                p("laute", "Lautenzug", "Register", 0.0, "aus", "gedämpft", "Filz an den Saiten: kurz und weich wie eine Laute"),
-                p("kiel", "Kiel", "Klang", 0.6, "weich", "spitz", "Anriss des Kiels: weich ↔ brillant"),
-                p("nachklang", "Nachklang", "Klang", 0.5, "kurz", "lang", "Wie lange die Saite nachklingt"),
+                p("achtfuss", tk!("8′ choir"), tid!("Register"), 1.0, tk!("off"), tk!("full"), tk!("String choir at normal pitch")),
+                p("vierfuss", tk!("4′ choir"), tid!("Register"), 0.0, tk!("off"), tk!("full"), tk!("String choir one octave higher – silvery, fuller")),
+                p("laute", tk!("Lute stop"), tid!("Register"), 0.0, tk!("off"), tk!("muted"), tk!("Felt on the strings: short and soft like a lute")),
+                p("kiel", tk!("Quill"), tid!("Klang"), 0.6, tk!("soft"), tk!("pointed"), tk!("Pluck of the quill: soft ↔ brilliant")),
+                p("nachklang", tk!("Sustain"), tid!("Klang"), 0.5, tk!("short"), tk!("long"), tk!("How long the string rings")),
             ]
             .into_iter()
             .chain(shaping(0.15, 0.15, 0.35, 0.4))
@@ -534,26 +569,26 @@ fn base_spec(kind: InstrumentKind) -> InstrumentSpec {
             vec![],
         ),
         InstrumentKind::Synth => (
-            "Synth",
-            "Synthesizer für Flächen und lange Klänge: verstimmte Oszillatoren, Sub und Schimmer, Filter – mit gezeichnetem Verlauf (Lautstärke, Helligkeit, Puls im Takt)",
+            tk!("Synth"),
+            tk!("Synthesizer for pads and long sounds: detuned oscillators, sub and shimmer, filter – with a drawn envelope (volume, brightness, pulse in time)"),
             [
-                p("stimmen", "Stimmen", "Oszillatoren", 0.5, "eine", "sieben", "Leicht verstimmte Stimmen je Ton (Unisono)"),
-                p("verstimmung", "Verstimmung", "Oszillatoren", 0.35, "rein", "schwebend", "Abstand der Stimmen, bis 30 Cent"),
-                p("wellenform", "Wellenform", "Oszillatoren", 0.45, "rund", "scharf", "Sinus ↔ Sägezahn ↔ Rechteck"),
-                p("sub", "Sub", "Oszillatoren", 0.25, "dünn", "tief", "Sinus eine Oktave tiefer"),
-                p("schimmer", "Schimmer", "Oszillatoren", 0.15, "matt", "glänzend", "Sägezahn eine Oktave höher"),
-                p("filter", "Filter", "Filter", 0.45, "dunkel", "hell", "Grundstellung des Tiefpasses – die Kurve „Helligkeit“ wirkt darauf"),
-                p("resonanz", "Resonanz", "Filter", 0.2, "weich", "singend", "Betonung an der Grenzfrequenz"),
-                p("bewegung", "Bewegung", "Bewegung", 0.25, "ruhig", "wogend", "Langsames Auf und Ab im Filter"),
-                p("tempo", "Tempo", "Bewegung", 0.3, "langsam", "schnell", "Tempo der Bewegung (0,05–6 Hz)"),
-                hidden("verlauf.ausklang", "Ausklang", 0.05, 6.0, 1.6, "Sekunden bis zur Stille nach dem Loslassen"),
-                hidden("verlauf.puls", "Puls", 0.0, 3.0, 0.0, "Puls im Takt: 0 aus, 1 Viertel, 2 Achtel, 3 Sechzehntel"),
-                hidden("verlauf.pulstiefe", "Pulstiefe", 0.0, 1.0, 0.0, "Wie tief der Puls die Lautstärke absenkt"),
+                p("stimmen", tk!("Voices"), tid!("Oszillatoren"), 0.5, tk!("one"), tk!("seven"), tk!("Slightly detuned voices per note (unison)")),
+                p("verstimmung", tk!("Detune"), tid!("Oszillatoren"), 0.35, tk!("pure"), tk!("wavering"), tk!("Spread of the voices, up to 30 cents")),
+                p("wellenform", tk!("Waveform"), tid!("Oszillatoren"), 0.45, tk!("round"), tk!("sharp"), tk!("Sine ↔ saw ↔ square")),
+                p("sub", tk!("Sub"), tid!("Oszillatoren"), 0.25, tk!("thin"), tk!("low"), tk!("Sine one octave lower")),
+                p("schimmer", tk!("Shimmer"), tid!("Oszillatoren"), 0.15, tk!("matte"), tk!("gleaming"), tk!("Saw one octave higher")),
+                p("filter", tk!("Filter"), tid!("Filter"), 0.45, tk!("dark"), tk!("bright"), tk!("Base setting of the low-pass – the \"Brightness\" curve acts on it")),
+                p("resonanz", tk!("Resonance"), tid!("Filter"), 0.2, tk!("soft"), tk!("singing"), tk!("Emphasis at the cutoff frequency")),
+                p("bewegung", tk!("Motion"), tid!("Bewegung"), 0.25, tk!("calm"), tk!("undulating"), tk!("Slow up and down in the filter")),
+                p("tempo", tk!("Tempo"), tid!("Bewegung"), 0.3, tk!("slow"), tk!("fast"), tk!("Speed of the motion (0.05–6 Hz)")),
+                hidden("verlauf.ausklang", tk!("Release"), 0.05, 6.0, 1.6, tk!("Seconds until silence after release")),
+                hidden("verlauf.puls", tk!("Pulse"), 0.0, 3.0, 0.0, tk!("Pulse in time: 0 off, 1 quarters, 2 eighths, 3 sixteenths")),
+                hidden("verlauf.pulstiefe", tk!("Pulse depth"), 0.0, 1.0, 0.0, tk!("How far the pulse lowers the volume")),
             ]
             .into_iter()
             .chain(shaping(0.2, 0.1, 0.45, 0.6))
             .collect(),
-            vec![pv("akkord", "Akkord"), pv("folge", "Akkordfolge"), pv("einzelton", "Einzelton")],
+            vec![pv("akkord", tk!("Chord")), pv("folge", tk!("Chord progression")), pv("einzelton", tk!("Single note"))],
             vec![],
         ),
     };
@@ -593,8 +628,9 @@ pub fn specs() -> Vec<InstrumentSpec> {
         .collect()
 }
 
-pub fn kind_name(kind: InstrumentKind) -> &'static str {
-    spec(kind).name
+/// Name of the instrument in the chosen language (for track names and messages).
+pub fn kind_name(kind: InstrumentKind) -> String {
+    klang_i18n::translate(base_spec(kind).name)
 }
 
 /// Instrument mit Standardwerten.
@@ -616,10 +652,14 @@ pub fn validate_params(kind: InstrumentKind, given: &BTreeMap<String, f32>) -> R
     for (k, v) in given {
         let Some(ps) = s.params.iter().find(|p| p.key == k) else {
             let allowed: Vec<&str> = s.params.iter().map(|p| p.key).collect();
-            return Err(format!("Unbekannter Parameter „{k}“ für {}. Erlaubt: {}", s.name, allowed.join(", ")));
+            return Err(tr!("Unknown parameter \"{param}\" for {instrument}. Allowed: {allowed}",
+                param = k,
+                instrument = klang_i18n::translate(s.name),
+                allowed = allowed.join(", ")
+            ));
         };
         if !v.is_finite() {
-            return Err(format!("„{k}“ muss eine Zahl sein"));
+            return Err(tr!("\"{param}\" must be a number", param = k));
         }
         out.insert(k.clone(), v.clamp(ps.min, ps.max));
     }
@@ -795,22 +835,22 @@ pub struct WaveView {
     pub peaks: Vec<[f32; 2]>,
     /// Ende des gehaltenen Tons (danach Ausklang), Sekunden
     pub held: f32,
-    pub testton: &'static str,
+    pub testton: String,
 }
 
 pub fn wave_view(inst: &Instrument, spb: f32, columns: usize) -> WaveView {
-    let (notes, secs, held, testton): (Vec<NoteSpec>, f32, f32, &'static str) = match inst.kind {
-        InstrumentKind::Drums => (vec![NoteSpec::new(0.0, 0.5, drums::KICK as f32, 0.95)], 1.2, 0.5, "Bassdrum"),
+    let (notes, secs, held, testton): (Vec<NoteSpec>, f32, f32, String) = match inst.kind {
+        InstrumentKind::Drums => (vec![NoteSpec::new(0.0, 0.5, drums::KICK as f32, 0.95)], 1.2, 0.5, tr!("Kick drum")),
         InstrumentKind::Synth => {
             let v = verlauf(Some(inst));
             let last = v.laut.last().map(|p| p[0]).unwrap_or(0.0).max(v.hell.last().map(|p| p[0]).unwrap_or(0.0));
             let held = (last + 0.8).clamp(2.0, 8.0);
             let notes = [57.0, 60.0, 64.0].iter().map(|&m| NoteSpec::new(0.0, held, m, 0.85)).collect();
-            (notes, held, held, "Akkord a-Moll, gehalten")
+            (notes, held, held, tr!("A minor chord, held"))
         }
-        InstrumentKind::Bass => (vec![NoteSpec::new(0.0, 1.2, 33.0, 0.95)], 1.6, 1.2, "Ton A1"),
-        InstrumentKind::Organ => (vec![NoteSpec::new(0.0, 1.5, 60.0, 0.85)], 2.0, 1.5, "Ton c′"),
-        _ => (vec![NoteSpec::new(0.0, 2.0, 57.0, 0.9)], 2.6, 2.0, "Ton A3"),
+        InstrumentKind::Bass => (vec![NoteSpec::new(0.0, 1.2, 33.0, 0.95)], 1.6, 1.2, tr!("Note {note}", note = "A1")),
+        InstrumentKind::Organ => (vec![NoteSpec::new(0.0, 1.5, 60.0, 0.85)], 2.0, 1.5, tr!("Note {note}", note = "c′")),
+        _ => (vec![NoteSpec::new(0.0, 2.0, 57.0, 0.9)], 2.6, 2.0, tr!("Note {note}", note = "A3")),
     };
     // Übersicht: halbe Abtastrate genügt (alle Filter liegen darunter)
     let sr = 24_000.0;
@@ -985,6 +1025,7 @@ pub struct Messung {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SoundReport {
+    #[serde(serialize_with = "ser_tr")]
     pub instrument: &'static str,
     pub params: BTreeMap<String, f32>,
     /// Messwerte für Oberfläche und Agent (Wort + Zahl).
@@ -1008,8 +1049,10 @@ fn word3(v: f32, words: [&'static str; 3]) -> &'static str {
     bucket(v, [0.34, 0.67], words)
 }
 
+/// A measurement; name and word are keys (`tk!`) and are translated here
+/// (note names as words stay as they are).
 fn messung(label: &str, wort: &str, wert: f32, detail: String) -> Messung {
-    Messung { label: label.into(), wort: wort.into(), wert: wert.clamp(0.0, 1.0), detail }
+    Messung { label: klang_i18n::translate(label), wort: klang_i18n::translate(wort), wert: wert.clamp(0.0, 1.0), detail }
 }
 
 fn hz(midi: f32) -> f32 {
@@ -1048,12 +1091,17 @@ fn report_pluck(p: &PluckParams) -> (Vec<Messung>, String) {
     // Schwellen kalibriert mit `cargo test -p klang-dsp print_calibration_grid -- --ignored --nocapture`.
     (
         vec![
-            messung("Helligkeit", bucket(rel, [2.4, 3.6], ["dunkel", "ausgewogen", "hell"]), (rel - 1.8) / 5.0, format!("{:.0} Hz", f.centroid_hz)),
-            messung("Wärme", bucket(f.low_share, [0.52, 0.61], ["dünn", "mittel", "warm"]), (f.low_share - 0.44) / 0.22, format!("{:.1} % tief", f.low_share * 100.0)),
-            messung("Anschlag", bucket(onset_rel, [5.0, 9.0], ["weich", "mittel", "hart"]), (onset_rel - 1.5) / 12.0, format!("{:.0} Hz", f.onset_centroid_hz)),
-            messung("Ausklingen", bucket(f.decay_s, [0.6, 1.6], ["kurz", "mittel", "lang"]), f.decay_s / 3.0, format!("{:.2} s", f.decay_s)),
+            messung(tk!("Brightness"), bucket(rel, [2.4, 3.6], [tk!("dark"), tk!("balanced"), tk!("bright")]), (rel - 1.8) / 5.0, format!("{:.0} Hz", f.centroid_hz)),
+            messung(
+                tk!("Warmth"),
+                bucket(f.low_share, [0.52, 0.61], [tk!("thin"), tk!("medium"), tk!("warm")]),
+                (f.low_share - 0.44) / 0.22,
+                tr!("{pct}% lows", pct = format!("{:.1}", f.low_share * 100.0)),
+            ),
+            messung(tk!("Velocity"), bucket(onset_rel, [5.0, 9.0], [tk!("soft"), tk!("medium"), tk!("hard")]), (onset_rel - 1.5) / 12.0, format!("{:.0} Hz", f.onset_centroid_hz)),
+            messung(tk!("Decay"), bucket(f.decay_s, [0.6, 1.6], [tk!("short"), tk!("medium"), tk!("long")]), f.decay_s / 3.0, format!("{:.2} s", f.decay_s)),
         ],
-        "Testton A3 (220 Hz)".into(),
+        tr!("Test tone {note} ({hz} Hz)", note = "A3", hz = 220),
     )
 }
 
@@ -1066,17 +1114,27 @@ fn report_drums(kit: &DrumKit) -> (Vec<Messung>, String) {
     let hat = drums::hat(SR, &kit.hat, false, 1.0, 9);
     let hat_f = analyze_sound(&hat, SR);
     let name = |m: Option<f32>| m.map(|m| note_name(m.round().clamp(0.0, 127.0) as u8)).unwrap_or_else(|| "–".into());
-    let detail_hz = |m: Option<f32>| m.map(|m| format!("{:.1} Hz gemessen", hz(m))).unwrap_or_else(|| "nicht messbar".into());
+    let detail_hz = |m: Option<f32>| m.map(|m| tr!("measured {hz} Hz", hz = format!("{:.1}", hz(m)))).unwrap_or_else(|| tr!("not measurable"));
     (
         vec![
-            messung("Bassdrum-Grundton", &name(kick_pitch), (kick_pitch.unwrap_or(24.0) - 24.0) / 28.0, detail_hz(kick_pitch)),
-            messung("Bassdrum-Punch", word3(kit.kick.punch, ["weich", "mittel", "punchig"]), kit.kick.punch, format!("Anschlag {:.0} Hz", kick_f.onset_centroid_hz)),
-            messung("Bassdrum-Länge", bucket(kick_f.decay_s, [0.35, 0.8], ["kurz", "mittel", "lang"]), kick_f.decay_s / 1.3, format!("{:.2} s", kick_f.decay_s)),
-            messung("Snare-Kessel", &name(snare_pitch), (snare_pitch.unwrap_or(45.0) - 45.0) / 22.0, detail_hz(snare_pitch)),
-            messung("Snare-Teppich", word3(kit.snare.teppich, ["trocken", "mittel", "rasselnd"]), kit.snare.teppich, format!("Schärfe {:.0} %", kit.snare.schaerfe * 100.0)),
-            messung("Hi-Hat", word3(kit.hat.helligkeit, ["dunkel", "mittel", "hell"]), kit.hat.helligkeit, format!("{:.0} Hz", hat_f.centroid_hz)),
+            messung(tk!("Kick pitch"), &name(kick_pitch), (kick_pitch.unwrap_or(24.0) - 24.0) / 28.0, detail_hz(kick_pitch)),
+            messung(
+                tk!("Kick punch"),
+                word3(kit.kick.punch, [tk!("soft"), tk!("medium"), tk!("punchy")]),
+                kit.kick.punch,
+                tr!("Attack {hz} Hz", hz = format!("{:.0}", kick_f.onset_centroid_hz)),
+            ),
+            messung(tk!("Kick length"), bucket(kick_f.decay_s, [0.35, 0.8], [tk!("short"), tk!("medium"), tk!("long")]), kick_f.decay_s / 1.3, format!("{:.2} s", kick_f.decay_s)),
+            messung(tk!("Snare shell"), &name(snare_pitch), (snare_pitch.unwrap_or(45.0) - 45.0) / 22.0, detail_hz(snare_pitch)),
+            messung(
+                tk!("Snare wires"),
+                word3(kit.snare.teppich, [tk!("dry"), tk!("medium"), tk!("rattling")]),
+                kit.snare.teppich,
+                tr!("Sharpness {pct}%", pct = format!("{:.0}", kit.snare.schaerfe * 100.0)),
+            ),
+            messung(tk!("Hi-hat"), word3(kit.hat.helligkeit, [tk!("dark"), tk!("medium"), tk!("bright")]), kit.hat.helligkeit, format!("{:.0} Hz", hat_f.centroid_hz)),
         ],
-        "Einzelschläge (Bassdrum, Snare, Hi-Hat)".into(),
+        tr!("Single hits (kick, snare, hi-hat)"),
     )
 }
 
@@ -1084,18 +1142,28 @@ fn report_organ(p: &OrganParams) -> (Vec<Messung>, String) {
     let x = render_organ(&[NoteSpec::new(0.0, 1.2, 60.0, 0.8)], 1.5, SR, p);
     let f = analyze_sound(&x, SR);
     let rel = f.centroid_hz / 261.6;
-    let registers = [("16′", p.subbass), ("8′", p.prinzipal), ("4′", p.floete), ("2⅔′", p.quinte), ("2′", p.oktave), ("Mixtur", p.mixtur)];
-    let drawn: Vec<&str> = registers.iter().filter(|r| r.1 > 0.05).map(|r| r.0).collect();
+    let registers = [("16′", p.subbass), ("8′", p.prinzipal), ("4′", p.floete), ("2⅔′", p.quinte), ("2′", p.oktave), (tk!("Mixture"), p.mixtur)];
+    let drawn: Vec<String> = registers.iter().filter(|r| r.1 > 0.05).map(|r| klang_i18n::translate(r.0)).collect();
     let weight = registers.iter().map(|r| r.1).sum::<f32>();
     let tiefe = (p.subbass * 1.0 + p.prinzipal * 0.3) / 1.3;
     (
         vec![
-            messung("Registrierung", bucket(weight, [1.2, 2.6], ["leise", "mittel", "volles Werk"]), weight / 4.5, if drawn.is_empty() { "kein Register".into() } else { drawn.join(" + ") }),
-            messung("Helligkeit", bucket(rel, [2.2, 4.5], ["dunkel", "ausgewogen", "glänzend"]), (rel - 1.0) / 7.0, format!("{:.0} Hz", f.centroid_hz)),
-            messung("Tiefe", word3(tiefe, ["schlank", "mittel", "gravitätisch"]), tiefe, format!("Subbass {:.0} %", p.subbass * 100.0)),
-            messung("Ansprache", word3(p.chiff, ["weich", "mittel", "spuckend"]), p.chiff, if p.tremulant > 0.05 { format!("Tremulant {:.0} %", p.tremulant * 100.0) } else { "ohne Tremulant".into() }),
+            messung(
+                tk!("Registration"),
+                bucket(weight, [1.2, 2.6], [tk!("faint"), tk!("medium"), tk!("full organ")]),
+                weight / 4.5,
+                if drawn.is_empty() { tr!("no stops") } else { drawn.join(" + ") },
+            ),
+            messung(tk!("Brightness"), bucket(rel, [2.2, 4.5], [tk!("dark"), tk!("balanced"), tk!("gleaming")]), (rel - 1.0) / 7.0, format!("{:.0} Hz", f.centroid_hz)),
+            messung(tk!("Depth"), word3(tiefe, [tk!("lean"), tk!("medium"), tk!("stately")]), tiefe, tr!("Subbass {pct}%", pct = format!("{:.0}", p.subbass * 100.0))),
+            messung(
+                tk!("Speech"),
+                word3(p.chiff, [tk!("soft"), tk!("medium"), tk!("chiffy")]),
+                p.chiff,
+                if p.tremulant > 0.05 { tr!("Tremulant {pct}%", pct = format!("{:.0}", p.tremulant * 100.0)) } else { tr!("no tremulant") },
+            ),
         ],
-        "Testton c' (262 Hz)".into(),
+        tr!("Test tone {note} ({hz} Hz)", note = "c'", hz = 262),
     )
 }
 
@@ -1107,15 +1175,20 @@ fn report_harpsichord(p: &HarpsichordParams) -> (Vec<Messung>, String) {
         (true, true) => "8′ + 4′",
         (true, false) => "8′",
         (false, true) => "4′",
-        _ => "kein Chor",
+        _ => tk!("no choir"),
     };
     (
         vec![
-            messung("Register", chor, (p.achtfuss + p.vierfuss) / 2.0, if p.laute > 0.05 { format!("Lautenzug {:.0} %", p.laute * 100.0) } else { "ohne Lautenzug".into() }),
-            messung("Brillanz", bucket(rel, [5.0, 9.0], ["weich", "mittel", "brillant"]), (rel - 2.0) / 10.0, format!("{:.0} Hz", f.centroid_hz)),
-            messung("Nachklang", bucket(f.decay_s, [0.5, 1.2], ["kurz", "mittel", "lang"]), f.decay_s / 2.0, format!("{:.2} s", f.decay_s)),
+            messung(
+                tk!("Stops"),
+                chor,
+                (p.achtfuss + p.vierfuss) / 2.0,
+                if p.laute > 0.05 { tr!("Lute stop {pct}%", pct = format!("{:.0}", p.laute * 100.0)) } else { tr!("no lute stop") },
+            ),
+            messung(tk!("Brilliance"), bucket(rel, [5.0, 9.0], [tk!("soft"), tk!("medium"), tk!("brilliant")]), (rel - 2.0) / 10.0, format!("{:.0} Hz", f.centroid_hz)),
+            messung(tk!("Sustain"), bucket(f.decay_s, [0.5, 1.2], [tk!("short"), tk!("medium"), tk!("long")]), f.decay_s / 2.0, format!("{:.2} s", f.decay_s)),
         ],
-        "Testton A3 (220 Hz)".into(),
+        tr!("Test tone {note} ({hz} Hz)", note = "A3", hz = 220),
     )
 }
 
@@ -1129,20 +1202,21 @@ fn report_synth(p: &SynthParams, v: &Verlauf) -> (Vec<Messung>, String) {
     let rise = (0..600).map(|i| i as f32 * 0.01).find(|&t| klang_dsp::pad::curve_at(&v.laut, t) >= 0.9 * peak).unwrap_or(6.0);
     let fuelle = (p.stimmen + p.sub) / 2.0;
     let puls = match v.puls {
-        1 => "Viertel",
-        2 => "Achtel",
-        3 => "Sechzehntel",
-        _ => "ohne Puls",
+        1 => tr!("quarters"),
+        2 => tr!("eighths"),
+        3 => tr!("sixteenths"),
+        _ => tr!("no pulse"),
     };
+    let stimmen = 1 + (p.stimmen * 6.0).round() as u32;
     (
         vec![
-            messung("Helligkeit", bucket(rel, [3.0, 6.0], ["dunkel", "ausgewogen", "hell"]), (rel - 1.5) / 8.0, format!("{:.0} Hz", f.centroid_hz)),
-            messung("Fülle", word3(fuelle, ["dünn", "mittel", "breit"]), fuelle, format!("{} Stimmen je Ton", 1 + (p.stimmen * 6.0).round() as u32)),
-            messung("Bewegung", word3(p.bewegung, ["ruhig", "bewegt", "wogend"]), p.bewegung, format!("{:.1} Hz", 0.05 + 5.95 * p.tempo * p.tempo)),
-            messung("Einschwingen", bucket(rise, [0.15, 1.0], ["sofort", "weich", "langsam"]), (rise / 3.0).min(1.0), format!("{rise:.2} s")),
-            messung("Ausklang", bucket(v.ausklang, [0.6, 2.0], ["kurz", "mittel", "lang"]), (v.ausklang / 4.0).min(1.0), format!("{:.1} s · {puls}", v.ausklang)),
+            messung(tk!("Brightness"), bucket(rel, [3.0, 6.0], [tk!("dark"), tk!("balanced"), tk!("bright")]), (rel - 1.5) / 8.0, format!("{:.0} Hz", f.centroid_hz)),
+            messung(tk!("Fullness"), word3(fuelle, [tk!("thin"), tk!("medium"), tk!("wide")]), fuelle, trn!(stimmen, "{n} voice per note", "{n} voices per note")),
+            messung(tk!("Motion"), word3(p.bewegung, [tk!("calm"), tk!("animated"), tk!("undulating")]), p.bewegung, format!("{:.1} Hz", 0.05 + 5.95 * p.tempo * p.tempo)),
+            messung(tk!("Attack"), bucket(rise, [0.15, 1.0], [tk!("instant"), tk!("soft"), tk!("slow")]), (rise / 3.0).min(1.0), format!("{rise:.2} s")),
+            messung(tk!("Release"), bucket(v.ausklang, [0.6, 2.0], [tk!("short"), tk!("medium"), tk!("long")]), (v.ausklang / 4.0).min(1.0), format!("{:.1} s · {puls}", v.ausklang)),
         ],
-        "Akkord a-Moll (3 s gehalten)".into(),
+        tr!("A minor chord (held for 3 s)"),
     )
 }
 
@@ -1157,22 +1231,30 @@ fn report_bass(p: &BassParams) -> (Vec<Messung>, String) {
     (
         vec![
             messung(
-                "Grundton",
+                tk!("Fundamental"),
                 &measured.map(|h| note_name(klang_dsp::notes::hz_to_midi(h).round() as u8)).unwrap_or_else(|| "–".into()),
                 0.3,
-                measured.map(|h| format!("{h:.1} Hz gemessen")).unwrap_or_else(|| "nicht messbar".into()),
+                measured.map(|h| tr!("measured {hz} Hz", hz = format!("{h:.1}"))).unwrap_or_else(|| tr!("not measurable")),
             ),
-            messung("Helligkeit", word3(p.filter, ["dunkel", "mittel", "hell"]), p.filter, format!("{:.0} Hz", f.centroid_hz)),
-            messung("Tiefe", word3(p.sub, ["dünn", "mittel", "tief"]), p.sub, format!("Sub-Oszillator {:.0} %", p.sub * 100.0)),
-            messung("Biss", word3(p.biss, ["sauber", "leicht angezerrt", "verzerrt"]), p.biss, format!("Resonanz {:.0} %", p.resonanz * 100.0)),
+            messung(tk!("Brightness"), word3(p.filter, [tk!("dark"), tk!("medium"), tk!("bright")]), p.filter, format!("{:.0} Hz", f.centroid_hz)),
+            messung(tk!("Depth"), word3(p.sub, [tk!("thin"), tk!("medium"), tk!("low")]), p.sub, tr!("Sub-oscillator {pct}%", pct = format!("{:.0}", p.sub * 100.0))),
             messung(
-                "Ausklingen",
-                word3(p.abklingen, ["kurz", "mittel", "lang"]),
+                tk!("Bite"),
+                word3(p.biss, [tk!("clean"), tk!("slightly driven"), tk!("distorted")]),
+                p.biss,
+                tr!("Resonance {pct}%", pct = format!("{:.0}", p.resonanz * 100.0)),
+            ),
+            messung(
+                tk!("Decay"),
+                word3(p.abklingen, [tk!("short"), tk!("medium"), tk!("long")]),
                 p.abklingen,
-                format!("Abklingzeit {:.2} s, Halten {:.0} %", 0.05 + 0.8 * p.abklingen, (0.3 + 0.6 * p.abklingen) * 100.0),
+                tr!("Decay {secs} s, sustain {pct}%",
+                    secs = format!("{:.2}", 0.05 + 0.8 * p.abklingen),
+                    pct = format!("{:.0}", (0.3 + 0.6 * p.abklingen) * 100.0)
+                ),
             ),
         ],
-        "Testton A1 (55 Hz)".into(),
+        tr!("Test tone {note} ({hz} Hz)", note = "A1", hz = 55),
     )
 }
 
@@ -1192,10 +1274,10 @@ mod tests {
     fn calibration_extremes_get_opposite_words() {
         let mid = [("helligkeit", 0.5), ("abklingen", 0.5), ("koerper", 0.5), ("anschlag", 0.5)];
         for (key, label, lo_word, hi_word) in [
-            ("helligkeit", "Helligkeit", "dunkel", "hell"),
-            ("koerper", "Wärme", "dünn", "warm"),
-            ("anschlag", "Anschlag", "weich", "hart"),
-            ("abklingen", "Ausklingen", "kurz", "lang"),
+            ("helligkeit", "Brightness", "dark", "bright"),
+            ("koerper", "Warmth", "thin", "warm"),
+            ("anschlag", "Velocity", "soft", "hard"),
+            ("abklingen", "Decay", "short", "long"),
         ] {
             let mut lo = mid.to_vec();
             let mut hi = mid.to_vec();
@@ -1220,14 +1302,14 @@ mod tests {
         let mut inst = default_instrument(InstrumentKind::Drums);
         inst.params.insert("kick.grundton".into(), 31.0); // G1
         let r = report(&inst);
-        assert_eq!(r.beschreibung["Bassdrum-Grundton"], "G1", "{:?}", r.anzeige);
-        assert_eq!(r.beschreibung["Snare-Kessel"], "F#3");
+        assert_eq!(r.beschreibung["Kick pitch"], "G1", "{:?}", r.anzeige);
+        assert_eq!(r.beschreibung["Snare shell"], "F#3");
     }
 
     #[test]
     fn bass_report_and_validation() {
         let r = report(&default_instrument(InstrumentKind::Bass));
-        assert_eq!(r.beschreibung["Grundton"], "A1", "{:?}", r.anzeige);
+        assert_eq!(r.beschreibung["Fundamental"], "A1", "{:?}", r.anzeige);
         let ok = validate_params(InstrumentKind::Bass, &[("filter".to_string(), 3.0)].into_iter().collect()).unwrap();
         assert_eq!(ok["filter"], 1.0);
         assert!(validate_params(InstrumentKind::Bass, &[("kick.punch".to_string(), 0.5)].into_iter().collect()).is_err());

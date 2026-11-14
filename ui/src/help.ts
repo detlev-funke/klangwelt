@@ -3,6 +3,8 @@
 // Vorfahren passt (der tiefste gewinnt). Fehlt ein Eintrag, zeigt das
 // Hilfefenster wenigstens den Tooltip (title) und den Eintrag des Fensters.
 
+import { t } from "./i18n.js";
+
 export interface HelpTopic {
   title: string;
   /** Absätze; einfache Hervorhebung mit **fett**. */
@@ -16,237 +18,237 @@ type Entry = { sel: string; topic: HelpTopic | ((el: Element, x: number, y: numb
 const RULER_H = 32;
 
 const ruler: HelpTopic = {
-  title: "Lineal",
+  title: t("Ruler"),
   text: [
-    "Takte und Schläge der Zeitleiste. Ziehen verschiebt die Ansicht, ein Klick setzt die Abspielposition.",
-    "Mit Umschalt oder Strg markierst du einen **Zeitraum**: Die Leertaste spielt dann genau ihn (mit Wiederholen in Schleife), der Export kann nur ihn schreiben, und der Agent erfährt ihn mit jeder Nachricht.",
-    "**Entf** löscht den gerade markierten Zeitraum aus allen Spuren: Alles danach rückt auf, Clips über die Kanten werden geteilt bzw. gekürzt (auch Aufnahmen) – ein Rückgängig-Schritt.",
-    "Ist die Harmonie eingeblendet, zeigt das untere Band die Akkorde in den Farben ihrer Stimmung – rote Kanten sind harmonische Brüche.",
+    t("Bars and beats of the timeline. Dragging moves the view, a click sets the playback position."),
+    t("With Shift or Ctrl you select a **time range**: Space then plays exactly that (looped if loop is on), the export can write just that range, and the agent is told about it with every message."),
+    t("**Del** deletes the selected time range from all tracks: everything after it moves up, clips crossing the edges are split or shortened (recordings too) – a single undo step."),
+    t("When harmony is shown, the lower band displays the chords in the colors of their mood – red edges are harmonic breaks."),
   ],
   keys: [
-    ["Ziehen", "Ansicht verschieben"],
-    ["Klick", "Abspielposition setzen"],
-    ["Umschalt/Strg + Ziehen", "Zeitraum markieren (Alt: ohne Raster)"],
-    ["Kante ziehen", "Zeitraum anpassen"],
-    ["Umschalt + Klick", "Zeitraum aufheben"],
-    ["Entf", "Zeitraum aus allen Spuren löschen (Rest rückt auf)"],
-    ["Rechtsklick", "Menü: Zeitraum löschen, Markierung aufheben"],
+    [t("Drag"), t("Move the view")],
+    [t("Click"), t("Set playback position")],
+    [t("Shift/Ctrl + drag"), t("Select a time range (Alt: off grid)")],
+    [t("Drag edge"), t("Adjust the time range")],
+    [t("Shift + click"), t("Clear the time range")],
+    [t("Del"), t("Delete the time range from all tracks (the rest moves up)")],
+    [t("Right-click"), t("Menu: delete time range, clear selection")],
   ],
 };
 
 const lanes: HelpTopic = {
-  title: "Zeitleiste",
+  title: t("Timeline"),
   text: [
-    "Die Clips aller Spuren über der Zeit. Clips ziehen verschiebt sie (rastet auf Schläge ein), an der rechten Kante ändert sich die Länge.",
-    "In der **Notenansicht** einer Instrumentspur bearbeitest du die Noten direkt: Alt+Klick setzt eine Note, Ziehen verschiebt die Auswahl, die rechte Kante ändert die Länge. Rechtsklick auf markierte Noten: **am Takt ausrichten** (1/4, 1/8, 1/16 oder Raster der Ansicht – nur die Anfänge oder Anfang und Länge), transponieren, löschen.",
-    "Audiodateien (WAV, AIFF, FLAC, Opus) ziehst du einfach hierher: Jede wird eine Audiospur mit Clip ab der Stelle unter der Maus – auf eine Audiospur gezogen landet die erste Datei in ihr. MP3 und AAC liest Klangwelt noch nicht.",
-    "Aufnahmen und eingefügte Audiodateien tragen den Knopf **♪ → Noten**: Er legt die erkannten Töne als Melodie-Spur darunter an. Per Rechtsklick geht auch eine **Rhythmus-Spur** (Anschläge als Bassdrum, Snare, Hi-Hat).",
+    t("The clips of all tracks over time. Dragging clips moves them (they snap to beats), the right edge changes the length."),
+    t("In an instrument track's **piano roll** you edit the notes directly: Alt+click adds a note, dragging moves the selection, the right edge changes the length. Right-click on selected notes: **quantize** (1/4, 1/8, 1/16 or the view grid – starts only, or start and length), transpose, delete."),
+    t("Just drag audio files (WAV, AIFF, FLAC, Opus) here: each becomes an audio track with a clip starting at the spot under the mouse – dropped onto an audio track, the first file lands in it. Klangwelt can't read MP3 and AAC yet."),
+    t("Recordings and inserted audio files have a **♪ → Notes** button: it creates the detected pitches as a melody track below. Right-click also offers a **rhythm track** (hits as kick, snare, hi-hat)."),
   ],
   keys: [
-    ["Strg + Mausrad", "zoomen"],
-    ["Umschalt + Mausrad", "waagrecht scrollen"],
-    ["Umschalt beim Ziehen", "ohne Raster"],
-    ["Alt + Klick", "Note setzen (ziehen: Länge)"],
-    ["Doppelklick (frei)", "neuer Noten-Clip"],
-    ["Doppelklick auf Audio", "Analyse öffnen"],
-    ["Entf", "Auswahl löschen – nach dem Markieren eines Zeitraums: ihn aus allen Spuren"],
-    ["↑ / ↓", "markierte Noten um einen Halbton (Umschalt: Oktave)"],
-    ["Rechtsklick", "Menü: ausrichten, transponieren, umwandeln, löschen"],
-    ["Datei hineinziehen", "Audiodatei als Spur einfügen"],
+    [t("Ctrl + mouse wheel"), t("zoom")],
+    [t("Shift + mouse wheel"), t("scroll horizontally")],
+    [t("Shift while dragging"), t("off grid")],
+    [t("Alt + click"), t("Add note (drag: length)")],
+    [t("Double-click (empty space)"), t("new note clip")],
+    [t("Double-click on audio"), t("Open analysis")],
+    [t("Del"), t("Delete selection – after selecting a time range: remove it from all tracks")],
+    ["↑ / ↓", t("move selected notes by a semitone (Shift: octave)")],
+    [t("Right-click"), t("Menu: quantize, transpose, convert, delete")],
+    [t("Drag a file in"), t("Insert an audio file as a track")],
   ],
 };
 
 const panelTopics: Record<string, HelpTopic> = {
   spuren: {
-    title: "Spuren",
+    title: t("Tracks"),
     text: [
-      "Das Hauptfenster: links die Spurköpfe, rechts die Zeitleiste. Audiospuren enthalten Aufnahmen, Instrumentspuren Noten, die ein Klangerzeuger der Soundwerkstatt spielt.",
-      "Oben im Kopf legst du neue Spuren an und blendest die Harmonie ein.",
+      t("The main window: track headers on the left, the timeline on the right. Audio tracks contain recordings, instrument tracks contain notes played by a sound generator from the sound workshop."),
+      t("In the header at the top you create new tracks and show the harmony."),
     ],
   },
   clip: {
-    title: "Fenster „Clip“",
+    title: t("\"Clip\" window"),
     text: [
-      "Eigenschaften des gewählten Clips. Bei Audio: Quelltempo und Synchronisieren (läuft dann im Projekttempo), Tempo erkennen, Analysieren, Melodie in eine Instrumentspur übernehmen.",
-      "Bei Noten: die **Vortragszeichen** – Dynamik pp … ff, Crescendo, Akzent, Staccato, Legato, Vibrato, Helligkeit, Anschleifen. Sie gelten für die gewählten Noten oder, ohne Auswahl, für alle.",
+      t("Properties of the selected clip. For audio: source tempo and sync (it then plays at the project tempo), detect tempo, analyze, turn the melody into an instrument track."),
+      t("For notes: the **performance markings** – dynamics pp … ff, crescendo, accent, staccato, legato, vibrato, brightness, scoop. They apply to the selected notes or, with nothing selected, to all of them."),
     ],
   },
   analyse: {
-    title: "Fenster „Analyse“",
+    title: t("\"Analysis\" window"),
     text: [
-      "Was in einer Aufnahme steckt: Tonhöhenkurve, erkannte Noten, Tempo und Tonart. Öffnet sich mit „Analysieren“ im Clip-Fenster oder per Doppelklick auf einen Audio-Clip.",
-      "Die erkannte Melodie lässt sich als Noten übernehmen und in der Bibliothek suchen.",
+      t("What's inside a recording: pitch curve, detected notes, tempo and key. Opens with \"Analyze\" in the Clip window or by double-clicking an audio clip."),
+      t("The detected melody can be turned into notes and searched for in the library."),
     ],
   },
   klang: {
-    title: "Soundwerkstatt („Klang“)",
+    title: t("Sound workshop (\"Sound\")"),
     text: [
-      "Der Klang der gewählten Instrumentspur. Oben das Instrument (Zupfer, Orgel, Cembalo, Bass, Synth, Schlagzeug), darunter drei **Felder**: Charakter, Klangfarbe und Raum. Ein Punkt im Feld oder ein benannter Startpunkt setzt nur die Regler dieses Felds.",
-      "Im **Feinschliff** stehen alle Regler einzeln, rechts die Messwerte. Unter **Meine Klänge** sicherst du Einstellungen für alle Projekte.",
+      t("The sound of the selected instrument track. At the top the instrument (pluck, organ, harpsichord, bass, synth, drums), below it three **fields**: character, timbre and space. A dot in a field or a named starting point sets only that field's controls."),
+      t("**Fine-tuning** has every control individually, with the measurements on the right. Under **My sounds** you save settings for all projects."),
     ],
   },
   rhythmus: {
-    title: "Fenster „Rhythmus“",
+    title: t("\"Rhythm\" window"),
     text: [
-      "Schlagzeug-Muster typischer Genres und ein Schritt-Raster: eine Zeile je Trommel, 16 Sechzehntel je Takt. Ohne gewählten Schlagzeug-Clip ist das Raster ein Entwurf, den „In Spur schreiben“ anlegt; mit gewähltem Clip bearbeitet jeder Klick den Clip.",
+      t("Drum patterns of typical genres and a step grid: one row per drum, 16 sixteenths per bar. Without a selected drum clip, the grid is a draft that \"Write to track\" creates; with a clip selected, every click edits that clip."),
     ],
   },
   song: {
-    title: "Fenster „Song“",
+    title: t("\"Song\" window"),
     text: [
-      "Ganze Stücke aus Vorlagen (Trance, Ambient, Deep House, Synthwave, Lo-Fi). Der Mini-Editor zeigt den Aufbau: Spalten sind Abschnitte, Zeilen sind Rollen (Fläche, Arpeggio, Bass …), jede Zelle ist aus, sparsam oder voll.",
-      "**Song erzeugen** schreibt die Spuren; erneut erzeugen ersetzt sie – so probierst du den Aufbau schnell durch.",
+      t("Complete pieces from templates (Trance, Ambient, Deep House, Synthwave, Lo-Fi). The mini editor shows the structure: columns are sections, rows are roles (pad, arpeggio, bass…), each cell is off, sparse or full."),
+      t("**Generate song** writes the tracks; generating again replaces them – so you can quickly try out different structures."),
     ],
   },
   bibliothek: {
-    title: "Fenster „Bibliothek“",
+    title: t("\"Library\" window"),
     text: [
-      "Partituren (MusicXML, Kern …) zum Suchen und Anhören. Eine Bibliothek ist ein Index; gesucht wird in der aktiven. Pakete wie Bach-Choräle oder PDMX lädst du über „Herunterladen“, eigene Dateien über „Hinzufügen“.",
-      "Die Melodiesuche findet Stücke zu Noten oder einer gesungenen Aufnahme. Unten die Noten der gewählten Partitur mit eigener Zeitleiste.",
+      t("Scores (MusicXML, Kern…) to search and listen to. A library is an index; the active one is searched. Get packs like Bach chorales or PDMX via \"Download\", your own files via \"Add\"."),
+      t("Melody search finds pieces from notes or a sung recording. Below, the notes of the selected score with their own timeline."),
     ],
   },
   fuge: {
-    title: "Fenster „Fuge“",
+    title: t("\"Fugue\" window"),
     text: [
-      "Werkzeuge für Fuge und Kontrapunkt: Antwort (real oder tonal), Verwandlungen (Umkehrung, Krebs, Vergrößerung …), Engführungen, Gegensätze und ein ganzer Fugenplan für 2–4 Stimmen. Das Thema ist ein Noten-Clip.",
-      "Der **Kontrapunkt-Prüfer** findet Parallelen, Stimmkreuzungen und unvorbereitete Dissonanzen und markiert sie in der Zeitleiste.",
+      t("Tools for fugue and counterpoint: answer (real or tonal), transformations (inversion, retrograde, augmentation…), strettos, countersubjects and a complete fugue plan for 2–4 voices. The subject is a note clip."),
+      t("The **counterpoint checker** finds parallels, voice crossings and unprepared dissonances and marks them in the timeline."),
     ],
   },
   harmonie: {
-    title: "Harmonie (Quintenzirkel)",
+    title: t("Harmony (circle of fifths)"),
     text: [
-      "Hilft beim Schreiben von Akkordfolgen. Der Zirkel zeigt Dur außen, Moll in der Mitte, vermindert innen; die besten Fortsetzungen tragen Rangnummern und Pfeile in den Farben ihrer Stimmung.",
-      "Der Verlauf folgt der Abspielposition. Klick auf einen Akkord spielt den Übergang vor, Doppelklick übernimmt ihn; „In Spur schreiben“ setzt die neuen Akkorde ein – **Einfügen** schafft Platz, **Ersetzen** überschreibt.",
+      t("Helps you write chord progressions. The circle shows major on the outside, minor in the middle, diminished on the inside; the best continuations carry rank numbers and arrows in the colors of their mood."),
+      t("The progression follows the playback position. Clicking a chord plays the transition, double-clicking adds it; \"Write to track\" puts the new chords in – **Insert** makes room, **Replace** overwrites."),
     ],
   },
   agent: {
-    title: "Fenster „Agent“",
+    title: t("\"Agent\" window"),
     text: [
-      "Aufträge an einen verbundenen KI-Agenten (z. B. Claude Code über MCP). Jede Nachricht trägt die Lage mit: welche Spuren hörbar, stumm oder solo sind und welcher Zeitraum markiert ist – „mach das hier leiser“ funktioniert also.",
-      "Oben steht, wie du den Agenten verbindest und zuhören lässt.",
+      t("Tasks for a connected AI agent (e.g. Claude Code via MCP). Every message includes the current state: which tracks are audible, muted or soloed and which time range is selected – so \"make this part quieter\" works."),
+      t("The top explains how to connect the agent and make it listen."),
     ],
-    keys: [["Enter", "senden"], ["Umschalt + Enter", "neue Zeile"]],
+    keys: [[t("Enter"), t("send")], [t("Shift + Enter"), t("new line")]],
   },
   hilfe: {
-    title: "Hilfe",
-    text: ["Zeig mit der Maus auf etwas – hier steht, was es tut. **F1** hält den Text fest (Schloss-Symbol); noch einmal F1 auf demselben Element löst ihn wieder."],
+    title: t("Help"),
+    text: [t("Point at something with the mouse – this shows what it does. **F1** pins the text (lock icon); pressing F1 again on the same element releases it.")],
   },
 };
 
 const ENTRIES: Entry[] = [
   // ------------------------------------------------ Leiste oben
-  { sel: "kw-transport .brand", topic: { title: "Klangwelt", text: ["Musik machen, aufnehmen, erkennen und Klänge gestalten – alles in einem Programm. Die **Intro-Tour** auf der Seite eines leeren Projekts zeigt alle Fenster."] } },
-  { sel: "[data-help=datei]", topic: { title: "Menü „Datei“", text: ["Neues Projekt, Öffnen, Speichern unter, Exportieren und das Demo-Projekt. Projekte liegen in Dokumente/Klangwelt/Projekte; eine .klangwelt-Datei enthält alles, auch die Aufnahmen."], keys: [["Strg+N", "neu"], ["Strg+O", "öffnen"], ["Strg+Umschalt+S", "speichern unter"]] } },
-  { sel: ".save-btn", topic: { title: "Speichern", text: ["Speichert das Projekt in seine Datei; beim ersten Mal fragt Klangwelt nach einem Namen. Ein Punkt am Knopf und „•“ hinter dem Namen zeigen ungespeicherte Änderungen."], keys: [["Strg+S", "speichern"]] } },
-  { sel: ".export-btn", topic: { title: "Exportieren", text: ["Schreibt das Stück als Datei – so, wie es zu hören ist (stumme Spuren fehlen, Solo gilt):", "**WAV** unkomprimiert · **FLAC** verlustfrei gepackt · **Opus** klein fürs Handy (Bitrate wählbar, Standard 160 kbit/s) · **Stems** eine WAV je Spur · **MIDI** nur die Noten.", "Ist ein Zeitraum markiert, kann der Export nur ihn schreiben. Ablage: Musik/Klangwelt/Exporte."], keys: [["Strg+E", "Export-Dialog"]] } },
-  { sel: ".proj-name", topic: { title: "Projektname", text: ["Name der Projektdatei; „•“ heißt: ungespeicherte Änderungen. Beim Zeigen steht der volle Pfad im Tooltip."] } },
-  { sel: "kw-transport .btn.big.rec", topic: { title: "Aufnehmen", text: ["Nimmt über das Mikrofon auf und legt die Aufnahme als Audio-Clip an. Danach kannst du sie analysieren, ihr Tempo erkennen oder die Melodie als Noten übernehmen."], keys: [["R", "Aufnahme starten / beenden"]] } },
-  { sel: "kw-transport .btn.big.primary", topic: { title: "Wiedergabe", text: ["Spielt ab oder hält an. Ist in der Zeitleiste ein Zeitraum markiert, spielt sie genau diesen – mit Wiederholen in Schleife. Ohne Markierung stoppt sie einen Takt nach dem Ende des Stücks."], keys: [["Leertaste", "Wiedergabe / Pause"]] } },
-  { sel: "kw-transport .btn.big", topic: { title: "Stopp", text: ["Hält an und setzt Abspielposition und Ansicht zurück an den Anfang."], keys: [["Enter / Pos1", "Stopp"]] } },
-  { sel: "kw-transport .lcd", topic: { title: "Position", text: ["Oben Takt.Schlag.Sechzehntel, unten die Zeit in Minuten und Sekunden."] } },
-  { sel: "[data-help=tempo]", topic: { title: "Tempo", text: ["Projekttempo in Schlägen pro Minute (BPM). Instrumentspuren folgen sofort; Audio-Clips mit „Synchronisieren“ werden gedehnt, ohne die Tonhöhe zu ändern."] } },
-  { sel: "[data-help=takt]", topic: { title: "Takt", text: ["Taktart des Projekts (z. B. 4/4). Sie bestimmt Taktstriche, Raster und Metronom."] } },
-  { sel: "[data-help=metronom]", topic: { title: "Metronom", text: ["Klick auf jedem Schlag, betont auf der Eins. Klangwelt merkt sich den Zustand bis zum nächsten Start."] } },
-  { sel: "[data-help=wiederholen]", topic: { title: "Wiederholen", text: ["Spielt in Schleife: den markierten Zeitraum oder, ohne Markierung, das ganze Stück (auf ganze Takte aufgerundet)."], keys: [["L", "Wiederholen ein/aus"]] } },
-  { sel: "[data-help=rueckgaengig]", topic: { title: "Rückgängig", text: ["Nimmt den letzten Schritt zurück – auch Änderungen des Agenten. Der Tooltip nennt den Schritt."], keys: [["Strg+Z", "rückgängig"]] } },
-  { sel: "[data-help=wiederherstellen]", topic: { title: "Wiederherstellen", text: ["Holt einen zurückgenommenen Schritt wieder."], keys: [["Strg+Y / Strg+Umschalt+Z", "wiederherstellen"]] } },
-  { sel: "[data-help=fenster]", topic: { title: "Fenster", text: ["Blendet Fenster ein und aus und setzt das Layout zurück. Fenster ziehst du an ihrem Reiter woandershin: andocken, als Reiter gruppieren oder frei schweben lassen."] } },
-  { sel: "[data-help=einstellungen]", topic: { title: "Einstellungen", text: ["Grundeinstellungen, z. B. die Tonachse: tiefe Töne oben (wie an einem gedrehten Klavier) oder hohe Töne oben (wie in Noten)."] } },
-  { sel: "canvas.meter", topic: { title: "Pegel", text: ["Oben der Ausgang, unten das Mikrofon. Rot heißt: zu laut – dann Pegel der Spuren senken."] } },
-  { sel: ".chip.agent", topic: { title: "Agent", text: [
-    "Zeigt, ob ein KI-Agent (z. B. Claude Code) mit Klangwelt verbunden ist:",
-    "**Kein Agent verbunden** – der Endpunkt der App läuft und wartet; kein Agent hat sich in den letzten Minuten gemeldet oder hält eine Verbindung. **Agent bereit** – ein Agent ist verbunden und kann das Projekt steuern. **Agent hört zu** – er holt Aufträge aus dem Chat sofort ab. **Agent aus** – der Endpunkt konnte nicht starten.",
-    "Ein Klick öffnet den Agent-Chat mit dem Prompt zum Verbinden: kopieren, in Claude Code einfügen, fertig.",
+  { sel: "kw-transport .brand", topic: { title: "Klangwelt", text: [t("Make music, record, detect and design sounds – all in one program. The **intro tour** on the page of an empty project shows all the windows.")] } },
+  { sel: "[data-help=datei]", topic: { title: t("\"File\" menu"), text: [t("New project, Open, Save as, Export and the demo project. Projects are stored in Documents/Klangwelt/Projekte; a .klangwelt file contains everything, including the recordings.")], keys: [[t("Ctrl+N"), t("new")], [t("Ctrl+O"), t("open")], [t("Ctrl+Shift+S"), t("save as")]] } },
+  { sel: ".save-btn", topic: { title: t("Save"), text: [t("Saves the project to its file; the first time, Klangwelt asks for a name. A dot on the button and \"•\" after the name indicate unsaved changes.")], keys: [[t("Ctrl+S"), t("save")]] } },
+  { sel: ".export-btn", topic: { title: t("Export"), text: [t("Writes the piece to a file – exactly as it sounds (muted tracks are left out, solo applies):"), t("**WAV** uncompressed · **FLAC** losslessly compressed · **Opus** small for your phone (selectable bitrate, default 160 kbit/s) · **Stems** one WAV per track · **MIDI** notes only."), t("If a time range is selected, the export can write just that. Location: Music/Klangwelt/Exporte.")], keys: [[t("Ctrl+E"), t("Export dialog")]] } },
+  { sel: ".proj-name", topic: { title: t("Project name"), text: [t("Name of the project file; \"•\" means unsaved changes. Hover to see the full path in the tooltip.")] } },
+  { sel: "kw-transport .btn.big.rec", topic: { title: t("Record"), text: [t("Records from the microphone and creates the recording as an audio clip. Afterwards you can analyze it, detect its tempo or turn the melody into notes.")], keys: [["R", t("Start / stop recording")]] } },
+  { sel: "kw-transport .btn.big.primary", topic: { title: t("Playback"), text: [t("Plays or pauses. If a time range is selected in the timeline, it plays exactly that – looped if loop is on. Without a selection, it stops one bar after the end of the piece.")], keys: [[t("Space"), t("Play / pause")]] } },
+  { sel: "kw-transport .btn.big", topic: { title: t("Stop"), text: [t("Stops and resets the playback position and the view to the start.")], keys: [[t("Enter / Home"), t("Stop")]] } },
+  { sel: "kw-transport .lcd", topic: { title: t("Position"), text: [t("Top: bar.beat.sixteenth, bottom: the time in minutes and seconds.")] } },
+  { sel: "[data-help=tempo]", topic: { title: t("Tempo"), text: [t("Project tempo in beats per minute (BPM). Instrument tracks follow immediately; audio clips with \"Sync\" are stretched without changing their pitch.")] } },
+  { sel: "[data-help=takt]", topic: { title: t("Time signature"), text: [t("The project's time signature (e.g. 4/4). It determines bar lines, grid and metronome.")] } },
+  { sel: "[data-help=metronom]", topic: { title: t("Metronome"), text: [t("A click on every beat, accented on the one. Klangwelt remembers the setting until the next start.")] } },
+  { sel: "[data-help=wiederholen]", topic: { title: t("Loop"), text: [t("Plays in a loop: the selected time range or, without a selection, the whole piece (rounded up to whole bars).")], keys: [["L", t("Loop on/off")]] } },
+  { sel: "[data-help=rueckgaengig]", topic: { title: t("Undo"), text: [t("Takes back the last step – including changes made by the agent. The tooltip names the step.")], keys: [[t("Ctrl+Z"), t("undo")]] } },
+  { sel: "[data-help=wiederherstellen]", topic: { title: t("Redo"), text: [t("Brings back an undone step.")], keys: [[t("Ctrl+Y / Ctrl+Shift+Z"), t("redo")]] } },
+  { sel: "[data-help=fenster]", topic: { title: t("Windows"), text: [t("Shows and hides windows and resets the layout. Drag a window by its tab to move it elsewhere: dock it, group it as a tab or let it float freely.")] } },
+  { sel: "[data-help=einstellungen]", topic: { title: t("Settings"), text: [t("Basic settings, e.g. the pitch axis: low notes at the top (like a piano turned sideways) or high notes at the top (like in sheet music).")] } },
+  { sel: "canvas.meter", topic: { title: t("Level"), text: [t("Output on top, microphone below. Red means too loud – lower the track levels.")] } },
+  { sel: ".chip.agent", topic: { title: t("Agent"), text: [
+    t("Shows whether an AI agent (e.g. Claude Code) is connected to Klangwelt:"),
+    t("**No agent connected** – the app's endpoint is running and waiting; no agent has checked in during the last few minutes or holds a connection. **Agent ready** – an agent is connected and can control the project. **Agent listening** – it picks up tasks from the chat right away. **Agent off** – the endpoint couldn't start."),
+    t("A click opens the agent chat with the prompt for connecting: copy it, paste it into Claude Code, done."),
   ] } },
-  { sel: "[data-help=ausgabegeraet]", topic: { title: "Ausgabegerät", text: [
-    "Das Gerät, über das Klangwelt spielt (Lautsprecher, Kopfhörer, Audio-Interface), und seine Abtastrate.",
-    "Ein Klick öffnet die Liste: **Systemstandard** folgt dem Standardgerät von Windows bzw. macOS, darunter stehen alle Geräte. Die Wahl wirkt sofort – eine laufende Wiedergabe spielt auf dem neuen Gerät weiter – und gilt auch beim nächsten Start. Ist das gewählte Gerät dann nicht angeschlossen, spielt Klangwelt über den Systemstandard und sagt kurz Bescheid.",
-    "Ohne Gerät läuft Klangwelt ohne Ton weiter.",
+  { sel: "[data-help=ausgabegeraet]", topic: { title: t("Output device"), text: [
+    t("The device Klangwelt plays through (speakers, headphones, audio interface) and its sample rate."),
+    t("A click opens the list: **System default** follows the default device of Windows or macOS, below it are all devices. The choice takes effect immediately – playback in progress continues on the new device – and also applies the next time you start. If the chosen device isn't connected then, Klangwelt plays through the system default and briefly lets you know."),
+    t("Without a device, Klangwelt keeps running without sound."),
   ] } },
-  { sel: "[data-help=aufnahmegeraet]", topic: { title: "Aufnahmegerät", text: [
-    "Das Mikrofon für Aufnahmen und das Vorsingen in der Bibliothek. Ein Klick öffnet die Liste: **Systemstandard** oder ein bestimmtes Gerät (z. B. ein USB-Mikrofon oder Audio-Interface).",
-    "Die Wahl gilt ab der nächsten Aufnahme und auch nach einem Neustart; während einer Aufnahme lässt sie sich nicht ändern.",
+  { sel: "[data-help=aufnahmegeraet]", topic: { title: t("Recording device"), text: [
+    t("The microphone for recordings and for singing melodies into the library search. A click opens the list: **System default** or a specific device (e.g. a USB microphone or audio interface)."),
+    t("The choice applies from the next recording on and also after a restart; it can't be changed during a recording."),
   ] } },
 
   // ------------------------------------------------ Spuren
-  { sel: ".harmony-toggle", topic: { title: "Harmonie in der Zeitleiste", text: ["Blendet im Lineal ein Band mit den Akkorden ein, gefärbt nach ihrer Stimmung (lösend, spannend, überraschend …). Rote Kanten markieren harmonische Brüche – tonartfremde Akkorde ohne Erklärung oder Tritonus-Sprünge. Das Band erscheint auch, solange du im Harmonie-Fenster arbeitest."] } },
-  { sel: "[data-help=neue-audiospur]", topic: { title: "Audiospur", text: ["Neue Spur für Aufnahmen. Die Aufnahme startest du mit R oder dem roten Knopf oben."] } },
-  { sel: "[data-help=neue-instrumentspur]", topic: { title: "Instrumentspur", text: ["Neue Spur mit Klangerzeuger und einem kurzen Muster: Zupfer, Orgel, Cembalo, Bass, Synth oder Schlagzeug. Den Klang gestaltest du im Fenster „Klang“."] } },
+  { sel: ".harmony-toggle", topic: { title: t("Harmony in the timeline"), text: [t("Shows a band of chords in the ruler, colored by their mood (resolving, tense, surprising …). Red edges mark harmonic breaks – out-of-key chords without an explanation, or tritone leaps. The band also appears while you're working in the Harmony window.")] } },
+  { sel: "[data-help=neue-audiospur]", topic: { title: t("Audio track"), text: [t("New track for recordings. Start recording with R or the red button at the top.")] } },
+  { sel: "[data-help=neue-instrumentspur]", topic: { title: t("Instrument track"), text: [t("New track with an instrument and a short pattern: pluck, organ, harpsichord, bass, synth or drums. Shape the sound in the \"Sound\" window.")] } },
   { sel: ".tracks-head", topic: panelTopics.spuren },
-  { sel: ".track-row input.text", topic: { title: "Name der Spur", text: ["Klicken und tippen benennt die Spur um; Enter übernimmt. Der Agent spricht Spuren mit Namen und Kennung an."] } },
-  { sel: ".track-row .toggle.m", topic: { title: "Stumm (M)", text: ["Schaltet die Spur stumm. Stumme Spuren fehlen auch im Export; der Agent erfährt, welche stumm sind."] } },
-  { sel: ".track-row .toggle.s", topic: { title: "Solo (S)", text: ["Nur Solo-Spuren sind zu hören – auch mehrere zugleich. Gilt auch für den Export."] } },
-  { sel: ".track-row .toggle.convert", topic: { title: "In Noten umwandeln", text: ["Erscheint bei Audiospuren in der Tonhöhen-Ansicht: legt die erkannten Töne aller Clips der Spur als Melodie-Spur direkt darunter an – auf Sechzehntel gerastert, tiefe Lagen als Bass-Spur. Ein Rückgängig-Schritt.", "Für Schlagzeug-Aufnahmen: Rechtsklick auf den Clip → „In Rhythmus-Spur umwandeln“ (Bassdrum, Snare, Hi-Hat)."] } },
-  { sel: ".track-row .toggle.v.x", topic: { title: "Ausdrucksspur", text: ["Blendet unter den Noten eine Spur für den Ausdruck ein: Anschlag, Vibrato, Helligkeit oder Biegung je Note. Werte ziehen oder über mehrere Noten malen; Umschalt zieht eine gerade Linie (Crescendo), Doppelklick setzt zurück."] } },
-  { sel: ".track-row .toggle.v", topic: { title: "Ansicht", text: ["Schaltet zwischen kompakter Zeile und Notenansicht (Pianorolle) um. Audiospuren zeigen in der Notenansicht, was die Analyse erkennt."] } },
-  { sel: ".track-row .stepper", topic: { title: "Tonhöhe", text: ["Verschiebt die Spur in Halbtönen (−24 … +24). Bei Audio bleibt das Tempo gleich; beim Export und im MIDI ist die Verschiebung eingerechnet."] } },
-  { sel: "[data-help=pegel]", topic: { title: "Pegel", text: ["Lautstärke der Spur in dB (−60 … +6). Doppelklick setzt 0 dB."] } },
-  { sel: "[data-help=panorama]", topic: { title: "Panorama", text: ["Position im Stereobild, von links nach rechts. Doppelklick setzt die Mitte."] } },
-  { sel: ".track-row canvas.keys", topic: { title: "Klaviatur", text: ["Ein um 90° gedrehtes Klavier: Klick spielt einen Ton an. Die Tonachse (tiefe oder hohe Töne oben) stellst du im Zahnrad um."], keys: [["Mausrad", "Tonbereich verschieben"], ["Strg + Mausrad", "zoomen"], ["Doppelklick", "einpassen"]] } },
-  { sel: ".track-row .expr-select", topic: { title: "Ausdrucksform", text: ["Was die Ausdrucksspur zeigt: Anschlag (Lautstärke), Vibrato, Helligkeit oder Biegung (Anschleifen)."] } },
-  { sel: ".track-row", topic: { title: "Spurkopf", text: ["Name, Stumm/Solo, Ansicht, Pegel, Panorama und Tonhöhe einer Spur. Die Linie zwischen zwei Spuren ziehen ändert die Höhe (Doppelklick: Standard)."] } },
+  { sel: ".track-row input.text", topic: { title: t("Track name"), text: [t("Click and type to rename the track; Enter confirms. The agent refers to tracks by name and ID.")] } },
+  { sel: ".track-row .toggle.m", topic: { title: t("Mute (M)"), text: [t("Mutes the track. Muted tracks are also left out of the export; the agent knows which ones are muted.")] } },
+  { sel: ".track-row .toggle.s", topic: { title: t("Solo (S)"), text: [t("Only solo tracks are audible – several at once, too. Also applies to the export.")] } },
+  { sel: ".track-row .toggle.convert", topic: { title: t("Convert to notes"), text: [t("Appears on audio tracks in pitch view: creates the detected notes of all the track's clips as a melody track directly below – quantized to sixteenths, low registers as a bass track. One undo step."), t("For drum recordings: right-click the clip → \"Convert to rhythm track\" (kick, snare, hi-hat).")] } },
+  { sel: ".track-row .toggle.v.x", topic: { title: t("Expression lane"), text: [t("Shows a lane for expression below the notes: velocity, vibrato, brightness or bend per note. Drag values or paint across several notes; Shift draws a straight line (crescendo), double-click resets.")] } },
+  { sel: ".track-row .toggle.v", topic: { title: t("View"), text: [t("Switches between a compact row and the piano roll. In the piano roll, audio tracks show what the analysis detects.")] } },
+  { sel: ".track-row .stepper", topic: { title: t("Pitch"), text: [t("Shifts the track in semitones (−24 … +24). For audio the tempo stays the same; the shift is included in the export and in MIDI.")] } },
+  { sel: "[data-help=pegel]", topic: { title: t("Level"), text: [t("Track volume in dB (−60 … +6). Double-click sets 0 dB.")] } },
+  { sel: "[data-help=panorama]", topic: { title: t("Pan"), text: [t("Position in the stereo field, from left to right. Double-click centers it.")] } },
+  { sel: ".track-row canvas.keys", topic: { title: t("Keyboard"), text: [t("A piano rotated by 90°: click plays a note. Change the pitch axis (low or high notes at the top) in the gear menu.")], keys: [[t("Mouse wheel"), t("scroll pitch range")], [t("Ctrl + mouse wheel"), t("zoom")], [t("Double-click"), t("fit")]] } },
+  { sel: ".track-row .expr-select", topic: { title: t("Expression type"), text: [t("What the expression lane shows: velocity (loudness), vibrato, brightness or bend (scoop).")] } },
+  { sel: ".track-row", topic: { title: t("Track header"), text: [t("A track's name, mute/solo, view, level, pan and pitch. Drag the line between two tracks to change the height (double-click: default).")] } },
   { sel: "kw-timeline canvas", topic: (el, _x, y) => (y - el.getBoundingClientRect().top < RULER_H ? ruler : lanes) },
-  { sel: ".empty-hint .song-start", topic: { title: "Mit Song starten", text: ["Legt ein ganzes Stück aus einer Vorlage an (Trance, Ambient, Deep House, Synthwave, Lo-Fi). Im Fenster „Song“ gestaltest du den Aufbau weiter."] } },
-  { sel: ".empty-hint .beat-start", topic: { title: "Mit Beat starten", text: ["Legt eine Schlagzeug-Spur mit vier Takten eines Genre-Musters an und übernimmt Tempo und Klang. Im Fenster „Rhythmus“ bearbeitest du ihn weiter."] } },
-  { sel: ".empty-hint .intro-btn", topic: { title: "Intro-Tour", text: ["Ein Rundgang durch alle Fenster: Schritt für Schritt hervorgehoben, mit Zetteln zu den wichtigsten Funktionen. Jederzeit mit Esc beenden."] } },
-  { sel: ".empty-hint", topic: { title: "Leeres Projekt", text: ["Lade die Demo, starte mit einem Song oder Beat, lege eine Spur an oder nimm direkt auf. Die Intro-Tour zeigt dir alle Fenster."] } },
+  { sel: ".empty-hint .song-start", topic: { title: t("Start with a song"), text: [t("Creates a complete piece from a template (Trance, Ambient, Deep House, Synthwave, Lo-Fi). Keep shaping its structure in the \"Song\" window.")] } },
+  { sel: ".empty-hint .beat-start", topic: { title: t("Start with a beat"), text: [t("Creates a drum track with four bars of a genre pattern and adopts its tempo and sound. Keep editing it in the \"Rhythm\" window.")] } },
+  { sel: ".empty-hint .intro-btn", topic: { title: t("Intro tour"), text: [t("A tour of all windows: highlighted step by step, with notes on the most important features. Quit anytime with Esc.")] } },
+  { sel: ".empty-hint", topic: { title: t("Empty project"), text: [t("Load the demo, start with a song or beat, add a track or record right away. The intro tour shows you all the windows.")] } },
   { sel: "kw-timeline", topic: lanes },
 
   // ------------------------------------------------ Clip
-  { sel: "kw-panel[tab=clip] .mark.dyn", topic: { title: "Dynamik", text: ["Setzt den Anschlag der gewählten Noten (ohne Auswahl: aller Noten im Clip): pp 32, p 48, mp 64, mf 80, f 100, ff 120."] } },
-  { sel: "kw-panel[tab=clip] .mark", topic: { title: "Vortragszeichen", text: ["Crescendo/Decrescendo, Akzent (+25), Staccato (halbe Länge), Legato (bis zur nächsten Note), Vibrato, Heller/Dunkler, Anschleifen und Neutral – für die gewählten Noten oder alle."] } },
-  { sel: "kw-panel[tab=clip] input[type=range]", topic: { title: "Ausdrucksregler", text: ["Zeigen den Mittelwert der gewählten Noten; Ziehen setzt alle auf den Wert (ein Rückgängig-Schritt)."] } },
+  { sel: "kw-panel[tab=clip] .mark.dyn", topic: { title: t("Dynamics"), text: [t("Sets the velocity of the selected notes (no selection: all notes in the clip): pp 32, p 48, mp 64, mf 80, f 100, ff 120.")] } },
+  { sel: "kw-panel[tab=clip] .mark", topic: { title: t("Expression marks"), text: [t("Crescendo/Decrescendo, Accent (+25), Staccato (half length), Legato (up to the next note), Vibrato, Brighter/Darker, Scoop and Neutral – for the selected notes or all of them.")] } },
+  { sel: "kw-panel[tab=clip] input[type=range]", topic: { title: t("Expression sliders"), text: [t("Show the average of the selected notes; dragging sets all of them to that value (one undo step).")] } },
 
   // ------------------------------------------------ Klang
-  { sel: "kw-panel[tab=klang] .snd-kinds", topic: { title: "Instrument", text: ["Wechselt den Klangerzeuger der Spur. Die Noten bleiben, der Klang beginnt beim Startpunkt des Instruments."] } },
-  { sel: "kw-panel[tab=klang] .snd-mark", topic: { title: "Startpunkt", text: ["Benannter Punkt im Feld – ein Klick setzt die Regler dieses Felds, die anderen Felder bleiben unberührt."] } },
-  { sel: "kw-panel[tab=klang] .snd-field[data-field=charakter]", topic: { title: "Feld „Charakter“", text: ["Je Instrument eigene Achsen (beim Schlagzeug z. B. knackig → mächtig und schlicht → komplex). Ein Punkt hier setzt viele Regler des Instruments auf einmal."] } },
-  { sel: "kw-panel[tab=klang] .snd-field[data-field=farbe]", topic: { title: "Feld „Klangfarbe“", text: ["Waagrecht dunkel → hell (Kippfilter), senkrecht glatt → rau (Flattern, Sättigung, Körnung)."] } },
-  { sel: "kw-panel[tab=klang] .snd-field[data-field=raum]", topic: { title: "Feld „Raum“", text: ["Waagrecht schmal → breit (Stereo, die Tiefen bleiben mittig), senkrecht nah → fern (Hall; aus der Ferne leiser und dumpfer)."] } },
-  { sel: "kw-panel[tab=klang] .snd-field", topic: { title: "Klangfeld", text: ["Punkt ziehen oder Startpunkt anklicken. Jedes Feld setzt nur seine eigenen Regler."] } },
-  { sel: "kw-panel[tab=klang] .snd-play", topic: { title: "Anspielen", text: ["Was nach dem Loslassen eines Reglers kurz erklingt: nichts, ein Einzelton oder das Muster. Die Wahl bleibt."] } },
-  { sel: "kw-panel[tab=klang] .snd-wave", topic: { title: "Zeitverlauf", text: ["Wellenform eines Testtons. Beim Synth zeichnest du hier den Verlauf: Lautstärke und Helligkeit als Kurven über die Zeit – Punkte ziehen, Doppelklick setzt oder löscht einen Punkt."] } },
-  { sel: "kw-panel[tab=klang] .snd-fine", topic: { title: "Feinschliff", text: ["Alle Regler des Instruments einzeln. Rechts die Messwerte des Klangs (Helligkeit, Ausklang, Grundton …) – dieselben, die der Agent liest."] } },
-  { sel: "kw-panel[tab=klang] .snd-lib", topic: { title: "Meine Klänge", text: ["Sichert die aktuelle Einstellung unter einem Namen – alle Regler, die Stellung in den Feldern, beim Synth der Verlauf. Die Klänge gelten in jedem Projekt; ein Klick lädt einen in die Spur. ✎ benennt um, der Papierkorb löscht beim zweiten Klick."] } },
+  { sel: "kw-panel[tab=klang] .snd-kinds", topic: { title: t("Instrument"), text: [t("Changes the track's instrument. The notes stay; the sound starts from the instrument's starting point.")] } },
+  { sel: "kw-panel[tab=klang] .snd-mark", topic: { title: t("Starting point"), text: [t("Named point in the field – a click sets this field's controls; the other fields stay untouched.")] } },
+  { sel: "kw-panel[tab=klang] .snd-field[data-field=charakter]", topic: { title: t("\"Character\" field"), text: [t("Each instrument has its own axes (for drums, e.g. crisp → powerful and simple → complex). A point here sets many of the instrument's controls at once.")] } },
+  { sel: "kw-panel[tab=klang] .snd-field[data-field=farbe]", topic: { title: t("\"Timbre\" field"), text: [t("Horizontal: dark → bright (tilt filter); vertical: smooth → rough (flutter, saturation, grain).")] } },
+  { sel: "kw-panel[tab=klang] .snd-field[data-field=raum]", topic: { title: t("\"Space\" field"), text: [t("Horizontal: narrow → wide (stereo, the lows stay centered); vertical: near → far (reverb; quieter and duller from a distance).")] } },
+  { sel: "kw-panel[tab=klang] .snd-field", topic: { title: t("Sound field"), text: [t("Drag the point or click a starting point. Each field only sets its own controls.")] } },
+  { sel: "kw-panel[tab=klang] .snd-play", topic: { title: t("Preview"), text: [t("What plays briefly after you release a control: nothing, a single note or the pattern. Your choice is remembered.")] } },
+  { sel: "kw-panel[tab=klang] .snd-wave", topic: { title: t("Over time"), text: [t("Waveform of a test tone. For the synth, you draw the envelope here: volume and brightness as curves over time – drag points; double-click adds or deletes a point.")] } },
+  { sel: "kw-panel[tab=klang] .snd-fine", topic: { title: t("Fine-tuning"), text: [t("All of the instrument's controls individually. On the right, the sound's measurements (brightness, decay, fundamental …) – the same ones the agent reads.")] } },
+  { sel: "kw-panel[tab=klang] .snd-lib", topic: { title: t("My sounds"), text: [t("Saves the current settings under a name – all controls, the position in the fields and, for the synth, the envelope. Saved sounds are available in every project; a click loads one into the track. ✎ renames, the trash can deletes on the second click.")] } },
 
   // ------------------------------------------------ Rhythmus
-  { sel: ".rh-genre", topic: { title: "Genre", text: ["Typische Muster eines Stils mit Tempo, empfohlenem Swing und einem Tipp. Ein Klick zeigt die Muster des Genres."] } },
-  { sel: ".rh-pattern", topic: { title: "Muster", text: ["Lädt das Muster ins Raster – als Entwurf oder, bei gewähltem Schlagzeug-Clip, als neuer Inhalt des Clips."] } },
-  { sel: ".rh-step", topic: { title: "Schritt", text: ["Ein Klick setzt oder löscht einen Schlag. Die hellen Spalten sind die Zählzeiten 1 2 3 4. Betonungen setzt Klangwelt selbst (Backbeat laut, Ghost Notes leise)."] } },
-  { sel: ".rh-label", topic: { title: "Trommel", text: ["Ein Klick spielt die Trommel an."] } },
-  { sel: ".rh-swing", topic: { title: "Swing", text: ["Verschiebt jede zweite Sechzehntel nach hinten – von gerade bis stark geswingt."] } },
-  { sel: ".rh-write", topic: { title: "In Spur schreiben", text: ["Legt den Entwurf als Clip an: hinter den letzten Clip einer Schlagzeug-Spur oder in eine neue Spur mit dem Klang des Genres."] } },
+  { sel: ".rh-genre", topic: { title: t("Genre"), text: [t("Typical patterns of a style with tempo, recommended swing and a tip. A click shows the genre's patterns.")] } },
+  { sel: ".rh-pattern", topic: { title: t("Pattern"), text: [t("Loads the pattern into the grid – as a draft or, if a drum clip is selected, as the clip's new content.")] } },
+  { sel: ".rh-step", topic: { title: t("Step"), text: [t("A click sets or clears a hit. The bright columns are beats 1 2 3 4. Klangwelt adds the accents itself (loud backbeat, quiet ghost notes).")] } },
+  { sel: ".rh-label", topic: { title: t("Drum"), text: [t("A click plays the drum.")] } },
+  { sel: ".rh-swing", topic: { title: t("Swing"), text: [t("Delays every second sixteenth – from straight to heavily swung.")] } },
+  { sel: ".rh-write", topic: { title: t("Write to track"), text: [t("Creates the draft as a clip: after the last clip of a drum track, or in a new track with the genre's sound.")] } },
 
   // ------------------------------------------------ Song
-  { sel: ".song-tpl", topic: { title: "Vorlage", text: ["Lädt Aufbau, Tempo, Tonart und Akkorde eines Stils in den Editor. Erst „Song erzeugen“ schreibt Spuren."] } },
-  { sel: ".song-cell", topic: { title: "Zelle", text: ["Wie stark eine Rolle in einem Abschnitt spielt: aus → sparsam → voll. Sparsam heißt z. B. Arpeggio in Achteln statt Sechzehnteln."], keys: [["Klick", "mehr"], ["Umschalt + Klick", "weniger"]] } },
-  { sel: ".song-chords", topic: { title: "Akkorde", text: ["Akkorde reihum mit deutschen Tonnamen wie im Quintenzirkel (a = a-Moll, C = C-Dur, B = B♭) oder Stufen (i, IV, V …). Daneben die Takte je Akkord."] } },
-  { sel: ".song-write", topic: { title: "Song erzeugen", text: ["Schreibt je Rolle eine Spur (alle Trommeln zusammen in „Beat“), einen Clip je Abschnitt, setzt das Tempo und zoomt auf den ganzen Song. Erneut erzeugen ersetzt die zuletzt erzeugten Spuren – ein Rückgängig-Schritt holt sie zurück."] } },
+  { sel: ".song-tpl", topic: { title: t("Template"), text: [t("Loads a style's structure, tempo, key and chords into the editor. Tracks are only written by \"Generate song\".")] } },
+  { sel: ".song-cell", topic: { title: t("Cell"), text: [t("How strongly a role plays in a section: off → sparse → full. Sparse means e.g. an arpeggio in eighths instead of sixteenths.")], keys: [[t("Click"), t("more")], [t("Shift + click"), t("less")]] } },
+  { sel: ".song-chords", topic: { title: t("Chords"), text: [t("Chords in sequence – lower case is minor (a = A minor, C = C major; F♯ or F#, B♭ or Bb) – or scale degrees (i, IV, V …). Next to them, the bars per chord.")] } },
+  { sel: ".song-write", topic: { title: t("Generate song"), text: [t("Writes one track per role (all drums together in \"Beat\") and one clip per section, sets the tempo and zooms to the whole song. Generating again replaces the most recently generated tracks – one undo step brings them back.")] } },
 
   // ------------------------------------------------ Bibliothek
-  { sel: ".lib-name", topic: { title: "Bibliotheken", text: ["Name der aktiven Bibliothek. Ein Klick öffnet die Verwaltung: wechseln, neu anlegen (z. B. zum Ausprobieren), umbenennen, löschen (nur den Index, nie Partituren)."] } },
-  { sel: "[data-help=lib-herunterladen]", topic: { title: "Herunterladen", text: ["Öffnet den Katalog der Musikbibliotheken: PDMX (über 250 000 Partituren), OpenScore, KernScores mit Bach, Mozart, Beethoven und DCML mit Harmonieanalyse. Jedes Paket nennt Umfang und Lizenz; ein Klick lädt es herunter und übernimmt es in die aktive Bibliothek – im Hintergrund, auch über einen Neustart hinweg.", "Läuft schon ein Download, heißt der Knopf „Einreihen“: Das Paket kommt in die Warteschlange und startet danach von selbst – so lassen sich mehrere Pakete auf einmal beauftragen."] } },
-  { sel: "[data-help=lib-warteschlange]", topic: { title: "Warteschlange", text: ["Beauftragte Pakete, die nach dem laufenden Auftrag geladen und übernommen werden – der Reihe nach, jedes in die Bibliothek, die beim Beauftragen aktiv war.", "Das × nimmt ein Paket heraus, „Alle herausnehmen“ leert die Liste. „Abbrechen“ stoppt nur den laufenden Auftrag; danach kommt das nächste dran. Beim Schließen der App geht die Warteschlange verloren."] } },
-  { sel: "canvas.lib-ruler", topic: { title: "Zeitleiste der Partitur", text: ["Ziehen wandert in der Zeit, ein Klick setzt den Cursor, Umschalt/Strg+Ziehen markiert einen Abschnitt zum Anhören oder Übernehmen."] } },
-  { sel: "canvas.lib-roll", topic: { title: "Noten der Partitur", text: ["Alle Stimmen der gewählten Partitur."], keys: [["Mausrad", "scrollen"], ["Strg + Mausrad", "zoomen"], ["mittlere Maustaste", "ziehen"]] } },
+  { sel: ".lib-name", topic: { title: t("Libraries"), text: [t("Name of the active library. A click opens the manager: switch, create a new one (e.g. for experimenting), rename, delete (only the index, never scores).")] } },
+  { sel: "[data-help=lib-herunterladen]", topic: { title: t("Download"), text: [t("Opens the catalog of music libraries: PDMX (over 250,000 scores), OpenScore, KernScores with Bach, Mozart and Beethoven, and DCML with harmonic analysis. Each package lists its size and license; a click downloads it and adds it to the active library – in the background, even across a restart."), t("If a download is already running, the button says \"Queue\": the package goes into the queue and starts by itself afterwards – so you can order several packages at once.")] } },
+  { sel: "[data-help=lib-warteschlange]", topic: { title: t("Queue"), text: [t("Ordered packages that are downloaded and added after the current job – one after another, each into the library that was active when it was ordered."), t("The × removes a package; \"Remove all\" clears the list. \"Cancel\" only stops the current job; then the next one starts. The queue is lost when you close the app.")] } },
+  { sel: "canvas.lib-ruler", topic: { title: t("Score timeline"), text: [t("Drag to move through time, a click sets the cursor, Shift/Ctrl+drag marks a section to listen to or import.")] } },
+  { sel: "canvas.lib-roll", topic: { title: t("Score notes"), text: [t("All voices of the selected score.")], keys: [[t("Mouse wheel"), t("scroll")], [t("Ctrl + mouse wheel"), t("zoom")], [t("middle mouse button"), t("drag")]] } },
 
   // ------------------------------------------------ Harmonie
-  { sel: "kw-panel[tab=harmonie] .hc-mode", topic: { title: "Einfügen oder Ersetzen", text: ["**Einfügen** schafft Platz: Alles ab der Stelle rückt in allen Spuren um die Länge der neuen Akkorde nach hinten. **Ersetzen** überschreibt das Nachfolgende in der Ziel-Spur."] } },
-  { sel: "kw-panel[tab=harmonie] .hc-follow", topic: { title: "Folgen", text: ["Der Verlauf greift beim Abspielen und Cursor-Setzen die Akkorde an dieser Stelle auf – deine eigenen neuen Akkorde bleiben dahinter stehen."] } },
-  { sel: "kw-panel[tab=harmonie] .hc-chip", topic: { title: "Verlauf", text: ["Die Akkorde bis hierher. Ein Klick spielt einen an; die letzten neuen Akkorde schreibt „In Spur schreiben“ in die Ziel-Spur."] } },
-  { sel: "kw-panel[tab=harmonie] .hc-pick", topic: { title: "Fortsetzung", text: ["Ein Vorschlag mit Stufe, Funktion und Begründung. Klick spielt den Übergang, Doppelklick übernimmt ihn in den Verlauf. Der Punkt davor zeigt die Stimmung."] } },
-  { sel: "kw-panel[tab=harmonie] .hc-legend", topic: { title: "Stimmungen", text: ["lösend (grün), spannend (orange), überraschend (pink), hell und dunkel – mit der Maus über einer Stimmung treten nur ihre Übergänge hervor."] } },
-  { sel: "kw-panel[tab=harmonie] .hc-circle", topic: { title: "Quintenzirkel", text: ["Außen Dur, Mitte Moll, innen vermindert; die Akkorde der Tonart sind eingefärbt. Die besten Fortsetzungen tragen Rang und Pfeil."], keys: [["Klick", "Übergang vorspielen"], ["Doppelklick", "in den Verlauf übernehmen"]] } },
+  { sel: "kw-panel[tab=harmonie] .hc-mode", topic: { title: t("Insert or replace"), text: [t("**Insert** makes room: everything from that point on moves later in all tracks by the length of the new chords. **Replace** overwrites what follows in the target track.")] } },
+  { sel: "kw-panel[tab=harmonie] .hc-follow", topic: { title: t("Follow"), text: [t("During playback and when you set the cursor, the progression picks up the chords at that point – your own new chords stay after them.")] } },
+  { sel: "kw-panel[tab=harmonie] .hc-chip", topic: { title: t("Progression"), text: [t("The chords so far. A click plays one; \"Write to track\" writes the latest new chords into the target track.")] } },
+  { sel: "kw-panel[tab=harmonie] .hc-pick", topic: { title: t("Continuation"), text: [t("A suggestion with scale degree, function and reasoning. Click plays the transition, double-click adds it to the progression. The dot in front shows the mood.")] } },
+  { sel: "kw-panel[tab=harmonie] .hc-legend", topic: { title: t("Moods"), text: [t("resolving (green), tense (orange), surprising (pink), bright and dark – hover over a mood to highlight only its transitions.")] } },
+  { sel: "kw-panel[tab=harmonie] .hc-circle", topic: { title: t("Circle of fifths"), text: [t("Major outside, minor in the middle, diminished inside; the key's chords are colored. The best continuations show a rank and an arrow.")], keys: [[t("Click"), t("preview transition")], [t("Double-click"), t("add to progression")]] } },
 
   // ------------------------------------------------ Kontextmenü
-  { sel: ".ctx-menu [data-act^=raster]", topic: { title: "Am Takt ausrichten", text: ["Rückt die markierten Noten auf das Raster: 1/4, 1/8, 1/16 oder das Raster der Ansicht (feiner, je weiter hineingezoomt). Gerechnet wird im Takt des Stücks, auch wenn der Clip versetzt beginnt.", "„Am Takt ausrichten“ setzt nur die Anfänge, „Anfang und Länge“ auch die Enden – jede Note bleibt mindestens ein Raster lang."] } },
-  { sel: ".ctx-menu", topic: { title: "Kontextmenü", text: ["Was sich mit dem Angeklickten tun lässt: Noten ausrichten und transponieren, eine Aufnahme in eine Melodie- oder Rhythmus-Spur umwandeln, den markierten Zeitraum aus allen Spuren löschen. Esc oder ein Klick daneben schließt es."] } },
+  { sel: ".ctx-menu [data-act^=raster]", topic: { title: t("Quantize"), text: [t("Moves the selected notes onto the grid: 1/4, 1/8, 1/16 or the view's grid (finer the further you zoom in). The grid follows the song's bars, even if the clip starts offset."), t("\"Quantize\" only moves the starts, \"Start and length\" also the ends – every note stays at least one grid step long.")] } },
+  { sel: ".ctx-menu", topic: { title: t("Context menu"), text: [t("What you can do with the clicked item: quantize and transpose notes, convert a recording into a melody or rhythm track, delete the selected time range from all tracks. Esc or a click outside closes it.")] } },
 
   // ------------------------------------------------ Agent
-  { sel: ".chat-input", topic: { title: "Auftrag", text: ["Schreib, was der Agent tun soll – z. B. „Mach die Kick tiefer“ oder „Schreib eine Basslinie für die markierten Takte“. Hörbare Spuren und der markierte Zeitraum gehen automatisch mit."], keys: [["Enter", "senden"], ["Umschalt + Enter", "neue Zeile"]] } },
+  { sel: ".chat-input", topic: { title: t("Task"), text: [t("Write what the agent should do – e.g. \"Make the kick deeper\" or \"Write a bassline for the selected bars\". Audible tracks and the selected time range are sent along automatically.")], keys: [[t("Enter"), t("send")], [t("Shift + Enter"), t("new line")]] } },
 
   // ------------------------------------------------ Fenster allgemein
-  { sel: ".dk-tab", topic: { title: "Fenster-Reiter", text: ["Ziehen verschiebt das Fenster: aufs Ziel-Kreuz eines anderen Fensters zum Andocken, auf eine Reiterleiste zum Gruppieren, irgendwohin sonst zum Schweben. Das × oder die mittlere Maustaste schließt es; „Fenster ▾“ holt es zurück."], keys: [["Esc beim Ziehen", "abbrechen"]] } },
+  { sel: ".dk-tab", topic: { title: t("Window tab"), text: [t("Dragging moves the window: onto another window's target cross to dock, onto a tab bar to group, anywhere else to float. The × or the middle mouse button closes it; \"Windows ▾\" brings it back.")], keys: [[t("Esc while dragging"), t("cancel")]] } },
   { sel: "kw-panel[tab=clip]", topic: panelTopics.clip },
   { sel: "kw-panel[tab=analyse]", topic: panelTopics.analyse },
   { sel: "kw-panel[tab=klang]", topic: panelTopics.klang },
@@ -281,12 +283,12 @@ export function helpFor(target: Element | null, x = 0, y = 0): HelpView | null {
       const topic = typeof entry.topic === "function" ? entry.topic(el, x, y) : entry.topic;
       const own = tooltipOf(el);
       // Tooltip eines tieferen Elements oder dynamischer Tooltip des Elements selbst
-      const extra = tip ?? (own && !topic.text.some((t) => t.includes(own)) ? own : null);
+      const extra = tip ?? (own && !topic.text.some((p) => p.includes(own)) ? own : null);
       return { topic, tip: extra && extra !== topic.title ? extra : null, el };
     }
     if (!tip) {
-      const t = tooltipOf(el);
-      if (t) tip = t;
+      const own = tooltipOf(el);
+      if (own) tip = own;
     }
   }
   return null;

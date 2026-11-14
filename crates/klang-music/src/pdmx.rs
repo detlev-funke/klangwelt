@@ -38,7 +38,7 @@ pub fn for_each_record(mut r: impl BufRead, cancel: &AtomicBool, mut f: impl FnM
             break;
         }
         if cancel.load(Ordering::Relaxed) {
-            return Err(io::Error::new(io::ErrorKind::Interrupted, "abgebrochen"));
+            return Err(io::Error::new(io::ErrorKind::Interrupted, klang_i18n::tr!("canceled")));
         }
         let mut i = 0;
         while i < line.len() {
@@ -168,22 +168,23 @@ pub fn load_meta(path: &Path) -> io::Result<HashMap<String, PdmxMeta>> {
     Ok(out)
 }
 
-/// Deutsche Bezeichnung eines MuseScore-Genres.
+/// German label of a MuseScore genre (stored like this in the facets of the
+/// index; translate it for display with `klang_i18n::translate`).
 pub fn genre_label(raw: &str) -> String {
     match raw.trim().to_lowercase().as_str() {
-        "classical" => "Klassik",
-        "folk" => "Volksmusik & Folk",
-        "soundtrack" => "Film- & Spielemusik",
+        "classical" => klang_i18n::tid!("Klassik"),
+        "folk" => klang_i18n::tid!("Volksmusik & Folk"),
+        "soundtrack" => klang_i18n::tid!("Film- & Spielemusik"),
         "pop" => "Pop",
         "rock" => "Rock",
         "rbfunksoul" => "R&B, Funk & Soul",
         "jazz" => "Jazz",
-        "worldmusic" => "Weltmusik",
-        "electronic" => "Elektronische Musik",
+        "worldmusic" => klang_i18n::tid!("Weltmusik"),
+        "electronic" => klang_i18n::tid!("Elektronische Musik"),
         "disco" => "Disco",
-        "religiousmusic" => "Geistliche Musik",
+        "religiousmusic" => klang_i18n::tid!("Geistliche Musik"),
         "country" => "Country",
-        "experimental" => "Experimentell",
+        "experimental" => klang_i18n::tid!("Experimentell"),
         "newage" => "New Age",
         "hiphop" => "Hip-Hop",
         "metal" => "Metal",
@@ -191,10 +192,10 @@ pub fn genre_label(raw: &str) -> String {
         "latin" => "Latin",
         "reggae" => "Reggae",
         "alternative" => "Alternative",
-        "holiday" | "holidaymusic" => "Festliche Musik",
-        "childrensmusic" | "children" => "Kindermusik",
+        "holiday" | "holidaymusic" => klang_i18n::tid!("Festliche Musik"),
+        "childrensmusic" | "children" => klang_i18n::tid!("Kindermusik"),
         "musical" | "musicaltheatre" => "Musical",
-        "" => "ohne Angabe",
+        "" => klang_i18n::tid!("ohne Angabe"),
         other => {
             let mut c = other.chars();
             return c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default();
@@ -219,7 +220,7 @@ pub fn composer_label(raw: &str) -> String {
     if ["trad", "traditional", "tradicional", "traditionnel", "traditionell", "anon", "anonymous", "anonym", "unattributed", "unknown", "folk", "volkslied", "volksweise"]
         .contains(&low)
     {
-        return "Traditionell / anonym".into();
+        return klang_i18n::tid!("Traditionell / anonym").into();
     }
     s
 }

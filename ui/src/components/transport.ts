@@ -1,28 +1,29 @@
 import { backend } from "../bridge.js";
 import { redo, stopToStart, toggleLoop, togglePlay, toggleRecord, undo } from "../actions.js";
 import { LOGO, dropdown, fitCanvas, formatBarBeat, formatTime, h, icon } from "../dom.js";
+import { t } from "../i18n.js";
 import { effect } from "../signals.js";
 import { windowMenu } from "../layout.js";
 import { settingsMenu } from "./settings.js";
-import { fileControls } from "./fileops.js";
+import { fileControls, projectLabel } from "./fileops.js";
 import { act, agentPulse, chat, errorText, notify, project, run, showPanel, snapshot, status } from "../store.js";
 import type { AudioDevices, AudioKind } from "../types.js";
 
 /** Text der Agent-Anzeige oben rechts. */
 export function agentLabel(serverRunning: boolean, connected: boolean, listening: boolean): string {
-  if (!serverRunning) return "Agent aus";
-  if (listening) return "Agent hört zu";
-  return connected ? "Agent bereit" : "Kein Agent verbunden";
+  if (!serverRunning) return t("Agent off");
+  if (listening) return t("Agent listening");
+  return connected ? t("Agent ready") : t("No agent connected");
 }
 
 const KIND_WORD: Record<AudioKind, { title: string; short: string }> = {
-  output: { title: "Ausgabegerät", short: "Ausgabe" },
-  input: { title: "Aufnahmegerät", short: "Aufnahme" },
+  output: { title: t("Output device"), short: t("Output") },
+  input: { title: t("Recording device"), short: t("Recording") },
 };
 
 /** Gerät wählen (null = Systemstandard) – wirkt sofort und wird gemerkt. */
 async function chooseDevice(kind: AudioKind, name: string | null): Promise<void> {
-  if (await act(backend.setAudioDevice(kind, name))) notify(`${KIND_WORD[kind].short}: ${name ?? "Systemstandard"}`);
+  if (await act(backend.setAudioDevice(kind, name))) notify(`${KIND_WORD[kind].short}: ${name ?? t("System default")}`);
 }
 
 /** Inhalt des Geräte-Menüs: „Systemstandard“ oben, dann die Geräte des Systems. */
@@ -50,8 +51,8 @@ function fillDeviceMenu(menu: HTMLElement, kind: AudioKind, d: AudioDevices, clo
   if (backend.platform === "web") {
     menu.replaceChildren(
       h("div", { class: "menu-title" }, KIND_WORD[kind].title),
-      option(null, "Systemstandard", deflt ? `zurzeit: ${deflt}` : "Standardgerät des Systems"),
-      h("div", { class: "menu-hint" }, kind === "output" ? "Im Browser spielt Klangwelt über das Ausgabegerät des Systems." : "Im Browser nimmt Klangwelt über das Mikrofon auf, das du dem Browser freigibst."),
+      option(null, t("System default"), deflt ? t("currently: {device}", { device: deflt }) : t("System default device")),
+      h("div", { class: "menu-hint" }, kind === "output" ? t("In the browser, Klangwelt plays through the system's output device.") : t("In the browser, Klangwelt records from the microphone you allow the browser to use.")),
     );
     return;
   }
@@ -59,14 +60,14 @@ function fillDeviceMenu(menu: HTMLElement, kind: AudioKind, d: AudioDevices, clo
   const e = snapshot.peek()?.engine;
   const notice = kind === "output" ? e?.outputNotice : e?.inputNotice;
   if (notice) hints.push(h("div", { class: "menu-hint dev-notice" }, notice));
-  if (recording) hints.push(h("div", { class: "menu-hint" }, "Während einer Aufnahme lässt sich das Gerät nicht wechseln."));
-  if (!list.length) hints.push(h("div", { class: "menu-hint" }, kind === "output" ? "Kein Ausgabegerät gefunden." : "Kein Mikrofon gefunden."));
-  hints.push(h("div", { class: "menu-hint" }, `Wirkt sofort und gilt auch beim nächsten Start.${kind === "output" ? " Die Wiedergabe läuft auf dem neuen Gerät weiter." : ""}`));
+  if (recording) hints.push(h("div", { class: "menu-hint" }, t("The device can't be changed during a recording.")));
+  if (!list.length) hints.push(h("div", { class: "menu-hint" }, kind === "output" ? t("No output device found.") : t("No microphone found.")));
+  hints.push(h("div", { class: "menu-hint" }, kind === "output" ? t("Takes effect immediately and also applies the next time you start. Playback continues on the new device.") : t("Takes effect immediately and also applies the next time you start.")));
   menu.replaceChildren(
     h("div", { class: "menu-title" }, KIND_WORD[kind].title),
-    option(null, "Systemstandard", deflt ? `zurzeit: ${deflt}` : "Standardgerät des Systems"),
+    option(null, t("System default"), deflt ? t("currently: {device}", { device: deflt }) : t("System default device")),
     h("div", { class: "menu-sep" }),
-    ...list.map((n) => option(n, n, n === deflt ? "Standardgerät des Systems" : null)),
+    ...list.map((n) => option(n, n, n === deflt ? t("System default device") : null)),
     ...hints,
   );
 }
@@ -75,7 +76,7 @@ function fillDeviceMenu(menu: HTMLElement, kind: AudioKind, d: AudioDevices, clo
 function deviceMenu(kind: AudioKind, btn: HTMLButtonElement): HTMLElement {
   const wrap = dropdown(btn, "dev-menu", (menu, close) => {
     menu.dataset.kind = kind;
-    menu.replaceChildren(h("div", { class: "menu-title" }, KIND_WORD[kind].title), h("div", { class: "menu-hint" }, "Geräte werden gesucht …"));
+    menu.replaceChildren(h("div", { class: "menu-title" }, KIND_WORD[kind].title), h("div", { class: "menu-hint" }, t("Searching for devices…")));
     backend
       .audioDevices()
       .then((d) => {
@@ -92,7 +93,7 @@ function openAgentChat(): void {
   const a = snapshot.peek()?.agent;
   // Browser: kein MCP-Server, aber das Agent-Fenster mit dem Prompt für einen Agenten mit Browser-Werkzeug
   if (!a?.url && backend.platform !== "web") {
-    notify(a?.error ?? "Agent-Schnittstelle nicht verfügbar", "error");
+    notify(a?.error ?? t("Agent interface not available"), "error");
     return;
   }
   showPanel("agent");
@@ -104,15 +105,15 @@ class KwTransport extends HTMLElement {
   connectedCallback(): void {
     if (this.childElementCount) return;
 
-    const play = h("button", { class: "btn big primary", title: "Wiedergabe / Pause (Leertaste)", onclick: () => togglePlay() }, icon("play"));
-    const stop = h("button", { class: "btn big", title: "Stopp – zurück an den Anfang, auch die Ansicht (Pos1)", onclick: () => stopToStart() }, icon("stop"));
+    const play = h("button", { class: "btn big primary", title: t("Play / pause (Space)"), onclick: () => togglePlay() }, icon("play"));
+    const stop = h("button", { class: "btn big", title: t("Stop – back to the start, including the view (Home)"), onclick: () => stopToStart() }, icon("stop"));
     const loop = h("button", { class: "btn icon", "data-help": "wiederholen", onclick: () => void toggleLoop() }, icon("loop"));
-    const rec = h("button", { class: "btn big rec", title: "Aufnehmen über das Mikrofon (R)", onclick: () => toggleRecord() }, icon("record"));
+    const rec = h("button", { class: "btn big rec", title: t("Record from the microphone (R)"), onclick: () => toggleRecord() }, icon("record"));
 
     const pos = h("div", { class: "big" }, "1.1.1");
     const time = h("div", { class: "small" }, "0:00.00");
 
-    const tempo = h("input", { class: "num", type: "number", min: 20, max: 400, step: 1, title: "Projekttempo in BPM" });
+    const tempo = h("input", { class: "num", type: "number", min: 20, max: 400, step: 1, title: t("Project tempo in BPM") });
     // Jeder Tempo-Schritt rendert das ganze Stück neu. Kommen Schritte schneller
     // (Pfeiltaste gehalten), geht nur der jeweils neueste Wert hinterher, sobald
     // der vorige angekommen ist – statt eines Staus aus Zwischenwerten.
@@ -141,11 +142,11 @@ class KwTransport extends HTMLElement {
     });
     const sig = h("div", { class: "num", style: "display:flex;align-items:center;justify-content:center;width:52px" }, "4/4");
 
-    const metro = h("button", { class: "btn icon", "data-help": "metronom", title: "Metronom", onclick: () => act(backend.setMetronome(!snapshot.peek()?.engine.metronome)) }, icon("metronome"));
+    const metro = h("button", { class: "btn icon", "data-help": "metronom", title: t("Metronome"), onclick: () => act(backend.setMetronome(!snapshot.peek()?.engine.metronome)) }, icon("metronome"));
     const undoBtn = h("button", { class: "btn icon", "data-help": "rueckgaengig", onclick: () => undo() }, icon("undo"));
     const redoBtn = h("button", { class: "btn icon", "data-help": "wiederherstellen", onclick: () => redo() }, icon("redo"));
 
-    const meter = h("canvas", { class: "meter", title: "Pegel: oben Ausgang, unten Mikrofon" });
+    const meter = h("canvas", { class: "meter", title: t("Levels: output on top, microphone below") });
     // Lautsprecher: zeigt das Ausgabegerät, Klick öffnet die Gerätewahl; daneben das Mikrofon
     const outLabel = h("span", { class: "dev-label" });
     const chip = h("button", { class: "chip audio-out", "data-help": "ausgabegeraet" }, icon("speaker"), outLabel);
@@ -156,8 +157,8 @@ class KwTransport extends HTMLElement {
     effect(() => {
       const s = snapshot.value;
       const file = s?.file?.split(/[\\/]/).pop()?.replace(/\.klangwelt$/i, "");
-      projName.textContent = `${file ?? s?.project.name ?? ""}${s?.dirty ? " •" : ""}`;
-      projName.title = s?.file ?? "Noch nicht gespeichert";
+      projName.textContent = `${file ?? projectLabel(s?.project.name ?? "")}${s?.dirty ? " •" : ""}`;
+      projName.title = s?.file ?? t("Not saved yet");
     });
     this.append(
       h("div", { class: "brand", html: `${LOGO}<span>Klangwelt</span>` }),
@@ -165,9 +166,9 @@ class KwTransport extends HTMLElement {
       projName,
       h("div", { class: "sep" }),
       h("div", { class: "group" }, stop, play, rec),
-      h("div", { class: "lcd", title: "Abspielposition: Takt.Schlag.Sechzehntel und Zeit" }, pos, time),
-      h("div", { class: "field", "data-help": "tempo" }, h("label", {}, "Tempo"), tempo),
-      h("div", { class: "field", "data-help": "takt", title: "Taktart des Projekts" }, h("label", {}, "Takt"), sig),
+      h("div", { class: "lcd", title: t("Playback position: bar.beat.sixteenth and time") }, pos, time),
+      h("div", { class: "field", "data-help": "tempo" }, h("label", {}, t("Tempo")), tempo),
+      h("div", { class: "field", "data-help": "takt", title: t("Time signature of the project") }, h("label", {}, t("Time signature")), sig),
       metro,
       loop,
       h("div", { class: "sep" }),
@@ -194,12 +195,12 @@ class KwTransport extends HTMLElement {
       agent.classList.toggle("listening", listening);
       agent.classList.toggle("connected", connected);
       agent.replaceChildren(h("span", { class: "dot" }), agentLabel(ok, connected, listening));
-      if (!ok) agent.title = a?.error ?? "Agent-Endpunkt nicht gestartet";
-      else if (web && listening) agent.title = "Ein Agent hört zu – Aufträge im Chat werden sofort abgeholt.\nKlick öffnet den Agent-Chat.";
-      else if (web) agent.title = "MCP-Server in der Seite (ohne Netzwerk) – für einen Agenten mit Browser-Werkzeug wie „Claude in Chrome“.\nKlick öffnet den Agent-Chat mit dem Prompt zum Kopieren.";
-      else if (listening) agent.title = `Ein Agent hört zu – Aufträge im Chat werden sofort abgeholt.\nEndpunkt: ${a!.url}\nKlick öffnet den Agent-Chat.`;
-      else if (connected) agent.title = `Ein Agent ist verbunden, hört aber gerade nicht im Chat zu.\nEndpunkt: ${a!.url}\nKlick öffnet den Agent-Chat – dort steht, wie er zuhört.`;
-      else agent.title = `Noch kein Agent verbunden – der Endpunkt wartet unter ${a!.url}.\nKlick öffnet den Agent-Chat: dort den Prompt kopieren und in Claude Code einfügen.`;
+      if (!ok) agent.title = a?.error ?? t("Agent endpoint not started");
+      else if (web && listening) agent.title = t("An agent is listening – tasks in the chat are picked up right away.\nClick to open the agent chat.");
+      else if (web) agent.title = t("MCP server inside the page (no network) – for an agent with a browser tool like \"Claude in Chrome\".\nClick to open the agent chat with the prompt to copy.");
+      else if (listening) agent.title = t("An agent is listening – tasks in the chat are picked up right away.\nEndpoint: {url}\nClick to open the agent chat.", { url: String(a!.url) });
+      else if (connected) agent.title = t("An agent is connected but isn't listening in the chat right now.\nEndpoint: {url}\nClick to open the agent chat – it explains how to make it listen.", { url: String(a!.url) });
+      else agent.title = t("No agent connected yet – the endpoint is waiting at {url}.\nClick to open the agent chat: copy the prompt there and paste it into Claude Code.", { url: String(a!.url) });
     });
     effect(() => {
       if (!agentPulse.value) return;
@@ -231,23 +232,30 @@ class KwTransport extends HTMLElement {
       sig.textContent = `${p.beatsPerBar}/${p.beatUnit}`;
       undoBtn.disabled = !snap.canUndo;
       redoBtn.disabled = !snap.canRedo;
-      undoBtn.title = snap.undoLabel ? `Rückgängig: ${snap.undoLabel} (Strg+Z)` : "Nichts rückgängig zu machen";
-      redoBtn.title = snap.redoLabel ? `Wiederholen: ${snap.redoLabel} (Strg+Y)` : "Nichts zu wiederholen";
+      undoBtn.title = snap.undoLabel ? t("Undo: {label} (Ctrl+Z)", { label: snap.undoLabel }) : t("Nothing to undo");
+      redoBtn.title = snap.redoLabel ? t("Redo: {label} (Ctrl+Y)", { label: snap.redoLabel }) : t("Nothing to redo");
       metro.classList.toggle("on", snap.engine.metronome);
       loop.classList.toggle("on", !!snap.engine.loopOn);
       const r = snap.engine.loopRange;
       // Takt.Schlag (Sechzehntel nur, wenn nötig): 4–8 Schläge in 4/4 = „Takt 2.1 bis 3.1“
       const at = (b: number) => formatBarBeat(b, p.beatsPerBar).replace(/\.1$/, "");
-      loop.title = `Wiederholen ${snap.engine.loopOn ? "an" : "aus"} (L) – ${r ? `markierter Bereich, Takt ${at(r[0])} bis ${at(r[1])}` : "am Ende des Stücks wieder von vorn"}\nBereich markieren: im Lineal mit Umschalt oder Strg ziehen`;
+      const loopState = r
+        ? snap.engine.loopOn
+          ? t("Loop on (L) – selected range, bars {from} to {to}", { from: at(r[0]), to: at(r[1]) })
+          : t("Loop off (L) – selected range, bars {from} to {to}", { from: at(r[0]), to: at(r[1]) })
+        : snap.engine.loopOn
+          ? t("Loop on (L) – back to the start at the end of the piece")
+          : t("Loop off (L) – back to the start at the end of the piece");
+      loop.title = `${loopState}\n${t("Select a range: drag in the ruler with Shift or Ctrl")}`;
       const e = snap.engine;
       chip.classList.toggle("warn", !e.available || !!e.outputNotice);
-      const outWhich = e.outputChoice ? "gewählt" : "Systemstandard";
+      const outWhich = e.outputChoice ? t("selected") : t("System default");
       chip.title = e.available
-        ? `Ausgabegerät: ${e.outputDevice} (${outWhich}) · ${e.sampleRate} Hz${e.outputNotice ? `\n${e.outputNotice}` : ""}\nKlick wählt ein anderes Gerät.`
-        : `${e.error ?? "Kein Audio"}\nKlick zeigt die Ausgabegeräte.`;
-      outLabel.textContent = e.available ? `${e.outputDevice ?? "Audio"} · ${(e.sampleRate / 1000).toFixed(1)} kHz` : e.error ?? "kein Audio";
+        ? `${t("Output device: {device} ({which}) · {rate} Hz", { device: String(e.outputDevice), which: outWhich, rate: e.sampleRate })}${e.outputNotice ? `\n${e.outputNotice}` : ""}\n${t("Click to choose a different device.")}`
+        : `${e.error ?? t("No audio")}\n${t("Click to show the output devices.")}`;
+      outLabel.textContent = e.available ? `${e.outputDevice ?? t("Audio")} · ${(e.sampleRate / 1000).toFixed(1)} kHz` : e.error ?? t("no audio");
       micBtn.classList.toggle("warn", !!e.inputNotice);
-      micBtn.title = `Aufnahmegerät: ${e.inputChoice ?? "Systemstandard"}${e.inputNotice ? `\n${e.inputNotice}` : ""}\nKlick wählt ein anderes Mikrofon.`;
+      micBtn.title = `${t("Recording device: {device}", { device: e.inputChoice ?? t("System default") })}${e.inputNotice ? `\n${e.inputNotice}` : ""}\n${t("Click to choose a different microphone.")}`;
     });
   }
 

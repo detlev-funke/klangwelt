@@ -393,7 +393,7 @@ impl MelodyIndex {
         r.read_exact(&mut magic)?;
         let v2 = &magic == Self::MAGIC;
         if !v2 && &magic != Self::MAGIC_V1 {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "keine Klangwelt-Indexdatei"));
+            return Err(io::Error::new(io::ErrorKind::InvalidData, klang_i18n::tr!("not a Klangwelt index file")));
         }
         let mut b8 = [0u8; 8];
         let mut b4 = [0u8; 4];
@@ -432,7 +432,7 @@ impl MelodyIndex {
             postings.insert(key, list);
         }
         if seqs.len() != docs.len() {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "Index ist inkonsistent"));
+            return Err(io::Error::new(io::ErrorKind::InvalidData, klang_i18n::tr!("Index is inconsistent")));
         }
         let facets = if v2 {
             let len = u64r(&mut r)? as usize;

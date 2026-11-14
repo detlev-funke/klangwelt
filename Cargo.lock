@@ -414,6 +414,7 @@ dependencies = [
  "klang-core",
  "klang-dsp",
  "klang-engine",
+ "klang-i18n",
  "klang-mcp",
  "klang-music",
  "klang-opus",
@@ -426,6 +427,7 @@ dependencies = [
 name = "klang-core"
 version = "0.1.0"
 dependencies = [
+ "klang-i18n",
  "serde",
  "serde_json",
 ]
@@ -434,6 +436,7 @@ dependencies = [
 name = "klang-dsp"
 version = "0.1.0"
 dependencies = [
+ "klang-i18n",
  "serde",
 ]
 
@@ -442,8 +445,13 @@ name = "klang-engine"
 version = "0.1.0"
 dependencies = [
  "cpal",
+ "klang-i18n",
  "rtrb",
 ]
+
+[[package]]
+name = "klang-i18n"
+version = "0.1.0"
 
 [[package]]
 name = "klang-mcp"
@@ -457,6 +465,7 @@ name = "klang-music"
 version = "0.1.0"
 dependencies = [
  "flate2",
+ "klang-i18n",
  "quick-xml",
  "serde",
  "serde_json",
@@ -477,6 +486,7 @@ version = "0.1.0"
 dependencies = [
  "klang-app",
  "klang-engine",
+ "klang-i18n",
  "klang-mcp",
  "serde_json",
 ]

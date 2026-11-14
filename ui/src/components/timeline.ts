@@ -9,6 +9,7 @@
 // zeigen, wo sie landen (filedrop.ts).
 
 import { startTour } from "./tour.js";
+import { chordName } from "../spelling.js";
 import { backend } from "../bridge.js";
 import {
   addTrack, analyzeSelected, convertAudio, deleteRange, deleteSelectedNotes, detectTempo, loadDemo, quantizeSelectedNotes, resetRowHeight,
@@ -25,6 +26,7 @@ import {
   maxScrollY, noteGrid, noteKey, noteSel, offViewAtTop, pitchAt, pitchDelta, pitchOfLane, pitchViews, rowHeight, rowTops,
   scrollPitch, viewFor, wheelPitchStep, exprAt, exprY,
 } from "../pianoroll.js";
+import { plural, t } from "../i18n.js";
 import { effect } from "../signals.js";
 import { RULER_H, act, clipLengthBeats, counterpointMarks, rangeFocus, run, selection, snapshot, specFor, status, viewport } from "../store.js";
 import type { Clip, Command, Note, Project, Track } from "../types.js";
@@ -157,21 +159,21 @@ class KwTimeline extends HTMLElement {
     this.#hint = h(
       "div",
       { class: "empty-hint" },
-      h("h2", {}, "Leeres Projekt"),
-      h("div", {}, "Lade die Demo, starte mit einem Song oder Beat, lege eine Spur an, nimm direkt über das Mikrofon auf – oder zieh Audiodateien (WAV, AIFF, FLAC, Opus) hierher."),
+      h("h2", {}, t("Empty project")),
+      h("div", {}, t("Load the demo, start with a song or beat, create a track, record straight from the microphone – or drag audio files (WAV, AIFF, FLAC, Opus) here.")),
       h(
         "div",
         { class: "row" },
-        h("button", { class: "btn intro-btn", title: "Rundgang durch alle Fenster – mit Zetteln zu den wichtigsten Funktionen", onclick: () => startTour() }, icon("help"), "Intro"),
-        h("button", { class: "btn primary", title: "Beispielprojekt mit Beat, Arpeggio und Melodie laden – zum Ausprobieren", onclick: () => loadDemo() }, icon("sparkle"), "Demo laden"),
-        dropdown(h("button", { class: "btn song-start", title: "Ganzes Stück aus einer Vorlage (Trance, Ambient …) anlegen – im Fenster „Song“ weiter gestalten" }, icon("song"), "Mit Song starten ▾") as HTMLButtonElement, "beat-menu song-menu", fillSongMenu),
-        dropdown(h("button", { class: "btn beat-start", title: "Beat-Vorlage eines Genres als Schlagzeug-Spur anlegen" }, icon("grid"), "Mit Beat starten ▾") as HTMLButtonElement, "beat-menu", fillBeatMenu),
-        h("button", { class: "btn", title: "Leere Instrumentspur (Zupfer) anlegen – Noten mit Alt+Klick setzen", onclick: () => addTrack("instrument") }, icon("keys"), "Instrumentspur"),
-        h("button", { class: "btn rec", title: "Über das Mikrofon aufnehmen (R) – legt eine Audiospur an", onclick: () => toggleRecord() }, icon("mic"), "Aufnehmen"),
+        h("button", { class: "btn intro-btn", title: t("Tour of all windows – with notes on the most important features"), onclick: () => startTour() }, icon("help"), t("Intro")),
+        h("button", { class: "btn primary", title: t("Load an example project with beat, arpeggio and melody – to try things out"), onclick: () => loadDemo() }, icon("sparkle"), t("Load demo")),
+        dropdown(h("button", { class: "btn song-start", title: t("Create a complete piece from a template (trance, ambient…) – keep shaping it in the \"Song\" window") }, icon("song"), `${t("Start with a song")} ▾`) as HTMLButtonElement, "beat-menu song-menu", fillSongMenu),
+        dropdown(h("button", { class: "btn beat-start", title: t("Create a genre's beat template as a drum track") }, icon("grid"), `${t("Start with a beat")} ▾`) as HTMLButtonElement, "beat-menu", fillBeatMenu),
+        h("button", { class: "btn", title: t("Create an empty instrument track (pluck) – add notes with Alt+click"), onclick: () => addTrack("instrument") }, icon("keys"), t("Instrument track")),
+        h("button", { class: "btn rec", title: t("Record from the microphone (R) – creates an audio track"), onclick: () => toggleRecord() }, icon("mic"), t("Record")),
       ),
       h(
         "div",
-        { class: "muted", html: "<kbd>Leertaste</kbd> Wiedergabe · <kbd>L</kbd> Wiederholen · <kbd>R</kbd> Aufnahme · <kbd>Strg</kbd>+Mausrad Zoom · <kbd>Alt</kbd>+Klick Note setzen · <kbd>Entf</kbd> löschen" },
+        { class: "muted", html: t("<kbd>Space</kbd> Play · <kbd>L</kbd> Loop · <kbd>R</kbd> Record · <kbd>Ctrl</kbd>+mouse wheel Zoom · <kbd>Alt</kbd>+click Add note · <kbd>Del</kbd> Delete") },
       ),
     );
     this.append(this.#canvas, this.#hint);
@@ -491,7 +493,7 @@ class KwTimeline extends HTMLElement {
     void run({
       type: "addClip",
       trackId: hit.track.id,
-      clip: { id: 0, name: "Noten", startBeats: bar, source: { type: "notes", lengthBeats: Math.max(1, Math.ceil((start + len) / bpb)) * bpb, notes: [note] } },
+      clip: { id: 0, name: t("Notes"), startBeats: bar, source: { type: "notes", lengthBeats: Math.max(1, Math.ceil((start + len) / bpb)) * bpb, notes: [note] } },
     });
   }
 
@@ -643,7 +645,7 @@ class KwTimeline extends HTMLElement {
     if (!d) {
       this.#canvas.style.cursor = this.#cursorFor(e);
       this.#canvas.title = this.#noteButtonAt(e.offsetX, e.offsetY)
-        ? "In Noten umwandeln: die erkannten Töne als Melodie-Spur darunter anlegen (Rechtsklick: auch als Rhythmus-Spur)"
+        ? t("Convert to notes: create the detected pitches as a melody track below (right-click: also as a rhythm track)")
         : this.#harmonyTip(e);
       return;
     }
@@ -776,7 +778,7 @@ class KwTimeline extends HTMLElement {
       for (const [clipId, notes] of d.draft) {
         if (notes !== d.orig.get(clipId)) commands.push({ type: "setClipNotes", trackId: d.trackId, clipId, notes });
       }
-      const label = `${EXPRS[d.key].label} ${d.line ? "als Linie" : "gezeichnet"}`;
+      const label = d.line ? t("{expr} as a line", { expr: EXPRS[d.key].label }) : t("{expr} drawn", { expr: EXPRS[d.key].label });
       if (commands.length === 1) void run(commands[0]!);
       else if (commands.length > 1) void run({ type: "batch", label, commands });
     }
@@ -800,7 +802,7 @@ class KwTimeline extends HTMLElement {
     const setNotes = { type: "setClipNotes" as const, trackId, clipId, notes: moved, ...(lengthBeats ? { lengthBeats } : {}) };
     noteSel.value = sel.length ? { trackId, clipId, keys: sel.map(noteKey) } : null;
     if (shift) {
-      void run({ type: "batch", label: "Noten (Clip nach links erweitert)", commands: [{ type: "setClip", trackId, clipId, patch: { startBeats: clip.startBeats - shift } }, setNotes] });
+      void run({ type: "batch", label: t("Notes (clip extended to the left)"), commands: [{ type: "setClip", trackId, clipId, patch: { startBeats: clip.startBeats - shift } }, setNotes] });
     } else {
       void run(setNotes);
     }
@@ -841,7 +843,7 @@ class KwTimeline extends HTMLElement {
     if (range && (e.offsetY < RULER_H || (beat >= range[0] && beat <= range[1]))) add(this.#rangeMenu(range, p.beatsPerBar));
     if (hit && clip && !entries.length) {
       selection.value = { trackId: hit.track.id, clipId: clip.id };
-      add([{ heading: clip.name }, { label: "Clip löschen", hint: "Entf", act: "clip-loeschen", action: () => void run({ type: "removeClip", trackId: hit.track.id, clipId: clip.id }) }]);
+      add([{ heading: clip.name }, { label: t("Delete clip"), hint: t("Del"), act: "clip-loeschen", action: () => void run({ type: "removeClip", trackId: hit.track.id, clipId: clip.id }) }]);
     }
     if (entries.length) openContextMenu(e.clientX, e.clientY, entries);
   }
@@ -854,54 +856,56 @@ class KwTimeline extends HTMLElement {
       ...[4, 8, 16].map((d) => ({
         label: `1/${d}`,
         act: `raster-${d}${lengths ? "-laenge" : ""}`,
-        title: `Auf ${d === 4 ? "Viertel" : d === 8 ? "Achtel" : "Sechzehntel"} ausrichten`,
+        title: d === 4 ? t("Snap to quarters") : d === 8 ? t("Snap to eighths") : t("Snap to sixteenths"),
         action: () => void quantizeSelectedNotes(gridOf(d, unit), lengths),
       })),
       {
-        label: "Raster",
+        label: t("Grid"),
         act: `raster-ansicht${lengths ? "-laenge" : ""}`,
-        title: `Raster der Ansicht: ${gridLabel(view, unit)} (feiner, je weiter hineingezoomt)`,
+        title: t("View grid: {grid} (finer the further you zoom in)", { grid: gridLabel(view, unit) }),
         action: () => void quantizeSelectedNotes(view, lengths),
       },
     ];
     return [
-      { heading: count === 1 ? "1 Note markiert" : `${count} Noten markiert` },
-      { label: "Am Takt ausrichten", act: "ausrichten", title: "Die Anfänge rücken auf das nächste Raster – die Längen bleiben", chips: chips(false) },
-      { label: "Anfang und Länge", act: "ausrichten-laenge", title: "Anfang und Ende rücken auf das Raster (jede Note mindestens ein Raster lang)", chips: chips(true) },
+      { heading: plural(count, "{n} note selected", "{n} notes selected") },
+      { label: t("Quantize"), act: "ausrichten", title: t("Starts move to the nearest grid line – lengths stay"), chips: chips(false) },
+      { label: t("Start and length"), act: "ausrichten-laenge", title: t("Start and end move to the grid (every note at least one grid step long)"), chips: chips(true) },
       {
-        label: "Transponieren",
+        label: t("Transpose"),
         act: "transponieren",
-        title: "In Halbtönen verschieben – schneller mit ↑ / ↓ (Umschalt: Oktave)",
-        chips: [[-12, "−Okt"], [-1, "−1"], [1, "+1"], [12, "+Okt"]].map(([d, label]) => ({
+        title: t("Shift in semitones – faster with ↑ / ↓ (Shift: octave)"),
+        chips: [[-12, t("−Oct")], [-1, "−1"], [1, "+1"], [12, t("+Oct")]].map(([d, label]) => ({
           label: String(label),
           act: `transponieren${Number(d) > 0 ? "+" : ""}${d}`,
-          title: Math.abs(Number(d)) === 12 ? `Eine Oktave ${Number(d) > 0 ? "höher" : "tiefer"} (Umschalt+${Number(d) > 0 ? "↑" : "↓"})` : `Einen Halbton ${Number(d) > 0 ? "höher (↑)" : "tiefer (↓)"}`,
+          title: Math.abs(Number(d)) === 12
+            ? Number(d) > 0 ? t("One octave up (Shift+↑)") : t("One octave down (Shift+↓)")
+            : Number(d) > 0 ? t("One semitone up (↑)") : t("One semitone down (↓)"),
           action: () => void transposeSelectedNotes(Number(d)),
         })),
       },
-      { label: "Löschen", hint: "Entf", act: "noten-loeschen", action: () => void deleteSelectedNotes() },
+      { label: t("Delete"), hint: t("Del"), act: "noten-loeschen", action: () => void deleteSelectedNotes() },
     ];
   }
 
   /** Menü für einen Audio-Clip: in eine Melodie- oder Rhythmus-Spur umwandeln, Analyse, Tempo, Löschen. */
-  #audioMenu(t: Track, c: Clip): MenuEntry[] {
+  #audioMenu(track: Track, c: Clip): MenuEntry[] {
     return [
       { heading: c.name },
-      { label: "In Melodie-Spur umwandeln", hint: "Töne → Noten", act: "melodie", title: "Die erkannten Töne als Instrumentspur direkt darunter (auf Sechzehntel gerastert, tiefe Lagen als Bass)", action: () => void convertAudio(t.id, c.id, "melodie") },
-      { label: "In Rhythmus-Spur umwandeln", hint: "Anschläge → Schlagzeug", act: "rhythmus", title: "Die erkannten Anschläge als Schlagzeug-Spur direkt darunter: Bassdrum, Snare und Hi-Hat nach Klangfarbe", action: () => void convertAudio(t.id, c.id, "rhythmus") },
+      { label: t("Convert to melody track"), hint: t("Pitches → notes"), act: "melodie", title: t("The detected pitches as an instrument track right below (quantized to sixteenths, low registers as bass)"), action: () => void convertAudio(track.id, c.id, "melodie") },
+      { label: t("Convert to rhythm track"), hint: t("Hits → drums"), act: "rhythmus", title: t("The detected hits as a drum track right below: kick, snare and hi-hat by timbre"), action: () => void convertAudio(track.id, c.id, "rhythmus") },
       "sep",
-      { label: "Analyse zeigen", act: "analyse", action: () => void analyzeSelected() },
-      { label: "Tempo erkennen", act: "tempo", title: "Quelltempo schätzen – der Clip läuft danach im Projekttempo mit", action: () => void detectTempo() },
-      { label: "Clip löschen", hint: "Entf", act: "clip-loeschen", action: () => void run({ type: "removeClip", trackId: t.id, clipId: c.id }) },
+      { label: t("Show analysis"), act: "analyse", action: () => void analyzeSelected() },
+      { label: t("Detect tempo"), act: "tempo", title: t("Estimate the source tempo – the clip then follows the project tempo"), action: () => void detectTempo() },
+      { label: t("Delete clip"), hint: t("Del"), act: "clip-loeschen", action: () => void run({ type: "removeClip", trackId: track.id, clipId: c.id }) },
     ];
   }
 
   /** Menü für den markierten Zeitbereich. */
   #rangeMenu(range: [number, number], bpb: number): MenuEntry[] {
     return [
-      { heading: `Markiert: ${rangeLabel(range[0], range[1], bpb)}` },
-      { label: "Zeitbereich löschen", hint: "Entf", act: "bereich-loeschen", title: "Aus allen Spuren löschen – alles danach rückt auf, Clips werden geteilt bzw. gekürzt", action: () => void deleteRange() },
-      { label: "Markierung aufheben", act: "bereich-aufheben", action: () => void act(backend.setLoopRange(null)) },
+      { heading: t("Selected: {range}", { range: rangeLabel(range[0], range[1], bpb) }) },
+      { label: t("Delete time range"), hint: t("Del"), act: "bereich-loeschen", title: t("Delete from all tracks – everything after it moves up, clips are split or shortened"), action: () => void deleteRange() },
+      { label: t("Clear selection"), act: "bereich-aufheben", action: () => void act(backend.setLoopRange(null)) },
     ];
   }
 
@@ -937,7 +941,7 @@ class KwTimeline extends HTMLElement {
       void run({
         type: "addClip",
         trackId: hit.track.id,
-        clip: { id: 0, name: "Noten", startBeats: Math.max(0, bar), source: { type: "notes", lengthBeats: p.beatsPerBar, notes: [] } },
+        clip: { id: 0, name: t("Notes"), startBeats: Math.max(0, bar), source: { type: "notes", lengthBeats: p.beatsPerBar, notes: [] } },
       });
     }
   }
@@ -1183,8 +1187,8 @@ class KwTimeline extends HTMLElement {
 
     // Position beim Verschieben (auch als Attribut – für Tests und Bildschirmleser)
     if (mv) {
-      const pitch = mv.pitch ? ` · ${mv.pitch > 0 ? "+" : "−"}${Math.abs(mv.pitch)} HT` : "";
-      const label = `Takt ${formatBarBeat(mv.at, bpb)}   ${fmtShift(mv.shift, bpb)}${pitch}`;
+      const pitch = mv.pitch ? ` · ${t("{delta} st", { delta: `${mv.pitch > 0 ? "+" : "−"}${Math.abs(mv.pitch)}` })}` : "";
+      const label = `${t("Bar {bar}", { bar: formatBarBeat(mv.at, bpb) })}   ${fmtShift(mv.shift, bpb)}${pitch}`;
       this.#tip(ctx, mv.x, mv.y, label);
       this.dataset.dragInfo = label;
     } else if (this.dataset.dragInfo) {
@@ -1299,16 +1303,20 @@ class KwTimeline extends HTMLElement {
     ctx.fillRect(x, RULER_H, 2, hh - RULER_H);
     ctx.restore();
     const n = drag.count;
-    const files = n === 1 ? "Audiodatei" : `${n} Audiodateien`;
-    const where = into ? `in „${row!.track.name}“${n > 1 ? ` (+${n - 1} neue Spur${n > 2 ? "en" : ""})` : ""}` : n === 1 ? "neue Spur" : "neue Spuren";
-    const label = `${files} → Takt ${formatBarBeat(target.startBeats, p.beatsPerBar)} · ${where}`;
+    const files = plural(n, "Audio file", "{n} audio files");
+    const where = into
+      ? n > 1
+        ? plural(n - 1, "into \"{name}\" (+{n} new track)", "into \"{name}\" (+{n} new tracks)", { name: row!.track.name })
+        : t("into \"{name}\"", { name: row!.track.name })
+      : plural(n, "new track", "new tracks");
+    const label = t("{files} → bar {bar} · {where}", { files, bar: formatBarBeat(target.startBeats, p.beatsPerBar), where });
     this.#tip(ctx, x, drag.y - this.#canvas.getBoundingClientRect().top, label, "rgba(110, 231, 216, 0.8)");
     this.dataset.dropInfo = label;
   }
 
   /** Knopf „♪ → Noten“ im Kopf eines Audio-Clips (entfällt, wenn der Clip zu schmal ist). */
-  #drawNoteButton(ctx: CanvasRenderingContext2D, t: Track, c: Clip, x0: number, x1: number, top: number, hgt: number, w: number): void {
-    const text = "♪ → Noten";
+  #drawNoteButton(ctx: CanvasRenderingContext2D, track: Track, c: Clip, x0: number, x1: number, top: number, hgt: number, w: number): void {
+    const text = `♪ → ${t("Notes")}`;
     ctx.save();
     ctx.font = "600 10.5px 'Segoe UI', system-ui, sans-serif";
     const bw = Math.ceil(ctx.measureText(text).width) + 12;
@@ -1332,7 +1340,7 @@ class KwTimeline extends HTMLElement {
     ctx.textBaseline = "middle";
     ctx.fillText(text, bx + 6, by + bh / 2 + 0.5);
     ctx.restore();
-    this.#noteButtons.push({ x: bx, y: by, w: bw, h: bh, trackId: t.id, clipId: c.id });
+    this.#noteButtons.push({ x: bx, y: by, w: bw, h: bh, trackId: track.id, clipId: c.id });
   }
 
   /** Harmonie-Band sichtbar (eingeschaltet oder Arbeit im Harmonie-Fenster) und Akkorde da? */
@@ -1370,7 +1378,7 @@ class KwTimeline extends HTMLElement {
         ctx.rect(x0 + 1, top, x1 - x0 - 2, bandH);
         ctx.clip();
         ctx.fillStyle = "#eef1f6";
-        ctx.fillText(c.name, x0 + 4, top + bandH / 2 + 1);
+        ctx.fillText(chordName(c.name), x0 + 4, top + bandH / 2 + 1);
         ctx.restore();
       }
       if (c.bruch) {
@@ -1404,10 +1412,10 @@ class KwTimeline extends HTMLElement {
     const c = line.chords[i];
     if (!c || this.#xToBeat(e.offsetX) > c.startBeats + c.lengthBeats) return "";
     const prev = line.chords[i - 1];
-    return `${c.name} · ${c.roman} · ${c.function} – ${c.role}`
-      + `\n${prev ? `${prev.name} → ${c.name}: ` : ""}${MOOD_LABELS[c.mood]}`
-      + (c.bruch ? `\nHarmonischer Bruch: ${c.bruch}` : "")
-      + `\nTonart ${line.key.name}`;
+    return `${chordName(c.name)} · ${c.roman} · ${c.function} – ${c.role}`
+      + `\n${prev ? `${chordName(prev.name)} → ${chordName(c.name)}: ` : ""}${MOOD_LABELS[c.mood]}`
+      + (c.bruch ? `\n${t("Harmonic break: {reason}", { reason: c.bruch })}` : "")
+      + `\n${t("Key {key}", { key: line.key.name })}`;
   }
 
   #drawLanes(ctx: CanvasRenderingContext2D, t: Track, y: number, w: number): void {
@@ -1503,7 +1511,7 @@ class KwTimeline extends HTMLElement {
     return d?.kind === "clip" && d.clipId === c.id && d.moved ? d.beats : c.startBeats;
   }
 
-  #drawNotesClip(ctx: CanvasRenderingContext2D, p: Project, t: Track, c: Clip, rowY: number, w: number, selected: boolean): void {
+  #drawNotesClip(ctx: CanvasRenderingContext2D, p: Project, track: Track, c: Clip, rowY: number, w: number, selected: boolean): void {
     const start = this.#clipStart(c);
     // x0: Clipanfang (Bezug der Noten); wx0/wx1: Rahmen des Clips – während
     // eine Note außerhalb liegt, wächst er schon mit (ganze Takte)
@@ -1517,7 +1525,7 @@ class KwTimeline extends HTMLElement {
     const wx0 = x0 + span.lo * this.#ppb();
     const wx1 = x0 + span.hi * this.#ppb();
     if (wx1 < 0 || wx0 > w) return;
-    const g = geoFor(t);
+    const g = geoFor(track);
     const LANE_H = g.laneH;
     const RHYTHM_TOP = g.rhythmTop;
     const lanesTop = rowY + NOTES_TOP;
@@ -1525,15 +1533,15 @@ class KwTimeline extends HTMLElement {
 
     const bottom = g.exprH ? g.exprTop + g.exprH : RHYTHM_TOP + RHYTHM_H;
     ctx.save();
-    ctx.globalAlpha = t.mute ? 0.45 : 1;
-    ctx.fillStyle = rgba(t.color, 0.06);
+    ctx.globalAlpha = track.mute ? 0.45 : 1;
+    ctx.fillStyle = rgba(track.color, 0.06);
     ctx.fillRect(wx0, lanesTop, wx1 - wx0, lanesH);
-    ctx.strokeStyle = selected ? "rgba(255,255,255,0.85)" : rgba(t.color, 0.45);
+    ctx.strokeStyle = selected ? "rgba(255,255,255,0.85)" : rgba(track.color, 0.45);
     ctx.lineWidth = selected ? 1.5 : 1;
     if (growing) ctx.setLineDash([5, 3]);
     ctx.strokeRect(wx0 + 0.5, rowY + 2.5, wx1 - wx0 - 1, bottom - 3);
     ctx.setLineDash([]);
-    ctx.fillStyle = rgba(t.color, 0.3);
+    ctx.fillStyle = rgba(track.color, 0.3);
     ctx.fillRect(wx0, rowY + 2, wx1 - wx0, NOTES_TOP - 3);
     ctx.beginPath();
     ctx.rect(wx0, rowY, wx1 - wx0, bottom);
@@ -1541,21 +1549,21 @@ class KwTimeline extends HTMLElement {
     ctx.fillStyle = "#e8ebf1";
     ctx.font = "600 11px 'Segoe UI', system-ui, sans-serif";
     ctx.textBaseline = "middle";
-    ctx.fillText(growing ? `${c.name} – wird erweitert` : c.name, Math.max(wx0, 0) + 7, rowY + NOTES_TOP / 2 + 1);
+    ctx.fillText(growing ? t("{name} – extending", { name: c.name }) : c.name, Math.max(wx0, 0) + 7, rowY + NOTES_TOP / 2 + 1);
 
     if (c.source.type === "notes") {
       const sel = noteSel.peek();
       const selKeys = new Set(sel && sel.clipId === c.id ? sel.keys : []);
-      const trackHasSel = !!sel && sel.trackId === t.id && sel.keys.length > 0;
+      const trackHasSel = !!sel && sel.trackId === track.id && sel.keys.length > 0;
       const d = this.#drag;
       const activeDraft = (d?.kind === "notes" || d?.kind === "noteExpr") && d.clipId === c.id ? new Set(d.active) : null;
-      const exprDef = g.exprH ? EXPRS[laneKeyFor(t)] : null;
+      const exprDef = g.exprH ? EXPRS[laneKeyFor(track)] : null;
       this.#clipNotes(c).forEach((n, i) => {
         const nx = x0 + n.startBeats * this.#ppb();
         const nw = Math.max(3, n.lengthBeats * this.#ppb() - 1);
         const isSel = activeDraft ? activeDraft.has(i) : selKeys.has(noteKey(n));
         // Rhythmus-Leiste: Notenanfänge dezent
-        ctx.fillStyle = rgba(t.color, 0.4);
+        ctx.fillStyle = rgba(track.color, 0.4);
         ctx.fillRect(Math.round(nx), rowY + RHYTHM_TOP + 4, 2, RHYTHM_H - 7);
         // Ausdrucksspur: Lolli je Note (Stiel von der Grund- bzw. Nulllinie zum Wert)
         if (exprDef) {
@@ -1563,16 +1571,16 @@ class KwTimeline extends HTMLElement {
           const base = rowY + exprY(g, exprDef, exprDef.bipolar ? 0 : exprDef.min);
           const vy = rowY + exprY(g, exprDef, v);
           const dim = trackHasSel && !isSel;
-          ctx.fillStyle = rgba(t.color, dim ? 0.25 : 0.75);
+          ctx.fillStyle = rgba(track.color, dim ? 0.25 : 0.75);
           ctx.fillRect(Math.round(nx), Math.min(base, vy), 1.5, Math.max(1, Math.abs(vy - base)));
-          ctx.fillStyle = isSel ? "#ffffff" : rgba(t.color, dim ? 0.4 : 1);
+          ctx.fillStyle = isSel ? "#ffffff" : rgba(track.color, dim ? 0.4 : 1);
           ctx.beginPath();
           ctx.arc(Math.round(nx) + 0.75, vy, isSel ? 3.2 : 2.6, 0, Math.PI * 2);
           ctx.fill();
         }
         if (!inView(g.view, n.pitch)) {
           // außerhalb des sichtbaren Bereichs: Markierung am Rand
-          ctx.fillStyle = rgba(t.color, 0.7);
+          ctx.fillStyle = rgba(track.color, 0.7);
           ctx.fillRect(nx, offViewAtTop(g.view, n.pitch) ? lanesTop : lanesTop + lanesH - 2, nw, 2);
           return;
         }
@@ -1583,7 +1591,7 @@ class KwTimeline extends HTMLElement {
           const from = Math.max(g.view.low - 1, Math.min(g.view.low + g.view.span, n.pitch + n.bend));
           const fy = rowY + laneY(g, from) + LANE_H / 2;
           const reach = Math.min(nw * 0.45, 10);
-          ctx.strokeStyle = rgba(t.color, 0.95);
+          ctx.strokeStyle = rgba(track.color, 0.95);
           ctx.lineWidth = 1.6;
           ctx.beginPath();
           ctx.moveTo(nx - 7, fy);
@@ -1591,7 +1599,7 @@ class KwTimeline extends HTMLElement {
           ctx.stroke();
         }
         // Anschlag = Deckkraft
-        ctx.fillStyle = rgba(t.color, 0.28 + 0.72 * (n.velocity / 127));
+        ctx.fillStyle = rgba(track.color, 0.28 + 0.72 * (n.velocity / 127));
         ctx.beginPath();
         ctx.roundRect(nx + 0.5, ny + 0.5, nw, nh, 2);
         ctx.fill();
@@ -1634,8 +1642,8 @@ class KwTimeline extends HTMLElement {
         }
       });
     } else {
-      this.#drawAudioPitch(ctx, p, t, c, x0, rowY, g, w);
-      this.#drawNoteButton(ctx, t, c, wx0, wx1, rowY + 2, NOTES_TOP - 3, w);
+      this.#drawAudioPitch(ctx, p, track, c, x0, rowY, g, w);
+      this.#drawNoteButton(ctx, track, c, wx0, wx1, rowY + 2, NOTES_TOP - 3, w);
     }
     ctx.restore();
   }
@@ -1668,7 +1676,7 @@ class KwTimeline extends HTMLElement {
    * Tonhöhenkurve, Anschläge mit Grundton (Bassdrum, Snare, Bass …) und tonlose
    * Schläge (Hi-Hat …) in der Rhythmus-Leiste.
    */
-  #drawAudioPitch(ctx: CanvasRenderingContext2D, p: Project, t: Track, c: Clip, x0: number, rowY: number, g: NoteGeo, w: number): void {
+  #drawAudioPitch(ctx: CanvasRenderingContext2D, p: Project, track: Track, c: Clip, x0: number, rowY: number, g: NoteGeo, w: number): void {
     if (c.source.type !== "audio") return;
     const view = g.view;
     const low = view.low;
@@ -1680,14 +1688,14 @@ class KwTimeline extends HTMLElement {
     const noteX = Math.max(x0, 0) + 10;
     if (!a) {
       const none = analysisState(c.source.assetId) === "none";
-      this.#clipNote(ctx, noteX, lanesTop + 10, none ? "Keine Analyse verfügbar" : "Analysiere …", none ? "Nur in der Desktop-App" : "Tonhöhen und Einsätze werden erkannt");
+      this.#clipNote(ctx, noteX, lanesTop + 10, none ? t("No analysis available") : t("Analyzing…"), none ? t("Desktop app only") : t("Detecting pitches and onsets"));
       return;
     }
     const beatsPerSec = (c.source.warp ? c.source.sourceBpm : p.tempoBpm) / 60;
     const ppb = this.#ppb();
     const xAt = (secs: number) => x0 + secs * beatsPerSec * ppb;
 
-    const shift = t.pitchSemitones;
+    const shift = track.pitchSemitones;
     const yAt = (midi: number) => rowY + laneY(g, midi) + LANE_H / 2;
     const diamond = Math.max(3, Math.min(5, LANE_H * 0.6));
 
@@ -1698,7 +1706,7 @@ class KwTimeline extends HTMLElement {
       const x = Math.round(xAt(hp.time));
       if (x < -3 || x > w + 3) continue;
       const bar = Math.max(4, (RHYTHM_H - 4) * Math.sqrt(hp.strength));
-      ctx.fillStyle = rgba(t.color, 0.95);
+      ctx.fillStyle = rgba(track.color, 0.95);
       ctx.fillRect(x - 1, stripTop + RHYTHM_H - 2 - bar, 3, bar);
     }
 
@@ -1725,15 +1733,15 @@ class KwTimeline extends HTMLElement {
       if (x < -10 || x > w + 10) continue;
       const alpha = 0.45 + 0.55 * hp.strength;
       if (!inView(view, m)) {
-        ctx.fillStyle = rgba(t.color, alpha);
+        ctx.fillStyle = rgba(track.color, alpha);
         ctx.fillRect(x - 3, offViewAtTop(view, m) ? lanesTop : lanesTop + lanesH - 2, 7, 2);
         continue;
       }
       const y = yAt(m);
       const len = Math.max(6, xAt(Math.min(hp.end, hp.time + 0.25)) - x);
-      ctx.fillStyle = rgba(t.color, alpha * 0.45);
+      ctx.fillStyle = rgba(track.color, alpha * 0.45);
       ctx.fillRect(x, y - Math.min(2, LANE_H / 3), len, Math.min(4, LANE_H * 0.66));
-      ctx.fillStyle = rgba(t.color, alpha);
+      ctx.fillStyle = rgba(track.color, alpha);
       ctx.beginPath();
       ctx.moveTo(x, y - diamond);
       ctx.lineTo(x + diamond, y);
@@ -1745,15 +1753,15 @@ class KwTimeline extends HTMLElement {
 
     const pitchedHits = a.hits.length - unpitched.length;
     if (!a.notes.length && !pitchedHits) {
-      const tempo = a.tempoEstimate ? ` · Tempo ≈ ${a.tempoEstimate.toFixed(1)} BPM` : "";
-      this.#clipNote(ctx, noteX, lanesTop + 14, "Keine Tonhöhe erkannt", `${unpitched.length} Schläge in der Rhythmus-Leiste${tempo}`);
+      const tempo = a.tempoEstimate ? ` · ${t("Tempo ≈ {bpm} BPM", { bpm: a.tempoEstimate.toFixed(1) })}` : "";
+      this.#clipNote(ctx, noteX, lanesTop + 14, t("No pitch detected"), `${t("{n} hits in the rhythm lane", { n: unpitched.length })}${tempo}`);
       return;
     }
     for (const [ni, n] of a.notes.entries()) {
       const m = n.midi + Math.round(shift);
       if (hideNote.has(ni) || !inView(view, m)) continue;
-      ctx.fillStyle = rgba(t.color, 0.35);
-      ctx.strokeStyle = rgba(t.color, 0.9);
+      ctx.fillStyle = rgba(track.color, 0.35);
+      ctx.strokeStyle = rgba(track.color, 0.9);
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.roundRect(xAt(n.startSecs), rowY + laneY(g, m) + 0.5, Math.max(2, xAt(n.endSecs) - xAt(n.startSecs)), Math.max(2, LANE_H - 1), 2);
@@ -1784,29 +1792,29 @@ class KwTimeline extends HTMLElement {
     ctx.stroke();
   }
 
-  #drawClip(ctx: CanvasRenderingContext2D, p: Project, t: Track, c: Clip, rowY: number, w: number, selected: boolean): void {
+  #drawClip(ctx: CanvasRenderingContext2D, p: Project, track: Track, c: Clip, rowY: number, w: number, selected: boolean): void {
     const start = this.#clipStart(c);
     const len = clipLengthBeats(c, p.tempoBpm);
     const x0 = this.#beatToX(start);
     const x1 = x0 + len * this.#ppb();
     if (x1 < 0 || x0 > w) return;
-    const rh = rowHeight(t);
+    const rh = rowHeight(track);
     const y0 = rowY + 5;
     const ch = rh - 10;
     const header = 17;
 
     ctx.save();
-    ctx.globalAlpha = t.mute ? 0.45 : 1;
+    ctx.globalAlpha = track.mute ? 0.45 : 1;
     ctx.beginPath();
     ctx.roundRect(x0 + 0.5, y0 + 0.5, Math.max(4, x1 - x0 - 1), ch, 6);
-    ctx.fillStyle = rgba(t.color, 0.13);
+    ctx.fillStyle = rgba(track.color, 0.13);
     ctx.fill();
     ctx.lineWidth = selected ? 2 : 1;
-    ctx.strokeStyle = selected ? "#ffffff" : rgba(t.color, 0.55);
+    ctx.strokeStyle = selected ? "#ffffff" : rgba(track.color, 0.55);
     ctx.stroke();
     ctx.clip();
 
-    ctx.fillStyle = rgba(t.color, 0.3);
+    ctx.fillStyle = rgba(track.color, 0.3);
     ctx.fillRect(x0, y0, x1 - x0, header);
     ctx.fillStyle = "#e8ebf1";
     ctx.font = "600 11px 'Segoe UI', system-ui, sans-serif";
@@ -1815,16 +1823,16 @@ class KwTimeline extends HTMLElement {
     if (c.source.type === "audio" && c.source.warp && Math.abs(c.source.sourceBpm - p.tempoBpm) > 0.05) {
       label += `   ⇄ ${+c.source.sourceBpm.toFixed(1)} → ${+p.tempoBpm.toFixed(1)} BPM`;
     }
-    if (t.pitchSemitones) label += `   ${t.pitchSemitones > 0 ? "+" : ""}${t.pitchSemitones} HT`;
+    if (track.pitchSemitones) label += `   ${t("{delta} st", { delta: `${track.pitchSemitones > 0 ? "+" : ""}${track.pitchSemitones}` })}`;
     ctx.fillText(label, Math.max(x0, 0) + 7, y0 + header / 2 + 0.5);
 
     const top = y0 + header + 3;
     const bodyH = ch - header - 6;
     if (c.source.type === "audio") {
-      this.#drawNoteButton(ctx, t, c, x0, x1, y0, header, w);
+      this.#drawNoteButton(ctx, track, c, x0, x1, y0, header, w);
       const wave = this.#wave(c.source.assetId);
       const mid = top + bodyH / 2;
-      ctx.fillStyle = rgba(t.color, 0.85);
+      ctx.fillStyle = rgba(track.color, 0.85);
       if (wave) {
         const buckets = wave.length / 2;
         const from = Math.max(0, Math.floor(x0));
@@ -1857,7 +1865,7 @@ class KwTimeline extends HTMLElement {
         lo -= 2;
         hi += 2;
         const nh = Math.max(2, Math.min(7, bodyH / (hi - lo + 1)));
-        ctx.fillStyle = rgba(t.color, 0.95);
+        ctx.fillStyle = rgba(track.color, 0.95);
         for (const n of notes) {
           const nx = x0 + n.startBeats * this.#ppb();
           const nw = Math.max(2, n.lengthBeats * this.#ppb() - 1.5);

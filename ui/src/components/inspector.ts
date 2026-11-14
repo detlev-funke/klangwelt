@@ -1,6 +1,7 @@
 import { analyzeSelected, convertAudio, detectTempo, melodyToTrack } from "../actions.js";
 import { fitCanvas, formatBarBeat, h, icon, noteName, setRange } from "../dom.js";
 import { highOnTop, noteKey, noteSel } from "../pianoroll.js";
+import { plural, t } from "../i18n.js";
 import { effect } from "../signals.js";
 import { DYNAMICS, EXPRS, EXPR_ORDER, type ExprKey, type Mark, applyMark, exprKeysFor, exprValue, setExprAll } from "../expression.js";
 import {
@@ -71,24 +72,24 @@ function exprSection(trackId: number, clipId: number): Panel {
   const marks = h(
     "div",
     { class: "marks-wrap" },
-    h("div", { class: "marks" }, ...DYNAMICS.map(([name, v]) => mark(name, `Dynamik ${name}: Anschlag ${v}`, { kind: "dyn", velocity: v }, "dyn"))),
+    h("div", { class: "marks" }, ...DYNAMICS.map(([name, v]) => mark(name, t("Dynamics {name}: velocity {velocity}", { name, velocity: v }), { kind: "dyn", velocity: v }, "dyn"))),
     h(
       "div",
       { class: "marks" },
-      mark("cresc.", "Crescendo: Anschlag steigt von der ersten bis zur letzten Note um 40", { kind: "cresc" }),
-      mark("decresc.", "Decrescendo: Anschlag fällt von der ersten bis zur letzten Note um 40", { kind: "decresc" }),
-      mark(">", "Akzent: Anschlag +25", { kind: "accent" }, "sym"),
-      mark("·", "Staccato: Noten halb so lang", { kind: "staccato" }, "sym"),
-      mark("⌒", "Legato: jede Note bis zur nächsten verlängern (beim Bass: gleiten)", { kind: "legato" }, "sym"),
+      mark("cresc.", t("Crescendo: velocity rises by 40 from the first to the last note"), { kind: "cresc" }),
+      mark("decresc.", t("Decrescendo: velocity falls by 40 from the first to the last note"), { kind: "decresc" }),
+      mark(">", t("Accent: velocity +25"), { kind: "accent" }, "sym"),
+      mark("·", t("Staccato: notes half as long"), { kind: "staccato" }, "sym"),
+      mark("⌒", t("Legato: extend each note up to the next one (on bass: glide)"), { kind: "legato" }, "sym"),
     ),
     h(
       "div",
       { class: "marks" },
-      mark("〜 Vibrato", "Vibrato an/aus (± 30 Cent, setzt verzögert ein)", { kind: "vibrato" }, "", "vibrato"),
-      mark("Heller", "Helligkeit +40 %", { kind: "brighter" }, "", "brightness"),
-      mark("Dunkler", "Helligkeit −40 %", { kind: "darker" }, "", "brightness"),
-      mark("↗ Anschleifen", "Ton 2 Halbtöne von unten anschleifen (an/aus)", { kind: "scoop" }, "", "bend"),
-      mark("Neutral", "Ausdruck zurücksetzen: Anschlag 100, kein Vibrato, keine Biegung, Grundklang", { kind: "reset" }, "ghost"),
+      mark(`〜 ${t("Vibrato")}`, t("Vibrato on/off (± 30 cents, delayed onset)"), { kind: "vibrato" }, "", "vibrato"),
+      mark(t("Brighter"), t("Brightness +40%"), { kind: "brighter" }, "", "brightness"),
+      mark(t("Darker"), t("Brightness −40%"), { kind: "darker" }, "", "brightness"),
+      mark(`↗ ${t("Scoop")}`, t("Scoop into the note from 2 semitones below (on/off)"), { kind: "scoop" }, "", "bend"),
+      mark(t("Neutral"), t("Reset expression: velocity 100, no vibrato, no bend, base sound"), { kind: "reset" }, "ghost"),
     ),
   );
 
@@ -107,7 +108,7 @@ function exprSection(trackId: number, clipId: number): Panel {
     input.addEventListener("change", () => (merging = false));
     input.addEventListener("keydown", (e) => e.stopPropagation());
     input.addEventListener("dblclick", () => apply((n, i) => setExprAll(n, i, k, d.neutral)));
-    const row = h("div", { class: "slider", title: `${d.hint} · Doppelklick: neutral` }, h("label", {}, h("span", {}, d.label), val), input);
+    const row = h("div", { class: "slider", title: `${d.hint} · ${t("Double-click: neutral")}` }, h("label", {}, h("span", {}, d.label), val), input);
     return { k, d, input, val, row };
   });
 
@@ -115,7 +116,7 @@ function exprSection(trackId: number, clipId: number): Panel {
   const el = h(
     "div",
     { class: "expr-section" },
-    h("div", { class: "prop" }, h("label", {}, "Ausdruck · ", scope), marks),
+    h("div", { class: "prop" }, h("label", {}, `${t("Expression")} · `, scope), marks),
     h("div", { class: "sliders expr-sliders" }, ...sliders.map((s) => s.row)),
   );
 
@@ -127,10 +128,10 @@ function exprSection(trackId: number, clipId: number): Panel {
       const chosen = selectedIdx(c.notes);
       const idx = chosen.length ? chosen : c.notes.map((_, i) => i);
       scope.textContent = !c.notes.length
-        ? "noch keine Noten"
+        ? t("no notes yet")
         : chosen.length
-          ? `für ${chosen.length} gewählte Note${chosen.length === 1 ? "" : "n"}`
-          : `für alle ${c.notes.length} Noten (Noten auswählen, um nur einzelne zu ändern)`;
+          ? plural(chosen.length, "for {n} selected note", "for {n} selected notes")
+          : t("for all {n} notes (select notes to change only some of them)", { n: c.notes.length });
       const supported = exprKeysFor(c.track);
       for (const b of markButtons) b.el.hidden = !!b.needs && !supported.includes(b.needs);
       const color = c.track.color;
@@ -142,7 +143,7 @@ function exprSection(trackId: number, clipId: number): Panel {
         const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
         const mixed = Math.max(...vals) - Math.min(...vals) > s.d.step * 1.5;
         setRange(s.input, avg);
-        s.val.textContent = `${s.d.format(avg)}${mixed ? " · gemischt" : ""}`;
+        s.val.textContent = `${s.d.format(avg)}${mixed ? ` · ${t("mixed")}` : ""}`;
       }
     },
   };
@@ -151,7 +152,7 @@ function exprSection(trackId: number, clipId: number): Panel {
 // ---------------------------------------------------------------- Clip
 
 function clipPanel(trackId: number, clipId: number): Panel {
-  const name = h("input", { class: "num", style: "width:100%;font-family:inherit", title: "Name des Clips (Enter übernimmt)" });
+  const name = h("input", { class: "num", style: "width:100%;font-family:inherit", title: t("Clip name (Enter applies)") });
   const bpm = h("input", { class: "num", type: "number", min: 20, max: 400, step: 0.1 });
   const warp = h("input", { type: "checkbox" });
   const startV = h("div", { class: "value" });
@@ -171,25 +172,25 @@ function clipPanel(trackId: number, clipId: number): Panel {
   const audioProps = h(
     "div",
     { class: "props" },
-    prop("Quelltempo (BPM)", bpm, "Tempo, in dem das Material eingespielt wurde"),
-    prop("Synchronisieren", h("label", { class: "check" }, warp, "an Projekttempo anpassen"), undefined),
-    h("div", { class: "prop" }, h("label", {}, "Wiedergabe"), speedHint),
+    prop(t("Source tempo (BPM)"), bpm, t("Tempo the material was recorded at")),
+    prop(t("Sync"), h("label", { class: "check" }, warp, t("match project tempo")), undefined),
+    h("div", { class: "prop" }, h("label", {}, t("Playback")), speedHint),
   );
   const actions = h(
     "div",
     { class: "actions" },
-    h("button", { class: "btn", title: "Tempo der Aufnahme aus den Einsätzen schätzen und als Quelltempo setzen", onclick: () => detectTempo() }, icon("metronome"), "Tempo erkennen"),
-    h("button", { class: "btn", title: "Tonhöhen, Noten, Tempo und Tonart der Aufnahme bestimmen – im Fenster „Analyse“", onclick: () => analyzeSelected() }, icon("chart"), "Analysieren"),
-    h("button", { class: "btn", title: "Die erkannte Melodie als Noten in eine neue Instrumentspur direkt darunter übernehmen", onclick: () => melodyToTrack() }, icon("keys"), "Melodie → Instrumentspur"),
-    h("button", { class: "btn", title: "Die erkannten Anschläge als Schlagzeug-Spur direkt darunter: Bassdrum, Snare und Hi-Hat nach Klangfarbe", onclick: () => void convertAudio(trackId, clipId, "rhythmus") }, icon("grid"), "Rhythmus → Schlagzeug"),
-    h("button", { class: "btn ghost", title: "Diesen Clip entfernen (rückgängig mit Strg+Z)", onclick: () => { void run({ type: "removeClip", trackId, clipId }); selection.value = null; } }, icon("trash"), "Clip löschen"),
+    h("button", { class: "btn", title: t("Estimate the recording's tempo from its onsets and set it as the source tempo"), onclick: () => detectTempo() }, icon("metronome"), t("Detect tempo")),
+    h("button", { class: "btn", title: t("Determine the recording's pitches, notes, tempo and key – in the \"Analysis\" window"), onclick: () => analyzeSelected() }, icon("chart"), t("Analyze")),
+    h("button", { class: "btn", title: t("Turn the detected melody into notes on a new instrument track right below"), onclick: () => melodyToTrack() }, icon("keys"), t("Melody → instrument track")),
+    h("button", { class: "btn", title: t("The detected hits as a drum track right below: kick, snare and hi-hat by timbre"), onclick: () => void convertAudio(trackId, clipId, "rhythmus") }, icon("grid"), t("Rhythm → drums")),
+    h("button", { class: "btn ghost", title: t("Remove this clip (undo with Ctrl+Z)"), onclick: () => { void run({ type: "removeClip", trackId, clipId }); selection.value = null; } }, icon("trash"), t("Delete clip")),
   );
 
   const expr = exprSection(trackId, clipId);
   const el = h(
     "div",
     {},
-    h("div", { class: "props" }, prop("Name", name), h("div", { class: "prop" }, h("label", {}, "Spur"), trackV), h("div", { class: "prop" }, h("label", {}, "Start (Takt.Schlag)"), startV), h("div", { class: "prop" }, h("label", {}, "Länge"), lenV)),
+    h("div", { class: "props" }, prop(t("Name"), name), h("div", { class: "prop" }, h("label", {}, t("Track")), trackV), h("div", { class: "prop" }, h("label", {}, t("Start (bar.beat)")), startV), h("div", { class: "prop" }, h("label", {}, t("Length")), lenV)),
     h("div", { style: "height:14px" }),
     audioProps,
     expr.el,
@@ -208,7 +209,7 @@ function clipPanel(trackId: number, clipId: number): Panel {
       trackV.textContent = track.name;
       startV.textContent = formatBarBeat(clip.startBeats, p.beatsPerBar);
       const len = clipLengthBeats(clip, p.tempoBpm);
-      lenV.textContent = `${+(len / p.beatsPerBar).toFixed(2)} Takte · ${+len.toFixed(2)} Schläge`;
+      lenV.textContent = t("{bars} bars · {beats} beats", { bars: +(len / p.beatsPerBar).toFixed(2), beats: +len.toFixed(2) });
       const isAudio = clip.source.type === "audio";
       audioProps.style.display = isAudio ? "" : "none";
       expr.el.style.display = isAudio ? "none" : "";
@@ -222,23 +223,23 @@ function clipPanel(trackId: number, clipId: number): Panel {
         warp.checked = s.warp;
         const speed = s.warp ? p.tempoBpm / s.sourceBpm : 1;
         speedHint.textContent = s.warp
-          ? `${(speed * 100).toFixed(1)} % Geschwindigkeit, Tonhöhe bleibt`
-          : "Originalgeschwindigkeit (nicht synchron)";
-        extra.replaceChildren(prop("Dauer der Aufnahme", `${s.durationSecs.toFixed(2)} s`));
+          ? t("{percent}% speed, pitch unchanged", { percent: (speed * 100).toFixed(1) })
+          : t("Original speed (not synced)");
+        extra.replaceChildren(prop(t("Length of the recording"), `${s.durationSecs.toFixed(2)} s`));
       } else {
         const notes = clip.source.notes;
         const lo = Math.min(...notes.map((n) => n.pitch));
         const hi = Math.max(...notes.map((n) => n.pitch));
         extra.replaceChildren(
-          prop("Noten", String(notes.length)),
-          prop("Tonumfang", notes.length ? `${noteName(lo)} – ${noteName(hi)}` : "–"),
-          prop("Klang", track.instrument?.preset ?? "–", "Im Tab „Klang“ gestalten"),
+          prop(t("Notes"), String(notes.length)),
+          prop(t("Pitch range"), notes.length ? `${noteName(lo)} – ${noteName(hi)}` : "–"),
+          prop(t("Sound"), track.instrument?.preset ? t(track.instrument.preset) : "–", t("Design in the \"Sound\" tab")),
           h(
             "div",
             { class: "prop", style: "grid-column: span 2" },
-            h("label", {}, "Noten bearbeiten (Notenansicht)"),
-            h("div", { class: "hint" }, "Alt+Klick setzt eine Note (auch neben dem Clip – er wächst mit) · Klick wählt, Umschalt/Strg+Klick mehrere, Ziehen auf freier Fläche zieht einen Auswahlrahmen · gewählte Noten ziehen verschiebt (Shift: ohne Raster) · rechte Kante ändert die Länge · Entf löscht · ↑/↓ transponiert (Shift: Oktave) · Rechtsklick: am Takt ausrichten, transponieren, löschen · Doppelklick auf freie Fläche legt einen neuen Clip an"),
-            h("div", { class: "hint" }, "Ausdruck: Alt+Ziehen auf einer Note ändert den Anschlag (Alt+Shift: Vibrato) · in der Ausdrucksspur unter den Noten Werte ziehen oder malen, Shift zieht eine gerade Linie (Crescendo), Doppelklick setzt zurück"),
+            h("label", {}, t("Edit notes (piano roll)")),
+            h("div", { class: "hint" }, t("Alt+click adds a note (also next to the clip – it grows with it) · click selects, Shift/Ctrl+click selects several, dragging on empty space draws a selection box · dragging selected notes moves them (Shift: off the grid) · the right edge changes the length · Del deletes · ↑/↓ transposes (Shift: by octave) · right-click: quantize, transpose, delete · double-click on empty space creates a new clip")),
+            h("div", { class: "hint" }, t("Expression: Alt+drag on a note changes the velocity (Alt+Shift: vibrato) · in the expression lane below the notes, drag or paint values, Shift draws a straight line (crescendo), double-click resets")),
           ),
         );
       }
@@ -256,19 +257,19 @@ function analysisPanel(a: Analysis): Panel {
   const facts = h(
     "div",
     { class: "facts" },
-    prop("Tonart", a.key ? a.key.name : "–", a.key ? `Sicherheit ${(a.key.confidence * 100).toFixed(0)} %` : "zu wenige Töne"),
-    prop("Tempo-Schätzung", a.tempoEstimate ? `${a.tempoEstimate.toFixed(1)} BPM` : "–"),
-    prop("Noten", String(a.notes.length), corrected ? `${corrected} unsauber gesungene Töne korrigiert` : "keine Korrektur nötig"),
-    prop("Dauer", `${a.durationSecs.toFixed(2)} s`),
-    h("button", { class: "btn", onclick: () => melodyToTrack() }, icon("keys"), "Melodie → Instrumentspur"),
+    prop(t("Key"), a.key ? a.key.name : "–", a.key ? t("Confidence {percent}%", { percent: (a.key.confidence * 100).toFixed(0) }) : t("too few notes")),
+    prop(t("Tempo estimate"), a.tempoEstimate ? `${a.tempoEstimate.toFixed(1)} BPM` : "–"),
+    prop(t("Notes"), String(a.notes.length), corrected ? t("Corrected {n} out-of-tune notes", { n: corrected }) : t("no correction needed")),
+    prop(t("Duration"), `${a.durationSecs.toFixed(2)} s`),
+    h("button", { class: "btn", onclick: () => melodyToTrack() }, icon("keys"), t("Melody → instrument track")),
   );
   const legend = h(
     "div",
     { class: "legend" },
-    h("span", {}, h("i", { style: "background:#6ee7d8" }), "Tonhöhenkurve"),
-    h("span", {}, h("i", { style: "background:#ffb454" }), "erkannte Noten"),
-    h("span", {}, h("i", { style: "background:#ff5d6c" }), "korrigiert (vorher)"),
-    h("span", {}, h("i", { style: "background:#8a93a6" }), "Einsätze"),
+    h("span", {}, h("i", { style: "background:#6ee7d8" }), t("Pitch curve")),
+    h("span", {}, h("i", { style: "background:#ffb454" }), t("detected notes")),
+    h("span", {}, h("i", { style: "background:#ff5d6c" }), t("corrected (before)")),
+    h("span", {}, h("i", { style: "background:#8a93a6" }), t("Onsets")),
   );
   const el = h("div", { class: "analysis" }, facts, h("div", { style: "display:grid;grid-template-rows:auto 1fr;gap:8px;min-height:0" }, legend, canvas));
   return { el, update: draw };
@@ -282,7 +283,7 @@ function drawAnalysis(canvas: HTMLCanvasElement, a: Analysis): void {
   if (!all.length) {
     ctx.fillStyle = "#5c6578";
     ctx.font = "13px system-ui";
-    ctx.fillText("Keine Tonhöhe erkannt – lauter oder näher am Mikrofon singen/summen.", 16, 28);
+    ctx.fillText(t("No pitch detected – sing or hum louder or closer to the microphone."), 16, 28);
     return;
   }
   const lo = Math.floor(Math.min(...all)) - 2;
@@ -393,15 +394,15 @@ class KwPanel extends HTMLElement {
     if (tab === "fuge") return fuguePanel();
     if (tab === "clip") {
       if (track && clipId != null) return clipPanel(track.id, clipId);
-      if (track) return placeholder(`Spur „${track.name}“ ausgewählt – klicke einen Clip in der Zeitleiste an.`);
-      return placeholder("Wähle einen Clip in der Zeitleiste aus.");
+      if (track) return placeholder(t("Track \"{name}\" selected – click a clip in the timeline.", { name: track.name }));
+      return placeholder(t("Select a clip in the timeline."));
     }
     if (tab === "analyse") {
       if (a) return analysisPanel(a);
-      return placeholder("Nimm etwas auf (R) oder wähle einen Audio-Clip und klicke „Analysieren“ (oder Doppelklick auf den Clip).");
+      return placeholder(t("Record something (R) or select an audio clip and click \"Analyze\" (or double-click the clip)."));
     }
     if (track?.kind === "instrument") return soundPanel(track.id);
-    return placeholder("Wähle eine Instrumentspur, um ihren Klang zu gestalten.");
+    return placeholder(t("Select an instrument track to design its sound."));
   }
 }
 

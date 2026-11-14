@@ -2,6 +2,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { clipSpan, fmtShift, rangeGrid, snapTo } from "../../ui/dist/editmath.js";
+import { setLanguage } from "../../ui/dist/i18n.js";
+import { loadDict } from "../../ui/scripts/i18n-keys.mjs";
+
+// The expectations are the German texts (written for the German UI): with the
+// German dictionary, the English keys in editmath.ts must give exactly these.
+setLanguage("de", await loadDict("de"));
 
 const n = (startBeats, lengthBeats = 1) => ({ startBeats, lengthBeats });
 

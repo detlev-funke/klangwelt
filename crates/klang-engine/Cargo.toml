@@ -6,6 +6,7 @@ edition.workspace = true
 publish = false
 
 [dependencies]
+klang-i18n = { workspace = true }
 rtrb = { workspace = true }
 
 # The audio device exists only on the desktop; in the browser an AudioWorklet mixes.

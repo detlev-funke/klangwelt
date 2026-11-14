@@ -8,6 +8,7 @@
 
 import { backend } from "../bridge.js";
 import { h, icon, setRange } from "../dom.js";
+import { plural, t } from "../i18n.js";
 import { act, errorText, notify, project, run, selection, showPanel, snapshot, status } from "../store.js";
 import type { Clip, RhythmGenre, RhythmGrid, RhythmInfo, RhythmPattern, RhythmRow, Track } from "../types.js";
 
@@ -74,7 +75,7 @@ export async function startWithBeat(g: RhythmGenre, p: RhythmPattern, bars = 4):
     snapshot.value = w.snapshot;
     selection.value = { trackId: w.trackId, clipId: w.clipId };
     showPanel("rhythmus");
-    notify(`„${p.name}“ · ${p.bpm} BPM – Leertaste spielt ab, im Fenster „Rhythmus“ bearbeitest du den Beat`);
+    notify(t("\"{name}\" · {bpm} BPM – Space plays it, edit the beat in the \"Rhythm\" window", { name: p.name, bpm: p.bpm }));
   } catch (e) {
     notify(errorText(e), "error");
   }
@@ -97,7 +98,7 @@ export function fillBeatMenu(menu: HTMLElement, close: () => void): void {
         : { top: "auto", bottom: `${window.innerHeight - r.top + 6}px`, maxHeight: `${above}px` }),
     });
   }
-  menu.replaceChildren(h("div", { class: "menu-title" }, "Beat-Vorlagen – neue Schlagzeug-Spur, Tempo der Vorlage"));
+  menu.replaceChildren(h("div", { class: "menu-title" }, t("Beat templates – new drum track, template tempo")));
   loadInfo()
     .then((info) => {
       menu.append(
@@ -135,7 +136,7 @@ const draft: { grid: RhythmGrid | null; swing: number; pattern: string | null; s
 };
 
 export function rhythmPanel(): { el: HTMLElement; update(): void } {
-  const el = h("div", { class: "rh" }, h("div", { class: "placeholder" }, "Muster werden geladen …"));
+  const el = h("div", { class: "rh" }, h("div", { class: "placeholder" }, t("Loading patterns…")));
   let info: RhythmInfo | null = null;
   const pf = prefs();
   let genreIx = Math.min(pf.genre, 99);
@@ -164,17 +165,17 @@ export function rhythmPanel(): { el: HTMLElement; update(): void } {
   const about = h("div", { class: "rh-about" });
   const mode = h("div", { class: "rh-mode" });
   const barsSeg = h("div", { class: "seg mini rh-bars" });
-  const swingIn = h("input", { type: "range", min: 0, max: 75, step: 1, class: "rh-swing", title: "Swing: jede zweite Sechzehntel kommt später" }) as HTMLInputElement;
+  const swingIn = h("input", { type: "range", min: 0, max: 75, step: 1, class: "rh-swing", title: t("Swing: every second sixteenth comes later") }) as HTMLInputElement;
   const swingVal = h("b", { class: "rh-swing-val" });
   const tempoInfo = h("span", { class: "muted rh-tempo" });
   const tempoBtn = h("button", { class: "btn small rh-tempo-btn" }) as HTMLButtonElement;
-  const targetSel = h("select", { class: "hc-select rh-target", title: "Wohin „In Spur schreiben“ den Beat setzt" }) as HTMLSelectElement;
-  const playBtn = h("button", { class: "btn small primary rh-play", title: "Den Entwurf in Schleife anhören – noch einmal: anhalten" }) as HTMLButtonElement;
-  const writeBtn = h("button", { class: "btn small blue rh-write", title: "Den Entwurf als Clip anlegen – danach bearbeitet das Raster diesen Clip" }, icon("plus"), "In Spur schreiben") as HTMLButtonElement;
-  const clearBtn = h("button", { class: "btn small ghost rh-clear", title: "Alle Schritte löschen" }, icon("trash"), "Leeren") as HTMLButtonElement;
+  const targetSel = h("select", { class: "hc-select rh-target", title: t("Where \"Write to track\" puts the beat") }) as HTMLSelectElement;
+  const playBtn = h("button", { class: "btn small primary rh-play", title: t("Listen to the draft in a loop – click again to stop") }) as HTMLButtonElement;
+  const writeBtn = h("button", { class: "btn small blue rh-write", title: t("Create the draft as a clip – the grid then edits that clip") }, icon("plus"), t("Write to track")) as HTMLButtonElement;
+  const clearBtn = h("button", { class: "btn small ghost rh-clear", title: t("Clear all steps") }, icon("trash"), t("Clear")) as HTMLButtonElement;
   const pages = h("div", { class: "seg mini rh-pages" });
   const grid = h("div", { class: "rh-grid" });
-  const moreBtn = h("button", { class: "btn ghost small rh-more", title: "Weitere Trommeln (Toms, Becken, Percussion) ein- oder ausblenden" }) as HTMLButtonElement;
+  const moreBtn = h("button", { class: "btn ghost small rh-more", title: t("Show or hide more drums (toms, cymbals, percussion)") }) as HTMLButtonElement;
 
   const bars = () => Math.max(1, Math.round(current().steps / STEPS));
   const current = (): RhythmGrid => (bound ? clipGrid : draft.grid) ?? { steps: STEPS, rows: {} };
@@ -201,7 +202,7 @@ export function rhythmPanel(): { el: HTMLElement; update(): void } {
     if (bound) {
       const b = bound;
       void act(backend.rhythmWrite(resizeGrid(p.grid, n), p.swing, b.trackId, b.clipId, 0, p.name, null, null).then((w) => w.snapshot)).then((ok) => {
-        if (ok) notify(`Clip „${b.clip.name}“ ist jetzt „${p.name}“ – Rückgängig mit Strg+Z`);
+        if (ok) notify(t("Clip \"{clip}\" is now \"{pattern}\" – undo with Ctrl+Z", { clip: b.clip.name, pattern: p.name }));
       });
     } else {
       draft.grid = resizeGrid(p.grid, n);
@@ -251,21 +252,21 @@ export function rhythmPanel(): { el: HTMLElement; update(): void } {
   const write = async () => {
     const p = project();
     if (!p) return;
-    const t = targetTrack();
+    const target = targetTrack();
     const bpb = p.beatsPerBar || 4;
     let start: number;
-    if (t) {
-      const end = Math.max(0, ...t.clips.map((c) => c.startBeats + (c.source.type === "notes" ? c.source.lengthBeats : 0)));
+    if (target) {
+      const end = Math.max(0, ...target.clips.map((c) => c.startBeats + (c.source.type === "notes" ? c.source.lengthBeats : 0)));
       start = Math.ceil(end / bpb - 1e-9) * bpb;
     } else {
       start = Math.floor((status.peek().positionSecs * p.tempoBpm) / 60 / bpb) * bpb;
     }
-    const name = matching()?.p.name ?? draft.pattern ?? "Beat";
+    const name = matching()?.p.name ?? draft.pattern ?? t("Beat");
     try {
-      const w = await backend.rhythmWrite(current(), draft.swing, t?.id ?? null, null, start, name, t ? null : draft.sound, null);
+      const w = await backend.rhythmWrite(current(), draft.swing, target?.id ?? null, null, start, name, target ? null : draft.sound, null);
       snapshot.value = w.snapshot;
       selection.value = { trackId: w.trackId, clipId: w.clipId };
-      notify(`„${name}“ geschrieben – das Raster bearbeitet jetzt diesen Clip`);
+      notify(t("Wrote \"{name}\" – the grid now edits this clip", { name }));
     } catch (e) {
       notify(errorText(e), "error");
     }
@@ -275,7 +276,7 @@ export function rhythmPanel(): { el: HTMLElement; update(): void } {
     playing = null;
     cancelAnimationFrame(raf);
     renderPlayhead();
-    playBtn.replaceChildren(icon("play"), "Anhören");
+    playBtn.replaceChildren(icon("play"), t("Listen"));
   };
   const play = async () => {
     if (playing) {
@@ -289,7 +290,7 @@ export function rhythmPanel(): { el: HTMLElement; update(): void } {
         ? await backend.rhythmPreview(bound.trackId, bound.clipId, null, clipSwing, null)
         : await backend.rhythmPreview(targetTrack()?.id ?? null, null, g, draft.swing, draft.sound);
       playing = { t0: performance.now(), secs, stepSecs: 60 / tempo() / 4, steps: g.steps };
-      playBtn.replaceChildren(icon("stop"), "Stopp");
+      playBtn.replaceChildren(icon("stop"), t("Stop"));
       const tick = () => {
         if (!playing) return;
         if ((performance.now() - playing.t0) / 1000 >= playing.secs) return stopPlay();
@@ -322,7 +323,7 @@ export function rhythmPanel(): { el: HTMLElement; update(): void } {
       cells = [];
       grid.replaceChildren(
         ...rows.map((r) => {
-          const label = h("button", { class: "rh-label", title: `${r.label} anspielen` }, r.label);
+          const label = h("button", { class: "rh-label", title: t("Play {name}", { name: r.label }) }, r.label);
           label.dataset.row = r.key;
           label.addEventListener("click", () => {
             const tid = bound?.trackId ?? targetTrack()?.id;
@@ -330,7 +331,7 @@ export function rhythmPanel(): { el: HTMLElement; update(): void } {
           });
           const steps = Array.from({ length: STEPS }, (_, i) => {
             const step = page * STEPS + i;
-            const c = h("button", { class: `rh-step${i % 4 === 0 ? " beat" : ""}`, title: `${r.label} · Schritt ${i + 1}` });
+            const c = h("button", { class: `rh-step${i % 4 === 0 ? " beat" : ""}`, title: t("{row} · step {step}", { row: r.label, step: i + 1 }) });
             c.dataset.row = r.key;
             c.dataset.step = String(step);
             c.addEventListener("click", () => toggle(r.key, step));
@@ -344,7 +345,7 @@ export function rhythmPanel(): { el: HTMLElement; update(): void } {
       );
       pages.replaceChildren(
         ...Array.from({ length: nBars }, (_, b) => {
-          const btn = h("button", { class: "seg-btn", title: `Takt ${b + 1} zeigen` }, `Takt ${b + 1}`);
+          const btn = h("button", { class: "seg-btn", title: t("Show bar {bar}", { bar: b + 1 }) }, t("Bar {bar}", { bar: b + 1 }));
           btn.dataset.page = String(b);
           btn.addEventListener("click", () => {
             page = b;
@@ -358,7 +359,7 @@ export function rhythmPanel(): { el: HTMLElement; update(): void } {
     for (const b of pages.children) (b as HTMLElement).classList.toggle("on", Number((b as HTMLElement).dataset.page) === page);
     for (const c of cells) c.el.classList.toggle("on", (g.rows[c.row] ?? []).includes(c.step));
     const hidden = (info?.rows ?? []).filter((r) => !r.main && !(g.rows[r.key]?.length)).length;
-    moreBtn.textContent = more ? "weniger Trommeln" : `weitere Trommeln (${hidden})`;
+    moreBtn.textContent = more ? t("fewer drums") : t("more drums ({n})", { n: hidden });
     moreBtn.hidden = !more && hidden === 0;
     renderPlayhead();
   };
@@ -396,7 +397,7 @@ export function rhythmPanel(): { el: HTMLElement; update(): void } {
     const g = genre();
     patternBar.replaceChildren(
       ...(g?.patterns ?? []).map((p) => {
-        const b = h("button", { class: "rh-pattern", title: p.tip }, h("b", {}, p.name), h("span", {}, `${p.bpm} BPM${p.swing ? ` · Swing ${p.swing} %` : ""}`));
+        const b = h("button", { class: "rh-pattern", title: p.tip }, h("b", {}, p.name), h("span", {}, `${p.bpm} BPM${p.swing ? ` · ${t("Swing {swing}%", { swing: p.swing })}` : ""}`));
         b.dataset.name = p.name;
         b.addEventListener("click", () => loadPattern(g!, p));
         b.addEventListener("mouseenter", () => {
@@ -430,14 +431,16 @@ export function rhythmPanel(): { el: HTMLElement; update(): void } {
     // Modus
     if (bound) {
       mode.replaceChildren(
-        h("span", { class: "rh-badge" }, "Clip"),
-        h("span", {}, `bearbeitet „${clipName || bound.clip.name}“ in „${bound.track.name}“ – jeder Klick sofort im Clip, Muster ersetzen den Inhalt`),
-        ...(clipSkipped ? [h("span", { class: "muted" }, ` · ${clipSkipped} Noten außerhalb des Rasters bleiben unverändert`)] : []),
+        h("span", { class: "rh-badge" }, t("Clip")),
+        h("span", {}, t("editing \"{clip}\" in \"{track}\" – every click goes straight into the clip, patterns replace its content", { clip: clipName || bound.clip.name, track: bound.track.name })),
+        ...(clipSkipped
+          ? [h("span", { class: "muted" }, ` · ${plural(clipSkipped, "{n} note outside the grid stays unchanged", "{n} notes outside the grid stay unchanged")}`)]
+          : []),
       );
     } else {
       mode.replaceChildren(
-        h("span", { class: "rh-badge draft" }, "Entwurf"),
-        h("span", {}, "wähle ein Muster oder tippe Schritte an – „In Spur schreiben“ legt einen Clip an (oder wähle einen Schlagzeug-Clip zum Bearbeiten)"),
+        h("span", { class: "rh-badge draft" }, t("Draft")),
+        h("span", {}, t("choose a pattern or tap in steps – \"Write to track\" creates a clip (or select a drum clip to edit it)")),
       );
     }
     // Takte
@@ -448,16 +451,16 @@ export function rhythmPanel(): { el: HTMLElement; update(): void } {
     swingVal.textContent = `${Math.round(swing())} %`;
     // Tempo
     const bpm = m?.p.bpm ?? (bound ? null : draft.bpm);
-    tempoInfo.textContent = `Projekt ${Math.round(tempo())} BPM`;
+    tempoInfo.textContent = t("Project {bpm} BPM", { bpm: Math.round(tempo()) });
     tempoBtn.hidden = !bpm || Math.round(bpm) === Math.round(tempo());
     if (bpm) {
-      tempoBtn.replaceChildren(`Tempo ${bpm} übernehmen`);
+      tempoBtn.replaceChildren(t("Use tempo {bpm}", { bpm }));
       tempoBtn.dataset.bpm = String(bpm);
-      tempoBtn.title = `Projekttempo auf ${bpm} BPM setzen – typisch für dieses Muster`;
+      tempoBtn.title = t("Set the project tempo to {bpm} BPM – typical for this pattern", { bpm });
     }
     // Ziel (nur im Entwurf)
     const tracks = drumTracks();
-    const opts = [...tracks.map((t) => [String(t.id), `Neuer Clip in „${t.name}“`] as const), ["neu", "Neue Schlagzeug-Spur"] as const];
+    const opts = [...tracks.map((tr) => [String(tr.id), t("New clip in \"{track}\"", { track: tr.name })] as const), ["neu", t("New drum track")] as const];
     const sig = opts.map((o) => o.join(":")).join("|");
     if (targetSel.dataset.sig !== sig) {
       targetSel.dataset.sig = sig;
@@ -477,7 +480,11 @@ export function rhythmPanel(): { el: HTMLElement; update(): void } {
   // ------------------------------------------------------------ Aufbau nach dem Laden
   const build = () => {
     [1, 2, 4].forEach((n) => {
-      const b = h("button", { class: "seg-btn", title: `${n} Takt${n > 1 ? "e" : ""} (${n * STEPS} Schritte)` }, `${n} Takt${n > 1 ? "e" : ""}`);
+      const b = h(
+        "button",
+        { class: "seg-btn", title: plural(n, "{n} bar ({steps} steps)", "{n} bars ({steps} steps)", { steps: n * STEPS }) },
+        plural(n, "{n} bar", "{n} bars"),
+      );
       b.dataset.bars = String(n);
       b.addEventListener("click", () => setBars(n));
       barsSeg.append(b);
@@ -507,7 +514,7 @@ export function rhythmPanel(): { el: HTMLElement; update(): void } {
       if (bpm) void run({ type: "setProject", patch: { tempoBpm: bpm } });
     });
     targetSel.addEventListener("change", () => (targetChoice = targetSel.value));
-    playBtn.replaceChildren(icon("play"), "Anhören");
+    playBtn.replaceChildren(icon("play"), t("Listen"));
     playBtn.addEventListener("click", () => void play());
     writeBtn.addEventListener("click", () => void write());
     clearBtn.addEventListener("click", () => {
@@ -537,13 +544,13 @@ export function rhythmPanel(): { el: HTMLElement; update(): void } {
       mode,
       h("div", { class: "rh-ctl" },
         barsSeg,
-        h("label", { class: "rh-swing-box" }, "Swing", swingIn, swingVal),
+        h("label", { class: "rh-swing-box" }, t("Swing"), swingIn, swingVal),
         tempoInfo, tempoBtn,
         h("span", { class: "rh-gap" }),
         targetSel, writeBtn, playBtn, clearBtn),
       pages,
       grid,
-      h("div", { class: "rh-foot" }, moreBtn, h("span", { class: "hint" }, "Klick setzt oder löscht einen Schritt · helle Spalten = Zählzeiten 1 2 3 4 · Klick auf eine Trommel spielt sie an")),
+      h("div", { class: "rh-foot" }, moreBtn, h("span", { class: "hint" }, t("Click sets or clears a step · bright columns = beats 1 2 3 4 · click a drum to hear it"))),
     );
     renderGenres();
     update();
@@ -553,7 +560,7 @@ export function rhythmPanel(): { el: HTMLElement; update(): void } {
     info = i;
     genreIx = Math.min(genreIx, i.genres.length - 1);
     build();
-  }).catch(() => el.replaceChildren(h("div", { class: "placeholder" }, "Rhythmus gibt es nur in der Desktop-App.")));
+  }).catch(() => el.replaceChildren(h("div", { class: "placeholder" }, t("Rhythm is only available in the desktop app."))));
 
   // ------------------------------------------------------------ Auswahl verfolgen
   const update = () => {

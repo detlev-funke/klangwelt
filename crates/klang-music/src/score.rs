@@ -159,7 +159,7 @@ fn read_mxl(path: &Path) -> Result<String, MusicError> {
         None => (0..zip.len())
             .filter_map(|i| zip.by_index(i).ok().map(|f| f.name().to_string()))
             .find(|n| !n.starts_with("META-INF") && (n.ends_with(".xml") || n.ends_with(".musicxml")))
-            .ok_or_else(|| MusicError::Zip("keine MusicXML-Datei im Archiv".into()))?,
+            .ok_or_else(|| MusicError::Zip(klang_i18n::tr!("no MusicXML file in the archive")))?,
     };
     let mut f = zip.by_name(&name).map_err(|e| MusicError::Zip(e.to_string()))?;
     let mut bytes = Vec::new();

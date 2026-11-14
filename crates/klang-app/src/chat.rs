@@ -4,6 +4,7 @@
 //! `chat_poll` ab (Long-Poll: der Aufruf wartet, bis ein Auftrag da ist) und
 //! antwortet mit `chat_reply`. So kann ein Agent dauerhaft „zuhören“.
 
+use klang_i18n::tr;
 use serde::Serialize;
 use std::sync::{Condvar, Mutex, MutexGuard};
 use crate::clock::Instant;
@@ -121,7 +122,7 @@ impl Chat {
     pub fn send_user(&self, text: &str, kontext: Option<String>) -> Result<ChatMessage, String> {
         let text = text.trim();
         if text.is_empty() {
-            return Err("Leere Nachricht".into());
+            return Err(tr!("Empty message"));
         }
         let mut g = self.lock();
         let mut m = Self::push(&mut g, Author::User, text.to_string(), Some(Status::Neu), None);
@@ -200,12 +201,12 @@ impl Chat {
     pub fn reply(&self, text: &str, reply_to: Option<u64>, done: bool) -> Result<ChatMessage, String> {
         let text = text.trim();
         if text.is_empty() {
-            return Err("Leere Antwort".into());
+            return Err(tr!("Empty reply"));
         }
         let mut g = self.lock();
         if let Some(id) = reply_to {
             if !g.messages.iter().any(|m| m.id == id && m.from == Author::User) {
-                return Err(format!("Auftrag {id} gibt es nicht"));
+                return Err(tr!("Task {id} doesn't exist", id = id));
             }
         }
         if done {

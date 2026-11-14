@@ -10,6 +10,7 @@
 //! Absturz beim Speichern zerstört nie das letzte gute Projekt.
 
 use klang_core::{ClipSource, Project};
+use klang_i18n::tr;
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -87,15 +88,15 @@ pub fn write_wav(w: &mut impl Write, samples: &[f32], sample_rate: u32) -> io::R
 
 /// Liest WAV: 32-Bit-Float oder 16-Bit-PCM, mehrkanalig wird zu mono gemittelt.
 pub fn read_wav(bytes: &[u8]) -> io::Result<(Vec<f32>, u32)> {
-    let bad = |m: &str| io::Error::new(io::ErrorKind::InvalidData, format!("WAV: {m}"));
+    let bad = |m: String| io::Error::new(io::ErrorKind::InvalidData, format!("WAV: {m}"));
     if bytes.len() < 12 || &bytes[..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
-        return Err(bad("keine WAV-Datei"));
+        return Err(bad(tr!("not a WAV file")));
     }
     let (mut i, mut fmt, mut data) = (12usize, None, None);
     while i + 8 <= bytes.len() {
         let id = &bytes[i..i + 4];
         let len = u32::from_le_bytes(bytes[i + 4..i + 8].try_into().unwrap()) as usize;
-        let body = bytes.get(i + 8..i + 8 + len).ok_or_else(|| bad("Block abgeschnitten"))?;
+        let body = bytes.get(i + 8..i + 8 + len).ok_or_else(|| bad(tr!("chunk truncated")))?;
         match id {
             b"fmt " if len >= 16 => {
                 let u16_at = |o: usize| u16::from_le_bytes(body[o..o + 2].try_into().unwrap());
@@ -106,12 +107,12 @@ pub fn read_wav(bytes: &[u8]) -> io::Result<(Vec<f32>, u32)> {
         }
         i += 8 + len + (len & 1);
     }
-    let (format, channels, rate, bits) = fmt.ok_or_else(|| bad("fmt fehlt"))?;
-    let data = data.ok_or_else(|| bad("data fehlt"))?;
+    let (format, channels, rate, bits) = fmt.ok_or_else(|| bad(tr!("fmt missing")))?;
+    let data = data.ok_or_else(|| bad(tr!("data missing")))?;
     let frames: Vec<f32> = match (format, bits) {
         (3, 32) => data.chunks_exact(4).map(|c| f32::from_le_bytes(c.try_into().unwrap())).collect(),
         (1, 16) => data.chunks_exact(2).map(|c| i16::from_le_bytes(c.try_into().unwrap()) as f32 / 32768.0).collect(),
-        _ => return Err(bad("nur 32-Bit-Float oder 16-Bit-PCM")),
+        _ => return Err(bad(tr!("only 32-bit float or 16-bit PCM"))),
     };
     let ch = channels as usize;
     let mono = if ch == 1 { frames } else { frames.chunks_exact(ch).map(|f| f.iter().sum::<f32>() / ch as f32).collect() };
@@ -182,22 +183,22 @@ pub fn load(path: &Path) -> io::Result<(Project, Vec<AudioData>)> {
 /// Liest den ZIP-Container (Projektdatei als Bytes, z. B. beim Import).
 pub fn read_zip<R: Read + io::Seek>(source: R) -> io::Result<(Project, Vec<AudioData>)> {
     let bad = |m: String| io::Error::new(io::ErrorKind::InvalidData, m);
-    let mut zip = zip::ZipArchive::new(source).map_err(|e| bad(format!("keine Klangwelt-Projektdatei ({e})")))?;
+    let mut zip = zip::ZipArchive::new(source).map_err(|e| bad(tr!("not a Klangwelt project file ({error})", error = e)))?;
     let manifest: Manifest = {
-        let mut f = zip.by_name("projekt.json").map_err(|_| bad("projekt.json fehlt".into()))?;
+        let mut f = zip.by_name("projekt.json").map_err(|_| bad(tr!("projekt.json missing")))?;
         let mut s = String::new();
         f.read_to_string(&mut s)?;
         serde_json::from_str(&s).map_err(|e| bad(format!("projekt.json: {e}")))?
     };
     if manifest.format != FORMAT {
-        return Err(bad("keine Klangwelt-Projektdatei".into()));
+        return Err(bad(tr!("not a Klangwelt project file")));
     }
     if manifest.version > VERSION {
-        return Err(bad(format!("Projekt stammt aus einer neueren Klangwelt-Version (Format {})", manifest.version)));
+        return Err(bad(tr!("Project was created with a newer version of Klangwelt (format {version})", version = manifest.version)));
     }
     let mut audio = Vec::new();
     for a in &manifest.assets {
-        let mut f = zip.by_name(&a.file).map_err(|_| bad(format!("Aufnahme {} fehlt", a.file)))?;
+        let mut f = zip.by_name(&a.file).map_err(|_| bad(tr!("Recording {file} missing", file = a.file)))?;
         let mut bytes = Vec::new();
         f.read_to_end(&mut bytes)?;
         let (samples, rate) = read_wav(&bytes)?;

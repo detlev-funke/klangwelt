@@ -14,8 +14,8 @@ as an audio file. The web version is not a trimmed-down preview: the browser
 runs **the same core as the desktop app**, written in Rust and compiled to
 WebAssembly. Sound is generated in real time on your own machine.
 
-The app itself speaks German; this page and the code documentation are in
-English.
+The app speaks English, German, French, Italian, Spanish, Dutch and Polish –
+it follows your browser's language, and the gear menu switches it.
 
 ## What you can do with it
 
@@ -46,12 +46,11 @@ English.
 
 1. [Open Klangwelt](https://devfunke.github.io/klangwelt/) – Edge or Chrome
    work best.
-2. **"Demo laden"** (load demo) plays a short piece with beat, arpeggio and
-   melody – a good place to start exploring. The space bar starts and stops
-   playback.
+2. **"Load demo"** plays a short piece with beat, arpeggio and melody – a good
+   place to start exploring. The space bar starts and stops playback.
 3. **Save** keeps the project in your browser's storage; it is still there on
-   your next visit. "Datei → Projektdatei herunterladen" downloads it as a file
-   for backup or sharing (the desktop app opens it, too).
+   your next visit. "File → Download project file" downloads it as a file for
+   backup or sharing (the desktop app opens it, too).
 4. After your first visit, Klangwelt also works **offline**.
 
 ## Your data stays with you

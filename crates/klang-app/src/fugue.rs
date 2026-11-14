@@ -8,6 +8,7 @@ use crate::state::{lock, AppState, CmdResult, Snapshot};
 use klang_core::{Clip, ClipSource, Command, Id, InstrumentKind, Note, Project, Track, TrackKind};
 use klang_dsp::synth::NoteSpec;
 use klang_dsp::util;
+use klang_i18n::tr;
 use klang_music::counterpoint::{check, IssueKind, Severity, VNote};
 use klang_music::fugue::{self, Answer, Stretto, Transform};
 use klang_music::theory::{estimate_key_from_histogram, Key};
@@ -45,14 +46,14 @@ pub struct Subject {
 
 pub fn subject_of(st: &AppState, track_id: Id, clip_id: Id) -> CmdResult<Subject> {
     let s = lock(&st.session)?;
-    let t = s.project.track(track_id).ok_or_else(|| format!("Spur {track_id} nicht gefunden"))?;
+    let t = s.project.track(track_id).ok_or_else(|| tr!("Track {id} not found", id = track_id))?;
     if !melodic(t) {
-        return Err(format!("„{}“ ist keine Instrumentspur mit Tonhöhe", t.name));
+        return Err(tr!("\"{name}\" is not a pitched instrument track", name = t.name));
     }
-    let c = t.clips.iter().find(|c| c.id == clip_id).ok_or("Clip nicht gefunden")?;
+    let c = t.clips.iter().find(|c| c.id == clip_id).ok_or_else(|| tr!("Clip not found"))?;
     let notes = clip_vnotes(t, c);
     if notes.len() < 4 {
-        return Err("Das Thema braucht mindestens 4 Töne – wähle einen Noten-Clip mit dem Fugenthema.".into());
+        return Err(tr!("The subject needs at least 4 notes – select a note clip containing the fugue subject."));
     }
     let start = notes[0].start;
     Ok(Subject { track_name: t.name.clone(), clip_name: c.name.clone(), start, notes: fugue::normalize(&notes) })
@@ -143,7 +144,7 @@ pub struct VoiceIn {
 /// Stimmen als neue Instrumentspuren ab `start` schreiben (ein Undo-Schritt).
 pub fn add_voices(st: &AppState, voices: &[VoiceIn], start: f64, kind: InstrumentKind, label: &str) -> CmdResult<(Snapshot, Vec<Id>)> {
     if voices.iter().all(|v| v.notes.is_empty()) {
-        return Err("Keine Noten zum Schreiben".into());
+        return Err(tr!("No notes to write"));
     }
     let (cmd, ids) = {
         let mut s = lock(&st.session)?;
@@ -197,7 +198,7 @@ pub fn preview_voices(st: &AppState, voices: &[Vec<VNote>], kind: InstrumentKind
     let spb = (60.0 / st.tempo()) as f32;
     let t0 = voices.iter().flatten().map(|n| n.start).fold(f64::MAX, f64::min);
     if !t0.is_finite() {
-        return Err("Keine Noten".into());
+        return Err(tr!("No notes"));
     }
     let inst = sound::default_instrument(kind);
     let end = voices.iter().flatten().map(|n| n.end()).fold(0.0, f64::max);

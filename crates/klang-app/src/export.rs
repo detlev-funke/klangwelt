@@ -9,6 +9,7 @@
 use crate::flac;
 use crate::state::{AppState, CmdResult};
 use klang_core::{ClipSource, InstrumentKind, Project, Track};
+use klang_i18n::tr;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -24,7 +25,7 @@ mod opus {
     pub const BITRATES: [u32; 0] = [];
     pub const DEFAULT_BITRATE: u32 = 160;
     pub fn encode(_left: &[f32], _right: &[f32], _kbps: u32, _title: &str) -> Result<Vec<u8>, String> {
-        Err("Opus gibt es in dieser Version nicht (ohne libopus gebaut) – bitte WAV oder FLAC wählen.".into())
+        Err(klang_i18n::tr!("Opus isn't available in this version (built without libopus) – please choose WAV or FLAC."))
     }
 }
 
@@ -99,7 +100,7 @@ impl Format {
             "opus" | "ogg" => Format::Opus,
             "stems" | "spuren" => Format::Stems,
             "midi" | "mid" => Format::Midi,
-            other => return Err(format!("Unbekanntes Exportformat „{other}“ (wav, flac, opus, stems, midi)")),
+            other => return Err(tr!("Unknown export format \"{format}\" (wav, flac, opus, stems, midi)", format = other)),
         })
     }
 
@@ -176,7 +177,7 @@ fn range_label(project: &Project, (a, b): (f64, f64)) -> String {
     let bpb = project.beats_per_bar.max(1) as f64;
     let from = (a / bpb).floor() as i64 + 1;
     let to = ((b / bpb) - 1e-9).ceil().max(1.0) as i64;
-    if from >= to { format!("Takt {from}") } else { format!("Takt {from}–{to}") }
+    if from >= to { tr!("Bar {from}", from = from) } else { tr!("bars {from}–{to}", from = from, to = to) }
 }
 
 pub fn info(dir: &Path, st: &AppState) -> CmdResult<ExportInfo> {
@@ -208,7 +209,7 @@ fn span(project: &Project, range: Option<(f64, f64)>) -> CmdResult<(usize, usize
         None => {
             let end = song_end_beats(project);
             if end <= 0.0 {
-                return Err("Das Projekt ist leer – es gibt nichts zu exportieren.".into());
+                return Err(tr!("The project is empty – there's nothing to export."));
             }
             let bar = project.beats_per_bar.max(1) as f64;
             Ok((0, frames(end), frames(end + bar) + (TAIL_SECS * SAMPLE_RATE as f64) as usize))
@@ -371,7 +372,7 @@ pub fn midi(project: &Project, range: Option<(f64, f64)>) -> CmdResult<Vec<u8>> 
         tracks.push(events);
     }
     if tracks.is_empty() {
-        return Err("Keine Noten zum Exportieren – MIDI enthält nur Instrumentspuren (Audio geht nicht).".into());
+        return Err(tr!("No notes to export – MIDI only contains instrument tracks (audio isn't possible)."));
     }
 
     let us_per_quarter = (60_000_000.0 / (project.tempo_bpm * quarter_per_beat)).round() as u32;
@@ -409,7 +410,7 @@ pub fn run(dir: &Path, st: &AppState, opts: &ExportOptions) -> CmdResult<ExportR
     let mut src = st.export_source()?;
     let project = src.project.clone();
     let range = if opts.range.unwrap_or(false) {
-        Some(src.range.ok_or("Kein Zeitraum markiert – in der Zeitleiste einen Bereich aufziehen oder das ganze Stück exportieren.")?)
+        Some(src.range.ok_or_else(|| tr!("No time range selected – drag out a range in the timeline or export the whole piece."))?)
     } else {
         None
     };
@@ -420,7 +421,7 @@ pub fn run(dir: &Path, st: &AppState, opts: &ExportOptions) -> CmdResult<ExportR
     let bits = match opts.bits.unwrap_or(24) {
         16 => 16,
         24 => 24,
-        b => return Err(format!("{b} Bit geht nicht – 16 oder 24")),
+        b => return Err(tr!("{bits}-bit isn't supported – use 16 or 24", bits = b)),
     };
 
     if fmt == Format::Midi {
@@ -460,7 +461,7 @@ pub fn run(dir: &Path, st: &AppState, opts: &ExportOptions) -> CmdResult<ExportR
         Format::Opus => {
             let kbps = opts.bitrate.unwrap_or(opus::DEFAULT_BITRATE);
             if !(32..=510).contains(&kbps) {
-                return Err(format!("{kbps} kbit/s geht nicht – 32 bis 510"));
+                return Err(tr!("{kbps} kbit/s isn't supported – use 32 to 510", kbps = kbps));
             }
             let data = opus::encode(&left, &right, kbps, &title)?;
             write(&path, &data)?;
@@ -486,7 +487,7 @@ pub fn run(dir: &Path, st: &AppState, opts: &ExportOptions) -> CmdResult<ExportR
                 files.push(file);
             }
             if files.is_empty() {
-                return Err("Keine hörbare Spur – alle stumm?".into());
+                return Err(tr!("No audible track – are all of them muted?"));
             }
             (files, total)
         }

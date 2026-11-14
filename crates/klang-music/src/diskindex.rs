@@ -83,7 +83,7 @@ fn read_at(f: &File, buf: &mut [u8], off: u64) -> io::Result<()> {
         while done < buf.len() {
             let n = f.seek_read(&mut buf[done..], off)?;
             if n == 0 {
-                return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Indexdatei zu kurz"));
+                return Err(io::Error::new(io::ErrorKind::UnexpectedEof, klang_i18n::tr!("Index file too short")));
             }
             done += n;
             off += n as u64;
@@ -185,7 +185,7 @@ impl IndexWriter {
         let f = features(notes);
         let doc = self.doc_count();
         info.note_count = notes.len() as u32;
-        let closed = || io::Error::other("Index ist schon abgeschlossen");
+        let closed = || io::Error::other(klang_i18n::tr!("Index is already finalized"));
         let json = serde_json::to_vec(&info).map_err(io::Error::other)?;
         self.docs.as_mut().ok_or_else(closed)?.write_all(&json)?;
         self.docs_idx.push(self.docs_idx.last().unwrap() + json.len() as u64);
@@ -304,7 +304,7 @@ impl IndexWriter {
         let mut from: Vec<usize> = Vec::new();
         while let Some(&Reverse((key, _))) = heap.peek() {
             if n_keys % 4096 == 0 && cancel.load(Ordering::Relaxed) {
-                return Err(io::Error::new(io::ErrorKind::Interrupted, "abgebrochen"));
+                return Err(io::Error::new(io::ErrorKind::Interrupted, klang_i18n::tr!("canceled")));
             }
             from.clear();
             while let Some(&Reverse((k, i))) = heap.peek() {
@@ -439,25 +439,25 @@ impl DiskIndex {
         read_at(&file, &mut head, 0)?;
         let v4 = &head[..6] == MAGIC;
         if !v4 && &head[..6] != MAGIC_V3 {
-            return Err(invalid("keine Klangwelt-Indexdatei (Format 3/4)"));
+            return Err(invalid(&klang_i18n::tr!("not a Klangwelt index file (format 3/4)")));
         }
         let v = u64s(&head[8..]);
         let [docs_off, docs_idx_off, seqs_off, seqs_idx_off, facets_off, post_off, keys_off, sparse_off, end, n_docs, n_keys, _n_post, chords_off] =
-            v[..13].try_into().map_err(|_| invalid("Kopf beschädigt"))?;
+            v[..13].try_into().map_err(|_| invalid(&klang_i18n::tr!("Header corrupted")))?;
         let chords_off = if v4 { chords_off } else { 0 };
         let sparse_end = if chords_off > 0 { chords_off } else { end };
         if file.metadata()?.len() < end || !(docs_off <= docs_idx_off && docs_idx_off <= seqs_off && seqs_off <= seqs_idx_off
             && seqs_idx_off <= facets_off && facets_off <= post_off && post_off <= keys_off && keys_off <= sparse_off && sparse_off <= sparse_end
             && sparse_end <= end)
         {
-            return Err(invalid("Indexdatei unvollständig oder beschädigt"));
+            return Err(invalid(&klang_i18n::tr!("Index file incomplete or corrupted")));
         }
         let docs_idx = u64s(&read_vec(&file, docs_idx_off, 8 * (n_docs + 1))?);
         let seqs_idx = u64s(&read_vec(&file, seqs_idx_off, 8 * (n_docs + 1))?);
         let facets: Vec<ScoreFacets> = serde_json::from_slice(&read_vec(&file, facets_off, post_off - facets_off)?).map_err(io::Error::other)?;
         let sparse = u64s(&read_vec(&file, sparse_off, sparse_end - sparse_off)?);
         if keys_off + n_keys * KEY_ENTRY as u64 != sparse_off {
-            return Err(invalid("Schlüsseltabelle beschädigt"));
+            return Err(invalid(&klang_i18n::tr!("Key table corrupted")));
         }
         let chords = if chords_off > 0 { ChordStats::decode_groups(&read_vec(&file, chords_off, end - chords_off)?)? } else { Vec::new() };
         Ok(Self { file, docs_off, docs_idx, seqs_off, seqs_idx, post_off, keys_off, n_keys, sparse, facets, chords })
@@ -838,7 +838,7 @@ impl<'a> BlockReader<'a> {
                 self.start += self.buf.len() as u64;
                 let n = Self::BLOCK.max((len - out.len()) as u64).min(self.end.saturating_sub(self.start));
                 if n == 0 {
-                    return Err(invalid("Indexdatei zu kurz"));
+                    return Err(invalid(&klang_i18n::tr!("Index file too short")));
                 }
                 self.buf.resize(n as usize, 0);
                 read_at(self.file, &mut self.buf, self.start)?;
@@ -1035,7 +1035,7 @@ fn write_merged(sources: &[&AnyIndex], out: &Path, dedupe: bool, progress: &dyn 
     }
     let stop = || -> io::Result<()> {
         if cancel.load(Ordering::Relaxed) {
-            Err(io::Error::new(io::ErrorKind::Interrupted, "abgebrochen"))
+            Err(io::Error::new(io::ErrorKind::Interrupted, klang_i18n::tr!("canceled")))
         } else {
             Ok(())
         }
@@ -1187,8 +1187,8 @@ fn write_merged(sources: &[&AnyIndex], out: &Path, dedupe: bool, progress: &dyn 
                     let raw = &cursors[i].raw;
                     let (mut at, mut doc) = (0usize, 0u64);
                     while at < raw.len() {
-                        doc += get_varint(raw, &mut at).ok_or_else(|| invalid("Fundstellen beschädigt"))?;
-                        let p = get_varint(raw, &mut at).ok_or_else(|| invalid("Fundstellen beschädigt"))?;
+                        doc += get_varint(raw, &mut at).ok_or_else(|| invalid(&klang_i18n::tr!("Occurrence list corrupted")))?;
+                        let p = get_varint(raw, &mut at).ok_or_else(|| invalid(&klang_i18n::tr!("Occurrence list corrupted")))?;
                         if let Some(d) = renum[i].get(doc as u32) {
                             list.push((d, p as u32));
                         }

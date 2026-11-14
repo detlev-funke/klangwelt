@@ -11,5 +11,6 @@ crate-type = ["cdylib"]
 [dependencies]
 klang-app = { workspace = true, features = ["opus"] }
 klang-engine = { workspace = true }
+klang-i18n = { workspace = true }
 klang-mcp = { workspace = true }
 serde_json = { workspace = true }

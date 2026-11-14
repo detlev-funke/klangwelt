@@ -17,6 +17,7 @@
 
 use crate::command::{ClipPatch, Command, CoreError};
 use crate::model::{Clip, ClipSource, Note, Project};
+use klang_i18n::tr;
 
 const EPS: f64 = 1e-9;
 /// Kürzere Noten (in Schlägen) fallen nach dem Zusammenziehen weg.
@@ -83,7 +84,7 @@ pub fn delete_range(
     cut: &mut dyn FnMut(&Clip, &AudioKeep) -> Result<ClipSource, String>,
 ) -> Result<Command, CoreError> {
     if !start.is_finite() || !end.is_finite() || start < 0.0 || end - start < 1e-6 {
-        return Err(CoreError::Invalid("Ungültiger Zeitbereich".into()));
+        return Err(CoreError::Invalid(tr!("Invalid time range")));
     }
     let len = end - start;
     let bpm = project.tempo_bpm;
@@ -135,10 +136,11 @@ pub fn delete_range(
         }
     }
     if commands.is_empty() {
-        return Err(CoreError::Invalid("Im markierten Bereich und dahinter liegt nichts zum Löschen".into()));
+        return Err(CoreError::Invalid(tr!("There's nothing to delete in or after the selected range")));
     }
     let bpb = project.beats_per_bar;
-    Ok(Command::Batch { label: format!("Zeitbereich löschen (Takt {} – {})", bar_beat(start, bpb), bar_beat(end, bpb)), commands })
+    let label = tr!("Delete time range (bars {from} – {to})", from = bar_beat(start, bpb), to = bar_beat(end, bpb));
+    Ok(Command::Batch { label, commands })
 }
 
 /// Richtet Noten am Raster aus („am Takt ausrichten“). Gerechnet wird in
@@ -153,7 +155,7 @@ pub fn delete_range(
 /// Tonhöhe auf demselben Anfang, bleibt die längere.
 pub fn quantize_notes(notes: &[Note], only: Option<&[usize]>, clip_start: f64, grid: f64, lengths: bool) -> Result<(Vec<Note>, Vec<usize>), CoreError> {
     if !grid.is_finite() || grid < 1.0 / 64.0 - EPS {
-        return Err(CoreError::Invalid("Das Raster muss mindestens 1/64 Schlag sein".into()));
+        return Err(CoreError::Invalid(tr!("The grid must be at least 1/64 beat")));
     }
     let chosen = |i: usize| only.is_none_or(|o| o.contains(&i));
     let snap = |b: f64| (b / grid).round() * grid;
@@ -200,7 +202,8 @@ pub fn grid_name(grid: f64, beat_unit: u32) -> String {
     if d >= 1.0 && (d - d.round()).abs() < 1e-6 {
         format!("1/{}", d.round() as i64)
     } else {
-        format!("{} Schläge", grid.to_string().replace('.', ","))
+        // never exactly one beat (that would give "1/unit")
+        tr!("{n} beats", n = klang_i18n::decimal(grid))
     }
 }
 
@@ -236,7 +239,7 @@ mod tests {
         assert_eq!(grid_name(0.25, 4), "1/16");
         assert_eq!(grid_name(1.0, 4), "1/4");
         assert_eq!(grid_name(0.5, 8), "1/16");
-        assert_eq!(grid_name(0.3, 4), "0,3 Schläge");
+        assert_eq!(grid_name(0.3, 4), "0.3 beats");
     }
 
     fn notes_clip(start: f64, len: f64, notes: &[(u8, f64, f64)]) -> Clip {
@@ -291,7 +294,7 @@ mod tests {
         ]);
         let before = s.project.clone();
         let cmd = delete_range(&s.project, 2.0, 5.0, &mut no_audio).unwrap();
-        assert_eq!(cmd.label(), "Zeitbereich löschen (Takt 1.3 – 2.2)");
+        assert_eq!(cmd.label(), "Delete time range (bars 1.3 – 2.2)");
         s.execute(cmd, false).unwrap();
         let t1 = &s.project.tracks[0].clips;
         // 62 im Bereich: weg; 64 (3,5–5,5) ragt hinaus: bleibt mit dem Rest 0,5 ab Schlag 2;

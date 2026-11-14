@@ -4,6 +4,7 @@
 // Bereiche, Beschriftungen und die Bearbeitungsfunktionen für Oberfläche und
 // Ausdrucksspur.
 
+import { t } from "./i18n.js";
 import { signal } from "./signals.js";
 import type { Note, Track } from "./types.js";
 
@@ -38,24 +39,24 @@ const signed = (v: number, digits = 0) => `${v > 0 ? "+" : v < 0 ? "−" : "±"}
 
 export const EXPRS: Record<ExprKey, ExprDef> = {
   velocity: {
-    key: "velocity", label: "Anschlag", hint: "Lautstärke und Härte des Anschlags",
+    key: "velocity", label: t("Velocity"), hint: t("Volume and hardness of the attack"),
     min: 1, max: 127, neutral: 100, bipolar: false, step: 1,
     format: (v) => `${Math.round(v)} (${dynamicName(v)})`,
   },
   vibrato: {
-    key: "vibrato", label: "Vibrato", hint: "Tiefe des Vibratos – setzt verzögert ein wie beim Singen",
+    key: "vibrato", label: t("Vibrato"), hint: t("Vibrato depth – starts with a delay, like in singing"),
     min: 0, max: 1, neutral: 0, bipolar: false, step: 0.01,
-    format: (v) => (v > 0.005 ? `± ${Math.round(v * 100)} Cent` : "aus"),
+    format: (v) => (v > 0.005 ? t("± {cents} cents", { cents: Math.round(v * 100) }) : t("off")),
   },
   brightness: {
-    key: "brightness", label: "Helligkeit", hint: "dunkler ↔ heller als der Grundklang des Instruments",
+    key: "brightness", label: t("Brightness"), hint: t("darker ↔ brighter than the instrument's base sound"),
     min: -1, max: 1, neutral: 0, bipolar: true, step: 0.01,
-    format: (v) => (Math.abs(v) < 0.005 ? "neutral" : `${signed(v * 100)} % ${v > 0 ? "heller" : "dunkler"}`),
+    format: (v) => (Math.abs(v) < 0.005 ? t("neutral") : v > 0 ? t("{value}% brighter", { value: signed(v * 100) }) : t("{value}% darker", { value: signed(v * 100) })),
   },
   bend: {
-    key: "bend", label: "Biegung", hint: "Anschleifen: Ton beginnt versetzt und gleitet hinein",
+    key: "bend", label: t("Bend"), hint: t("Scoop: the note starts offset and glides in"),
     min: -12, max: 12, neutral: 0, bipolar: true, step: 0.5,
-    format: (v) => (Math.abs(v) < 0.05 ? "aus" : `${signed(v, 1)} Halbtöne ${v < 0 ? "von unten" : "von oben"}`),
+    format: (v) => (Math.abs(v) < 0.05 ? t("off") : v < 0 ? t("{value} semitones from below", { value: signed(v, 1) }) : t("{value} semitones from above", { value: signed(v, 1) })),
   },
 };
 

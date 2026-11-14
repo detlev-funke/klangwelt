@@ -81,8 +81,8 @@ impl VerlaufPreset {
 
 pub const VERLAUF_PRESETS: [VerlaufPreset; 8] = [
     VerlaufPreset {
-        name: "Anschwellen",
-        beschreibung: "schwillt langsam an und öffnet sich",
+        name: klang_i18n::tid!("Anschwellen"),
+        beschreibung: klang_i18n::tk!("swells slowly and opens up"),
         laut: &[[0.0, 0.0], [1.6, 0.85], [2.8, 1.0]],
         hell: &[[0.0, 0.2], [2.2, 0.75], [3.5, 0.6]],
         ausklang: 1.6,
@@ -90,8 +90,8 @@ pub const VERLAUF_PRESETS: [VerlaufPreset; 8] = [
         pulstiefe: 0.0,
     },
     VerlaufPreset {
-        name: "Glocke",
-        beschreibung: "Anschlag, dann langes Ausklingen",
+        name: klang_i18n::tid!("Glocke"),
+        beschreibung: klang_i18n::tk!("attack, then a long decay"),
         laut: &[[0.0, 0.0], [0.01, 1.0], [0.5, 0.55], [1.8, 0.28], [4.0, 0.12]],
         hell: &[[0.0, 1.0], [0.3, 0.62], [1.5, 0.35], [4.0, 0.2]],
         ausklang: 2.2,
@@ -99,8 +99,8 @@ pub const VERLAUF_PRESETS: [VerlaufPreset; 8] = [
         pulstiefe: 0.0,
     },
     VerlaufPreset {
-        name: "Atmen",
-        beschreibung: "hebt und senkt sich im Atemtempo",
+        name: klang_i18n::tid!("Atmen"),
+        beschreibung: klang_i18n::tk!("rises and falls at breathing pace"),
         laut: &[[0.0, 0.0], [1.0, 0.85], [2.0, 0.45], [3.0, 0.85], [4.0, 0.45], [5.0, 0.85]],
         hell: &[[0.0, 0.3], [1.0, 0.7], [2.0, 0.35], [3.0, 0.75], [4.0, 0.35], [5.0, 0.7]],
         ausklang: 1.8,
@@ -108,8 +108,8 @@ pub const VERLAUF_PRESETS: [VerlaufPreset; 8] = [
         pulstiefe: 0.0,
     },
     VerlaufPreset {
-        name: "Aufblühen",
-        beschreibung: "gleich da, wird immer heller",
+        name: klang_i18n::tid!("Aufblühen"),
+        beschreibung: klang_i18n::tk!("there right away, getting brighter and brighter"),
         laut: &[[0.0, 0.0], [0.4, 0.6], [2.5, 0.9]],
         hell: &[[0.0, 0.08], [3.0, 0.95]],
         ausklang: 1.2,
@@ -117,8 +117,8 @@ pub const VERLAUF_PRESETS: [VerlaufPreset; 8] = [
         pulstiefe: 0.0,
     },
     VerlaufPreset {
-        name: "Pulsieren",
-        beschreibung: "pocht in Achteln",
+        name: klang_i18n::tid!("Pulsieren"),
+        beschreibung: klang_i18n::tk!("throbs in eighths"),
         laut: &[[0.0, 0.0], [0.08, 0.9]],
         hell: &[[0.0, 0.45], [4.0, 0.7]],
         ausklang: 0.5,
@@ -126,8 +126,8 @@ pub const VERLAUF_PRESETS: [VerlaufPreset; 8] = [
         pulstiefe: 0.85,
     },
     VerlaufPreset {
-        name: "Wellen",
-        beschreibung: "wogt auf und ab",
+        name: klang_i18n::tid!("Wellen"),
+        beschreibung: klang_i18n::tk!("surges up and down"),
         laut: &[[0.0, 0.0], [0.8, 0.7], [1.6, 0.95], [2.4, 0.6], [3.2, 0.95], [4.0, 0.6], [4.8, 0.95]],
         hell: &[[0.0, 0.2], [0.8, 0.6], [1.6, 0.3], [2.4, 0.7], [3.2, 0.3], [4.0, 0.7], [4.8, 0.3]],
         ausklang: 2.0,
@@ -135,8 +135,8 @@ pub const VERLAUF_PRESETS: [VerlaufPreset; 8] = [
         pulstiefe: 0.0,
     },
     VerlaufPreset {
-        name: "Gate",
-        beschreibung: "zerhackt in Sechzehnteln",
+        name: klang_i18n::tid!("Gate"),
+        beschreibung: klang_i18n::tk!("chopped into sixteenths"),
         laut: &[[0.0, 0.0], [0.02, 1.0]],
         hell: &[[0.0, 0.35], [4.0, 0.85]],
         ausklang: 0.3,
@@ -144,8 +144,8 @@ pub const VERLAUF_PRESETS: [VerlaufPreset; 8] = [
         pulstiefe: 1.0,
     },
     VerlaufPreset {
-        name: "Stich",
-        beschreibung: "kurz und gezupft, für Akzente",
+        name: klang_i18n::tid!("Stich"),
+        beschreibung: klang_i18n::tk!("short and plucked, for accents"),
         laut: &[[0.0, 0.0], [0.005, 1.0], [0.25, 0.35], [0.8, 0.0]],
         hell: &[[0.0, 0.9], [0.2, 0.4], [0.8, 0.2]],
         ausklang: 0.3,

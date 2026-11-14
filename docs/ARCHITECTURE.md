@@ -340,6 +340,85 @@ Output and input device can be chosen while running – in the top bar
 * **Desktop performance:** `tests/perf/desktop.mjs` measures commands over the
   real IPC (medians), for comparison before and after reworking the core.
 
+## Languages (i18n)
+
+The app speaks English, German, French, Italian, Spanish, Dutch and Polish.
+
+* **Keys are the English texts in the code.** `t("Save")` returns the text in
+  the current language. Placeholders: `t("Track {name}", { name })`. Plurals:
+  `plural(n, "one note", "{n} notes")` – the key is the plural form, `{n}` is
+  always set, and a dictionary entry may be an object with the forms of
+  `Intl.PluralRules` (`{ one, few, many, other }`, e.g. for Polish). `tk("…")`
+  marks texts in tables as keys; they are translated when shown, with
+  `t(value)`.
+* **Identifiers that are shown** – preset names, envelope names, facet values
+  of the score index, rhythm genres … – are marked with `tid("…")` / `tid!("…")`.
+  Their value never changes, because it is persisted (projects, saved sounds,
+  the index on disk), compared, or sent back by the UI or the agent; for
+  historical reasons these values are German. Every dictionary except German
+  translates them for display, so `i18n/en.ts` contains only identifiers.
+* **`ui/src/i18n.ts`:** language list (`LANGUAGES`), detection (first entry of
+  `navigator.languages` that is supported, otherwise English), the remembered
+  choice (`localStorage["klangwelt.language"]`; only an explicit choice is
+  stored, not the detected language), `t`, `plural`, `tk`, `tid`. Fallback
+  chain: chosen language → English → the key itself.
+* **Start order:** `main.ts` awaits `initI18n()` (loads only the chosen
+  dictionary, plus English as fallback – not for German, whose identifiers are
+  German already – with a dynamic `import()`), hands the dictionary to the core
+  (`set_language`) and only then imports `app.ts`. So every module may call
+  `t()` at load time, also in module-level tables, and the core already answers
+  in that language while the panels are built. `document.documentElement.lang`
+  follows the language. A `load` listener added during the app's start may never
+  fire (the event is over by then).
+* **Before the UI starts** the core has no dictionary: messages it creates at
+  that moment and stores (desktop: the one-time library migration notice, an
+  MCP port error) stay English. Notices that are built when they are read
+  (missing audio device, engine errors) follow the language.
+* **Dictionaries:** `ui/src/i18n/<code>.ts`, one object per language. The UI
+  owns them for the core as well: at start it sends the merged dictionary
+  (flat, plural forms as `key\u001fone` …) to the core with the command
+  `set_language` (same command table on desktop and in the browser).
+* **Core:** crate `klang-i18n` – `tr!("Track {id} not found", id = id)`,
+  `trn!(n, "one bar", "{n} bars")`, `tk!("…")`/`tid!("…")` + `translate(…)`.
+  A global dictionary, set by `set_language`; without one (Rust tests, command
+  line) everything is English. Error messages, undo labels, chord/key names,
+  explanations and notices go through it. Tool descriptions for the agent
+  (`agent.rs`) are not translated – they are read by the AI, not by the user.
+* **UI code that compares texts from the core** compares with `t(key)` – the
+  core uses the same dictionary, so both sides agree in every language.
+  Better still, the core sends a stable field (e.g. `FugueSection.kind`,
+  `SuggestResult.reindex`).
+* **Note and chord names:** the core spells them the German way (B = B♭,
+  H = B, Cis/Es, minor in lower case: "fis", "h°7"; keys like "a-Moll") – that
+  is its data and input format (song chords, melody search, the agent). For
+  display, `ui/src/spelling.ts` (names from the core's data) and
+  `theory::display_name` (names inside the core's messages) convert: letters
+  with ♯/♭ in English, French, Italian and Spanish, Dutch spelling in Dutch
+  (B = B natural, Bes = B♭), unchanged in German and Polish. Names typed into
+  the song's key and chords and the melody search go back to German
+  (`keyInput`, `chordsInput`). The chord track is created as "Chords" in the
+  chosen language; "Akkorde" (older projects) is recognised as well.
+* **Switching** (settings menu, gear in the transport bar): store the choice
+  and reload the UI. Desktop: the core keeps its state (only labels created
+  earlier, e.g. old undo steps, stay in the previous language). Browser: the
+  core lives in the web worker and is restarted; with unsaved changes the
+  existing `beforeunload` question appears first.
+* **Key list:** `ui/scripts/i18n-keys.mjs` reads every `t`/`plural`/`tk`/`tid`
+  call in `ui/src` and every `tr!`/`trn!`/`tk!`/`tid!` in `crates/` (keys must
+  be string literals). `--missing=fr --out=todo.json` lists what a language
+  lacks, `--merge=fr --from=done.json` writes translations into
+  `ui/src/i18n/fr.ts`; `--root=../klangwelt-desktop/app/src` adds the desktop
+  shell's keys. `tests/unit/i18n.test.mjs` fails if a dictionary lacks a key or
+  uses a placeholder the call doesn't pass.
+* **Adding a language:** an entry in `LANGUAGES`, then `--missing=xx`,
+  translate, `--merge=xx` – and a branch in `klang-i18n`'s `category` if its
+  plural rules differ from English.
+* **Tests:** Rust tests run without a dictionary and assert English texts. The
+  browser and desktop test harnesses start the browser/WebView with
+  `--accept-lang=de-DE,de`, so the end-to-end tests see the German UI they
+  were written for; `tests/web/i18n.test.mjs` covers detection, switching,
+  reloading and the core's messages.
+
 ## Context help and intro tour
 
 * **`ui/src/help.ts`:** directory of `[selector, topic]`. For an element, the

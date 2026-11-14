@@ -7,10 +7,14 @@
 use crate::analysis::{analyze_score_with, ScoreAnalysis, VoiceRole};
 use crate::pdmx::{composer_label, genre_label, PdmxMeta};
 use crate::score::Score;
+use klang_i18n::{tid, tk};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Merkmale einer Partitur (Werte als lesbare Wörter).
+/// Facets of a score (values as readable German words). The values
+/// are stored like this in the index and are the paths in the tree – for display
+/// [`value_label`] (bzw. `TreeNode::label`). Facet values are therefore
+/// identifiers (`tid!`), only the dimension labels are plain keys (`tk!`).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScoreFacets {
@@ -48,6 +52,8 @@ pub struct ScoreFacets {
 #[serde(rename_all = "camelCase")]
 pub struct Dimension {
     pub key: &'static str,
+    /// Label (a key); translated when serialized.
+    #[serde(serialize_with = "translated")]
     pub label: &'static str,
     /// Eine Partitur kann mehrere Werte haben.
     pub multi: bool,
@@ -57,23 +63,27 @@ pub struct Dimension {
 }
 
 pub const DIMENSIONS: [Dimension; 16] = [
-    Dimension { key: "genre", label: "Genre", multi: true, order: &[] },
-    Dimension { key: "komponist", label: "Komponist", multi: false, order: &[] },
-    Dimension { key: "stimmung", label: "Stimmung", multi: false, order: &["fröhlich · energisch", "heiter · ruhig", "dramatisch · aufgewühlt", "melancholisch · ruhig"] },
-    Dimension { key: "faerbung", label: "Färbung", multi: false, order: &["hell", "ausgewogen", "dunkel"] },
-    Dimension { key: "energie", label: "Energie", multi: false, order: &["ruhig", "bewegt", "energisch"] },
-    Dimension { key: "tongeschlecht", label: "Dur / Moll", multi: false, order: &["Dur", "Moll", "unbestimmt"] },
-    Dimension { key: "tonart", label: "Tonart", multi: false, order: &[] },
-    Dimension { key: "taktart", label: "Taktart", multi: false, order: &["gerade", "Dreier", "zusammengesetzt", "unregelmäßig", "ohne Angabe"] },
-    Dimension { key: "takt", label: "Takt", multi: false, order: &[] },
-    Dimension { key: "tempo", label: "Tempo", multi: false, order: &["langsam", "mäßig", "schnell", "sehr schnell", "ohne Angabe"] },
-    Dimension { key: "besetzung", label: "Besetzung", multi: false, order: &["Solo", "Duo", "Trio", "Quartett", "Kammerensemble", "Großes Ensemble"] },
-    Dimension { key: "instrumente", label: "Instrumentengruppe", multi: true, order: &["Tasteninstrumente", "Gesang", "Streicher", "Zupfinstrumente", "Holzbläser", "Blechbläser", "Schlagwerk", "Sonstige"] },
-    Dimension { key: "satz", label: "Satzweise", multi: false, order: &["einstimmig", "Melodie mit Begleitung", "mehrstimmig", "akkordisch"] },
-    Dimension { key: "harmonik", label: "Harmonik", multi: false, order: &["diatonisch", "leicht chromatisch", "chromatisch"] },
-    Dimension { key: "laenge", label: "Länge", multi: false, order: &["kurz", "mittel", "lang", "sehr lang"] },
-    Dimension { key: "schwierigkeit", label: "Schwierigkeit", multi: false, order: &["leicht", "mittel", "schwer", "sehr schwer", "ohne Angabe"] },
+    Dimension { key: "genre", label: tk!("Genre"), multi: true, order: &[] },
+    Dimension { key: "komponist", label: tk!("Composer"), multi: false, order: &[] },
+    Dimension { key: "stimmung", label: tk!("Mood"), multi: false, order: &["fröhlich · energisch", "heiter · ruhig", "dramatisch · aufgewühlt", "melancholisch · ruhig"] },
+    Dimension { key: "faerbung", label: tk!("Tonal color"), multi: false, order: &["hell", "ausgewogen", "dunkel"] },
+    Dimension { key: "energie", label: tk!("Energy"), multi: false, order: &["ruhig", "bewegt", "energisch"] },
+    Dimension { key: "tongeschlecht", label: tk!("Major / minor"), multi: false, order: &["Dur", "Moll", "unbestimmt"] },
+    Dimension { key: "tonart", label: tk!("Key"), multi: false, order: &[] },
+    Dimension { key: "taktart", label: tk!("Meter"), multi: false, order: &["gerade", "Dreier", "zusammengesetzt", "unregelmäßig", "ohne Angabe"] },
+    Dimension { key: "takt", label: tk!("Time signature"), multi: false, order: &[] },
+    Dimension { key: "tempo", label: tk!("Tempo"), multi: false, order: &["langsam", "mäßig", "schnell", "sehr schnell", "ohne Angabe"] },
+    Dimension { key: "besetzung", label: tk!("Ensemble"), multi: false, order: &["Solo", "Duo", "Trio", "Quartett", "Kammerensemble", "Großes Ensemble"] },
+    Dimension { key: "instrumente", label: tk!("Instrument group"), multi: true, order: &["Tasteninstrumente", "Gesang", "Streicher", "Zupfinstrumente", "Holzbläser", "Blechbläser", "Schlagwerk", "Sonstige"] },
+    Dimension { key: "satz", label: tk!("Texture"), multi: false, order: &["einstimmig", "Melodie mit Begleitung", "mehrstimmig", "akkordisch"] },
+    Dimension { key: "harmonik", label: tk!("Harmonic style"), multi: false, order: &["diatonisch", "leicht chromatisch", "chromatisch"] },
+    Dimension { key: "laenge", label: tk!("Length"), multi: false, order: &["kurz", "mittel", "lang", "sehr lang"] },
+    Dimension { key: "schwierigkeit", label: tk!("Difficulty"), multi: false, order: &["leicht", "mittel", "schwer", "sehr schwer", "ohne Angabe"] },
 ];
+
+fn translated<S: serde::Serializer>(label: &&'static str, ser: S) -> Result<S::Ok, S::Error> {
+    ser.serialize_str(&klang_i18n::translate(label))
+}
 
 pub fn dimension(key: &str) -> Option<&'static Dimension> {
     DIMENSIONS.iter().find(|d| d.key == key)
@@ -83,23 +93,23 @@ pub fn dimension(key: &str) -> Option<&'static Dimension> {
 pub fn values<'a>(f: &'a ScoreFacets, dim: &str) -> Vec<&'a str> {
     let one = |s: &'a str| vec![s];
     match dim {
-        "genre" if f.genres.is_empty() => vec!["ohne Angabe"],
+        "genre" if f.genres.is_empty() => vec![tid!("ohne Angabe")],
         "genre" => f.genres.iter().map(String::as_str).collect(),
-        "schwierigkeit" => one(if f.difficulty.is_empty() { "ohne Angabe" } else { &f.difficulty }),
+        "schwierigkeit" => one(if f.difficulty.is_empty() { tid!("ohne Angabe") } else { &f.difficulty }),
         "stimmung" => one(&f.mood),
         "faerbung" => one(&f.color),
         "energie" => one(&f.energy),
         "tongeschlecht" => one(&f.mode),
-        "tonart" => one(if f.key.is_empty() { "unbestimmt" } else { &f.key }),
+        "tonart" => one(if f.key.is_empty() { tid!("unbestimmt") } else { &f.key }),
         "taktart" => one(&f.meter_kind),
-        "takt" => one(if f.meter.is_empty() { "ohne Angabe" } else { &f.meter }),
+        "takt" => one(if f.meter.is_empty() { tid!("ohne Angabe") } else { &f.meter }),
         "tempo" => one(&f.tempo),
         "besetzung" => one(&f.ensemble),
         "instrumente" => f.families.iter().map(String::as_str).collect(),
         "satz" => one(&f.texture),
         "harmonik" => one(&f.harmony),
         "laenge" => one(&f.length),
-        "komponist" => one(if f.composer.trim().is_empty() { "unbekannt" } else { f.composer.trim() }),
+        "komponist" => one(if f.composer.trim().is_empty() { tid!("unbekannt") } else { f.composer.trim() }),
         _ => Vec::new(),
     }
 }
@@ -112,22 +122,22 @@ pub fn family(part_name: &str, has_voices: bool) -> &'static str {
     let has = |words: &[&str]| words.iter().any(|w| n.contains(w));
     let word = |w: &str| n.split(|c: char| !c.is_alphanumeric()).any(|t| t == w);
     if has(&["drum", "schlagzeug", "percussion", "perkussion", "timpani", "pauke", "xylophon", "marimba", "vibraphon", "glockenspiel", "cymbal", "becken", "snare", "conga", "bongo", "triangle"]) {
-        return "Schlagwerk";
+        return tid!("Schlagwerk");
     }
     if has(&["english horn", "englisch horn", "cor anglais", "flute", "flöte", "floete", "piccolo", "recorder", "oboe", "clarinet", "klarinette", "bassoon", "fagott", "sax"]) {
-        return "Holzbläser";
+        return tid!("Holzbläser");
     }
     if has(&["piano", "klavier", "keyboard", "organ", "orgel", "harpsichord", "cembalo", "celesta", "accordion", "akkordeon", "synth", "e-piano", "rhodes"]) {
-        return "Tasteninstrumente";
+        return tid!("Tasteninstrumente");
     }
     if has(&["guitar", "gitarre", "harp", "harfe", "lute", "laute", "ukulele", "mandolin", "banjo", "bass guitar", "e-bass", "electric bass", "zither"]) {
-        return "Zupfinstrumente";
+        return tid!("Zupfinstrumente");
     }
     if has(&["violin", "violine", "geige", "viola", "bratsche", "cello", "violoncello", "contrabass", "kontrabass", "double bass", "string", "streicher", "fiddle"]) {
-        return "Streicher";
+        return tid!("Streicher");
     }
     if has(&["trumpet", "trompete", "horn", "trombone", "posaune", "tuba", "euphonium", "cornet", "kornett", "flugelhorn", "flügelhorn", "brass"]) {
-        return "Blechbläser";
+        return tid!("Blechbläser");
     }
     if has(&["voice", "vocal", "voix", "soprano", "sopran", "alto", "tenor", "baritone", "bariton", "mezzo", "choir", "chor", "singstimme", "gesang", "melody", "lead", "canto", "voce", "stimme"])
         || word("alt")
@@ -135,45 +145,45 @@ pub fn family(part_name: &str, has_voices: bool) -> &'static str {
         || word("a")
         || word("t")
     {
-        return "Gesang";
+        return tid!("Gesang");
     }
     if word("bass") || word("b") {
-        return if has_voices { "Gesang" } else { "Zupfinstrumente" };
+        return if has_voices { tid!("Gesang") } else { tid!("Zupfinstrumente") };
     }
-    "Sonstige"
+    tid!("Sonstige")
 }
 
 fn ensemble(parts: usize) -> &'static str {
     match parts {
-        0 | 1 => "Solo",
-        2 => "Duo",
-        3 => "Trio",
-        4 => "Quartett",
-        5..=9 => "Kammerensemble",
-        _ => "Großes Ensemble",
+        0 | 1 => tid!("Solo"),
+        2 => tid!("Duo"),
+        3 => tid!("Trio"),
+        4 => tid!("Quartett"),
+        5..=9 => tid!("Kammerensemble"),
+        _ => tid!("Großes Ensemble"),
     }
 }
 
 fn meter_kind(ts: Option<(u32, u32)>) -> &'static str {
     match ts {
-        None => "ohne Angabe",
+        None => tid!("ohne Angabe"),
         Some((n, d)) => match (n, d) {
-            (6 | 9 | 12, 8 | 16) => "zusammengesetzt",
-            (3, _) => "Dreier",
-            (2 | 4, _) => "gerade",
-            (6 | 9 | 12, _) => "zusammengesetzt",
-            _ => "unregelmäßig",
+            (6 | 9 | 12, 8 | 16) => tid!("zusammengesetzt"),
+            (3, _) => tid!("Dreier"),
+            (2 | 4, _) => tid!("gerade"),
+            (6 | 9 | 12, _) => tid!("zusammengesetzt"),
+            _ => tid!("unregelmäßig"),
         },
     }
 }
 
 fn tempo_word(bpm: Option<f64>) -> &'static str {
     match bpm {
-        None => "ohne Angabe",
-        Some(b) if b < 76.0 => "langsam",
-        Some(b) if b < 108.0 => "mäßig",
-        Some(b) if b < 140.0 => "schnell",
-        Some(_) => "sehr schnell",
+        None => tid!("ohne Angabe"),
+        Some(b) if b < 76.0 => tid!("langsam"),
+        Some(b) if b < 108.0 => tid!("mäßig"),
+        Some(b) if b < 140.0 => tid!("schnell"),
+        Some(_) => tid!("sehr schnell"),
     }
 }
 
@@ -190,13 +200,13 @@ fn three(v: f32, low: &'static str, mid: &'static str, high: &'static str) -> &'
 fn texture(a: &ScoreAnalysis) -> &'static str {
     let melodic = a.voices.iter().filter(|v| matches!(v.role, VoiceRole::MainTheme | VoiceRole::CounterMelody | VoiceRole::InnerVoice)).count();
     if a.voices.len() <= 1 {
-        if a.voices.first().map(|v| v.chordal > 0.5).unwrap_or(false) { "akkordisch" } else { "einstimmig" }
+        if a.voices.first().map(|v| v.chordal > 0.5).unwrap_or(false) { tid!("akkordisch") } else { tid!("einstimmig") }
     } else if a.voices.iter().any(|v| v.role == VoiceRole::CounterMelody) || melodic >= 3 {
-        "mehrstimmig"
+        tid!("mehrstimmig")
     } else if a.voices.iter().all(|v| v.chordal > 0.5) {
-        "akkordisch"
+        tid!("akkordisch")
     } else {
-        "Melodie mit Begleitung"
+        tid!("Melodie mit Begleitung")
     }
 }
 
@@ -216,7 +226,7 @@ pub fn facets_from(score: &Score, a: &ScoreAnalysis, doc: u32, meta: Option<&Pdm
     families.sort();
     families.dedup();
     if families.is_empty() {
-        families.push("Sonstige".into());
+        families.push(tid!("Sonstige").into());
     }
     let beats_per_bar = score.time_signature.map(|(n, d)| n as f64 * 4.0 / d.max(1) as f64).unwrap_or(4.0).max(0.5);
     let bars = (a.duration_quarters / beats_per_bar).round().max(0.0) as u32;
@@ -234,20 +244,20 @@ pub fn facets_from(score: &Score, a: &ScoreAnalysis, doc: u32, meta: Option<&Pdm
         genres,
         parts,
         difficulty: match meta.and_then(|m| m.complexity) {
-            Some(0) => "leicht",
-            Some(1) => "mittel",
-            Some(2) => "schwer",
-            Some(_) => "sehr schwer",
+            Some(0) => tid!("leicht"),
+            Some(1) => tid!("mittel"),
+            Some(2) => tid!("schwer"),
+            Some(_) => tid!("sehr schwer"),
             None => "",
         }
         .to_string(),
         mood: a.mood.label.to_string(),
-        color: three(a.mood.valence, "dunkel", "ausgewogen", "hell").to_string(),
-        energy: three(a.mood.arousal, "ruhig", "bewegt", "energisch").to_string(),
+        color: three(a.mood.valence, tid!("dunkel"), tid!("ausgewogen"), tid!("hell")).to_string(),
+        energy: three(a.mood.arousal, tid!("ruhig"), tid!("bewegt"), tid!("energisch")).to_string(),
         mode: match a.key {
-            Some(k) if k.minor => "Moll",
-            Some(_) => "Dur",
-            None => "unbestimmt",
+            Some(k) if k.minor => tid!("Moll"),
+            Some(_) => tid!("Dur"),
+            None => tid!("unbestimmt"),
         }
         .to_string(),
         key: a.key_name.clone().unwrap_or_default(),
@@ -258,18 +268,18 @@ pub fn facets_from(score: &Score, a: &ScoreAnalysis, doc: u32, meta: Option<&Pdm
         families,
         texture: texture(a).to_string(),
         harmony: if a.chromaticism < 0.05 {
-            "diatonisch"
+            tid!("diatonisch")
         } else if a.chromaticism < 0.15 {
-            "leicht chromatisch"
+            tid!("leicht chromatisch")
         } else {
-            "chromatisch"
+            tid!("chromatisch")
         }
         .to_string(),
         length: match bars {
-            0..=15 => "kurz",
-            16..=63 => "mittel",
-            64..=199 => "lang",
-            _ => "sehr lang",
+            0..=15 => tid!("kurz"),
+            16..=63 => tid!("mittel"),
+            64..=199 => tid!("lang"),
+            _ => tid!("sehr lang"),
         }
         .to_string(),
         bars,
@@ -281,7 +291,10 @@ pub fn facets_from(score: &Score, a: &ScoreAnalysis, doc: u32, meta: Option<&Pdm
 #[derive(Clone, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TreeNode {
+    /// Value as in the facets (German) – the path for the next query.
     pub value: String,
+    /// Value for display (translated).
+    pub label: String,
     pub count: usize,
 }
 
@@ -291,7 +304,7 @@ pub struct TreeScore {
     pub doc: u32,
     pub title: String,
     pub composer: String,
-    /// Kurzbeschreibung: Tonart · Takt · Tempo · Besetzung
+    /// Short description: key · meter · tempo · instrumentation (translated)
     pub facts: String,
 }
 
@@ -307,6 +320,17 @@ pub struct TreeLevel {
     pub total: usize,
     /// Partituren unter diesem Knoten.
     pub matching: usize,
+}
+
+/// Value of a level for display: keys in the chosen language, otherwise through
+/// the dictionary (names and unknown values stay).
+pub fn value_label(dim: &str, value: &str) -> String {
+    if dim == "tonart" {
+        if let Some(k) = crate::harmony::parse_key(value) {
+            return k.name();
+        }
+    }
+    klang_i18n::translate(value)
 }
 
 fn matches(f: &ScoreFacets, levels: &[&str], path: &[String]) -> bool {
@@ -329,7 +353,7 @@ pub fn tree_children(all: &[ScoreFacets], levels: &[&str], path: &[String], offs
         // Feste Reihenfolge, sonst nach Anzahl; Restgruppen („ohne Angabe“ …) immer ans Ende.
         let rest = |v: &str| matches!(v, "ohne Angabe" | "unbekannt" | "unbestimmt" | "Sonstige");
         let rank = |v: &str| order.iter().position(|o| *o == v).unwrap_or(order.len() + usize::from(rest(v)));
-        let mut nodes: Vec<TreeNode> = counts.into_iter().map(|(v, c)| TreeNode { value: v.to_string(), count: c }).collect();
+        let mut nodes: Vec<TreeNode> = counts.into_iter().map(|(v, c)| TreeNode { value: v.to_string(), label: value_label(dim, v), count: c }).collect();
         nodes.sort_by(|a, b| {
             rank(&a.value)
                 .cmp(&rank(&b.value))
@@ -354,10 +378,10 @@ pub fn tree_children(all: &[ScoreFacets], levels: &[&str], path: &[String], offs
             doc: f.doc,
             title: f.title.clone(),
             composer: f.composer.clone(),
-            facts: [f.key.as_str(), f.meter.as_str(), f.tempo.as_str(), f.ensemble.as_str()]
+            facts: [("tonart", f.key.as_str()), ("takt", f.meter.as_str()), ("tempo", f.tempo.as_str()), ("besetzung", f.ensemble.as_str())]
                 .iter()
-                .filter(|s| !s.is_empty() && **s != "ohne Angabe")
-                .copied()
+                .filter(|(_, s)| !s.is_empty() && *s != "ohne Angabe")
+                .map(|(d, s)| value_label(d, s))
                 .collect::<Vec<_>>()
                 .join(" · "),
         })

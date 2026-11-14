@@ -5,6 +5,7 @@
 
 import { backend } from "../bridge.js";
 import { dropdown, h, icon } from "../dom.js";
+import { language, plural, t } from "../i18n.js";
 import { errorText, notify } from "../store.js";
 import type { Dimension, LibraryInfo, TreeLevel, TreeNode, TreeScore } from "../types.js";
 
@@ -12,13 +13,13 @@ const LEVELS_KEY = "klangwelt.bibliothek.ebenen";
 const PAGE = 200;
 
 const PRESETS: Array<[string, string[]]> = [
-  ["Genre › Komponist", ["genre", "komponist"]],
-  ["Komponist › Genre", ["komponist", "genre"]],
-  ["Genre › Stimmung › Besetzung", ["genre", "stimmung", "besetzung"]],
-  ["Stimmung › Besetzung › Tonart", ["stimmung", "besetzung", "tonart"]],
-  ["Besetzung › Instrumentengruppe › Schwierigkeit", ["besetzung", "instrumente", "schwierigkeit"]],
-  ["Dur/Moll › Tempo › Taktart", ["tongeschlecht", "tempo", "taktart"]],
-  ["Färbung › Energie › Harmonik", ["faerbung", "energie", "harmonik"]],
+  [t("Genre › Composer"), ["genre", "komponist"]],
+  [t("Composer › Genre"), ["komponist", "genre"]],
+  [t("Genre › Mood › Instrumentation"), ["genre", "stimmung", "besetzung"]],
+  [t("Mood › Instrumentation › Key"), ["stimmung", "besetzung", "tonart"]],
+  [t("Instrumentation › Instrument group › Difficulty"), ["besetzung", "instrumente", "schwierigkeit"]],
+  [t("Major/minor › Tempo › Time signature"), ["tongeschlecht", "tempo", "taktart"]],
+  [t("Color › Energy › Harmony"), ["faerbung", "energie", "harmonik"]],
 ];
 
 function loadLevels(): string[] {
@@ -71,28 +72,28 @@ export function treeView(onOpen: (doc: number) => void): TreeView {
 
   // ---------- Ebenen-Leiste: Chips (ziehen zum Umsortieren, × entfernt), + Ebene, Vorlagen
   const chips = h("div", { class: "tree-chips" });
-  const addBtn = h("button", { class: "btn small", title: "Ebene hinzufügen" }, icon("plus"), "Ebene ▾");
+  const addBtn = h("button", { class: "btn small", title: t("Add level") }, icon("plus"), `${t("Grouping")} ▾`);
   const add = dropdown(addBtn, "tree-menu", (menu, close) => {
     const rest = dims.filter((d) => !levels.includes(d.key));
     menu.replaceChildren(
       ...(rest.length
-        ? rest.map((d) => h("button", { class: "menu-item", onclick: () => { setLevels([...levels, d.key]); close(); } }, d.label, d.multi ? h("span", {}, "mehrfach") : null))
-        : [h("div", { class: "menu-hint" }, "Alle Ebenen sind schon dabei.")]),
+        ? rest.map((d) => h("button", { class: "menu-item", onclick: () => { setLevels([...levels, d.key]); close(); } }, d.label, d.multi ? h("span", {}, t("multiple")) : null))
+        : [h("div", { class: "menu-hint" }, t("All levels are already included."))]),
     );
   });
-  const presetBtn = h("button", { class: "btn small", title: "Fertige Anordnungen" }, "Vorlagen ▾");
+  const presetBtn = h("button", { class: "btn small", title: t("Ready-made arrangements") }, `${t("Presets")} ▾`);
   const presets = dropdown(presetBtn, "tree-menu", (menu, close) => {
     menu.replaceChildren(...PRESETS.map(([name, lv]) => h("button", { class: "menu-item", onclick: () => { setLevels(lv); close(); } }, name)));
   });
-  const bar = h("div", { class: "tree-bar" }, h("span", { class: "tree-bar-label" }, "Ebenen:"), chips, add, presets);
+  const bar = h("div", { class: "tree-bar" }, h("span", { class: "tree-bar-label" }, t("Levels:")), chips, add, presets);
 
   let dragFrom = -1;
   const renderChips = () => {
     chips.replaceChildren(
       ...levels.map((k, i) => {
-        const chip = h("span", { class: "tree-chip", draggable: "true", title: "Ziehen zum Umsortieren" },
+        const chip = h("span", { class: "tree-chip", draggable: "true", title: t("Drag to reorder") },
           h("b", {}, String(i + 1)), label(k),
-          h("button", { class: "tree-chip-x", title: "Ebene entfernen", onclick: () => setLevels(levels.filter((_, j) => j !== i)) }, "×"));
+          h("button", { class: "tree-chip-x", title: t("Remove level"), onclick: () => setLevels(levels.filter((_, j) => j !== i)) }, "×"));
         chip.addEventListener("dragstart", (e) => {
           dragFrom = i;
           e.dataTransfer?.setData("text/plain", k);
@@ -170,23 +171,24 @@ export function treeView(onOpen: (doc: number) => void): TreeView {
         const childPath = [...path, n.value];
         const child = branches.get(keyOf(childPath));
         const isOpen = !!child?.open && (child.nodes.length > 0 || child.scores.length > 0 || child.loading);
-        const row = h("div", { class: `tree-node${isOpen ? " open" : ""}`, style: pad(depth), title: `${label(b.dimension)}: ${n.value}` },
+        const row = h("div", { class: `tree-node${isOpen ? " open" : ""}`, style: pad(depth), title: `${label(b.dimension)}: ${n.label || n.value}` },
           h("span", { class: "caret" }, child?.loading ? "…" : isOpen ? "▾" : "▸"),
-          h("span", { class: "name" }, n.value),
+          h("span", { class: "name" }, n.label || n.value),
           h("span", { class: "bar" }, h("i", { style: `width:${Math.max(2, Math.round((n.count / max) * 100))}%` })),
-          h("span", { class: "count" }, n.count.toLocaleString("de-DE")));
+          h("span", { class: "count" }, n.count.toLocaleString(language())));
         row.addEventListener("click", () => toggle(childPath));
         out.push(row, ...rows(childPath, depth + 1));
       }
       if (b.nodes.length < b.total) {
+        const more = b.total - b.nodes.length;
         out.push(h("button", { class: "tree-more", style: pad(depth), onclick: () => void load(path, true) },
-          `weitere ${(b.total - b.nodes.length).toLocaleString("de-DE")} ${label(b.dimension)}-Einträge …`));
+          plural(more, "one more {dimension} entry…", "{n} more {dimension} entries…", { n: more.toLocaleString(language()), dimension: label(b.dimension) })));
       }
     } else {
       for (const s of b.scores) {
-        const row = h("div", { class: `tree-score${s.doc === selectedDoc ? " on" : ""}`, style: pad(depth), title: "Partitur öffnen" },
+        const row = h("div", { class: `tree-score${s.doc === selectedDoc ? " on" : ""}`, style: pad(depth), title: t("Open score") },
           icon("clip"),
-          h("span", { class: "name" }, s.title || "(ohne Titel)", s.composer ? h("span", { class: "muted" }, ` – ${s.composer}`) : null),
+          h("span", { class: "name" }, s.title || t("(untitled)"), s.composer ? h("span", { class: "muted" }, ` – ${s.composer}`) : null),
           h("span", { class: "facts" }, s.facts));
         row.addEventListener("click", () => {
           selectedDoc = s.doc;
@@ -196,8 +198,9 @@ export function treeView(onOpen: (doc: number) => void): TreeView {
         out.push(row);
       }
       if (b.scores.length < b.total) {
+        const more = b.total - b.scores.length;
         out.push(h("button", { class: "tree-more", style: pad(depth), onclick: () => void load(path, true) },
-          `weitere ${(b.total - b.scores.length).toLocaleString("de-DE")} Partituren …`));
+          plural(more, "one more score…", "{n} more scores…", { n: more.toLocaleString(language()) })));
       }
     }
     return out;
@@ -206,10 +209,10 @@ export function treeView(onOpen: (doc: number) => void): TreeView {
   function render(): void {
     const root = branches.get("");
     const head = root && root.dimension
-      ? [h("div", { class: "tree-head" }, `${root.matching.toLocaleString("de-DE")} Partituren · ${levels.map(label).join(" › ")}`)]
+      ? [h("div", { class: "tree-head" }, plural(root.matching, "{n} score · {levels}", "{n} scores · {levels}", { n: root.matching.toLocaleString(language()), levels: levels.map(label).join(" › ") }))]
       : [];
     list.replaceChildren(...head, ...rows([], 0));
-    if (root?.loading && !root.nodes.length) list.append(h("div", { class: "lib-empty" }, "Lade …"));
+    if (root?.loading && !root.nodes.length) list.append(h("div", { class: "lib-empty" }, t("Loading…")));
   }
 
   const rebuild = () => {
@@ -230,16 +233,16 @@ export function treeView(onOpen: (doc: number) => void): TreeView {
   const showBanner = () => {
     const parts: Node[] = [];
     if (!info?.id) {
-      parts.push(h("span", {}, info?.loading ? "Die Bibliothek wird geladen …" : "Keine Bibliothek geladen."));
+      parts.push(h("span", {}, info?.loading ? t("The library is loading…") : t("No library loaded.")));
     } else if (!info.scores) {
-      parts.push(h("span", {}, `„${info.name}“ ist noch leer – oben „Herunterladen“ oder Partituren hinzufügen.`));
+      parts.push(h("span", {}, t("\"{name}\" is still empty – use \"Download\" above or add scores.", { name: info.name ?? "" })));
     } else if (!info.treeScores) {
-      parts.push(h("span", {}, "Diese Bibliothek wurde vor der Baumansicht indiziert. "),
-        h("button", { class: "btn small blue", title: "Aus ihren Paketen und Ordnern neu aufbauen", onclick: () => backend.libraryReindex().catch((e) => notify(errorText(e), "error")) }, "Neu aufbauen"));
+      parts.push(h("span", {}, `${t("This library was indexed before the tree view existed.")} `),
+        h("button", { class: "btn small blue", title: t("Rebuild from its packs and folders"), onclick: () => backend.libraryReindex().catch((e) => notify(errorText(e), "error")) }, t("Rebuild")));
     } else if (!info.hasMeta) {
-      parts.push(h("span", {}, "Genre und Komponist aus PDMX fehlen noch (nur für PDMX-Bibliotheken). "),
-        h("button", { class: "btn small blue", title: "PDMX.csv (225 MB) lesen, passende Zeilen behalten, neu indizieren", onclick: () => backend.libraryEnrich().catch((e) => notify(errorText(e), "error")) },
-          icon("download"), "Genre & Komponist nachladen (225 MB)"));
+      parts.push(h("span", {}, `${t("Genre and composer from PDMX are still missing (PDMX libraries only).")} `),
+        h("button", { class: "btn small blue", title: t("Read PDMX.csv (225 MB), keep the matching rows, re-index"), onclick: () => backend.libraryEnrich().catch((e) => notify(errorText(e), "error")) },
+          icon("download"), t("Download genre & composer (225 MB)")));
     }
     banner.replaceChildren(...parts);
     banner.hidden = parts.length === 0;

@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/klang-i18n",
     "crates/klang-dsp",
     "crates/klang-core",
     "crates/klang-music",
@@ -26,6 +27,7 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 flate2 = "1"
 tar = { version = "0.4", default-features = false }
 
+klang-i18n = { path = "crates/klang-i18n" }
 klang-dsp = { path = "crates/klang-dsp" }
 klang-core = { path = "crates/klang-core" }
 klang-music = { path = "crates/klang-music" }

@@ -16,6 +16,7 @@
 //! [`connect`], bevor er die Engine startet.
 
 use crate::wire::{self, Kind};
+use klang_i18n::tr;
 use crate::{update_peak, Arrangement, AudioDevices, EngineError, EngineInfo, EngineStatus, PlacedClip, PreviewSource, PreviewStream, Recording, RtMsg, Shared, STREAM_AHEAD_SECS};
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -141,7 +142,7 @@ pub struct Engine {
 impl Engine {
     /// Startet die Engine an der mit [`connect`] gesetzten Ausgabe.
     pub fn start() -> Result<Self, EngineError> {
-        let port = port().ok_or_else(|| EngineError("Keine Audio-Ausgabe im Browser (AudioWorklet nicht verfügbar)".into()))?;
+        let port = port().ok_or_else(|| EngineError(tr!("No audio output in the browser (AudioWorklet not available)")))?;
         let info = EngineInfo { output_device: port.device.clone(), sample_rate: port.sample_rate, channels: 2, ..Default::default() };
         Ok(Self { info, port, inner: Mutex::new(Inner::default()) })
     }
@@ -165,14 +166,14 @@ impl Engine {
     pub fn set_output_device(&self, name: Option<String>) -> Result<EngineInfo, EngineError> {
         match name {
             None => Ok(self.info()),
-            Some(_) => Err(EngineError("Im Browser wählt das System das Ausgabegerät.".into())),
+            Some(_) => Err(EngineError(tr!("In the browser, the system chooses the output device."))),
         }
     }
 
     pub fn set_input_device(&self, name: Option<String>) -> Result<EngineInfo, EngineError> {
         match name {
             None => Ok(self.info()),
-            Some(_) => Err(EngineError("Im Browser wählt das System das Mikrofon (Freigabe im Browser).".into())),
+            Some(_) => Err(EngineError(tr!("In the browser, the system chooses the microphone (grant access in the browser)."))),
         }
     }
 
@@ -304,7 +305,7 @@ impl Engine {
     pub fn stop_recording(&self) -> Result<Recording, EngineError> {
         (self.port.post)(Kind::Record, &[0.0]);
         SHARED.recording.store(false, Ordering::Relaxed);
-        let samples = REC.lock().unwrap_or_else(|e| e.into_inner()).take().ok_or_else(|| EngineError("Es läuft keine Aufnahme".into()))?;
+        let samples = REC.lock().unwrap_or_else(|e| e.into_inner()).take().ok_or_else(|| EngineError(tr!("No recording is running")))?;
         Ok(Recording { samples, sample_rate: self.info.sample_rate, start_frame: REC_START.load(Ordering::Relaxed), device: "Mikrofon".into() })
     }
 

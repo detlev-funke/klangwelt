@@ -11,6 +11,7 @@
 use crate::counterpoint::{check, complementary_rhythm, generate_line, tally, IssueKind, LineSpec, Severity, VNote};
 use crate::harmony::{parse_roman, voice_progression};
 use crate::theory::Key;
+use klang_i18n::{tk, tr, trn};
 use serde::{Deserialize, Serialize};
 
 const EPS: f64 = 1e-6;
@@ -118,13 +119,15 @@ pub enum Transform {
 impl Transform {
     pub fn label(&self) -> String {
         match self {
-            Self::Umkehrung => "Umkehrung".into(),
-            Self::Krebs => "Krebs".into(),
-            Self::Krebsumkehrung => "Krebsumkehrung".into(),
-            Self::Vergroesserung => "Vergrößerung".into(),
-            Self::Verkleinerung => "Verkleinerung".into(),
-            Self::Versetzung(s) => format!("um {} Stufe{} {}", s.abs(), if s.abs() == 1 { "" } else { "n" }, if *s >= 0 { "höher" } else { "tiefer" }),
-            Self::Chromatisch(s) => format!("um {} Halbt{} {}", s.abs(), if s.abs() == 1 { "on" } else { "öne" }, if *s >= 0 { "höher" } else { "tiefer" }),
+            Self::Umkehrung => tr!("Inversion"),
+            Self::Krebs => tr!("Retrograde"),
+            Self::Krebsumkehrung => tr!("Retrograde inversion"),
+            Self::Vergroesserung => tr!("Augmentation"),
+            Self::Verkleinerung => tr!("Diminution"),
+            Self::Versetzung(s) if *s >= 0 => trn!(s.abs(), "{n} scale step higher", "{n} scale steps higher"),
+            Self::Versetzung(s) => trn!(s.abs(), "{n} scale step lower", "{n} scale steps lower"),
+            Self::Chromatisch(s) if *s >= 0 => trn!(s.abs(), "{n} semitone higher", "{n} semitones higher"),
+            Self::Chromatisch(s) => trn!(s.abs(), "{n} semitone lower", "{n} semitones lower"),
         }
     }
 }
@@ -205,9 +208,9 @@ pub fn answer(subject: &[VNote], k: &Key) -> Answer {
     let names = ["c", "cis", "d", "es", "e", "f", "fis", "g", "gis", "a", "b", "h"];
     let (t, d) = (names[k.tonic as usize % 12], names[(k.tonic as usize + 7) % 12]);
     let reason = if tonal {
-        format!("Tonale Antwort: Das Thema beginnt im Raum von Grundton und Quinte; die Quinte {d} wird mit dem Grundton {t} beantwortet, damit die Tonart nicht kippt. Danach eine Quinte höher.")
+        tr!("Tonal answer: the subject starts within the range of tonic and fifth; the fifth {d} is answered by the tonic {t} so the key doesn't tip over. After that, a fifth higher.", d = d, t = t)
     } else {
-        "Reale Antwort: das ganze Thema eine Quinte höher (in der Dominante).".to_string()
+        tr!("Real answer: the whole subject a fifth higher (in the dominant).")
     };
     Answer { kind: if tonal { AnswerKind::Tonal } else { AnswerKind::Real }, notes, mutated, reason }
 }
@@ -231,15 +234,15 @@ pub struct Stretto {
 }
 
 const STRETTO_INTERVALS: [(&str, i32, bool); 9] = [
-    ("Oktave höher", 12, false),
-    ("Oktave tiefer", -12, false),
-    ("Quinte höher", 4, true),
-    ("Quinte tiefer", -4, true),
-    ("Quarte höher", 3, true),
-    ("Quarte tiefer", -3, true),
-    ("Terz tiefer", -2, true),
-    ("Sexte tiefer", -5, true),
-    ("Duodezime tiefer", -11, true),
+    (tk!("Octave higher"), 12, false),
+    (tk!("Octave lower"), -12, false),
+    (tk!("Fifth higher"), 4, true),
+    (tk!("Fifth lower"), -4, true),
+    (tk!("Fourth higher"), 3, true),
+    (tk!("Fourth lower"), -3, true),
+    (tk!("Third lower"), -2, true),
+    (tk!("Sixth lower"), -5, true),
+    (tk!("Twelfth lower"), -11, true),
 ];
 
 /// Engführungen: Einsatzabstände und Intervalle, bei denen das Thema mit
@@ -265,7 +268,7 @@ pub fn strettos(subject: &[VNote], k: &Key, beats_per_bar: u32) -> Vec<Stretto> 
                 out.push(Stretto {
                     delay: d,
                     semitones: (follower.first().map(|n| n.pitch as i32).unwrap_or(0)) - s.first().map(|n| n.pitch as i32).unwrap_or(0),
-                    label: label.to_string(),
+                    label: klang_i18n::translate(label),
                     errors,
                     warnings,
                     overlap: ((len - d) / len).max(0.0),
@@ -349,6 +352,10 @@ pub fn countersubjects(subject: &[VNote], k: &Key, beats_per_bar: u32, count: us
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Section {
+    /// Kind of section (untranslated): exposition, zwischenspiel,
+    /// durchfuehrung, engfuehrung, schlussdurchfuehrung, orgelpunkt, schlusskadenz.
+    pub kind: &'static str,
+    /// Name for display (translated).
     pub name: String,
     pub start: f64,
     pub end: f64,
@@ -402,10 +409,10 @@ struct VoiceDef {
 
 fn voice_defs(n: usize) -> Vec<VoiceDef> {
     let all = [
-        VoiceDef { name: "Sopran", range: (62, 79), center: 70.0 },
-        VoiceDef { name: "Alt", range: (55, 72), center: 64.0 },
-        VoiceDef { name: "Tenor", range: (48, 67), center: 57.0 },
-        VoiceDef { name: "Bass", range: (38, 58), center: 48.0 },
+        VoiceDef { name: tk!("Soprano"), range: (62, 79), center: 70.0 },
+        VoiceDef { name: tk!("Alto"), range: (55, 72), center: 64.0 },
+        VoiceDef { name: tk!("Tenor"), range: (48, 67), center: 57.0 },
+        VoiceDef { name: tk!("Bass"), range: (38, 58), center: 48.0 },
     ];
     let pick: &[usize] = match n {
         2 => &[0, 3],
@@ -416,13 +423,18 @@ fn voice_defs(n: usize) -> Vec<VoiceDef> {
         .map(|&i| {
             let d = &all[i];
             let name = match (n, i) {
-                (2, 0) => "Oberstimme",
-                (2, 3) => "Unterstimme",
+                (2, 0) => tk!("Upper voice"),
+                (2, 3) => tk!("Lower voice"),
                 _ => d.name,
             };
             VoiceDef { name, range: d.range, center: d.center }
         })
         .collect()
+}
+
+/// Name of a voice for display.
+fn voice_name(d: &VoiceDef) -> String {
+    klang_i18n::translate(d.name)
 }
 
 /// In die Lage einer Stimme oktavieren.
@@ -524,7 +536,7 @@ impl Builder<'_> {
             v.retain(|n| n.len >= 0.05);
         }
         let _ = self.key;
-        self.defs.iter().zip(self.voices).map(|(d, notes)| PlannedVoice { name: d.name.to_string(), notes }).collect()
+        self.defs.iter().zip(self.voices).map(|(d, notes)| PlannedVoice { name: voice_name(d), notes }).collect()
     }
 }
 
@@ -549,7 +561,7 @@ pub fn plan_fugue(subject: &[VNote], k: &Key, opt: &FugueOptions) -> FuguePlan {
     };
     let mut b = Builder { defs, voices: vec![Vec::new(); n], bpb, key: k };
     let mut sections: Vec<Section> = Vec::new();
-    let names = |kk: &Key| kk.name_de();
+    let names = |kk: &Key| kk.name();
 
     // ---------------- Exposition
     for (i, &v) in order.iter().enumerate() {
@@ -577,16 +589,17 @@ pub fn plan_fugue(subject: &[VNote], k: &Key, opt: &FugueOptions) -> FuguePlan {
     }
     let expo_end = n as f64 * entry_gap;
     sections.push(Section {
-        name: "Exposition".into(),
+        kind: "exposition",
+        name: tr!("Exposition"),
         start: 0.0,
         end: expo_end,
         key: names(k),
-        description: format!(
-            "{} Einsätze: Thema und {} Antwort im Wechsel{}",
-            n,
-            if ans.kind == AnswerKind::Tonal { "tonale" } else { "reale" },
-            if cs.is_some() { ", dazu der Gegensatz in der zuvor eingetretenen Stimme" } else { "" }
-        ),
+        description: match (ans.kind == AnswerKind::Tonal, cs.is_some()) {
+            (true, true) => tr!("{n} entries: subject and tonal answer alternating, plus the countersubject in the voice that entered before", n = n),
+            (true, false) => tr!("{n} entries: subject and tonal answer alternating", n = n),
+            (false, true) => tr!("{n} entries: subject and real answer alternating, plus the countersubject in the voice that entered before", n = n),
+            (false, false) => tr!("{n} entries: subject and real answer alternating", n = n),
+        },
     });
 
     // Zwischenspiel: Sequenz des Themenkopfs oben, Quintfall im Bass, Mitte frei
@@ -620,17 +633,18 @@ pub fn plan_fugue(subject: &[VNote], k: &Key, opt: &FugueOptions) -> FuguePlan {
             b.free(v, t0, t0 + dur, target, &seq, true);
         }
         sections.push(Section {
-            name: format!("Zwischenspiel {nr}"),
+            kind: "zwischenspiel",
+            name: tr!("Episode {nr}", nr = nr),
             start: t0,
             end: t0 + dur,
-            key: format!("→ {}", target.name_de()),
-            description: "Sequenz des Themenkopfs (stufenweise abwärts) über Quintfall im Bass".into(),
+            key: format!("→ {}", target.name()),
+            description: tr!("Sequence of the subject's head (stepping down) over falling fifths in the bass"),
         });
         t0 + dur
     };
 
     // Durchführung: Thema in einer Stimme, Gegensatz in einer anderen, Rest frei
-    let middle_entry = |b: &mut Builder, t0: f64, material: &[VNote], cs_mat: Option<Vec<VNote>>, v: usize, kk: &Key, sections: &mut Vec<Section>, name: &str| -> f64 {
+    let middle_entry = |b: &mut Builder, t0: f64, material: &[VNote], cs_mat: Option<Vec<VNote>>, v: usize, kk: &Key, sections: &mut Vec<Section>, (kind, name): (&'static str, String)| -> f64 {
         let entered = b.entry(v, material, t0);
         let mut handled = vec![v];
         if let Some(c) = cs_mat {
@@ -644,12 +658,14 @@ pub fn plan_fugue(subject: &[VNote], k: &Key, opt: &FugueOptions) -> FuguePlan {
                 b.free(o, t0, t0 + entry_gap, kk, &entered, true);
             }
         }
+        let voice = voice_name(&b.defs[v]);
         sections.push(Section {
-            name: name.to_string(),
+            kind,
+            name,
             start: t0,
             end: t0 + entry_gap,
-            key: kk.name_de(),
-            description: format!("Thema in {}{}", b.defs[v].name, if handled.len() > 1 { ", Gegensatz dazu" } else { "" }),
+            key: kk.name(),
+            description: if handled.len() > 1 { tr!("Subject in {voice}, with countersubject", voice = voice) } else { tr!("Subject in {voice}", voice = voice) },
         });
         t0 + entry_gap
     };
@@ -666,16 +682,16 @@ pub fn plan_fugue(subject: &[VNote], k: &Key, opt: &FugueOptions) -> FuguePlan {
         v
     });
     let v1 = if n >= 3 { n - 2 } else { 1 };
-    t = middle_entry(&mut b, t, &rel_subject, rel_cs, v1, &rel, &mut sections, "Durchführung (Paralleltonart)");
+    t = middle_entry(&mut b, t, &rel_subject, rel_cs, v1, &rel, &mut sections, ("durchfuehrung", tr!("Middle entries (relative key)")));
     t = episode(&mut b, t, &sub, &mut sections, 2);
     let sub_subject = shift(&s, 0.0, 5);
     let sub_cs = cs.as_ref().map(|c| shift(&c.notes, 0.0, 5));
-    t = middle_entry(&mut b, t, &sub_subject, sub_cs, 0, &sub, &mut sections, "Durchführung (Subdominante)");
+    t = middle_entry(&mut b, t, &sub_subject, sub_cs, 0, &sub, &mut sections, ("durchfuehrung", tr!("Middle entries (subdominant)")));
     t = episode(&mut b, t, k, &mut sections, 3);
 
     // ---------------- Engführung (oder Schlussdurchführung)
     let st = if opt.stretto { strettos(&s, k, bpb).into_iter().next() } else { None };
-    let stretto_name = st.as_ref().map(|x| format!("{}, Abstand {} Schl.", x.label, x.delay));
+    let stretto_name = st.as_ref().map(|x| tr!("{label}, {delay} beats apart", label = x.label, delay = x.delay));
     match &st {
         Some(x) => {
             let lead_v = n - 1;
@@ -690,16 +706,17 @@ pub fn plan_fugue(subject: &[VNote], k: &Key, opt: &FugueOptions) -> FuguePlan {
             // Lücke der folgenden Stimme vor ihrem Einsatz füllen
             b.free(follow_v, t, t + x.delay, k, &lead, true);
             sections.push(Section {
-                name: "Engführung".into(),
+                kind: "engfuehrung",
+                name: tr!("Stretto"),
                 start: t,
                 end,
-                key: k.name_de(),
-                description: format!("Thema in {} und – {} – in {}", b.defs[lead_v].name, x.label, b.defs[follow_v].name),
+                key: k.name(),
+                description: tr!("Subject in {lead} and – {interval} – in {follower}", lead = voice_name(&b.defs[lead_v]), interval = x.label, follower = voice_name(&b.defs[follow_v])),
             });
             t = end;
         }
         None => {
-            t = middle_entry(&mut b, t, &s, cs.as_ref().map(|c| c.notes.clone()), n - 1, k, &mut sections, "Schlussdurchführung");
+            t = middle_entry(&mut b, t, &s, cs.as_ref().map(|c| c.notes.clone()), n - 1, k, &mut sections, ("schlussdurchfuehrung", tr!("Final entries")));
         }
     }
 
@@ -716,7 +733,14 @@ pub fn plan_fugue(subject: &[VNote], k: &Key, opt: &FugueOptions) -> FuguePlan {
     for v in 1..n - 1 {
         b.free(v, t, t + pedal_len, k, &top_head, true);
     }
-    sections.push(Section { name: "Orgelpunkt".into(), start: t, end: t + pedal_len, key: k.name_de(), description: "Bass hält die Dominante, oben der Themenkopf".into() });
+    sections.push(Section {
+        kind: "orgelpunkt",
+        name: tr!("Pedal point"),
+        start: t,
+        end: t + pedal_len,
+        key: k.name(),
+        description: tr!("Bass holds the dominant, the subject's head on top"),
+    });
     t += pedal_len;
 
     // ---------------- Schlusskadenz
@@ -740,11 +764,12 @@ pub fn plan_fugue(subject: &[VNote], k: &Key, opt: &FugueOptions) -> FuguePlan {
         tt += durs[ci];
     }
     sections.push(Section {
-        name: "Schlusskadenz".into(),
+        kind: "schlusskadenz",
+        name: tr!("Final cadence"),
         start: t,
         end: tt,
-        key: k.name_de(),
-        description: if k.minor && opt.picardy { "Quartsextvorhalt – D⁷ – Tonika mit Picardischer Terz".into() } else { "Quartsextvorhalt – D⁷ – Tonika".into() },
+        key: k.name(),
+        description: if k.minor && opt.picardy { tr!("Cadential six-four – D⁷ – tonic with Picardy third") } else { tr!("Cadential six-four – D⁷ – tonic") },
     });
 
     FuguePlan { sections, voices: b.finish(), length: tt, answer: ans.kind, stretto: stretto_name, countersubject: cs.is_some() }
@@ -824,7 +849,7 @@ mod tests {
             (64, 1.0), (65, 1.0), (67, 2.0), (64, 1.0), (65, 1.0), (67, 2.0),
         ]);
         let st = strettos(&s, &c(), 4);
-        assert!(st.iter().any(|x| x.delay == 8.0 && x.label.starts_with("Oktave")), "{:?}", st.iter().map(|x| (x.delay, &x.label)).collect::<Vec<_>>());
+        assert!(st.iter().any(|x| x.delay == 8.0 && x.label.starts_with("Octave")), "{:?}", st.iter().map(|x| (x.delay, &x.label)).collect::<Vec<_>>());
         assert!(st.iter().all(|x| x.errors == 0));
     }
 
@@ -845,7 +870,7 @@ mod tests {
             assert_eq!(plan.voices.len(), n);
             assert!(plan.voices.iter().all(|v| !v.notes.is_empty()));
             let names: Vec<&str> = plan.sections.iter().map(|x| x.name.as_str()).collect();
-            assert!(names.contains(&"Exposition") && names.contains(&"Orgelpunkt") && names.contains(&"Schlusskadenz"), "{names:?}");
+            assert!(names.contains(&"Exposition") && names.contains(&"Pedal point") && names.contains(&"Final cadence"), "{names:?}");
             assert!(plan.sections.windows(2).all(|w| (w[0].end - w[1].start).abs() < 1e-6), "lückenlos");
             assert!((plan.length - plan.sections.last().unwrap().end).abs() < 1e-6);
             // Satzfehler zählen (Gerüst: wenige erlaubt)

@@ -14,6 +14,7 @@ use crate::sound;
 use crate::state::{lock, AppState, CmdResult, Snapshot};
 use klang_core::{Clip, ClipSource, Command, Id, Instrument, InstrumentKind, Note, ProjectPatch, Track, TrackKind, TrackView};
 use klang_dsp::drums;
+use klang_i18n::tr;
 use klang_music::harmony as kh;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -123,37 +124,37 @@ impl SongPlan {
 
     /// Prüft den Plan; liefert Tonart und Akkorde.
     pub fn check(&self) -> Result<(klang_music::theory::Key, Vec<kh::Chord>), String> {
-        let key = kh::parse_key(&self.key).ok_or_else(|| format!("Tonart „{}“ nicht verstanden – z. B. „a-Moll“, „C-Dur“", self.key))?;
+        let key = kh::parse_key(&self.key).ok_or_else(|| tr!("Key \"{key}\" not understood – e.g. \"A minor\", \"C major\"", key = self.key))?;
         if self.chords.is_empty() {
-            return Err("Mindestens ein Akkord".into());
+            return Err(tr!("At least one chord"));
         }
         let chords = self
             .chords
             .iter()
-            .map(|c| kh::parse_chord(c, &key).ok_or_else(|| format!("Akkord „{c}“ nicht verstanden – z. B. a, F, C, G7 oder Stufen wie i, VI, III, VII")))
+            .map(|c| kh::parse_chord(c, &key).ok_or_else(|| tr!("Chord \"{chord}\" not understood – e.g. Am, F, C, G7 or degrees like i, VI, III, VII", chord = c)))
             .collect::<Result<Vec<_>, _>>()?;
         if !(40.0..=220.0).contains(&self.tempo) {
-            return Err(format!("Tempo {} – erlaubt 40–220 BPM", self.tempo));
+            return Err(tr!("Tempo {tempo} – allowed: 40–220 BPM", tempo = self.tempo));
         }
         if self.sections.is_empty() {
-            return Err("Mindestens ein Abschnitt".into());
+            return Err(tr!("At least one section"));
         }
         if self.sections.iter().any(|s| s.bars == 0 || s.bars > 64) {
-            return Err("Abschnitte haben 1–64 Takte".into());
+            return Err(tr!("Sections have 1–64 bars"));
         }
         if self.total_bars() > MAX_BARS {
-            return Err(format!("Höchstens {MAX_BARS} Takte"));
+            return Err(tr!("At most {max} bars", max = MAX_BARS));
         }
         let mut seen = std::collections::BTreeSet::new();
         for l in &self.layers {
             if !seen.insert(l.key.as_str()) {
-                return Err(format!("Rolle „{}“ doppelt", l.key));
+                return Err(tr!("Role \"{role}\" appears twice", role = l.key));
             }
         }
         for s in &self.sections {
             for k in s.levels.keys() {
                 if !self.layers.iter().any(|l| &l.key == k) {
-                    return Err(format!("Abschnitt „{}“: unbekannte Rolle „{k}“", s.name));
+                    return Err(tr!("Section \"{section}\": unknown role \"{role}\"", section = s.name, role = k));
                 }
             }
         }
@@ -183,17 +184,19 @@ fn section(name: &str, bars: u32, kind: SectionKind, levels: &[(&str, u8)]) -> S
 
 fn drum_layers() -> Vec<Layer> {
     vec![
-        layer("kick", "Kick", Role::Kick, None, None, None, None, 0.0),
-        layer("hats", "Hi-Hats", Role::Hats, None, None, None, None, 0.0),
-        layer("clap", "Clap", Role::Clap, None, None, None, None, 0.0),
-        layer("perc", "Percussion", Role::Perc, None, None, None, None, 0.0),
-        layer("fx", "Übergänge", Role::Fx, None, None, None, None, 0.0),
+        layer("kick", &tr!("Kick"), Role::Kick, None, None, None, None, 0.0),
+        layer("hats", &tr!("Hi-hats"), Role::Hats, None, None, None, None, 0.0),
+        layer("clap", &tr!("Clap"), Role::Clap, None, None, None, None, 0.0),
+        layer("perc", &tr!("Percussion"), Role::Perc, None, None, None, None, 0.0),
+        layer("fx", &tr!("Transitions"), Role::Fx, None, None, None, None, 0.0),
     ]
 }
 
 use SectionKind::*;
 
-/// Die mitgelieferten Vorlagen.
+/// The built-in templates. Description, role and section names in
+/// the chosen language; identifiers (template, role keys, sounds,
+/// envelopes, rooms), key, chords and the templates' proper names stay.
 pub fn templates() -> Vec<SongPlan> {
     let synth = Some(InstrumentKind::Synth);
     let bass = Some(InstrumentKind::Bass);
@@ -202,7 +205,7 @@ pub fn templates() -> Vec<SongPlan> {
         SongPlan {
             template: "trance".into(),
             name: "Trance".into(),
-            description: "Erst nur Flächen, dann Arpeggio und Kick, Schritt für Schritt Bass, Hi-Hats und Clap – Break mit Lead, Steigerung mit Snare-Wirbel, zwei Höhepunkte, Ausklang.".into(),
+            description: tr!("Only pads at first, then arpeggio and kick, step by step bass, hi-hats and clap – a break with lead, a build-up with snare roll, two peaks, outro."),
             tempo: 138.0,
             key: "a-Moll".into(),
             chords: vec!["a".into(), "F".into(), "C".into(), "G".into()],
@@ -211,29 +214,29 @@ pub fn templates() -> Vec<SongPlan> {
             swing: 0.0,
             layers: [
                 vec![
-                    layer("pad", "Fläche", Role::Pad, synth, Some("Ozean"), Some("Anschwellen"), Some("Saal"), -9.0),
-                    layer("arp", "Arpeggio", Role::Arp, synth, Some("Glas"), Some("Stich"), Some("Bühne"), -11.0),
-                    layer("bass", "Bass", Role::Bass, bass, Some("Pluck-Bass"), None, None, -5.0),
-                    layer("lead", "Lead", Role::Lead, synth, Some("Streicher"), Some("Aufblühen"), Some("Saal"), -9.0),
+                    layer("pad", &tr!("Pad"), Role::Pad, synth, Some("Ozean"), Some("Anschwellen"), Some("Saal"), -9.0),
+                    layer("arp", &tr!("Arpeggio"), Role::Arp, synth, Some("Glas"), Some("Stich"), Some("Bühne"), -11.0),
+                    layer("bass", &tr!("Bass"), Role::Bass, bass, Some("Pluck-Bass"), None, None, -5.0),
+                    layer("lead", &tr!("Lead"), Role::Lead, synth, Some("Streicher"), Some("Aufblühen"), Some("Saal"), -9.0),
                 ],
                 drum_layers(),
             ]
             .concat(),
             sections: vec![
-                section("Intro", 16, Intro, &[("pad", 1)]),
-                section("Thema", 16, Teil, &[("pad", 2), ("arp", 1), ("kick", 1)]),
-                section("Aufbau", 16, Aufbau, &[("pad", 2), ("arp", 2), ("bass", 1), ("kick", 1), ("hats", 1), ("fx", 1)]),
-                section("Break", 16, Break, &[("pad", 2), ("lead", 1)]),
-                section("Steigerung", 8, Aufbau, &[("arp", 2), ("lead", 1), ("kick", 1), ("hats", 1), ("clap", 1), ("fx", 2)]),
-                section("Höhepunkt", 16, Hoehepunkt, &[("pad", 2), ("arp", 2), ("bass", 2), ("lead", 2), ("kick", 2), ("hats", 2), ("clap", 2), ("fx", 1)]),
-                section("Höhepunkt 2", 16, Hoehepunkt, &[("pad", 2), ("arp", 2), ("bass", 2), ("lead", 2), ("kick", 2), ("hats", 2), ("clap", 2), ("perc", 1)]),
-                section("Outro", 16, Outro, &[("pad", 1), ("arp", 1), ("kick", 1), ("hats", 1)]),
+                section(&tr!("Intro"), 16, Intro, &[("pad", 1)]),
+                section(&tr!("Subject"), 16, Teil, &[("pad", 2), ("arp", 1), ("kick", 1)]),
+                section(&tr!("Build-up"), 16, Aufbau, &[("pad", 2), ("arp", 2), ("bass", 1), ("kick", 1), ("hats", 1), ("fx", 1)]),
+                section(&tr!("Break"), 16, Break, &[("pad", 2), ("lead", 1)]),
+                section(&tr!("Rise"), 8, Aufbau, &[("arp", 2), ("lead", 1), ("kick", 1), ("hats", 1), ("clap", 1), ("fx", 2)]),
+                section(&tr!("Peak"), 16, Hoehepunkt, &[("pad", 2), ("arp", 2), ("bass", 2), ("lead", 2), ("kick", 2), ("hats", 2), ("clap", 2), ("fx", 1)]),
+                section(&tr!("Peak 2"), 16, Hoehepunkt, &[("pad", 2), ("arp", 2), ("bass", 2), ("lead", 2), ("kick", 2), ("hats", 2), ("clap", 2), ("perc", 1)]),
+                section(&tr!("Outro"), 16, Outro, &[("pad", 1), ("arp", 1), ("kick", 1), ("hats", 1)]),
             ],
         },
         SongPlan {
             template: "ambient".into(),
             name: "Ambient".into(),
-            description: "Weite Flächen, ein schwebendes Arpeggio, später ein leiser Puls und ein sanfter Beat – mit stillen Momenten dazwischen.".into(),
+            description: tr!("Wide pads, a floating arpeggio, later a soft pulse and a gentle beat – with quiet moments in between."),
             tempo: 84.0,
             key: "e-Moll".into(),
             chords: vec!["e".into(), "C".into(), "G".into(), "D".into()],
@@ -242,28 +245,28 @@ pub fn templates() -> Vec<SongPlan> {
             swing: 0.0,
             layers: [
                 vec![
-                    layer("pad", "Fläche", Role::Pad, synth, Some("Nebel"), Some("Atmen"), Some("Kirche"), -8.0),
-                    layer("arp", "Glitzern", Role::Arp, pluck, Some("Kristall"), None, Some("Saal"), -12.0),
-                    layer("bass", "Bass", Role::Bass, bass, Some("Sub-Bass"), None, None, -7.0),
-                    layer("lead", "Chor", Role::Lead, synth, Some("Chor"), Some("Aufblühen"), Some("Kirche"), -10.0),
+                    layer("pad", &tr!("Pad"), Role::Pad, synth, Some("Nebel"), Some("Atmen"), Some("Kirche"), -8.0),
+                    layer("arp", &tr!("Sparkle"), Role::Arp, pluck, Some("Kristall"), None, Some("Saal"), -12.0),
+                    layer("bass", &tr!("Bass"), Role::Bass, bass, Some("Sub-Bass"), None, None, -7.0),
+                    layer("lead", &tr!("Choir"), Role::Lead, synth, Some("Chor"), Some("Aufblühen"), Some("Kirche"), -10.0),
                 ],
                 drum_layers(),
             ]
             .concat(),
             sections: vec![
-                section("Morgen", 8, Intro, &[("pad", 1)]),
-                section("Weite", 16, Teil, &[("pad", 2), ("arp", 1)]),
-                section("Puls", 16, Aufbau, &[("pad", 2), ("arp", 1), ("bass", 1), ("perc", 1)]),
-                section("Herz", 16, Hoehepunkt, &[("pad", 2), ("arp", 2), ("bass", 1), ("lead", 1), ("kick", 1), ("hats", 1), ("perc", 1)]),
-                section("Stille", 8, Break, &[("pad", 1), ("lead", 1)]),
-                section("Herz 2", 16, Hoehepunkt, &[("pad", 2), ("arp", 2), ("bass", 2), ("lead", 2), ("kick", 1), ("hats", 2), ("perc", 1)]),
-                section("Ausklang", 16, Outro, &[("pad", 1), ("arp", 1)]),
+                section(&tr!("Morning"), 8, Intro, &[("pad", 1)]),
+                section(&tr!("Expanse"), 16, Teil, &[("pad", 2), ("arp", 1)]),
+                section(&tr!("Pulse"), 16, Aufbau, &[("pad", 2), ("arp", 1), ("bass", 1), ("perc", 1)]),
+                section(&tr!("Heart"), 16, Hoehepunkt, &[("pad", 2), ("arp", 2), ("bass", 1), ("lead", 1), ("kick", 1), ("hats", 1), ("perc", 1)]),
+                section(&tr!("Stillness"), 8, Break, &[("pad", 1), ("lead", 1)]),
+                section(&tr!("Heart 2"), 16, Hoehepunkt, &[("pad", 2), ("arp", 2), ("bass", 2), ("lead", 2), ("kick", 1), ("hats", 2), ("perc", 1)]),
+                section(&tr!("Release"), 16, Outro, &[("pad", 1), ("arp", 1)]),
             ],
         },
         SongPlan {
             template: "deep-house".into(),
             name: "Deep House".into(),
-            description: "Beginnt mit Kick und Hi-Hats, der Groove wächst mit Clap und Bass, dann kommen die Akkorde – Break, Drop, Ausklang.".into(),
+            description: tr!("Starts with kick and hi-hats, the groove grows with clap and bass, then the chords come in – break, drop, outro."),
             tempo: 122.0,
             key: "c-Moll".into(),
             chords: vec!["c".into(), "As".into(), "Es".into(), "B".into()],
@@ -272,27 +275,27 @@ pub fn templates() -> Vec<SongPlan> {
             swing: 0.0,
             layers: [
                 vec![
-                    layer("pad", "Akkorde", Role::Pad, synth, Some("Wärme"), Some("Pulsieren"), Some("Bühne"), -10.0),
-                    layer("arp", "Stabs", Role::Arp, pluck, Some("Warm"), None, Some("Studio"), -12.0),
-                    layer("bass", "Bass", Role::Bass, bass, Some("Finger"), None, None, -4.0),
-                    layer("lead", "Melodie", Role::Lead, synth, Some("Glas"), Some("Glocke"), Some("Saal"), -11.0),
+                    layer("pad", &tr!("Chords"), Role::Pad, synth, Some("Wärme"), Some("Pulsieren"), Some("Bühne"), -10.0),
+                    layer("arp", &tr!("Stabs"), Role::Arp, pluck, Some("Warm"), None, Some("Studio"), -12.0),
+                    layer("bass", &tr!("Bass"), Role::Bass, bass, Some("Finger"), None, None, -4.0),
+                    layer("lead", &tr!("Melody"), Role::Lead, synth, Some("Glas"), Some("Glocke"), Some("Saal"), -11.0),
                 ],
                 drum_layers(),
             ]
             .concat(),
             sections: vec![
-                section("Intro", 16, Intro, &[("kick", 1), ("hats", 1)]),
-                section("Groove", 16, Teil, &[("kick", 2), ("hats", 2), ("clap", 1), ("bass", 1), ("perc", 1)]),
-                section("Akkorde", 16, Aufbau, &[("pad", 1), ("bass", 1), ("kick", 2), ("hats", 2), ("clap", 1), ("perc", 1), ("fx", 1)]),
-                section("Break", 8, Break, &[("pad", 2), ("lead", 1)]),
-                section("Drop", 16, Hoehepunkt, &[("pad", 2), ("arp", 1), ("bass", 2), ("lead", 2), ("kick", 2), ("hats", 2), ("clap", 2), ("perc", 2), ("fx", 1)]),
-                section("Outro", 16, Outro, &[("kick", 1), ("hats", 1), ("perc", 1)]),
+                section(&tr!("Intro"), 16, Intro, &[("kick", 1), ("hats", 1)]),
+                section(&tr!("Groove"), 16, Teil, &[("kick", 2), ("hats", 2), ("clap", 1), ("bass", 1), ("perc", 1)]),
+                section(&tr!("Chords"), 16, Aufbau, &[("pad", 1), ("bass", 1), ("kick", 2), ("hats", 2), ("clap", 1), ("perc", 1), ("fx", 1)]),
+                section(&tr!("Break"), 8, Break, &[("pad", 2), ("lead", 1)]),
+                section(&tr!("Drop"), 16, Hoehepunkt, &[("pad", 2), ("arp", 1), ("bass", 2), ("lead", 2), ("kick", 2), ("hats", 2), ("clap", 2), ("perc", 2), ("fx", 1)]),
+                section(&tr!("Outro"), 16, Outro, &[("kick", 1), ("hats", 1), ("perc", 1)]),
             ],
         },
         SongPlan {
             template: "synthwave".into(),
             name: "Synthwave".into(),
-            description: "Achtziger-Flächen und ein pulsierendes Arpeggio, Strophe und Refrain im Wechsel mit kräftiger Snare.".into(),
+            description: tr!("Eighties pads and a pulsing arpeggio, verse and chorus alternating with a punchy snare."),
             tempo: 104.0,
             key: "f-Moll".into(),
             chords: vec!["f".into(), "Des".into(), "As".into(), "Es".into()],
@@ -301,28 +304,28 @@ pub fn templates() -> Vec<SongPlan> {
             swing: 0.0,
             layers: [
                 vec![
-                    layer("pad", "Fläche", Role::Pad, synth, Some("Wärme"), Some("Anschwellen"), Some("Saal"), -9.0),
-                    layer("arp", "Arpeggio", Role::Arp, synth, Some("Puls"), Some("Gate"), Some("Bühne"), -12.0),
-                    layer("bass", "Bass", Role::Bass, bass, Some("Pluck-Bass"), None, None, -5.0),
-                    layer("lead", "Lead", Role::Lead, synth, Some("Streicher"), Some("Aufblühen"), Some("Saal"), -9.0),
+                    layer("pad", &tr!("Pad"), Role::Pad, synth, Some("Wärme"), Some("Anschwellen"), Some("Saal"), -9.0),
+                    layer("arp", &tr!("Arpeggio"), Role::Arp, synth, Some("Puls"), Some("Gate"), Some("Bühne"), -12.0),
+                    layer("bass", &tr!("Bass"), Role::Bass, bass, Some("Pluck-Bass"), None, None, -5.0),
+                    layer("lead", &tr!("Lead"), Role::Lead, synth, Some("Streicher"), Some("Aufblühen"), Some("Saal"), -9.0),
                 ],
                 drum_layers(),
             ]
             .concat(),
             sections: vec![
-                section("Intro", 8, Intro, &[("pad", 1), ("arp", 1)]),
-                section("Strophe", 16, Teil, &[("pad", 1), ("arp", 2), ("bass", 1), ("kick", 1), ("hats", 1), ("clap", 1)]),
-                section("Refrain", 16, Hoehepunkt, &[("pad", 2), ("arp", 2), ("bass", 2), ("lead", 2), ("kick", 2), ("hats", 2), ("clap", 2), ("fx", 1)]),
-                section("Strophe 2", 16, Teil, &[("pad", 1), ("arp", 2), ("bass", 1), ("kick", 1), ("hats", 1), ("clap", 1), ("perc", 1)]),
-                section("Überleitung", 8, Aufbau, &[("pad", 2), ("arp", 2), ("lead", 1), ("kick", 1), ("fx", 2)]),
-                section("Refrain 2", 16, Hoehepunkt, &[("pad", 2), ("arp", 2), ("bass", 2), ("lead", 2), ("kick", 2), ("hats", 2), ("clap", 2), ("perc", 1), ("fx", 1)]),
-                section("Outro", 8, Outro, &[("pad", 1), ("arp", 1)]),
+                section(&tr!("Intro"), 8, Intro, &[("pad", 1), ("arp", 1)]),
+                section(&tr!("Verse"), 16, Teil, &[("pad", 1), ("arp", 2), ("bass", 1), ("kick", 1), ("hats", 1), ("clap", 1)]),
+                section(&tr!("Chorus"), 16, Hoehepunkt, &[("pad", 2), ("arp", 2), ("bass", 2), ("lead", 2), ("kick", 2), ("hats", 2), ("clap", 2), ("fx", 1)]),
+                section(&tr!("Verse 2"), 16, Teil, &[("pad", 1), ("arp", 2), ("bass", 1), ("kick", 1), ("hats", 1), ("clap", 1), ("perc", 1)]),
+                section(&tr!("Bridge"), 8, Aufbau, &[("pad", 2), ("arp", 2), ("lead", 1), ("kick", 1), ("fx", 2)]),
+                section(&tr!("Chorus 2"), 16, Hoehepunkt, &[("pad", 2), ("arp", 2), ("bass", 2), ("lead", 2), ("kick", 2), ("hats", 2), ("clap", 2), ("perc", 1), ("fx", 1)]),
+                section(&tr!("Outro"), 8, Outro, &[("pad", 1), ("arp", 1)]),
             ],
         },
         SongPlan {
             template: "lofi".into(),
             name: "Lo-Fi".into(),
-            description: "Warme Akkorde und gedämpfte Zupfer, ein verschleppter Beat mit Swing – entspannt zum Weiterbauen.".into(),
+            description: tr!("Warm chords and muted plucks, a laid-back swung beat – relaxed and ready to build on."),
             tempo: 82.0,
             key: "F-Dur".into(),
             chords: vec!["F".into(), "e".into(), "d".into(), "C".into()],
@@ -331,21 +334,21 @@ pub fn templates() -> Vec<SongPlan> {
             swing: 35.0,
             layers: [
                 vec![
-                    layer("pad", "Akkorde", Role::Pad, synth, Some("Wärme"), Some("Atmen"), Some("Studio"), -9.0),
-                    layer("arp", "Zupfer", Role::Arp, pluck, Some("Gedämpft"), None, Some("Studio"), -11.0),
-                    layer("bass", "Bass", Role::Bass, bass, Some("Finger"), None, None, -5.0),
-                    layer("lead", "Melodie", Role::Lead, pluck, Some("Warm"), None, Some("Bühne"), -10.0),
+                    layer("pad", &tr!("Chords"), Role::Pad, synth, Some("Wärme"), Some("Atmen"), Some("Studio"), -9.0),
+                    layer("arp", &tr!("Pluck"), Role::Arp, pluck, Some("Gedämpft"), None, Some("Studio"), -11.0),
+                    layer("bass", &tr!("Bass"), Role::Bass, bass, Some("Finger"), None, None, -5.0),
+                    layer("lead", &tr!("Melody"), Role::Lead, pluck, Some("Warm"), None, Some("Bühne"), -10.0),
                 ],
                 drum_layers(),
             ]
             .concat(),
             sections: vec![
-                section("Intro", 4, Intro, &[("pad", 1), ("arp", 1)]),
-                section("Teil A", 8, Teil, &[("pad", 2), ("arp", 1), ("bass", 1), ("kick", 1), ("hats", 1), ("clap", 1)]),
-                section("Teil B", 8, Hoehepunkt, &[("pad", 2), ("arp", 2), ("bass", 2), ("lead", 1), ("kick", 2), ("hats", 2), ("clap", 2), ("perc", 1)]),
-                section("Pause", 4, Break, &[("pad", 1), ("lead", 1)]),
-                section("Teil B 2", 8, Hoehepunkt, &[("pad", 2), ("arp", 2), ("bass", 2), ("lead", 2), ("kick", 2), ("hats", 2), ("clap", 2), ("perc", 1)]),
-                section("Outro", 4, Outro, &[("pad", 1), ("arp", 1)]),
+                section(&tr!("Intro"), 4, Intro, &[("pad", 1), ("arp", 1)]),
+                section(&tr!("Part A"), 8, Teil, &[("pad", 2), ("arp", 1), ("bass", 1), ("kick", 1), ("hats", 1), ("clap", 1)]),
+                section(&tr!("Part B"), 8, Hoehepunkt, &[("pad", 2), ("arp", 2), ("bass", 2), ("lead", 1), ("kick", 2), ("hats", 2), ("clap", 2), ("perc", 1)]),
+                section(&tr!("Pause"), 4, Break, &[("pad", 1), ("lead", 1)]),
+                section(&tr!("Part B 2"), 8, Hoehepunkt, &[("pad", 2), ("arp", 2), ("bass", 2), ("lead", 2), ("kick", 2), ("hats", 2), ("clap", 2), ("perc", 1)]),
+                section(&tr!("Outro"), 4, Outro, &[("pad", 1), ("arp", 1)]),
             ],
         },
     ]
@@ -357,7 +360,7 @@ pub fn template(id: &str) -> Result<SongPlan, String> {
     all.iter()
         .find(|t| t.template == want || t.name.to_lowercase() == want)
         .cloned()
-        .ok_or_else(|| format!("Keine Song-Vorlage „{id}“ (vorhanden: {})", all.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().join(", ")))
+        .ok_or_else(|| tr!("No song template \"{id}\" (available: {list})", id = id, list = all.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().join(", ")))
 }
 
 // ---------------------------------------------------------------- Noten
@@ -661,7 +664,7 @@ pub fn generate(plan: &SongPlan) -> Result<Vec<GenTrack>, String> {
                 inst.preset = p.clone();
             }
         }
-        out.push(GenTrack { name: "Beat".into(), instrument: inst, gain_db: -2.0, clips: drum_clips });
+        out.push(GenTrack { name: tr!("Beat"), instrument: inst, gain_db: -2.0, clips: drum_clips });
     }
     Ok(out)
 }
@@ -708,7 +711,11 @@ impl AppState {
                 commands.push(Command::AddTrack { track: t, index: None });
             }
         }
-        let label = format!("{label_prefix}Song „{}“ {}", plan.name, if replaced > 0 { "neu erzeugen" } else { "erzeugen" });
+        let label = if replaced > 0 {
+            tr!("{prefix}Regenerate song \"{name}\"", prefix = label_prefix, name = plan.name)
+        } else {
+            tr!("{prefix}Generate song \"{name}\"", prefix = label_prefix, name = plan.name)
+        };
         let snapshot = self.execute(Command::Batch { label, commands }, false)?;
         *lock(&self.song_tracks)? = ids.clone();
         let bars = plan.total_bars();
@@ -757,24 +764,24 @@ mod tests {
         let t = template("Trance").unwrap();
         let tracks = generate(&t).unwrap();
         let names: Vec<&str> = tracks.iter().map(|g| g.name.as_str()).collect();
-        assert_eq!(names, ["Fläche", "Arpeggio", "Bass", "Lead", "Beat"]);
+        assert_eq!(names, ["Pad", "Arpeggio", "Bass", "Lead", "Beat"]);
         // Intro: nur die Fläche, kein Beat
         let beat = tracks.iter().find(|g| g.name == "Beat").unwrap();
         assert!(beat.clips.iter().all(|c| c.1 >= 16.0 * 4.0), "Beat erst nach dem Intro");
         assert_eq!(tracks[0].clips[0].0, "Intro");
         // Aufbau endet mit einem Snare-Wirbel, der lauter wird
-        let aufbau = beat.clips.iter().find(|c| c.0 == "Aufbau").unwrap();
+        let aufbau = beat.clips.iter().find(|c| c.0 == "Build-up").unwrap();
         let roll: Vec<&Note> = aufbau.3.iter().filter(|n| n.pitch == drums::SNARE).collect();
         assert!(roll.len() >= 16 + 8, "Wirbel: {}", roll.len());
         assert!(roll.last().unwrap().velocity > roll.first().unwrap().velocity + 30);
         // Höhepunkt: Crash zu Beginn, mehr Trommeln als im Thema
-        let hp = beat.clips.iter().find(|c| c.0 == "Höhepunkt").unwrap();
+        let hp = beat.clips.iter().find(|c| c.0 == "Peak").unwrap();
         assert!(hp.3.iter().any(|n| n.pitch == drums::CRASH && n.start_beats == 0.0));
-        let thema = beat.clips.iter().find(|c| c.0 == "Thema").unwrap();
+        let thema = beat.clips.iter().find(|c| c.0 == "Subject").unwrap();
         assert!(hp.3.len() > 3 * thema.3.len());
         // Aufbau: Arpeggio wird heller
         let arp = tracks.iter().find(|g| g.name == "Arpeggio").unwrap();
-        let a = &arp.clips.iter().find(|c| c.0 == "Aufbau").unwrap().3;
+        let a = &arp.clips.iter().find(|c| c.0 == "Build-up").unwrap().3;
         assert!(a.last().unwrap().brightness > a.first().unwrap().brightness + 0.6);
         // Akkorde folgen a – F – C – G mit zwei Takten je Akkord
         let pad = &tracks[0].clips[1].3; // Thema
@@ -799,10 +806,10 @@ mod tests {
     fn bad_plans_are_explained() {
         let mut t = template("Ambient").unwrap();
         t.key = "Lila".into();
-        assert!(t.check().unwrap_err().contains("Tonart"));
+        assert!(t.check().unwrap_err().contains("Key"));
         let mut t = template("Ambient").unwrap();
         t.chords = vec!["Xyz".into()];
-        assert!(t.check().unwrap_err().contains("Akkord"));
+        assert!(t.check().unwrap_err().contains("Chord"));
         let mut t = template("Ambient").unwrap();
         t.sections[0].levels.insert("gong".into(), 1);
         assert!(t.check().unwrap_err().contains("gong"));

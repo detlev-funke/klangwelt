@@ -2,6 +2,7 @@
 // vereinfachte Logik, kein Audio.
 
 import type { Backend } from "./bridge.js";
+import { t } from "./i18n.js";
 import type { ChatMessage, Command, EngineStatus, Project, Snapshot, Track } from "./types.js";
 
 /** Sammlungen im Download-Katalog der Vorschau (Texte wie in der App gekürzt). */
@@ -62,19 +63,19 @@ export function createMock(): Backend {
     project: structuredClone(project),
     canUndo: undo.length > 0,
     canRedo: redo.length > 0,
-    undoLabel: undo.length ? "Letzte Änderung" : null,
-    redoLabel: redo.length ? "Letzte Änderung" : null,
+    undoLabel: undo.length ? t("Last change") : null,
+    redoLabel: redo.length ? t("Last change") : null,
     engine: {
-      available: false, error: "Browser-Vorschau – kein Audio", outputDevice: null, outputChoice, inputChoice, outputNotice: null, inputNotice: null,
+      available: false, error: t("Browser preview – no audio"), outputDevice: null, outputChoice, inputChoice, outputNotice: null, inputNotice: null,
       sampleRate: 48000, metronome, loopOn, loopRange,
     },
-    agent: { url: null, error: "nur in der Desktop-App", library: null, libraryVoices: 0 },
+    agent: { url: null, error: t("desktop app only"), library: null, libraryVoices: 0 },
   });
 
   const track = (p: Project, id: number): Track => {
-    const t = p.tracks.find((x) => x.id === id);
-    if (!t) throw new Error(`Spur ${id} nicht gefunden`);
-    return t;
+    const found = p.tracks.find((x) => x.id === id);
+    if (!found) throw new Error(t("Track {id} not found", { id }));
+    return found;
   };
 
   function apply(p: Project, c: Command): void {
@@ -105,7 +106,7 @@ export function createMock(): Backend {
       case "removeClip": { const t = track(p, c.trackId); t.clips = t.clips.filter((x) => x.id !== c.clipId); break; }
       case "setClip": {
         const clip = track(p, c.trackId).clips.find((x) => x.id === c.clipId);
-        if (!clip) throw new Error("Clip nicht gefunden");
+        if (!clip) throw new Error(t("Clip not found"));
         if (c.patch.name !== undefined) clip.name = c.patch.name;
         if (c.patch.startBeats !== undefined) clip.startBeats = c.patch.startBeats;
         if (clip.source.type === "audio") {
@@ -116,7 +117,7 @@ export function createMock(): Backend {
       }
       case "setClipNotes": {
         const clip = track(p, c.trackId).clips.find((x) => x.id === c.clipId);
-        if (!clip || clip.source.type !== "notes") throw new Error("Noten gibt es nur in Instrument-Clips");
+        if (!clip || clip.source.type !== "notes") throw new Error(t("Only instrument clips contain notes"));
         clip.source.notes = [...c.notes].sort((a, b) => a.startBeats - b.startBeats || a.pitch - b.pitch);
         if (c.lengthBeats !== undefined) clip.source.lengthBeats = c.lengthBeats;
         break;
@@ -126,11 +127,12 @@ export function createMock(): Backend {
   }
 
   const later = <T>(v: T) => Promise.resolve(v);
-  const noAudio = () => Promise.reject("Aufnahme und Analyse gibt es nur in der Desktop-App.");
+  const noAudio = () => Promise.reject(t("Recording and analysis are only available in the desktop app."));
 
   return {
     native: false,
     platform: "mock",
+    setLanguage: () => later(undefined),
     getState: () => later(snap()),
     execute: (c, merge = false) => {
       const display = ["view", "compactHeight", "notesHeight"];
@@ -171,7 +173,7 @@ export function createMock(): Backend {
     }),
     setAudioDevice: (kind, name) => {
       const list = kind === "output" ? MOCK_OUTPUTS : MOCK_INPUTS;
-      if (name && !list.includes(name)) return Promise.reject(`Gerät „${name}“ nicht gefunden – ist es angeschlossen?`);
+      if (name && !list.includes(name)) return Promise.reject(t("Device \"{name}\" not found – is it connected?", { name }));
       if (kind === "output") outputChoice = name;
       else inputChoice = name;
       return later(snap());
@@ -212,10 +214,10 @@ export function createMock(): Backend {
         params: { ...p },
         anzeige,
         beschreibung: Object.fromEntries(anzeige.map((m) => [m.label, m.wort])),
-        testton: "Browser-Vorschau – ohne Messung",
+        testton: t("Browser preview – no measurement"),
       });
     },
-    libraryInfo: () => later({ id: null, name: null, voices: 0, scores: 0, building: null, download: null, message: "Bibliothek nur in der Desktop-App", treeScores: 0, hasMeta: true, chordScores: null, adding: false, merging: null, loading: false }),
+    libraryInfo: () => later({ id: null, name: null, voices: 0, scores: 0, building: null, download: null, message: t("Library is only available in the desktop app"), treeScores: 0, hasMeta: true, chordScores: null, adding: false, merging: null, loading: false }),
     libraryAdd: noAudio,
     libraryList: async () => [],
     libraryCreate: noAudio,
@@ -253,7 +255,7 @@ export function createMock(): Backend {
     libraryListenStop: noAudio,
     // Harmonik rechnet im Rust-Kern – die Vorschau zeigt nur einen leeren Zirkel.
     harmonyView: () => later({ key: { tonic: 0, minor: false, name: "C-Dur", source: "standard" as const }, circle: [], cadences: [] }),
-    harmonySuggest: () => later({ suggestions: [], library: null, hint: "Harmonik nur in der Desktop-App", paths: [] }),
+    harmonySuggest: () => later({ suggestions: [], library: null, hint: t("Harmony analysis is only available in the desktop app"), reindex: false, paths: [] }),
     harmonyDescribe: () => later([]),
     harmonyChords: () => later([]),
     harmonyPreview: noAudio,
@@ -276,12 +278,12 @@ export function createMock(): Backend {
     },
     chatHistory: () => later({ messages: [...chatMessages], agentListening: false, agentConnected: false }),
     onChatChanged: () => {},
-    instrumentSpecs: () => Promise.reject("Instrumente gibt es nur in der Desktop-App."),
-    soundWave: () => Promise.reject("Klang gibt es nur in der Desktop-App."),
+    instrumentSpecs: () => Promise.reject(t("Instruments are only available in the desktop app.")),
+    soundWave: () => Promise.reject(t("Sound editing is only available in the desktop app.")),
     soundField: noAudio,
-    songTemplates: () => Promise.reject("Song-Vorlagen gibt es nur in der Desktop-App."),
+    songTemplates: () => Promise.reject(t("Song templates are only available in the desktop app.")),
     songWrite: noAudio,
-    rhythmInfo: () => Promise.reject("Rhythmus gibt es nur in der Desktop-App."),
+    rhythmInfo: () => Promise.reject(t("Rhythm is only available in the desktop app.")),
     rhythmRead: noAudio,
     rhythmToggle: noAudio,
     rhythmSwing: noAudio,
@@ -296,12 +298,12 @@ export function createMock(): Backend {
     createInstrumentTrack: noAudio,
     insertPattern: noAudio,
     onProjectChanged: () => {},
-    projectSave: () => Promise.reject("Speichern gibt es nur in der Desktop-App."),
-    projectOpen: () => Promise.reject("Öffnen gibt es nur in der Desktop-App."),
+    projectSave: () => Promise.reject(t("Saving is only available in the desktop app.")),
+    projectOpen: () => Promise.reject(t("Opening files is only available in the desktop app.")),
     projectNew: noAudio,
     projectList: async () => ["Dokumente/Klangwelt/Projekte", []],
     exportInfo: async () => ({ dir: "Musik/Klangwelt/Exporte", name: "Export", range: null, rangeLabel: null, seconds: 0, hasNotes: false, bitrates: [64, 96, 128, 160, 192, 256, 320], defaultBitrate: 160, existing: [] }),
-    exportRun: async () => { throw new Error("Export gibt es nur in der App."); },
+    exportRun: async () => { throw new Error(t("Export is only available in the app.")); },
     exportReveal: async () => {},
     appClose: async () => {},
     onCloseRequested: () => {},

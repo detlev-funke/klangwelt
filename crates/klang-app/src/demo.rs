@@ -5,6 +5,7 @@ use crate::state::AssetPool;
 use klang_core::{Clip, ClipSource, Command, Instrument, Note, Project, ProjectPatch, Track, TrackKind};
 use klang_dsp::synth::{self, NoteSpec, PluckParams};
 use klang_dsp::util;
+use klang_i18n::tr;
 
 const SR: u32 = 48_000;
 
@@ -74,51 +75,51 @@ fn melody() -> Vec<Note> {
 pub fn demo_command(project: &mut Project, pool: &mut AssetPool) -> Command {
     let drums = drum_loop(96.0, 4);
     let drums_secs = drums.len() as f64 / SR as f64;
-    let drums_id = pool.insert("Beat (96 BPM)".into(), drums, SR);
+    let drums_id = pool.insert(tr!("Beat (96 BPM)"), drums, SR);
 
     let arp = arpeggio(128.0);
     let arp_secs = arp.len() as f64 / SR as f64;
-    let arp_id = pool.insert("Arpeggio (128 BPM)".into(), arp, SR);
+    let arp_id = pool.insert(tr!("Arpeggio (128 BPM)"), arp, SR);
 
-    let mut beat = Track::new(project.alloc_id(), "Beat", TrackKind::Audio);
+    let mut beat = Track::new(project.alloc_id(), tr!("Beat"), TrackKind::Audio);
     beat.gain_db = -2.0;
     beat.clips.push(Clip {
         id: project.alloc_id(),
-        name: "Beat · 96 BPM".into(),
+        name: tr!("Beat · 96 BPM"),
         start_beats: 0.0,
         source: ClipSource::Audio { asset_id: drums_id, source_bpm: 96.0, warp: true, duration_secs: drums_secs },
     });
 
-    let mut arp_track = Track::new(project.alloc_id(), "Arpeggio", TrackKind::Audio);
+    let mut arp_track = Track::new(project.alloc_id(), tr!("Arpeggio"), TrackKind::Audio);
     arp_track.gain_db = -6.0;
     arp_track.pan = 0.35;
     arp_track.clips.push(Clip {
         id: project.alloc_id(),
-        name: "Arpeggio · 128 BPM".into(),
+        name: tr!("Arpeggio · 128 BPM"),
         start_beats: 0.0,
         source: ClipSource::Audio { asset_id: arp_id, source_bpm: 128.0, warp: true, duration_secs: arp_secs },
     });
 
-    let mut lead = Track::new(project.alloc_id(), "Melodie", TrackKind::Instrument);
+    let mut lead = Track::new(project.alloc_id(), tr!("Melody"), TrackKind::Instrument);
     lead.gain_db = -3.0;
     lead.pan = -0.2;
     let mut instrument = Instrument::pluck();
-    instrument.preset = "warm".into();
+    instrument.preset = "warm".into(); // Kennung, nicht übersetzen
     for (k, v) in [("helligkeit", 0.4), ("abklingen", 0.7), ("koerper", 0.75), ("anschlag", 0.35)] {
         instrument.params.insert(k.into(), v);
     }
     lead.instrument = Some(instrument);
     lead.clips.push(Clip {
         id: project.alloc_id(),
-        name: "Thema".into(),
+        name: tr!("Subject"),
         start_beats: 0.0,
         source: ClipSource::Notes { length_beats: 16.0, notes: melody() },
     });
 
     Command::Batch {
-        label: "Demo laden".into(),
+        label: tr!("Load demo"),
         commands: vec![
-            Command::SetProject { patch: ProjectPatch { tempo_bpm: Some(110.0), name: Some("Demo".into()), ..Default::default() } },
+            Command::SetProject { patch: ProjectPatch { tempo_bpm: Some(110.0), name: Some(tr!("Demo")), ..Default::default() } },
             Command::AddTrack { track: beat, index: None },
             Command::AddTrack { track: arp_track, index: None },
             Command::AddTrack { track: lead, index: None },

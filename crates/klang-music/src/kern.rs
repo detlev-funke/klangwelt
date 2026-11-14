@@ -313,7 +313,7 @@ pub fn parse_kern(text: &str) -> Result<Score, MusicError> {
         }
     }
     if spines.is_empty() {
-        return Err(MusicError::Unsupported("keine **kern-Spalte".into()));
+        return Err(MusicError::Unsupported(klang_i18n::tr!("no **kern spine")));
     }
 
     let get = |prefix: &str| refs.iter().find(|(k, v)| k.starts_with(prefix) && !v.is_empty()).map(|(_, v)| html_text(v));
@@ -388,7 +388,7 @@ pub fn parse_kern(text: &str) -> Result<Score, MusicError> {
         }
     }
     if score.parts.is_empty() {
-        return Err(MusicError::Unsupported("keine Noten in der **kern-Datei".into()));
+        return Err(MusicError::Unsupported(klang_i18n::tr!("no notes in the **kern file")));
     }
     Ok(score)
 }

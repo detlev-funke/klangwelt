@@ -14,10 +14,12 @@
 // einfügen (alles danach rückt nach hinten) oder das Nachfolgende ersetzen.
 
 import { backend } from "../bridge.js";
+import { chordName, keyText } from "../spelling.js";
 import { h, icon } from "../dom.js";
 import { act, errorText, findClip, notify, project, selection, snapshot, status } from "../store.js";
 import { chordIndexAt, harmonyFocus, harmonyKey, harmonyLine, watchHarmonyLine } from "../harmonyline.js";
 import { effect } from "../signals.js";
+import { language, plural, t } from "../i18n.js";
 import { openInLibrary } from "./library.js";
 import type { CadencePath, Chord, ChordInfo, ChordSuggestion, HarmonyExample, HarmonyView, KeySpec, Mood, Snapshot, SuggestCategory, SuggestResult, Track } from "../types.js";
 
@@ -32,24 +34,28 @@ interface SketchItem extends ChordInfo {
 
 const MAJOR = ["C", "Des", "D", "Es", "E", "F", "Fis", "G", "As", "A", "B", "H"];
 const MINOR = ["c", "cis", "d", "es", "e", "f", "fis", "g", "gis", "a", "b", "h"];
-const keyName = (k: KeySpec) => (k.minor ? `${MINOR[k.tonic]}-Moll` : `${MAJOR[k.tonic]}-Dur`);
+/** Key name in the language's spelling (the tables are German, like the core's names). */
+const keyName = (k: KeySpec) => keyText(k.minor ? `${MINOR[k.tonic] ?? ""}-Moll` : `${MAJOR[k.tonic] ?? ""}-Dur`);
+/** The chord track (core: harmony.rs, is_chord_track): new ones are called "Chords" in the
+ *  chosen language, older projects have "Akkorde". */
+const isChordTrack = (name: string) => ["Akkorde", "Chords", t("Chords")].includes(name);
 
 const CATEGORIES: Array<[SuggestCategory, string, string]> = [
-  ["schluss", "Schließen", "Ganzschluss, Plagalschluss, Trugschluss"],
-  ["spannung", "Spannung", "führt zur Dominante"],
-  ["weiter", "Weiterführen", "bleibt offen, ohne zu schließen"],
-  ["farbe", "Farbe", "Zwischendominanten, entlehnte Akkorde, Neapolitaner"],
-  ["ausweichen", "Ausweichen", "öffnet eine Nachbartonart"],
-  ["haeufig", "Häufig in der Bibliothek", "keine Regel, aber oft so gesetzt"],
+  ["schluss", t("Close"), t("Authentic cadence, plagal cadence, deceptive cadence")],
+  ["spannung", t("Tension"), t("leads to the dominant")],
+  ["weiter", t("Continue"), t("stays open without closing")],
+  ["farbe", t("Color"), t("Secondary dominants, borrowed chords, Neapolitan")],
+  ["ausweichen", t("Modulate"), t("opens a neighboring key")],
+  ["haeufig", t("Common in the library"), t("not a rule, but often written this way")],
 ];
 
 /** Stimmungen der Übergänge: Farbe (CSS-Klasse m-…), Name, Erklärung. */
 const MOODS: Array<[Mood, string, string]> = [
-  ["loesend", "lösend", "Spannung löst sich: Dominante → Tonika (oder Ziel der Zwischendominante), Leitton aufwärts, Plagalschluss"],
-  ["spannend", "spannend", "baut Spannung auf: zur Dominante, Doppel- oder Zwischendominante, Quartsextvorhalt"],
-  ["ueberraschend", "überraschend", "unerwartet: Trugschluss, chromatische Terzverwandtschaft (z. B. C → As)"],
-  ["hell", "hell", "zu einem Durakkord der Tonart"],
-  ["dunkel", "dunkel", "zu Moll oder vermindert, oder aus der Molltonart entlehnt"],
+  ["loesend", t("resolving"), t("Tension resolves: dominant → tonic (or the target of the secondary dominant), leading tone upward, plagal cadence")],
+  ["spannend", t("tense"), t("builds tension: to the dominant, double or secondary dominant, cadential 6-4")],
+  ["ueberraschend", t("surprising"), t("unexpected: deceptive cadence, chromatic mediant (e.g. C → A♭)")],
+  ["hell", t("bright"), t("to a major chord of the key")],
+  ["dunkel", t("dark"), t("to minor or diminished, or borrowed from the minor key")],
 ];
 const moodLabel = (m: Mood) => MOODS.find((x) => x[0] === m)?.[1] ?? m;
 
@@ -85,7 +91,7 @@ const sameOverlay = (a: Overlay | null, b: Overlay | null) => !!a && !!b && a.ki
 
 const same = (a: Chord, b: Chord) => a.root === b.root && a.quality === b.quality && (a.bass ?? -1) === (b.bass ?? -1);
 const ckey = (c: Chord) => `${c.root}|${c.quality}|${c.bass ?? ""}`;
-const pct = (x: number) => (x >= 0.095 ? Math.round(x * 100) : Math.round(x * 1000) / 10).toLocaleString("de-DE");
+const pct = (x: number) => (x >= 0.095 ? Math.round(x * 100) : Math.round(x * 1000) / 10).toLocaleString(language());
 
 function triadClass(c: Chord): 0 | 1 | 2 | null {
   switch (c.quality) {
@@ -208,15 +214,15 @@ let libraryListening = false;
 let onLibrary: () => void = () => {};
 
 export function harmonyPanel(): { el: HTMLElement; update(): void } {
-  const keySel = h("select", { class: "hc-select", title: "Tonart – automatisch aus den Noten geschätzt oder fest gewählt" });
+  const keySel = h("select", { class: "hc-select", title: t("Key – estimated automatically from the notes or set manually") });
   keySel.addEventListener("change", () => {
     const v = keySel.value;
     st.keyChoice = v === "auto" ? null : { tonic: Number(v.split(":")[0]), minor: v.endsWith(":m") };
     harmonyKey.value = st.keyChoice;
     void loadView();
   });
-  const durSeg = h("div", { class: "seg mini", title: "Dauer je Akkord beim Abspielen und Schreiben" });
-  for (const [bars, label] of [[0.5, "½ Takt"], [1, "1 Takt"], [2, "2 Takte"]] as const) {
+  const durSeg = h("div", { class: "seg mini", title: t("Duration per chord when playing and writing") });
+  for (const [bars, label] of [[0.5, t("½ bar")], [1, t("1 bar")], [2, t("2 bars")]] as const) {
     const b = h("button", { class: "seg-btn" }, label);
     b.dataset.v = String(bars);
     b.addEventListener("click", () => {
@@ -226,7 +232,7 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
     b.classList.toggle("on", bars === st.barsPerChord);
     durSeg.append(b);
   }
-  const targetSel = h("select", { class: "hc-select", title: "Wohin „In Spur schreiben“ die Akkorde setzt" });
+  const targetSel = h("select", { class: "hc-select", title: t("Where \"Write to track\" puts the chords") });
   targetSel.addEventListener("change", () => {
     st.target = targetSel.value === "akkorde" ? "akkorde" : Number(targetSel.value);
   });
@@ -244,7 +250,7 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
     for (const e of el.querySelectorAll<HTMLElement | SVGElement>("[data-mood]")) e.classList.toggle("faded", m !== null && e.dataset.mood !== m);
   };
   const legend = h("div", { class: "hc-legend" },
-    h("span", { class: "hc-lg-title" }, "Stimmung"),
+    h("span", { class: "hc-lg-title" }, t("Mood")),
     ...MOODS.map(([m, label, desc]) => {
       const item = h("span", { class: `hc-lg m-${m}`, title: `${label}: ${desc}` }, h("i"), label);
       item.addEventListener("mouseenter", () => focusMood(m));
@@ -254,20 +260,20 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
 
   const field = (label: string, control: HTMLElement) => h("span", { class: "hc-field" }, h("label", {}, label), control);
   const pathSection = h("div", { class: "hc-pathsec" },
-    h("div", { class: "hc-title", title: "Mehrschrittige Kadenzen vom aktuellen Akkord aus – je Schlussart der beste Weg, darunter ggf. ein längerer.\nMaus darüber: im Zirkel zeigen · Klick: festhalten" }, "Wege zum Schluss", pathFrom),
+    h("div", { class: "hc-title", title: t("Multi-step cadences from the current chord – the best path for each cadence type, plus a longer one where available.\nHover: show in the circle · Click: pin") }, t("Paths to a cadence"), pathFrom),
     pathBox);
   const left = h("div", { class: "hc-left" }, circleBox, legend, pathSection);
   const side = h("div", { class: "hc-side" },
     sketchBox,
-    h("div", { class: "hc-title" }, "Fortsetzungen", libLine),
+    h("div", { class: "hc-title" }, t("Continuations"), libLine),
     suggBox,
-    h("div", { class: "hc-title" }, "Kadenzen"),
+    h("div", { class: "hc-title" }, t("Cadences")),
     cadBox);
   const bodyEl = h("div", { class: "hc-body" }, left, side);
   const el = h(
     "div",
     { class: "harmony" },
-    h("div", { class: "hc-head" }, field("Tonart", keySel), field("Dauer", durSeg), field("Ziel", targetSel)),
+    h("div", { class: "hc-head" }, field(t("Key"), keySel), field(t("Duration"), durSeg), field(t("Target"), targetSel)),
     bodyEl,
   );
   // Breit (zwei Spalten): die Wege zum Schluss rechts unter den Verlauf – links
@@ -377,13 +383,15 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
     try {
       const placed = await backend.harmonyChords(currentKey(), track?.id ?? null, track && found ? found.clip.id : null);
       if (!placed.length) {
-        notify("Keine Akkorde erkannt – einstimmige Stellen ergeben keinen Akkord.");
+        notify(t("No chords detected – single-voice passages don't form a chord."));
         return;
       }
       pinKey();
       st.sketch = placed.map((p) => ({ ...p, fixed: true }));
       st.candidate = null;
-      notify(`${placed.length} Akkorde gelesen${track ? ` aus „${track.name}“` : " aus allen Instrumentspuren"}`);
+      notify(track
+        ? plural(placed.length, "Read {n} chord from \"{track}\"", "Read {n} chords from \"{track}\"", { track: track.name })
+        : plural(placed.length, "Read {n} chord from all instrument tracks", "Read {n} chords from all instrument tracks"));
       await loadSuggestions();
     } catch (e) {
       notify(errorText(e), "error");
@@ -394,7 +402,7 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
     pinKey();
     const fresh = st.sketch.filter((s) => !s.fixed);
     if (!fresh.length) {
-      notify("Nichts Neues zu schreiben – erst Akkorde übernehmen (Doppelklick oder „+“).");
+      notify(t("Nothing new to write – add chords first (double-click or \"+\")."));
       return;
     }
     const bpb = beatsPerBar();
@@ -407,18 +415,20 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
     const mode = st.insertMode;
     const ok = await act(backend.harmonyWrite(currentKey(), fresh.map((s) => s.chord), bpc, start, targetTrackId(), before, mode));
     if (!ok) return;
-    let t = start;
+    let pos = start;
     st.sketch = st.sketch.map((s) => {
       if (s.fixed) return s;
-      const placed = { ...s, fixed: true, startBeats: t, lengthBeats: bpc };
-      t += bpc;
+      const placed = { ...s, fixed: true, startBeats: pos, lengthBeats: bpc };
+      pos += bpc;
       return placed;
     });
-    const where = targetTrackId() != null ? `„${melodicTracks().find((x) => x.id === targetTrackId())?.name}“` : "„Akkorde“";
-    const how = mode === "einfuegen" ? "eingefügt (alles danach rückt nach hinten)" : "geschrieben";
-    notify(`${fresh.length} Akkord${fresh.length === 1 ? "" : "e"} in ${where} ab Takt ${Math.floor(start / bpb) + 1} ${how}`);
+    const where = targetTrackId() != null ? melodicTracks().find((x) => x.id === targetTrackId())?.name ?? "" : t("Chords");
+    const vars = { track: where, bar: Math.floor(start / bpb) + 1 };
+    notify(mode === "einfuegen"
+      ? plural(fresh.length, "Inserted {n} chord into \"{track}\" from bar {bar} (everything after it shifts later)", "Inserted {n} chords into \"{track}\" from bar {bar} (everything after it shifts later)", vars)
+      : plural(fresh.length, "Wrote {n} chord to \"{track}\" from bar {bar}", "Wrote {n} chords to \"{track}\" from bar {bar}", vars));
     // Cursor auf den letzten neuen Akkord: der Verlauf geht von dort weiter
-    const lastStart = t - bpc;
+    const lastStart = pos - bpc;
     followIx = -2;
     void backend.seek((lastStart * 60) / bpm).catch(() => {});
     renderSketch();
@@ -428,12 +438,14 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
 
   function renderHead(): void {
     const v = st.view;
-    const auto = v && v.key.source !== "gewaehlt" ? `Automatisch (${v.key.name}${v.key.source === "standard" ? ", keine Noten" : ", geschätzt"})` : "Automatisch";
+    const auto = v && v.key.source !== "gewaehlt"
+      ? v.key.source === "standard" ? t("Automatic ({key}, no notes)", { key: v.key.name }) : t("Automatic ({key}, estimated)", { key: v.key.name })
+      : t("Automatic");
     const opts = [h("option", { value: "auto" }, auto)];
     for (const minor of [false, true]) {
       for (let i = 0; i < 12; i++) {
-        const t = (i * 7 + (minor ? 9 : 0)) % 12; // im Quintenzirkel sortiert
-        opts.push(h("option", { value: `${t}:${minor ? "m" : "d"}` }, keyName({ tonic: t, minor })));
+        const tonic = (i * 7 + (minor ? 9 : 0)) % 12; // im Quintenzirkel sortiert
+        opts.push(h("option", { value: `${tonic}:${minor ? "m" : "d"}` }, keyName({ tonic, minor })));
       }
     }
     keySel.replaceChildren(...opts);
@@ -448,8 +460,8 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
     if (sig === targetSig && targetSel.childElementCount) return;
     targetSig = sig;
     targetSel.replaceChildren(
-      h("option", { value: "akkorde" }, "Spur „Akkorde“"),
-      ...tracks.filter((t) => t.name !== "Akkorde").map((t) => h("option", { value: String(t.id) }, `Spur „${t.name}“`)),
+      h("option", { value: "akkorde" }, t("Track \"{name}\"", { name: t("Chords") })),
+      ...tracks.filter((tr) => !isChordTrack(tr.name)).map((tr) => h("option", { value: String(tr.id) }, t("Track \"{name}\"", { name: tr.name }))),
     );
     if (typeof st.target === "number" && !tracks.some((t) => t.id === st.target)) st.target = "akkorde";
     targetSel.value = String(st.target);
@@ -458,7 +470,7 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
   function renderCircle(): void {
     const v = st.view;
     if (!v || !v.circle.length) {
-      circleBox.replaceChildren(h("div", { class: "lib-empty" }, "Quintenzirkel lädt …"));
+      circleBox.replaceChildren(h("div", { class: "lib-empty" }, t("Loading circle of fifths…")));
       return;
     }
     const last = st.sketch.at(-1)?.chord ?? null;
@@ -474,7 +486,7 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
     const cadence = shown?.kind === "cadence" ? v.cadences.find((c) => c.id === shown.id) ?? null : null;
     const path = shown?.kind === "path" ? (st.result?.paths ?? []).find((p) => pathId(p) === shown.id) ?? null : null;
 
-    const root = svg("svg", { viewBox: "-212 -212 424 424", class: "hc-svg", role: "img", "aria-label": `Quintenzirkel in ${v.key.name}` });
+    const root = svg("svg", { viewBox: "-212 -212 424 424", class: "hc-svg", role: "img", "aria-label": t("Circle of fifths in {key}", { key: v.key.name }) });
     // Pfeilspitzen je Stimmung (Marker erben die Strichfarbe nicht zuverlässig)
     const defs = svg("defs", {},
       ...MOODS.map(([m]) => svg("marker", { id: `hc-mk-${m}`, viewBox: "0 0 10 10", refX: "7", refY: "5", markerWidth: "4.2", markerHeight: "4.2", orient: "auto-start-reverse" },
@@ -496,10 +508,10 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
       const path = svg("path", { d: sector(cell.ring, cell.pos) });
       if (s && s.rank <= 8) path.style.setProperty("--s", String(Math.max(0.15, s.s.score)));
       const [cx, cy] = centerOf(cell.ring, cell.pos);
-      const label = svg("text", { x: cx, y: cy + (inKey || s ? -2 : 4), class: "hc-name" }, cell.name);
+      const label = svg("text", { x: cx, y: cy + (inKey || s ? -2 : 4), class: "hc-name" }, chordName(cell.name));
       g.append(path, label);
       if (inKey || (s && s.rank <= 8)) g.append(svg("text", { x: cx, y: cy + 11, class: "hc-roman" }, cell.roman));
-      const tip = `${cell.name} · ${cell.roman} · ${cell.function} – ${cell.role}${s ? `\n${s.rank}. Vorschlag: ${s.s.reason}` : ""}${s?.s.library ? `\nBibliothek: ${pct(s.s.library.share)} %` : ""}\nKlick: Übergang anhören · Doppelklick: übernehmen`;
+      const tip = `${chordName(cell.name)} · ${cell.roman} · ${cell.function} – ${cell.role}${s ? `\n${t("Suggestion #{rank}: {reason}", { rank: s.rank, reason: s.s.reason })}` : ""}${s?.s.library ? `\n${t("Library: {pct}%", { pct: pct(s.s.library.share) })}` : ""}\n${t("Click: hear the transition · Double-click: add")}`;
       g.append(svg("title", {}, tip));
       g.addEventListener("click", () => tryChord(cell));
       g.addEventListener("dblclick", () => accept(cell));
@@ -537,8 +549,8 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
     root.append(
       svg("circle", { r: 62, class: "hc-center" }),
       svg("text", { y: -22, class: "hc-key" }, v.key.name),
-      svg("text", { y: -8, class: "hc-keysrc" }, v.key.source === "gewaehlt" ? "gewählt" : v.key.source === "geschaetzt" ? "aus den Noten" : "Standard"),
-      svg("text", { y: 16, class: "hc-cur" }, cur ? cur.name : "–"),
+      svg("text", { y: -8, class: "hc-keysrc" }, v.key.source === "gewaehlt" ? t("selected") : v.key.source === "geschaetzt" ? t("from the notes") : t("default")),
+      svg("text", { y: 16, class: "hc-cur" }, cur ? chordName(cur.name) : "–"),
       svg("text", { y: 31, class: "hc-curfn" }, cur ? `${cur.roman} · ${cur.function}` : ""),
     );
     circleBox.replaceChildren(root);
@@ -551,9 +563,9 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
   function chip(item: SketchItem, i: number, isLast: boolean): HTMLElement {
     const b = h("button", {
       class: `hc-chip${item.fixed ? " fixed" : ""}${isLast ? " last" : ""}${flashFrom >= 0 && i >= flashFrom ? " new" : ""}`,
-      title: `${item.name} · ${item.roman} · ${item.function} – ${item.role}${item.fixed ? "\nsteht schon in der Spur" : ""}\nKlick: anhören`,
+      title: `${chordName(item.name)} · ${item.roman} · ${item.function} – ${item.role}${item.fixed ? `\n${t("already in the track")}` : ""}\n${t("Click: listen")}`,
       onclick: () => void preview([item.chord], 0.5),
-    }, h("b", {}, item.name), h("span", {}, item.roman));
+    }, h("b", {}, chordName(item.name)), h("span", {}, item.roman));
     b.dataset.i = String(i);
     return b;
   }
@@ -568,33 +580,33 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
     if (st.candidate) {
       const c = st.candidate;
       arrows.push(h("i", { class: "hc-to" }, "→"),
-        h("span", { class: "hc-chip cand", title: `${c.name} · ${c.roman} · ${c.function} – ${c.role}` }, h("b", {}, c.name), h("span", {}, c.roman),
-          h("button", { class: "btn small blue", title: "In den Verlauf übernehmen (oder Doppelklick)", onclick: () => accept(c) }, "+ übernehmen")));
+        h("span", { class: "hc-chip cand", title: `${chordName(c.name)} · ${c.roman} · ${c.function} – ${c.role}` }, h("b", {}, chordName(c.name)), h("span", {}, c.roman),
+          h("button", { class: "btn small blue", title: t("Add to the progression (or double-click)"), onclick: () => accept(c) }, t("+ Add"))));
     }
     const canBack = !!st.sketch.length && !st.sketch.at(-1)!.fixed;
     sketchBox.replaceChildren(
-      h("div", { class: "hc-title" }, "Verlauf",
-        h("span", { class: "muted" }, " – Klick auf einen Akkord: Übergang anhören, Doppelklick: übernehmen")),
+      h("div", { class: "hc-title" }, t("Progression"),
+        h("span", { class: "muted" }, ` – ${t("Click a chord: hear the transition, double-click: add")}`)),
       h("div", { class: "hc-chips" }, ...arrows),
       h("div", { class: "hc-actions" },
-        h("button", { class: "btn small", title: "Ganzen Verlauf vorspielen", onclick: () => st.sketch.length && void preview(st.sketch.map((s) => s.chord), st.barsPerChord) }, icon("play"), "Verlauf"),
-        h("button", { class: "btn small", title: "Letzten Akkord entfernen", disabled: !canBack, onclick: back }, icon("undo"), "Zurück"),
-        h("button", { class: "btn small ghost", title: "Neu beginnen (mit der Tonika)", onclick: () => { st.sketch = []; st.candidate = null; holdFollow(); void loadView(); } }, "Leeren"),
-        h("button", { class: "btn small", title: "Akkorde aus dem gewählten Clip lesen (ohne Auswahl: aus allen Instrumentspuren)", onclick: () => void fromTracks() }, icon("clip"), "Aus Spur lesen"),
+        h("button", { class: "btn small", title: t("Play the whole progression"), onclick: () => st.sketch.length && void preview(st.sketch.map((s) => s.chord), st.barsPerChord) }, icon("play"), t("Progression")),
+        h("button", { class: "btn small", title: t("Remove last chord"), disabled: !canBack, onclick: back }, icon("undo"), t("Back")),
+        h("button", { class: "btn small ghost", title: t("Start over (with the tonic)"), onclick: () => { st.sketch = []; st.candidate = null; holdFollow(); void loadView(); } }, t("Clear")),
+        h("button", { class: "btn small", title: t("Read chords from the selected clip (with nothing selected: from all instrument tracks)"), onclick: () => void fromTracks() }, icon("clip"), t("Read from track")),
         modeSeg(),
         h("button", { class: "btn small primary", title: st.insertMode === "einfuegen"
-          ? "Neue Akkorde hinter den Akkord am Cursor einfügen – alles danach rückt in allen Spuren nach hinten"
-          : "Neue Akkorde hinter den Akkord am Cursor schreiben – was dort in der Ziel-Spur steht, wird ersetzt", onclick: () => void write() }, icon("plus"), "In Spur schreiben")),
-      h("label", { class: "check small hc-follow", title: "Beim Abspielen und Cursor-Setzen greift der Verlauf die Akkorde an dieser Stelle auf (eigene neue Akkorde bleiben)" },
-        followBox(), "folgt der Abspielposition"),
+          ? t("Insert new chords after the chord at the cursor – everything after it shifts later in all tracks")
+          : t("Write new chords after the chord at the cursor – whatever is there in the target track gets replaced"), onclick: () => void write() }, icon("plus"), t("Write to track"))),
+      h("label", { class: "check small hc-follow", title: t("During playback and when you set the cursor, the progression picks up the chords at that position (your own new chords stay)") },
+        followBox(), t("follows playback position")),
     );
   }
 
   function modeSeg(): HTMLElement {
-    const seg = h("div", { class: "seg mini hc-mode", title: "Wie „In Spur schreiben“ die neuen Akkorde setzt" });
+    const seg = h("div", { class: "seg mini hc-mode", title: t("How \"Write to track\" places the new chords") });
     for (const [m, label, tip] of [
-      ["einfuegen", "Einfügen", "Platz schaffen: alles danach rückt in allen Spuren nach hinten"],
-      ["ersetzen", "Ersetzen", "das Nachfolgende in der Ziel-Spur überschreiben"],
+      ["einfuegen", t("Insert"), t("Make room: everything after it shifts later in all tracks")],
+      ["ersetzen", t("Replace"), t("overwrite what follows in the target track")],
     ] as const) {
       const b = h("button", { class: `seg-btn${st.insertMode === m ? " on" : ""}`, title: tip }, label);
       b.dataset.mode = m;
@@ -664,21 +676,24 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
 
   function exampleRow(e: HarmonyExample): HTMLElement {
     const who = e.composer ? `${e.composer} – ` : "";
+    const name = `${who}${e.title || t("(untitled)")}`;
     return h("div", { class: "hc-ex" },
-      h("span", { class: "hc-ex-name", title: `${who}${e.title || "(ohne Titel)"}, Takt ${e.bar}` }, `${who}${e.title || "(ohne Titel)"}`, h("em", {}, ` · T. ${e.bar}`)),
-      h("button", { class: "btn small ghost", title: "Diese Stelle anhören", onclick: () => void backend.harmonyPlayExample(e.doc, e.start, e.end).catch((x) => notify(errorText(x), "error")) }, icon("play")),
-      h("button", { class: "btn small ghost", title: "Partitur im Fenster „Bibliothek“ an dieser Stelle öffnen", onclick: () => void openInLibrary(e.doc, [e.start, e.end]) }, icon("book"), "Öffnen"));
+      h("span", { class: "hc-ex-name", title: t("{title}, bar {bar}", { title: name, bar: e.bar }) }, name, h("em", {}, ` · ${t("Bar {bar}", { bar: e.bar })}`)),
+      h("button", { class: "btn small ghost", title: t("Listen to this passage"), onclick: () => void backend.harmonyPlayExample(e.doc, e.start, e.end).catch((x) => notify(errorText(x), "error")) }, icon("play")),
+      h("button", { class: "btn small ghost", title: t("Open the score at this spot in the \"Library\" window"), onclick: () => void openInLibrary(e.doc, [e.start, e.end]) }, icon("book"), t("Open")));
   }
 
   function suggestionRow(s: ChordSuggestion, rank: number, maxShare: number): HTMLElement {
     const k = ckey(s.chord);
     const lib = s.library;
     const isCand = !!st.candidate && same(st.candidate.chord, s.chord);
-    const prevName = st.sketch.at(-1)?.name ?? "";
+    const prevName = chordName(st.sketch.at(-1)?.name ?? "");
     const share = lib
       ? h("div", {
           class: "hc-share",
-          title: `${lib.count.toLocaleString("de-DE")} von ${lib.total.toLocaleString("de-DE")} Fortsetzungen nach ${prevName} in der Bibliothek${lib.exact ? "" : " (als Grundakkord gezählt – für diese Form gibt es zu wenig Daten)"}`,
+          title: lib.exact
+            ? t("{count} of {total} continuations after {chord} in the library", { count: lib.count.toLocaleString(language()), total: lib.total.toLocaleString(language()), chord: prevName })
+            : t("{count} of {total} continuations after {chord} in the library (counted as root position – there's too little data for this form)", { count: lib.count.toLocaleString(language()), total: lib.total.toLocaleString(language()), chord: prevName }),
         },
           h("i", { style: `width:${maxShare > 0 ? Math.max(2, (lib.share / maxShare) * 100) : 0}%` }),
           h("b", {}, `${pct(lib.share)} %`))
@@ -686,18 +701,18 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
     const m = s.mood ?? "hell";
     const row = h("div", { class: `hc-row${isCand ? " cand" : ""}` },
       h("span", { class: "hc-rank" },
-        h("i", { class: `hc-mood m-${m}`, "data-mood": m, title: `${prevName} → ${s.name}: ${moodLabel(m)} – ${MOODS.find((x) => x[0] === m)?.[2] ?? ""}` }),
+        h("i", { class: `hc-mood m-${m}`, "data-mood": m, title: `${prevName} → ${chordName(s.name)}: ${moodLabel(m)} – ${MOODS.find((x) => x[0] === m)?.[2] ?? ""}` }),
         String(rank)),
-      h("button", { class: "hc-pick", title: "Übergang anhören (Doppelklick: übernehmen)", onclick: () => tryChord(s), ondblclick: () => accept(s) },
-        h("b", {}, s.name),
+      h("button", { class: "hc-pick", title: t("Hear the transition (double-click: add)"), onclick: () => tryChord(s), ondblclick: () => accept(s) },
+        h("b", {}, chordName(s.name)),
         h("span", { class: "hc-fn" }, `${s.roman} · ${s.function}`),
         h("span", { class: "hc-why" }, s.reason, s.toKey ? h("em", {}, ` → ${s.toKey}`) : null)),
       share,
       lib && lib.examples.length
-        ? h("button", { class: `btn small ghost hc-exbtn${st.expanded === k ? " on" : ""}`, title: "Beispiele aus der Bibliothek",
-            onclick: () => { st.expanded = st.expanded === k ? null : k; renderSuggestions(); } }, `${lib.examples.length} Beisp. ${st.expanded === k ? "▴" : "▾"}`)
+        ? h("button", { class: `btn small ghost hc-exbtn${st.expanded === k ? " on" : ""}`, title: t("Examples from the library"),
+            onclick: () => { st.expanded = st.expanded === k ? null : k; renderSuggestions(); } }, `${t("{n} ex.", { n: lib.examples.length })} ${st.expanded === k ? "▴" : "▾"}`)
         : h("span"),
-      h("button", { class: "btn small blue", title: "In den Verlauf übernehmen", onclick: () => accept(s) }, "+"),
+      h("button", { class: "btn small blue", title: t("Add to the progression"), onclick: () => accept(s) }, "+"),
     );
     if (st.expanded !== k || !lib) return row;
     return h("div", { class: "hc-rowwrap" }, row, h("div", { class: "hc-exlist" }, ...lib.examples.map(exampleRow)));
@@ -708,20 +723,26 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
     if (r?.library) {
       const lib = r.library;
       const groups = lib.groups.length > 1
-        ? h("span", { class: "seg mini hc-groups", title: "Woher die Häufigkeiten kommen" },
+        ? h("span", { class: "seg mini hc-groups", title: t("Where the frequencies come from") },
             ...lib.groups.map((g) => {
-              const b = h("button", { class: `seg-btn${g.id === lib.group ? " on" : ""}`, title: `${g.scores.toLocaleString("de-DE")} ${currentKey().minor ? "Moll" : "Dur"}stücke mit Akkordfolge`,
+              const count = g.scores.toLocaleString(language());
+              const b = h("button", { class: `seg-btn${g.id === lib.group ? " on" : ""}`, title: currentKey().minor
+                ? plural(g.scores, "{count} minor-key piece with a chord progression", "{count} minor-key pieces with chord progressions", { count })
+                : plural(g.scores, "{count} major-key piece with a chord progression", "{count} major-key pieces with chord progressions", { count }),
                 onclick: () => { st.group = g.id; void loadSuggestions(); } }, g.label);
               return b;
             }))
         : null;
+      const libVars = { name: lib.name, count: lib.scores.toLocaleString(language()) };
       libLine.replaceChildren(
-        h("span", { class: "muted" }, ` · Häufigkeit in „${lib.name}“ (${lib.scores.toLocaleString("de-DE")} ${currentKey().minor ? "Moll" : "Dur"}stücke)`),
+        h("span", { class: "muted" }, ` · ${currentKey().minor
+          ? plural(lib.scores, "Frequency in \"{name}\" ({count} minor-key piece)", "Frequency in \"{name}\" ({count} minor-key pieces)", libVars)
+          : plural(lib.scores, "Frequency in \"{name}\" ({count} major-key piece)", "Frequency in \"{name}\" ({count} major-key pieces)", libVars)}`),
         groups ?? "",
         r.hint ? h("span", { class: "muted" }, ` · ${r.hint}`) : "");
     } else if (r?.hint) {
-      const reindex = r.hint.includes("neu indizieren")
-        ? h("button", { class: "btn small blue", onclick: () => void backend.libraryReindex().then(() => notify("Bibliothek wird neu indiziert – Fortschritt im Fenster „Bibliothek“")).catch((e) => notify(errorText(e), "error")) }, "Neu indizieren")
+      const reindex = r.reindex
+        ? h("button", { class: "btn small blue", onclick: () => void backend.libraryReindex().then(() => notify(t("Library is being re-indexed – progress in the \"Library\" window"))).catch((e) => notify(errorText(e), "error")) }, t("Re-index"))
         : null;
       libLine.replaceChildren(h("span", { class: "muted" }, ` · ${r.hint}`), reindex ?? "");
     } else {
@@ -729,7 +750,7 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
     }
     const list = r?.suggestions ?? [];
     if (!list.length) {
-      suggBox.replaceChildren(h("div", { class: "lib-empty" }, st.view ? "Keine Vorschläge." : "…"));
+      suggBox.replaceChildren(h("div", { class: "lib-empty" }, st.view ? t("No suggestions.") : "…"));
       return;
     }
     const ranked = list.slice().sort((a, b) => b.score - a.score);
@@ -752,13 +773,13 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
       if (i) {
         const m = moods[i - 1] ?? "hell";
         const sh = opt.shares?.[i - 1];
-        const prev = chords[i - 1]!.name;
+        const prev = chordName(chords[i - 1]!.name);
         // mit Bibliothek: die Übergangswahrscheinlichkeit gleich unter dem Pfeil
-        out.push(h("i", { class: `hc-pto m-${m}${sh != null ? " has-pct" : ""}`, "data-mood": m, title: `${prev} → ${s.name}: ${moodLabel(m)}${sh != null ? `\nBibliothek: ${pct(sh)} % der Fortsetzungen nach ${prev}` : ""}` },
+        out.push(h("i", { class: `hc-pto m-${m}${sh != null ? " has-pct" : ""}`, "data-mood": m, title: `${prev} → ${chordName(s.name)}: ${moodLabel(m)}${sh != null ? `\n${t("Library: {pct}% of continuations after {chord}", { pct: pct(sh), chord: prev })}` : ""}` },
           ...(sh != null ? [h("span", {}, "→"), h("small", { class: "hc-pct" }, `${pct(sh)} %`)] : ["→"])));
       }
       const from = i === 0 && opt.from;
-      out.push(h("span", { class: `hc-pchip${from ? " from" : ""}`, title: `${s.name} · ${s.roman} · ${s.function} – ${s.role}${from ? "\n(aktueller Akkord)" : ""}` }, h("b", {}, s.name), h("span", {}, s.roman)));
+      out.push(h("span", { class: `hc-pchip${from ? " from" : ""}`, title: `${chordName(s.name)} · ${s.roman} · ${s.function} – ${s.role}${from ? `\n${t("(current chord)")}` : ""}` }, h("b", {}, chordName(s.name)), h("span", {}, s.roman)));
     });
     return out;
   }
@@ -783,7 +804,7 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
    */
   function appendSteps(steps: ChordInfo[], what: string, toTrack = false): void {
     if (!steps.length) {
-      notify("Der Verlauf endet schon so – nichts anzuhängen.");
+      notify(t("The progression already ends that way – nothing to append."));
       return;
     }
     pinKey();
@@ -798,49 +819,48 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
       renderSketch();
     }, 1600);
     void loadSuggestions();
-    const n = `${steps.length} Akkord${steps.length === 1 ? "" : "e"}`;
     if (toTrack) void write();
-    else notify(`${what}: ${n} an den Verlauf angehängt – „In Spur schreiben“ setzt sie in die Spur`);
+    else notify(plural(steps.length, "{what}: appended {n} chord to the progression – \"Write to track\" puts it in the track", "{what}: appended {n} chords to the progression – \"Write to track\" puts them in the track", { what }));
   }
 
   function renderPaths(): void {
     const cur = st.sketch.at(-1);
-    pathFrom.textContent = cur ? ` · von ${cur.name}` : "";
+    pathFrom.textContent = cur ? ` · ${t("from {chord}", { chord: chordName(cur.name) })}` : "";
     const paths = st.result?.paths ?? [];
     if (!paths.length) {
-      pathBox.replaceChildren(h("div", { class: "lib-empty" }, st.result ? "Kein Schluss in Reichweite." : "…"));
+      pathBox.replaceChildren(h("div", { class: "lib-empty" }, st.result ? t("No cadence within reach.") : "…"));
       return;
     }
     pathBox.replaceChildren(...paths.map((p) => {
       const o: Overlay = { kind: "path", id: pathId(p) };
       const pinned = sameOverlay(st.pinned, o);
       const libAvg = p.shares && p.shares.length ? p.shares.reduce<number>((a, x) => a + (x ?? 0), 0) / p.shares.length : null;
-      const tip = `${p.label}${p.longer ? " (längerer Weg)" : ""}: ${[cur?.name ?? "", ...p.steps.map((s) => s.name)].join(" → ")}`
-        + `\nWertung ${p.score.toLocaleString("de-DE")}${libAvg != null ? ` · Schritte im Mittel ${pct(libAvg)} % in der Bibliothek` : ""}`
-        + "\nMaus darüber: im Zirkel zeigen · Klick: festhalten";
+      const tip = `${p.longer ? t("{label} (longer path)", { label: p.label }) : p.label}: ${[chordName(cur?.name ?? ""), ...p.steps.map((s) => chordName(s.name))].join(" → ")}`
+        + `\n${t("Rating {score}", { score: p.score.toLocaleString(language()) })}${libAvg != null ? ` · ${t("Steps average {pct}% in the library", { pct: pct(libAvg) })}` : ""}`
+        + `\n${t("Hover: show in the circle · Click: pin")}`;
       const row = h("div", { class: `hc-path${p.longer ? " longer" : ""}${pinned ? " on" : ""}`, title: tip },
-        h("span", { class: "hc-plabel" }, p.longer ? "länger" : p.label),
+        h("span", { class: "hc-plabel" }, p.longer ? t("longer") : p.label),
         h("span", { class: "hc-pseq" }, ...(cur
           ? moodSeq([cur, ...p.steps], p.moods, { from: true, shares: p.shares })
           : moodSeq(p.steps, p.moods.slice(1), { shares: p.shares?.slice(1) }))),
         h("span", { class: "hc-pbtns" },
-          h("button", { class: "btn small ghost", title: "Vom aktuellen Akkord bis zum Schluss vorspielen und im Zirkel festhalten", onclick: (e: Event) => {
+          h("button", { class: "btn small ghost", title: t("Play from the current chord to the cadence and pin it in the circle"), onclick: (e: Event) => {
             e.stopPropagation();
             togglePin(o, true);
             void preview([...(cur ? [cur.chord] : []), ...p.steps.map((s) => s.chord)], st.barsPerChord);
           } }, icon("play")),
-          h("button", { class: "btn small blue", title: "Diese Akkorde an den Verlauf anhängen (zum Weiterprobieren)", onclick: (e: Event) => {
+          h("button", { class: "btn small blue", title: t("Append these chords to the progression (to keep experimenting)"), onclick: (e: Event) => {
             e.stopPropagation();
             st.pinned = null;
             hover = null;
             appendSteps(p.steps, p.label);
           } }, "+"),
-          h("button", { class: "btn small", title: "Anhängen und gleich vierstimmig in die Ziel-Spur schreiben", onclick: (e: Event) => {
+          h("button", { class: "btn small", title: t("Append and write straight to the target track in four parts"), onclick: (e: Event) => {
             e.stopPropagation();
             st.pinned = null;
             hover = null;
             appendSteps(p.steps, p.label, true);
-          } }, "In Spur")));
+          } }, t("To track"))));
       row.addEventListener("mouseenter", () => showHover(o));
       row.addEventListener("mouseleave", () => showHover(null));
       row.addEventListener("click", () => togglePin(o));
@@ -859,24 +879,24 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
     if (!v) return;
     cadBox.replaceChildren(...v.cadences.map((c) => {
       const o: Overlay = { kind: "cadence", id: c.id };
-      const card = h("div", { class: `hc-cadcard${sameOverlay(st.pinned, o) ? " on" : ""}`, title: `${c.description}\n${c.steps.map((s) => `${s.name} (${s.roman})`).join(" – ")}\nMaus darüber: im Zirkel zeigen · Klick: festhalten` },
+      const card = h("div", { class: `hc-cadcard${sameOverlay(st.pinned, o) ? " on" : ""}`, title: `${c.description}\n${c.steps.map((s) => `${chordName(s.name)} (${s.roman})`).join(" – ")}\n${t("Hover: show in the circle · Click: pin")}` },
         h("b", {}, c.name), h("span", { class: "hc-pseq" }, ...moodSeq(c.steps, c.moods ?? [])),
         h("div", {},
-          h("button", { class: "btn small", title: "Vorspielen und im Zirkel festhalten", onclick: (e: Event) => {
+          h("button", { class: "btn small", title: t("Play and pin in the circle"), onclick: (e: Event) => {
             e.stopPropagation();
             togglePin(o, true);
             void preview(c.steps.map((s) => s.chord), st.barsPerChord);
           } }, icon("play")),
-          h("button", { class: "btn small blue", title: "An den Verlauf (oben) anhängen – zum Weiterprobieren", onclick: (e: Event) => {
+          h("button", { class: "btn small blue", title: t("Append to the progression (above) – to keep experimenting"), onclick: (e: Event) => {
             e.stopPropagation();
             st.pinned = o;
             appendSteps(cadenceTail(c.steps), c.name);
-          } }, "+ anhängen"),
-          h("button", { class: "btn small", title: "Anhängen und gleich vierstimmig in die Ziel-Spur schreiben", onclick: (e: Event) => {
+          } }, t("+ Append")),
+          h("button", { class: "btn small", title: t("Append and write straight to the target track in four parts"), onclick: (e: Event) => {
             e.stopPropagation();
             st.pinned = o;
             appendSteps(cadenceTail(c.steps), c.name, true);
-          } }, "In Spur")));
+          } }, t("To track"))));
       card.addEventListener("mouseenter", () => showHover(o));
       card.addEventListener("mouseleave", () => showHover(null));
       card.addEventListener("click", () => togglePin(o));

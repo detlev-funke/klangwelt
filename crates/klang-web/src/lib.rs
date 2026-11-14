@@ -179,8 +179,9 @@ pub extern "C" fn kw_init(sample_rate: u32, audio: u32) {
     }
     *st.settings_file.lock().unwrap_or_else(|e| e.into_inner()) = Some(file);
     // Herunterladen und Indizieren macht auf dem Desktop dessen Hülle – im Browser gibt es das noch nicht.
+    // a key, translated when asked for (`library::info`) – no language has been chosen yet.
     st.library_status.lock().unwrap_or_else(|e| e.into_inner()).message =
-        Some("Im Browser gibt es noch keine Notenbibliothek (Herunterladen und Indizieren fehlen) – siehe docs/WEB.md.".into());
+        Some(klang_i18n::tk!("There's no score library in the browser yet (downloading and indexing are missing) – see docs/WEB.md.").into());
     let _ = STATE.set(st);
 }
 
@@ -216,7 +217,7 @@ pub unsafe extern "C" fn kw_invoke(cmd: *const u8, cmd_len: usize, args: *const 
         b => match serde_json::from_slice(b) {
             Ok(v) => v,
             Err(e) => {
-                set_out(format!("Ungültige Angaben: {e}").into_bytes());
+                set_out(klang_i18n::tr!("Invalid input: {error}", error = e).into_bytes());
                 return 1;
             }
         },

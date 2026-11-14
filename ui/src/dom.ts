@@ -1,5 +1,7 @@
 // Kleine DOM-Helfer und Icons (inline SVG).
 
+import { t, tid } from "./i18n.js";
+
 type Child = Node | string | number | null | undefined | false;
 type Props = Record<string, unknown>;
 
@@ -179,7 +181,7 @@ export function formatBarBeat(beats: number, beatsPerBar: number): string {
   return `${bar}.${beat}.${sixteenth}`;
 }
 
-const NOTE_NAMES = ["C", "C♯", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "H"];
+const NOTE_NAMES = ["C", "C♯", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", t(tid("H"))]; // German H = B (an identifier, translated for display)
 export function noteName(midi: number): string {
   return `${NOTE_NAMES[((midi % 12) + 12) % 12]}${Math.floor(midi / 12) - 1}`;
 }

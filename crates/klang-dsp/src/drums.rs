@@ -35,19 +35,19 @@ pub const SHAKER: u8 = 70;
 /// Name der Trommel auf einer Taste (Kurzform für die Klaviatur).
 pub fn piece_name(midi: u8) -> Option<(&'static str, &'static str)> {
     Some(match midi {
-        KICK => ("BD", "Bassdrum"),
-        SNARE => ("SD", "Snare"),
-        CLAP => ("CP", "Clap"),
-        TOM_LOW => ("T1", "Tom tief"),
-        HAT_CLOSED => ("HH", "Hi-Hat zu"),
-        TOM_MID => ("T2", "Tom mittel"),
-        HAT_OPEN => ("OH", "Hi-Hat offen"),
-        TOM_HIGH => ("T3", "Tom hoch"),
-        RIM => ("RS", "Rim"),
-        CRASH => ("CR", "Crash"),
-        RIDE => ("RD", "Ride"),
-        COWBELL => ("CB", "Cowbell"),
-        SHAKER => ("SH", "Shaker"),
+        KICK => ("BD", klang_i18n::tk!("Kick drum")),
+        SNARE => ("SD", klang_i18n::tk!("Snare")),
+        CLAP => ("CP", klang_i18n::tk!("Clap")),
+        TOM_LOW => ("T1", klang_i18n::tk!("Low tom")),
+        HAT_CLOSED => ("HH", klang_i18n::tk!("Closed hi-hat")),
+        TOM_MID => ("T2", klang_i18n::tk!("Mid tom")),
+        HAT_OPEN => ("OH", klang_i18n::tk!("Open hi-hat")),
+        TOM_HIGH => ("T3", klang_i18n::tk!("High tom")),
+        RIM => ("RS", klang_i18n::tk!("Rim")),
+        CRASH => ("CR", klang_i18n::tk!("Crash")),
+        RIDE => ("RD", klang_i18n::tk!("Ride")),
+        COWBELL => ("CB", klang_i18n::tk!("Cowbell")),
+        SHAKER => ("SH", klang_i18n::tk!("Shaker")),
         _ => return None,
     })
 }

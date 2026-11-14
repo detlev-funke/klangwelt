@@ -1,0 +1,8 @@
+[package]
+name = "klang-i18n"
+description = "Klangwelt translations for messages of the core (dictionaries come from the user interface)"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]

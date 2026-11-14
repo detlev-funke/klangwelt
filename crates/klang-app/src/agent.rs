@@ -19,6 +19,7 @@ use crate::song;
 use crate::sound_library;
 use crate::state::{lock, AppState};
 use klang_core::{ClipSource, Command, Id, Instrument, InstrumentKind, TrackPatch};
+use klang_i18n::{tr, trn};
 use klang_mcp::{Handler, Prompt, ServerInfo, Tool};
 use klang_music::analysis::analyze_score;
 use klang_music::chordstats::GROUPS;
@@ -615,15 +616,15 @@ impl<S: AgentShell> Agent<S> {
             for c in commands {
                 self.st().execute(c, false)?;
             }
-            self.changed("execute", "Ansicht geändert");
+            self.changed("execute", tr!("View changed"));
             return Ok(json!({ "ok": true, "undoLabel": null, "project": self.project_summary(false)? }));
         }
         let label = match args.get("label").and_then(Value::as_str) {
             Some(l) if !l.trim().is_empty() => l.trim().to_string(),
             _ if commands.len() == 1 => commands[0].label(),
-            _ => format!("{} Änderungen", commands.len()),
+            _ => trn!(commands.len(), "{n} change", "{n} changes"),
         };
-        let label = format!("Agent · {label}");
+        let label = tr!("Agent · {label}", label = label);
         let snap = self.st().execute(Command::Batch { label: label.clone(), commands }, false)?;
         drop(snap);
         self.changed("execute", label.clone());
@@ -666,7 +667,7 @@ impl<S: AgentShell> Agent<S> {
         }
         inst.params.extend(values);
         inst.preset = args.get("preset").and_then(Value::as_str).unwrap_or("agent").to_string();
-        let label = "Agent · Klang ändern".to_string();
+        let label = tr!("Agent · {label}", label = tr!("Change sound"));
         let cmd = Command::Batch {
             label: label.clone(),
             commands: vec![Command::SetTrack { track_id, patch: TrackPatch { instrument: Some(inst), ..Default::default() } }],
@@ -674,7 +675,7 @@ impl<S: AgentShell> Agent<S> {
         self.st().execute(cmd, false)?;
         let report = self.st().describe_track(track_id)?;
         let words: Vec<String> = report.anzeige.iter().map(|m| format!("{} {}", m.label, m.wort)).collect();
-        self.changed("set_sound", format!("Klang „{}“: {}", track.name, words.join(", ")));
+        self.changed("set_sound", tr!("Sound \"{name}\": {words}", name = track.name, words = words.join(", ")));
         let mut out = serde_json::to_value(&report).map_err(|e| e.to_string())?;
         if let Some(p) = args.get("preview").and_then(Value::as_str) {
             out["vorgespielt"] = json!(self.st().preview_track(track_id, p)?);
@@ -707,7 +708,7 @@ impl<S: AgentShell> Agent<S> {
         let lib = lib.as_ref().ok_or("Keine Bibliothek geladen – sie wird beim Start geladen; mit library_status nachsehen.")?;
         let limit = args.get("limit").and_then(Value::as_u64).unwrap_or(10) as usize;
         let hits = lib.index.search(&query, limit);
-        self.activity("search_melody", format!("Melodiesuche: {} Treffer", hits.len()));
+        self.activity("search_melody", trn!(hits.len(), "Melody search: {n} match", "Melody search: {n} matches"));
         Ok(json!({ "query": query.iter().map(|n| note_name(n.midi)).collect::<Vec<_>>(), "hits": hits }))
     }
 }
@@ -773,7 +774,7 @@ impl<S: AgentShell> Agent<S> {
                 let Some(label) = label else { return Ok(json!({ "ok": false, "info": "Nichts zu tun" })) };
                 let snap = if name == "undo" { st.undo()? } else { st.redo()? };
                 drop(snap);
-                self.changed(name, format!("{}: {label}", if name == "undo" { "Rückgängig" } else { "Wiederholt" }));
+                self.changed(name, if name == "undo" { tr!("Undone: {label}", label = label) } else { tr!("Redone: {label}", label = label) });
                 Ok(json!({ "ok": true, "schritt": label }))
             }
             "open_project" => {
@@ -783,7 +784,7 @@ impl<S: AgentShell> Agent<S> {
                 }
                 // Das Fenster öffnet über seinen normalen Weg (fragt bei ungespeicherten Änderungen)
                 self.shell.open_in_window(&path)?;
-                self.activity("open_project", format!("Projekt öffnen: {}", path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default()));
+                self.activity("open_project", tr!("Open project: {file}", file = path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default()));
                 Ok(json!({ "ok": true, "hinweis": "Im Fenster geöffnet – bei ungespeicherten Änderungen fragt Klangwelt erst nach." }))
             }
             "transport" => {
@@ -792,7 +793,12 @@ impl<S: AgentShell> Agent<S> {
                 }
                 if let Some(a) = args.get("action").and_then(Value::as_str) {
                     st.transport(a)?;
-                    self.activity("transport", match a { "play" => "Wiedergabe", "stop" => "Stopp", "rewind" => "Zum Anfang", _ => "Wiedergabe umgeschaltet" });
+                    self.activity("transport", match a {
+                        "play" => tr!("Playback"),
+                        "stop" => tr!("Stop"),
+                        "rewind" => tr!("Go to start"),
+                        _ => tr!("Playback toggled"),
+                    });
                 }
                 settle();
                 let s = st.status();
@@ -801,7 +807,7 @@ impl<S: AgentShell> Agent<S> {
             "set_metronome" => {
                 let on = args.get("enabled").and_then(Value::as_bool).ok_or("Argument „enabled“ fehlt")?;
                 st.set_metronome(on)?;
-                self.changed("set_metronome", if on { "Metronom an" } else { "Metronom aus" });
+                self.changed("set_metronome", if on { tr!("Metronome on") } else { tr!("Metronome off") });
                 Ok(json!({ "metronome": on }))
             }
             "audio_devices" => serde_json::to_value(st.audio_devices()?).map_err(|e| e.to_string()),
@@ -810,14 +816,15 @@ impl<S: AgentShell> Agent<S> {
                 let name = args.get("name").and_then(Value::as_str).map(str::to_string);
                 st.set_audio_device(kind, name)?;
                 let d = st.audio_devices()?;
-                let (gewaehlt, wort) = if matches!(kind, "eingabe" | "input") { (d.input.clone(), "Aufnahme") } else { (d.output.clone(), "Ausgabe") };
-                self.changed("set_audio_device", format!("{wort}: {}", gewaehlt.as_deref().unwrap_or("Systemstandard")));
+                let input = matches!(kind, "eingabe" | "input");
+                let device = if input { d.input.clone() } else { d.output.clone() }.unwrap_or_else(|| tr!("System default"));
+                self.changed("set_audio_device", if input { tr!("Input: {device}", device = device) } else { tr!("Output: {device}", device = device) });
                 serde_json::to_value(d).map_err(|e| e.to_string())
             }
             "export_project" => {
                 let opts: crate::export::ExportOptions = serde_json::from_value(args.clone()).map_err(|e| format!("Argumente: {e}"))?;
                 let r = crate::export::run(&crate::export::export_dir(&st), &st, &opts)?;
-                self.activity("export_project", format!("Exportiert: {}", r.path));
+                self.activity("export_project", tr!("Exported: {path}", path = r.path));
                 serde_json::to_value(r).map_err(|e| e.to_string())
             }
             "describe_sound" => serde_json::to_value(st.describe_track(Id(u64_arg(&args, "trackId")?))?).map_err(|e| e.to_string()),
@@ -834,7 +841,7 @@ impl<S: AgentShell> Agent<S> {
                 st.sound_field(track_id, field, xy, preset, false)?;
                 let report = st.describe_track(track_id)?;
                 let words: Vec<String> = report.anzeige.iter().map(|m| format!("{} {}", m.label, m.wort)).collect();
-                self.changed("set_sound_field", format!("Feld {field}: {}", words.join(", ")));
+                self.changed("set_sound_field", tr!("Field {field}: {words}", field = field, words = words.join(", ")));
                 let mut out = serde_json::to_value(&report).map_err(|e| e.to_string())?;
                 if let Some(p) = args.get("preview").and_then(Value::as_str) {
                     out["vorgespielt"] = json!(st.preview_track(track_id, p)?);
@@ -866,7 +873,7 @@ impl<S: AgentShell> Agent<S> {
                 }
                 let replace = args.get("replace").and_then(Value::as_bool).unwrap_or(true);
                 let w = st.song_write(&plan, replace, "Agent · ")?;
-                self.changed("write_song", format!("Song „{}“: {} Takte", plan.name, w.bars));
+                self.changed("write_song", trn!(w.bars, "Song \"{name}\": {n} bar", "Song \"{name}\": {n} bars", name = plan.name));
                 if args.get("play").and_then(Value::as_bool).unwrap_or(false) {
                     st.seek_seconds(0.0)?;
                     st.transport("play")?;
@@ -918,7 +925,7 @@ impl<S: AgentShell> Agent<S> {
                     None => rhythm::free_start(&st, track_id),
                 };
                 let w = st.rhythm_write(grid.clone(), swing, track_id, clip_id, start, &name, sound.as_deref(), tempo, "Agent · ")?;
-                self.changed("write_drum_pattern", format!("Rhythmus „{name}“ geschrieben"));
+                self.changed("write_drum_pattern", tr!("Rhythm \"{name}\" written", name = name));
                 let mut out = json!({ "ok": true, "trackId": w.track_id, "clipId": w.clip_id, "name": name, "startBeats": start, "takte": bars, "swing": swing,
                     "zeilen": grid.rows.iter().map(|(k, v)| (k.clone(), json!(rhythm::row_text(v, steps)))).collect::<serde_json::Map<_, _>>() });
                 if let Some(t) = tempo {
@@ -948,7 +955,7 @@ impl<S: AgentShell> Agent<S> {
                 let inst = st.track_sound(Id(u64_arg(&args, "trackId")?))?;
                 let r = sound_library::save(&sound_library::file(&self.st()), str_arg(&args, "name")?, &inst)?;
                 sound_library::announce(&self.st(), &r.sounds);
-                self.activity("save_sound", format!("Klang „{}“ {}", r.name, if r.replaced { "ersetzt" } else { "gesichert" }));
+                self.activity("save_sound", if r.replaced { tr!("Sound \"{name}\" replaced", name = r.name) } else { tr!("Sound \"{name}\" saved", name = r.name) });
                 let summary = r.sounds.iter().find(|e| e.id == r.id).map(|e| e.summary.clone());
                 Ok(json!({ "ok": true, "id": r.id, "name": r.name, "ersetzt": r.replaced, "beschreibung": summary }))
             }
@@ -957,7 +964,7 @@ impl<S: AgentShell> Agent<S> {
                 let prefer = st.track_sound(track_id)?.kind;
                 let saved = sound_library::find(&sound_library::file(&self.st()), str_arg(&args, "sound")?, Some(prefer))?;
                 st.load_sound(track_id, &saved, "Agent · ")?;
-                self.changed("load_saved_sound", format!("Klang „{}“ geladen", saved.name));
+                self.changed("load_saved_sound", tr!("Sound \"{name}\" loaded", name = saved.name));
                 let mut out = serde_json::to_value(st.describe_track(track_id)?).map_err(|e| e.to_string())?;
                 out["geladen"] = json!(saved.name);
                 if let Some(p) = args.get("preview").and_then(Value::as_str) {
@@ -971,7 +978,7 @@ impl<S: AgentShell> Agent<S> {
                 let list = sound_library::rename(&path, &saved.id, str_arg(&args, "name")?)?;
                 sound_library::announce(&self.st(), &list);
                 let name = list.iter().find(|e| e.id == saved.id).map(|e| e.name.clone()).unwrap_or_default();
-                self.activity("rename_saved_sound", format!("Klang „{}“ heißt jetzt „{name}“", saved.name));
+                self.activity("rename_saved_sound", tr!("Sound \"{old}\" renamed to \"{name}\"", old = saved.name, name = name));
                 Ok(json!({ "ok": true, "id": saved.id, "name": name }))
             }
             "delete_saved_sound" => {
@@ -979,7 +986,7 @@ impl<S: AgentShell> Agent<S> {
                 let saved = sound_library::find(&path, str_arg(&args, "sound")?, None)?;
                 let list = sound_library::delete(&path, &saved.id)?;
                 sound_library::announce(&self.st(), &list);
-                self.activity("delete_saved_sound", format!("Klang „{}“ gelöscht", saved.name));
+                self.activity("delete_saved_sound", tr!("Sound \"{name}\" deleted", name = saved.name));
                 Ok(json!({ "ok": true, "geloescht": saved.name, "uebrig": list.len() }))
             }
             "chat_poll" => {
@@ -1031,8 +1038,8 @@ impl<S: AgentShell> Agent<S> {
             "list_instruments" => serde_json::to_value(sound::specs()).map(|v| json!({ "instrumente": v })).map_err(|e| e.to_string()),
             "create_instrument_track" => {
                 let kind = parse_kind(&args)?;
-                let (_, id) = st.create_instrument_track(kind, &format!("Agent · {} anlegen", sound::kind_name(kind)))?;
-                self.changed("create_instrument_track", format!("{}-Spur mit Muster angelegt", sound::kind_name(kind)));
+                let (_, id) = st.create_instrument_track(kind, &tr!("Agent · Create {kind}", kind = sound::kind_name(kind)))?;
+                self.changed("create_instrument_track", tr!("{kind} track with pattern created", kind = sound::kind_name(kind)));
                 Ok(json!({ "ok": true, "trackId": id, "instrument": sound::kind_name(kind) }))
             }
             "set_instrument" => {
@@ -1051,7 +1058,7 @@ impl<S: AgentShell> Agent<S> {
                     }
                     inst.preset = preset.name.to_string();
                 }
-                let label = format!("Agent · {} für „{}“", sound::kind_name(kind), track.name);
+                let label = tr!("Agent · {kind} for \"{name}\"", kind = sound::kind_name(kind), name = track.name);
                 st.execute(
                     Command::Batch { label: label.clone(), commands: vec![Command::SetTrack { track_id, patch: TrackPatch { instrument: Some(inst), ..Default::default() } }] },
                     false,
@@ -1063,7 +1070,7 @@ impl<S: AgentShell> Agent<S> {
                 let track_id = Id(u64_arg(&args, "trackId")?);
                 let pattern = args.get("pattern").and_then(Value::as_str).unwrap_or("akkord");
                 let secs = st.preview_track(track_id, pattern)?;
-                self.activity("preview_sound", format!("Vorhören: {pattern}"));
+                self.activity("preview_sound", tr!("Preview: {what}", what = pattern));
                 Ok(json!({ "spielt": pattern, "sekunden": secs }))
             }
             "analyze_clip" => {
@@ -1083,20 +1090,21 @@ impl<S: AgentShell> Agent<S> {
                 }))
             }
             "melody_to_track" => {
-                let (_, new_id) = st.melody_to_track(Id(u64_arg(&args, "trackId")?), Id(u64_arg(&args, "clipId")?), "Agent · Melodie übernehmen")?;
-                self.changed("melody_to_track", "Melodie als Instrumentspur angelegt");
+                let label = tr!("Agent · {label}", label = tr!("Import melody"));
+                let (_, new_id) = st.melody_to_track(Id(u64_arg(&args, "trackId")?), Id(u64_arg(&args, "clipId")?), &label)?;
+                self.changed("melody_to_track", tr!("Melody created as instrument track"));
                 Ok(json!({ "ok": true, "trackId": new_id }))
             }
             "audio_to_notes" => {
                 let target: crate::convert::Target = serde_json::from_value(args.get("target").cloned().unwrap_or(Value::Null))
                     .map_err(|_| "„target“ muss 'melodie' oder 'rhythmus' sein".to_string())?;
                 let clip = args.get("clipId").and_then(Value::as_u64).map(Id);
-                let label = match target {
-                    crate::convert::Target::Melodie => "Agent · In Melodie-Spur umwandeln",
-                    crate::convert::Target::Rhythmus => "Agent · In Rhythmus-Spur umwandeln",
-                };
-                let r = st.audio_to_notes(Id(u64_arg(&args, "trackId")?), clip, target, label)?;
-                self.changed("audio_to_notes", format!("Aufnahme umgewandelt: {} Noten", r.notes));
+                let label = tr!("Agent · {label}", label = match target {
+                    crate::convert::Target::Melodie => tr!("Convert to melody track"),
+                    crate::convert::Target::Rhythmus => tr!("Convert to rhythm track"),
+                });
+                let r = st.audio_to_notes(Id(u64_arg(&args, "trackId")?), clip, target, &label)?;
+                self.changed("audio_to_notes", trn!(r.notes, "Recording converted: {n} note", "Recording converted: {n} notes"));
                 Ok(json!({ "ok": true, "trackId": r.track_id, "noten": r.notes }))
             }
             "import_audio" => {
@@ -1116,33 +1124,34 @@ impl<S: AgentShell> Agent<S> {
                 let track = args.get("trackId").and_then(Value::as_u64).map(Id);
                 let start = args.get("startBeats").and_then(Value::as_f64).unwrap_or(0.0);
                 let r = st.import_audio(files, track, start)?;
-                self.changed("import_audio", format!("{} Audiodatei(en) eingefügt", r.imported.len()));
+                self.changed("import_audio", tr!("{n} audio file(s) inserted", n = r.imported.len()));
                 Ok(json!({ "ok": true, "eingefuegt": r.imported, "fehler": r.errors }))
             }
             "delete_range" => {
                 let num = |k: &str| args.get(k).and_then(Value::as_f64).ok_or_else(|| format!("Argument „{k}“ fehlt"));
                 let (a, b) = (num("startBeats")?, num("endBeats")?);
                 drop(st.delete_range(a, b)?);
-                self.changed("delete_range", format!("Zeitbereich {a}–{b} gelöscht, Rest aufgerückt"));
+                self.changed("delete_range", tr!("Time range {from}–{to} deleted, rest moved up", from = a, to = b));
                 Ok(json!({ "ok": true, "geloescht": [a.min(b), a.max(b)], "aufgerueckt": (a - b).abs() }))
             }
             "quantize_notes" => {
                 let grid = args.get("grid").and_then(Value::as_f64).ok_or("Argument „grid“ fehlt (Schläge, z. B. 0.5 = Achtel)")?;
                 let lengths = args.get("lengths").and_then(Value::as_bool).unwrap_or(false);
                 let indices = args.get("notes").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_u64).map(|i| i as usize).collect());
-                let r = st.quantize_notes(Id(u64_arg(&args, "trackId")?), Id(u64_arg(&args, "clipId")?), indices, grid, lengths, Some("Agent · Noten am Raster ausrichten"))?;
-                self.changed("quantize_notes", "Noten am Raster ausgerichtet");
+                let label = tr!("Agent · {label}", label = tr!("Quantize notes"));
+                let r = st.quantize_notes(Id(u64_arg(&args, "trackId")?), Id(u64_arg(&args, "clipId")?), indices, grid, lengths, Some(&label))?;
+                self.changed("quantize_notes", tr!("Notes quantized"));
                 Ok(json!({ "ok": true, "ausgerichtet": r.selected.len() }))
             }
             "download_library" => {
                 let id = str_arg(&args, "id")?;
                 match self.shell.library_download(id)? {
                     (dir, None) => {
-                        self.activity("download_library", format!("Paket wird geladen: {id}"));
+                        self.activity("download_library", tr!("Downloading package: {id}", id = id));
                         Ok(json!({ "ok": true, "ordner": dir.display().to_string(), "hinweis": "Läuft im Hintergrund und landet in der aktiven Bibliothek – mit library_status nachsehen; danach search_melody." }))
                     }
                     (dir, Some(platz)) => {
-                        self.activity("download_library", format!("Paket eingereiht: {id} (Platz {platz})"));
+                        self.activity("download_library", tr!("Package queued: {id} (position {place})", id = id, place = platz));
                         Ok(json!({ "ok": true, "warteschlange": platz, "ordner": dir.display().to_string(), "hinweis": "Gerade läuft ein anderer Auftrag – das Paket startet danach von selbst und landet in der jetzt aktiven Bibliothek. Mit library_status (queue) nachsehen." }))
                     }
                 }
@@ -1150,7 +1159,7 @@ impl<S: AgentShell> Agent<S> {
             "add_to_library" => {
                 let paths: Vec<String> = args.get("paths").and_then(Value::as_array).map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default();
                 let name = self.shell.library_add(&paths)?;
-                self.activity("add_to_library", format!("Füge {} Datei(en) zu „{name}“ hinzu", paths.len()));
+                self.activity("add_to_library", tr!("Adding {n} file(s) to \"{name}\"", n = paths.len(), name = name));
                 Ok(json!({ "ok": true, "bibliothek": name, "hinweis": "Läuft im Hintergrund (wenige Sekunden) – mit library_status nachsehen." }))
             }
             "library_status" => serde_json::to_value(crate::library::info(&st)?).map_err(|e| e.to_string()),
@@ -1169,20 +1178,20 @@ impl<S: AgentShell> Agent<S> {
                 self.shell.library_switch(str_arg(&args, "library")?)?;
                 crate::library::emit_info(st);
                 let (name, scores) = lock(&st.library)?.as_ref().map(|l| (l.name.clone(), l.index.score_count())).unwrap_or_default();
-                self.changed("switch_library", format!("Bibliothek „{name}“ aktiv"));
+                self.changed("switch_library", tr!("Library \"{name}\" active", name = name));
                 Ok(json!({ "ok": true, "aktiv": name, "partituren": scores }))
             }
             "create_library" => {
                 let activate = args.get("activate").and_then(Value::as_bool).unwrap_or(true);
                 let (id, name) = self.shell.library_create(str_arg(&args, "name")?, activate)?;
                 crate::library::emit_info(st);
-                self.changed("create_library", format!("Bibliothek „{name}“ angelegt"));
+                self.changed("create_library", tr!("Library \"{name}\" created", name = name));
                 Ok(json!({ "ok": true, "id": id, "name": name }))
             }
             "delete_library" => {
                 let id = self.shell.library_delete(str_arg(&args, "library")?)?;
                 crate::library::emit_info(st);
-                self.changed("delete_library", format!("Bibliothek {id} gelöscht"));
+                self.changed("delete_library", tr!("Library {id} deleted", id = id));
                 Ok(json!({ "ok": true, "geloescht": id }))
             }
             "search_melody" => self.search(&args),
@@ -1281,11 +1290,11 @@ impl<S: AgentShell> Agent<S> {
                 let names: Vec<String> = chords.iter().map(|c| kh::chord_name(c, &key.key)).collect();
                 if name == "preview_chords" {
                     let secs = harmony::preview(&st, track, &chords, &key.key, bpc, None)?;
-                    self.activity("preview_chords", format!("Vorhören: {}", names.join(" – ")));
+                    self.activity("preview_chords", tr!("Preview: {what}", what = names.join(" – ")));
                     return Ok(json!({ "spielt": names, "sekunden": secs }));
                 }
                 let start = args.get("startBeats").and_then(Value::as_f64).unwrap_or(0.0);
-                let label = format!("Agent · Akkorde {}", names.join(" – "));
+                let label = tr!("Agent · Chords {chords}", chords = names.join(" – "));
                 let insert = args.get("mode").and_then(Value::as_str) == Some("einfuegen");
                 let (_, w) = harmony::write_mode(&st, track, start, &chords, &key.key, bpc, None, &label, insert)?;
                 self.changed("write_chords", label);
@@ -1335,7 +1344,7 @@ impl<S: AgentShell> Agent<S> {
                 let mut r = json!({ "verwandlung": t.label(), "noten": notes.iter().map(|n| note_name(n.pitch)).collect::<Vec<_>>() });
                 if args.get("write").and_then(Value::as_bool).unwrap_or(true) {
                     let name = format!("{} – {}", v.clip_name, t.label());
-                    let label = format!("Agent · {name}");
+                    let label = tr!("Agent · {label}", label = name);
                     let (_, ids) = crate::fugue::add_voices(&st, &[crate::fugue::VoiceIn { name, notes }], v.start, instrument_of(&args), &label)?;
                     self.changed("transform_melody", label);
                     r["trackId"] = json!(ids.first());
@@ -1355,7 +1364,7 @@ impl<S: AgentShell> Agent<S> {
                 });
                 if args.get("write").and_then(Value::as_bool).unwrap_or(false) {
                     let best = cs.first().ok_or("Kein Gegensatz gefunden")?;
-                    let label = "Agent · Gegensatz".to_string();
+                    let label = tr!("Agent · {label}", label = tr!("Countersubject"));
                     let (_, ids) = crate::fugue::add_voices(&st, &[crate::fugue::VoiceIn { name: "Gegensatz".into(), notes: best.notes.clone() }], v.start, instrument_of(&args), &label)?;
                     self.changed("countersubject", label);
                     r["trackId"] = json!(ids.first());
@@ -1385,7 +1394,7 @@ impl<S: AgentShell> Agent<S> {
                     }
                 };
                 let voices: Vec<crate::fugue::VoiceIn> = plan.voices.iter().map(|pv| crate::fugue::VoiceIn { name: format!("Fuge – {}", pv.name), notes: pv.notes.clone() }).collect();
-                let label = format!("Agent · Fuge über „{}“", v.clip_name);
+                let label = tr!("Agent · Fugue on \"{clip}\"", clip = v.clip_name);
                 let (_, ids) = crate::fugue::add_voices(&st, &voices, start, instrument_of(&args), &label)?;
                 self.changed("write_fugue", label);
                 let bar = v.beats_per_bar as f64;

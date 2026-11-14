@@ -11,6 +11,7 @@
 // verschoben, sie behalten also ihren Zustand. Das Layout landet im localStorage.
 
 import { h, icon } from "./dom.js";
+import { t } from "./i18n.js";
 
 export interface PanelDef {
   id: string;
@@ -590,7 +591,7 @@ export class Dock {
     this.#floatEls.clear();
     const L = this.#layout;
     this.#area.replaceChildren(
-      L.root ? this.#node(L.root) : h("div", { class: "dk-empty" }, "Alle Fenster schweben – zieh einen Reiter auf die Marke in der Mitte, um ihn hier anzudocken."),
+      L.root ? this.#node(L.root) : h("div", { class: "dk-empty" }, t("All windows are floating – drag a tab onto the marker in the middle to dock it here.")),
     );
     this.#floatLayer.replaceChildren(...L.floats.map((w, i) => this.#float(w, i)));
     this.#publish();
@@ -637,14 +638,14 @@ export class Dock {
       if (!def) continue;
       const tab = h(
         "div",
-        { class: `dk-tab${id === s.active ? " active" : ""}${this.#badges.has(id) ? " unread" : ""}`, role: "tab", title: `${def.title} – ziehen zum Verschieben oder Andocken` },
+        { class: `dk-tab${id === s.active ? " active" : ""}${this.#badges.has(id) ? " unread" : ""}`, role: "tab", title: t("{title} – drag to move or dock", { title: def.title }) },
         icon(def.icon),
         h("span", {}, def.title),
         h("i", { class: "badge" }),
       );
       tab.dataset.panel = id;
       if (def.closable) {
-        const x = h("button", { class: "dk-close", title: `${def.title} schließen (wieder öffnen über „Fenster“)` }, icon("close"));
+        const x = h("button", { class: "dk-close", title: t("Close {title} (reopen via \"Windows\")", { title: def.title }) }, icon("close"));
         x.addEventListener("pointerdown", (e) => e.stopPropagation());
         x.addEventListener("click", (e) => {
           e.stopPropagation();
@@ -661,7 +662,7 @@ export class Dock {
       c.hidden = id !== s.active;
       body.append(c);
     }
-    tabs.append(h("div", { class: "dk-fill", title: win ? "Ziehen: Fenster verschieben oder andocken" : "Ziehen: ganze Gruppe verschieben" }));
+    tabs.append(h("div", { class: "dk-fill", title: win ? t("Drag: move or dock the window") : t("Drag: move the whole group") }));
     tabs.addEventListener("pointerdown", (e) => {
       if (!(e.target as Element).closest(".dk-tab")) this.#pressGroup(e, s, win);
     });
@@ -706,7 +707,7 @@ export class Dock {
 
   #gutter(n: SplitNode, i: number, container: HTMLElement): HTMLElement {
     const horiz = n.dir === "row";
-    const g = h("div", { class: `dk-gutter ${n.dir}`, title: "Ziehen: Größe ändern · Doppelklick: gleich groß" });
+    const g = h("div", { class: `dk-gutter ${n.dir}`, title: t("Drag: resize · Double-click: equal sizes") });
     g.addEventListener("pointerdown", (e) => {
       if (e.button !== 0) return;
       e.preventDefault();

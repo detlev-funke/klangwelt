@@ -5,27 +5,28 @@
 
 import { backend } from "../bridge.js";
 import { formatTime, h, icon } from "../dom.js";
+import { language, plural, t } from "../i18n.js";
 import { errorText, notify, snapshot } from "../store.js";
 import type { ExportFormat, ExportInfo, ExportResult } from "../types.js";
 
 const STORE = "klangwelt.export";
 
 const FORMATS: { id: ExportFormat; label: string; ext: string; text: string }[] = [
-  { id: "wav", label: "WAV", ext: ".wav", text: "Unkomprimiert und verlustfrei – zum Weiterbearbeiten und Mastern." },
-  { id: "flac", label: "FLAC", ext: ".flac", text: "Verlustfrei gepackt: derselbe Klang wie WAV, kleiner – bei 16 Bit etwa halb so groß." },
-  { id: "opus", label: "Opus", ext: ".opus", text: "Klein und klingt sehr gut – zum Anhören auf dem Handy und zum Verschicken." },
-  { id: "stems", label: "Stems", ext: "", text: "Ein Ordner mit einer WAV je hörbarer Spur, alle gleich lang – zum Weitermischen in einem anderen Programm." },
-  { id: "midi", label: "MIDI", ext: ".mid", text: "Nur die Noten der Instrumentspuren (mit Tempo und Takt) – für Notensatz und andere Musikprogramme." },
+  { id: "wav", label: "WAV", ext: ".wav", text: t("Uncompressed and lossless – for further editing and mastering.") },
+  { id: "flac", label: "FLAC", ext: ".flac", text: t("Losslessly compressed: same sound as WAV, but smaller – about half the size at 16 bit.") },
+  { id: "opus", label: "Opus", ext: ".opus", text: t("Small and sounds very good – for listening on your phone and sharing.") },
+  { id: "stems", label: "Stems", ext: "", text: t("A folder with one WAV per audible track, all the same length – for further mixing in another program.") },
+  { id: "midi", label: "MIDI", ext: ".mid", text: t("Only the notes of the instrument tracks (with tempo and time signature) – for notation and other music software.") },
 ];
 
 const BITRATE_HINT: Record<number, string> = {
-  64: "Sprache, Skizzen",
-  96: "unterwegs",
-  128: "gut",
-  160: "empfohlen – kaum vom Original zu unterscheiden",
-  192: "sehr gut",
-  256: "transparent",
-  320: "Höchstwert",
+  64: t("speech, sketches"),
+  96: t("on the go"),
+  128: t("good"),
+  160: t("recommended – barely distinguishable from the original"),
+  192: t("very good"),
+  256: t("transparent"),
+  320: t("maximum"),
 };
 
 interface Prefs {
@@ -56,8 +57,8 @@ function savePrefs(p: Prefs): void {
 }
 
 export function formatBytes(b: number): string {
-  if (b >= 1e9) return `${(b / 1e9).toLocaleString("de-DE", { maximumFractionDigits: 1 })} GB`;
-  if (b >= 1e6) return `${(b / 1e6).toLocaleString("de-DE", { maximumFractionDigits: 1 })} MB`;
+  if (b >= 1e9) return `${(b / 1e9).toLocaleString(language(), { maximumFractionDigits: 1 })} GB`;
+  if (b >= 1e6) return `${(b / 1e6).toLocaleString(language(), { maximumFractionDigits: 1 })} MB`;
   return `${Math.max(1, Math.round(b / 1e3))} kB`;
 }
 
@@ -83,7 +84,7 @@ export async function exportDialog(): Promise<void> {
   let busy = false;
 
   const back = h("div", { class: "modal-back" });
-  const box = h("div", { class: "modal export-modal", role: "dialog", "aria-label": "Exportieren" });
+  const box = h("div", { class: "modal export-modal", role: "dialog", "aria-label": t("Export") });
   const close = () => {
     if (busy) return;
     open = false;
@@ -111,11 +112,11 @@ export async function exportDialog(): Promise<void> {
     const b = h("button", { class: "seg-btn", "data-format": f.id, title: f.text, onclick: () => { prefs.format = f.id; update(); } }, f.label);
     if (f.id === "midi" && !info.hasNotes) {
       b.disabled = true;
-      b.title = "Keine Noten in hörbaren Instrumentspuren – MIDI enthält nur Noten, keine Aufnahmen.";
+      b.title = t("No notes in audible instrument tracks – MIDI contains only notes, no recordings.");
     }
     if (f.id === "opus" && noOpus) {
       b.disabled = true;
-      b.title = "Opus gibt es in dieser Version nicht (ohne libopus gebaut) – WAV oder FLAC wählen.";
+      b.title = t("Opus isn't available in this version (built without libopus) – choose WAV or FLAC.");
     }
     fmtSeg.append(b);
     return b;
@@ -124,40 +125,40 @@ export async function exportDialog(): Promise<void> {
   // --- Bittiefe
   const bitsSeg = h("div", { class: "seg mini ex-bits" });
   const bitButtons = ([16, 24] as const).map((b) => {
-    const btn = h("button", { class: "seg-btn", "data-bits": String(b), onclick: () => { prefs.bits = b; update(); } }, `${b} Bit`);
-    btn.title = b === 24 ? "Volle Auflösung – für Weiterbearbeitung" : "CD-Qualität, kleiner (mit Dither)";
+    const btn = h("button", { class: "seg-btn", "data-bits": String(b), onclick: () => { prefs.bits = b; update(); } }, t("{bits}-bit", { bits: b }));
+    btn.title = b === 24 ? t("Full resolution – for further editing") : t("CD quality, smaller (with dither)");
     bitsSeg.append(btn);
     return btn;
   });
-  const bitsRow = h("label", { class: "ex-row" }, h("span", { class: "ex-label" }, "Auflösung"), bitsSeg);
+  const bitsRow = h("label", { class: "ex-row" }, h("span", { class: "ex-label" }, t("Bit depth")), bitsSeg);
 
   // --- Bitrate
-  const rate = h("select", { class: "lib-input ex-bitrate", title: "Datenrate: höher = besser und größer" },
+  const rate = h("select", { class: "lib-input ex-bitrate", title: t("Data rate: higher = better and larger") },
     ...info.bitrates.map((r) => h("option", { value: String(r) }, `${r} kbit/s – ${BITRATE_HINT[r] ?? ""}`)));
   if (!info.bitrates.includes(prefs.bitrate)) prefs.bitrate = info.defaultBitrate;
   rate.value = String(prefs.bitrate);
   rate.addEventListener("change", () => { prefs.bitrate = Number(rate.value); update(); });
-  const rateRow = h("label", { class: "ex-row" }, h("span", { class: "ex-label" }, "Bitrate"), rate);
+  const rateRow = h("label", { class: "ex-row" }, h("span", { class: "ex-label" }, t("Bitrate")), rate);
 
   // --- Bereich
   const rangeBox = h("input", { type: "checkbox", class: "ex-range" });
   rangeBox.disabled = !info.range;
   rangeBox.addEventListener("change", () => { useRange = rangeBox.checked; update(); });
-  const rangeRow = h("label", { class: "ex-row ex-check", title: info.range ? "Nur den in der Zeitleiste markierten Zeitraum exportieren" : "In der Zeitleiste einen Zeitraum aufziehen, um nur ihn zu exportieren" },
-    rangeBox, h("span", {}, info.rangeLabel ? `Nur markierter Bereich (${info.rangeLabel})` : "Nur markierter Bereich (keiner markiert)"));
+  const rangeRow = h("label", { class: "ex-row ex-check", title: info.range ? t("Export only the time range selected in the timeline") : t("Drag out a time range in the timeline to export only that") },
+    rangeBox, h("span", {}, info.rangeLabel ? t("Selected range only ({range})", { range: info.rangeLabel }) : t("Selected range only (nothing selected)")));
 
   // --- Name
-  const name = h("input", { type: "text", class: "lib-input modal-input ex-name", value: info.name, placeholder: "Dateiname (oder vollständiger Pfad)" });
+  const name = h("input", { type: "text", class: "lib-input modal-input ex-name", value: info.name, placeholder: t("File name (or full path)") });
   name.addEventListener("input", () => update());
   const hint = h("div", { class: "modal-hint ex-hint" });
   const size = h("div", { class: "ex-size" });
 
   const body = h("div", { class: "modal-body" },
     fmtSeg, fmtText, bitsRow, rateRow, rangeRow, name, hint, size);
-  const go = h("button", { class: "btn blue ex-go", onclick: () => void run() }, icon("download"), "Exportieren");
-  const cancel = h("button", { class: "btn ghost", onclick: () => close() }, "Abbrechen");
+  const go = h("button", { class: "btn blue ex-go", onclick: () => void run() }, icon("download"), t("Export"));
+  const cancel = h("button", { class: "btn ghost", onclick: () => close() }, t("Cancel"));
   const actions = h("div", { class: "modal-actions" }, cancel, go);
-  box.append(h("div", { class: "modal-title" }, "Exportieren"), body, actions);
+  box.append(h("div", { class: "modal-title" }, t("Export")), body, actions);
 
   // Für die Größenschätzung: Tempo und hörbare Spuren
   const proj = snapshot.peek()?.project;
@@ -179,21 +180,26 @@ export async function exportDialog(): Promise<void> {
     const shown = isPath ? file : file.replace(/[<>:"/\\|?*]/g, "_");
     const clash = !isPath && info.existing.some((e) => e.toLowerCase() === shown.toLowerCase());
     hint.textContent = isPath
-      ? `Wird unter ${shown} gespeichert.`
+      ? t("Will be saved to {path}.", { path: shown })
       : clash
-        ? `„${shown}“ gibt es in ${info.dir} schon – wird überschrieben.`
-        : `Wird als „${shown}“ in ${info.dir} gespeichert.`;
+        ? t("\"{name}\" already exists in {dir} – it will be overwritten.", { name: shown, dir: info.dir })
+        : t("Will be saved as \"{name}\" in {dir}.", { name: shown, dir: info.dir });
     hint.classList.toggle("warn", clash);
     const secs = seconds();
     const empty = secs <= 0 && !(useRange && info.range);
     if (empty) {
-      size.textContent = "Das Projekt ist leer – es gibt nichts zu exportieren.";
+      size.textContent = t("The project is empty – there's nothing to export.");
     } else {
       const pcm = secs * 48000 * 2 * (prefs.bits / 8);
       const est = f.id === "wav" ? pcm : f.id === "flac" ? pcm * (prefs.bits === 24 ? 0.8 : 0.6) : f.id === "opus" ? secs * prefs.bitrate * 125 : f.id === "stems" ? pcm * Math.max(1, audibleTracks) : 0;
-      size.textContent = f.id === "midi"
-        ? `${useRange ? "Bereich" : "Länge"}: ${formatTime(secs)} · nur Noten`
-        : `${useRange ? "Bereich" : "Länge"}: ${formatTime(secs)} (plus Nachklang) · 48 kHz Stereo · etwa ${formatBytes(est)}${f.id === "stems" ? ` (${audibleTracks} Spuren)` : ""}`;
+      const time = formatTime(secs);
+      if (f.id === "midi") {
+        size.textContent = `${useRange ? t("Range: {time}", { time }) : t("Length: {time}", { time })} · ${t("notes only")}`;
+      } else {
+        const len = useRange ? t("Range: {time} (plus tail)", { time }) : t("Length: {time} (plus tail)", { time });
+        const tracks = f.id === "stems" ? ` ${plural(audibleTracks, "({n} track)", "({n} tracks)")}` : "";
+        size.textContent = `${len} · ${t("48 kHz stereo")} · ${t("about {size}", { size: formatBytes(est) })}${tracks}`;
+      }
     }
     go.disabled = empty || busy;
   }
@@ -203,7 +209,7 @@ export async function exportDialog(): Promise<void> {
     busy = true;
     savePrefs(prefs);
     for (const el of box.querySelectorAll<HTMLButtonElement | HTMLInputElement | HTMLSelectElement>("button, input, select")) el.disabled = true;
-    go.replaceChildren(h("span", { class: "ex-spin" }), "Exportiere …");
+    go.replaceChildren(h("span", { class: "ex-spin" }), t("Exporting…"));
     hint.classList.remove("warn", "error");
     let result: ExportResult;
     try {
@@ -219,7 +225,7 @@ export async function exportDialog(): Promise<void> {
       for (const el of box.querySelectorAll<HTMLButtonElement | HTMLInputElement | HTMLSelectElement>("button, input, select")) el.disabled = false;
       fmtButtons.forEach((b) => { if (b.dataset.format === "midi") b.disabled = !info.hasNotes; if (b.dataset.format === "opus") b.disabled = noOpus; });
       rangeBox.disabled = !info.range;
-      go.replaceChildren(icon("download"), "Exportieren");
+      go.replaceChildren(icon("download"), t("Export"));
       hint.textContent = errorText(e);
       hint.classList.add("error");
       update();
@@ -232,7 +238,7 @@ export async function exportDialog(): Promise<void> {
   function showDone(r: ExportResult): void {
     const f = FORMATS.find((x) => x.id === r.format);
     const file = r.path.split(/[\\/]/).pop() ?? r.path;
-    const what = r.format === "stems" ? `${r.files.length} Spuren` : f?.label ?? r.format;
+    const what = r.format === "stems" ? plural(r.files.length, "{n} track", "{n} tracks") : f?.label ?? r.format;
     body.replaceChildren(
       h("div", { class: "ex-done" }, icon("check"), h("span", {}, `${file}`)),
       h("div", { class: "ex-text" }, `${what} · ${formatBytes(r.bytes)} · ${formatTime(r.seconds)}`),
@@ -240,11 +246,11 @@ export async function exportDialog(): Promise<void> {
     );
     // Browser: die Datei wurde schon heruntergeladen – der Knopf lädt sie nochmal
     const web = backend.platform === "web";
-    const reveal = h("button", { class: "btn blue ex-reveal", onclick: () => { void backend.exportReveal(r.path).catch((e) => notify(errorText(e), "error")); } }, icon(web ? "download" : "folder"), web ? "Nochmal herunterladen" : "Im Ordner zeigen");
-    const done = h("button", { class: "btn ghost ex-close", onclick: () => close() }, "Fertig");
+    const reveal = h("button", { class: "btn blue ex-reveal", onclick: () => { void backend.exportReveal(r.path).catch((e) => notify(errorText(e), "error")); } }, icon(web ? "download" : "folder"), web ? t("Download again") : t("Show in folder"));
+    const done = h("button", { class: "btn ghost ex-close", onclick: () => close() }, t("Done"));
     actions.replaceChildren(done, reveal);
     reveal.focus();
-    notify(`Exportiert: ${file}`);
+    notify(t("Exported: {file}", { file }));
   }
 
   back.append(box);

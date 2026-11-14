@@ -326,7 +326,7 @@ pub fn load_dcml(notes_path: &Path) -> Result<Score, MusicError> {
         }
     }
     if score.parts.is_empty() {
-        return Err(MusicError::Unsupported(format!("{piece}: keine Noten")));
+        return Err(MusicError::Unsupported(klang_i18n::tr!("{piece}: no notes", piece = piece)));
     }
 
     // Harmonien

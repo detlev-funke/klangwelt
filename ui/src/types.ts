@@ -370,7 +370,10 @@ export interface Dimension {
 }
 
 export interface TreeNode {
+  /** Value as in the facets (German) – the path for the next query. */
   value: string;
+  /** Value for display (translated). */
+  label: string;
   count: number;
 }
 
@@ -597,6 +600,8 @@ export interface SuggestResult {
     groups: Array<{ id: number; key: string; label: string; scores: number }>;
   } | null;
   hint: string | null;
+  /** The hint suggests re-indexing the library (button "Re-index"). */
+  reindex: boolean;
   /** Wege zum Schluss: je Schlussart der beste, ggf. dahinter eine längere Variante. */
   paths: CadencePath[];
 }
@@ -657,6 +662,9 @@ export interface Countersubject {
 }
 
 export interface FugueSection {
+  /** Kind (untranslated): exposition, zwischenspiel, durchfuehrung, engfuehrung, schlussdurchfuehrung, orgelpunkt, schlusskadenz. */
+  kind: string;
+  /** Name for display (translated). */
   name: string;
   start: number;
   end: number;

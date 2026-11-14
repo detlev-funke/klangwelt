@@ -11,6 +11,80 @@ const MINOR_SCALE: [u8; 8] = [0, 2, 3, 5, 7, 8, 10, 11];
 const NAMES_MAJOR: [&str; 12] = ["C", "Des", "D", "Es", "E", "F", "Fis", "G", "As", "A", "B", "H"];
 const NAMES_MINOR: [&str; 12] = ["c", "cis", "d", "es", "e", "f", "fis", "g", "gis", "a", "b", "h"];
 
+/// German note names that differ in other languages (tonic
+/// of a key, capitalised): notes with accidentals as well as H (English B) and
+/// B (English B♭).
+// tid!: `note_display` compares these with the German spellings in
+// NAMES_MAJOR/NAMES_MINOR, so the values must stay German.
+const NOTE_KEYS: [&str; 8] = [
+    klang_i18n::tid!("Cis"),
+    klang_i18n::tid!("Des"),
+    klang_i18n::tid!("Es"),
+    klang_i18n::tid!("Fis"),
+    klang_i18n::tid!("Gis"),
+    klang_i18n::tid!("As"),
+    klang_i18n::tid!("B"),
+    klang_i18n::tid!("H"),
+];
+
+/// Note name for display (translated if it is in [`NOTE_KEYS`]).
+fn note_display(name: &str) -> String {
+    if NOTE_KEYS.contains(&name) {
+        klang_i18n::translate(name)
+    } else {
+        name.to_string()
+    }
+}
+
+/// A note or chord name spelt the German way – the core's own and input spelling
+/// ("fis", "B7", "h°", "Cis/Eis", "cis4") – as shown in the chosen language:
+/// letters with ♯/♭ in English, French, Italian and Spanish, Dutch spelling in
+/// Dutch (B = B natural, Bes = B♭), unchanged in German and Polish. The UI has
+/// the same rules (ui/src/spelling.ts) for names it shows from the core's data.
+pub fn display_name(name: &str) -> String {
+    let dutch = match klang_i18n::language().as_str() {
+        "de" | "pl" => return name.to_string(),
+        "nl" => true,
+        _ => false,
+    };
+    name.split('/').map(|part| display_part(part, dutch)).collect::<Vec<_>>().join("/")
+}
+
+fn display_part(part: &str, dutch: bool) -> String {
+    let mut chars = part.chars();
+    let Some(first) = chars.next().filter(|c| matches!(c.to_ascii_uppercase(), 'A'..='H')) else {
+        return part.to_string();
+    };
+    let lower = first.is_lowercase();
+    let mut rest = chars.as_str();
+    let (letter, acc) = if first.to_ascii_uppercase() == 'B' {
+        ('B', -1) // German B = B♭
+    } else {
+        let letter = match first.to_ascii_uppercase() {
+            'H' => 'B', // German H = B natural
+            l => l,
+        };
+        let flat_s = letter == 'A' || letter == 'E'; // As, Es, Ases, Eses
+        let suffixes: &[(&str, i32)] = if flat_s { &[("isis", 2), ("is", 1), ("ses", -2), ("s", -1)] } else { &[("isis", 2), ("is", 1), ("eses", -2), ("es", -1)] };
+        let mut acc = 0;
+        if !rest.starts_with("sus") {
+            if let Some((s, a)) = suffixes.iter().find(|(s, _)| rest.starts_with(s)) {
+                acc = *a;
+                rest = &rest[s.len()..];
+            }
+        }
+        (letter, acc)
+    };
+    let letter = if lower { letter.to_ascii_lowercase() } else { letter };
+    let accidental = if dutch {
+        let suffix = ["eses", "es", "", "is", "isis"][(acc + 2) as usize];
+        if acc < 0 && matches!(letter.to_ascii_uppercase(), 'A' | 'E') { &suffix[1..] } else { suffix }
+    } else {
+        ["𝄫", "♭", "", "♯", "𝄪"][(acc + 2) as usize]
+    };
+    format!("{letter}{accidental}{rest}")
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Key {
@@ -30,12 +104,28 @@ impl Key {
         Self { tonic, minor, confidence: 1.0 }
     }
 
-    /// Deutsche Schreibweise, z. B. „Es-Dur“, „fis-Moll“.
+    /// German spelling, e.g. "Es-Dur", "fis-Moll" – untranslated (that's how
+    /// the key is stored in the index facets).
     pub fn name_de(&self) -> String {
         if self.minor {
             format!("{}-Moll", NAMES_MINOR[self.tonic as usize % 12])
         } else {
             format!("{}-Dur", NAMES_MAJOR[self.tonic as usize % 12])
+        }
+    }
+
+    /// Name for display in the chosen language (in German like [`name_de`](Self::name_de)).
+    /// `{note}` is the tonic capitalised, for minor `{low}` the German
+    /// lower-case name ("fis"); notes with accidentals and H/B go through the dictionary.
+    pub fn name(&self) -> String {
+        let i = self.tonic as usize % 12;
+        if self.minor {
+            let low = NAMES_MINOR[i];
+            let mut c = low.chars();
+            let upper = c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default();
+            klang_i18n::tr!("{note} minor", low = display_name(low), note = note_display(&upper))
+        } else {
+            klang_i18n::tr!("{note} major", note = note_display(NAMES_MAJOR[i]))
         }
     }
 
@@ -200,6 +290,35 @@ pub fn quantize(notes: &[TimedNote], seconds_per_beat: f64, grid_beats: f64) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn german_names_in_other_spellings() {
+        let letters = |s: &str| s.split('/').map(|p| display_part(p, false)).collect::<Vec<_>>().join("/");
+        let dutch = |s: &str| s.split('/').map(|p| display_part(p, true)).collect::<Vec<_>>().join("/");
+        for (de, en, nl) in [
+            ("fis", "f♯", "fis"),
+            ("Dis", "D♯", "Dis"),
+            ("H", "B", "B"),
+            ("h°7", "b°7", "b°7"),
+            ("B7", "B♭7", "Bes7"),
+            ("b", "b♭", "bes"),
+            ("Es", "E♭", "Es"),
+            ("as", "a♭", "as"),
+            ("Des", "D♭", "Des"),
+            ("Eses", "E𝄫", "Eses"),
+            ("Fisis", "F𝄪", "Fisis"),
+            ("His", "B♯", "Bis"),
+            ("Asus4", "Asus4", "Asus4"),
+            ("D7/Fis", "D7/F♯", "D7/Fis"),
+            ("cis4", "c♯4", "cis4"),
+            ("VII", "VII", "VII"),
+        ] {
+            assert_eq!(letters(de), en, "{de}");
+            assert_eq!(dutch(de), nl, "{de}");
+        }
+        // no dictionary (tests): English
+        assert_eq!(display_name("Fis7"), "F♯7");
+    }
 
     fn tn(start: f64, end: f64, midi: u8, cents: f32) -> TimedNote {
         TimedNote { start, end, midi, cents, velocity: 0.8 }

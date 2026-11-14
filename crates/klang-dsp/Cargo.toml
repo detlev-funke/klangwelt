@@ -6,4 +6,5 @@ edition.workspace = true
 publish = false
 
 [dependencies]
+klang-i18n = { workspace = true }
 serde = { workspace = true }

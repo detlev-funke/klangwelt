@@ -722,6 +722,8 @@ body.dk-dragging, body.dk-dragging * { cursor: grabbing !important; user-select:
 .set-option b { font-weight: 600; color: var(--text); }
 .set-option small { font-size: 11px; color: var(--faint); }
 .menu-hint { padding: 4px 10px 6px; font-size: 11px; color: var(--faint); max-width: 230px; }
+.lang-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
+.lang-option { padding: 4px 10px 4px 6px; }
 /* Kontextmenü (Rechtsklick in der Zeitleiste) */
 .menu.ctx-menu { position: fixed; top: 0; right: auto; z-index: 1000; min-width: 240px; max-width: 360px; }
 .ctx-menu .menu-item b { font-weight: 600; }

@@ -8,6 +8,7 @@
 use crate::state::{lock, AppState, CmdResult, Snapshot};
 use klang_core::{Clip, ClipSource, Command, Id, Note, Track, TrackKind};
 use klang_dsp::synth::NoteSpec;
+use klang_i18n::{tr, trn};
 use klang_music::analysis::analyze_score;
 use klang_music::diskindex::AnyIndex;
 use klang_music::facets::{dimension, tree_children, Dimension, TreeLevel, DIMENSIONS};
@@ -70,7 +71,8 @@ pub struct QueuedDownload {
 #[serde(rename_all = "camelCase")]
 pub struct DownloadProgress {
     pub name: String,
-    /// „Partituren“ oder „Kategorien“ (Genre/Komponist aus PDMX.csv)
+    /// "Partituren" or "Kategorien" (genre/composer from PDMX.csv) – identifiers,
+    /// the UI compares them (don't translate)
     pub phase: String,
     pub folder: String,
     /// Partituren im Zielordner
@@ -122,7 +124,8 @@ pub fn info(st: &AppState) -> CmdResult<LibraryInfo> {
         scores: lib.as_ref().map(|l| l.index.score_count()).unwrap_or(0),
         building: status.building,
         download: status.download.clone(),
-        message: status.message.clone(),
+        // fixed messages (e.g. the web core's, `tk!`) are made before the language is chosen – translate them here
+        message: status.message.as_deref().map(klang_i18n::translate),
         tree_scores: lib.as_ref().map(|l| l.index.facets().len()).unwrap_or(0),
         has_meta: lib.as_ref().map(|l| l.has_meta).unwrap_or(true),
         chord_scores: lib.as_ref().and_then(|l| l.index.chords()).map(|c| c.scores),
@@ -138,17 +141,27 @@ pub fn info(st: &AppState) -> CmdResult<LibraryInfo> {
 pub fn busy(st: &AppState) -> Option<String> {
     let s = st.library_status.lock().ok()?;
     let now = if let Some(d) = &s.download {
-        Some(if d.phase == "Kategorien" { format!("{}: Genre und Komponist werden geladen", d.name) } else { format!("{} wird heruntergeladen", d.name) })
+        Some(if d.phase == "Kategorien" {
+            tr!("{name}: loading genre and composer", name = d.name)
+        } else {
+            tr!("Downloading {name}", name = d.name)
+        })
     } else if s.merging.is_some() {
-        Some("Partituren werden in die Bibliothek übernommen".to_string())
+        Some(tr!("Adding scores to the library"))
     } else {
-        s.building.map(|(d, t)| if t > 0 { format!("Die Bibliothek wird indiziert ({d} von {t} Dateien)") } else { "Die Bibliothek wird indiziert".to_string() })
+        s.building.map(|(d, t)| {
+            if t > 0 {
+                tr!("Indexing the library ({done} of {total} files)", done = d, total = t)
+            } else {
+                tr!("Indexing the library")
+            }
+        })
     };
     // Wartende Pakete gehen beim Schließen verloren – dazusagen.
     let waiting = match s.queue.len() {
         0 => None,
-        1 => Some(format!("„{}“ wartet noch in der Warteschlange", s.queue[0].name)),
-        n => Some(format!("{n} Pakete warten noch in der Warteschlange")),
+        1 => Some(tr!("\"{name}\" is still waiting in the queue", name = s.queue[0].name)),
+        n => Some(trn!(n, "{n} package is still waiting in the queue", "{n} packages are still waiting in the queue")),
     };
     match (now, waiting) {
         (Some(a), Some(b)) => Some(format!("{a}; {b}")),
@@ -167,13 +180,14 @@ pub fn dimensions() -> CmdResult<Vec<Dimension>> {
 
 pub fn tree(st: &AppState, levels: &[String], path: &[String], offset: usize, limit: usize) -> CmdResult<TreeLevel> {
     let lib = lock(&st.library)?;
-    let lib = lib.as_ref().ok_or("Keine Bibliothek geladen.")?;
+    let lib = lib.as_ref().ok_or_else(|| tr!("No library loaded."))?;
     if lib.index.facets().is_empty() {
-        return Err("Diese Bibliothek hat noch keine Merkmale – bitte neu indizieren.".into());
+        return Err(tr!("This library has no features yet – please reindex."));
     }
     let mut lv: Vec<&str> = Vec::new();
     for l in levels {
-        let d = dimension(l).ok_or_else(|| format!("Unbekannte Ebene: {l} (verfügbar: {})", DIMENSIONS.map(|d| d.key).join(", ")))?;
+        let d = dimension(l)
+            .ok_or_else(|| tr!("Unknown level: {level} (available: {list})", level = l, list = DIMENSIONS.map(|d| d.key).join(", ")))?;
         lv.push(d.key);
     }
     Ok(tree_children(lib.index.facets(), &lv, path, offset, limit.clamp(1, 1000)))
@@ -194,8 +208,8 @@ pub fn parse_melody(s: &str) -> Result<Vec<MelodyNote>, String> {
     });
     for tok in tokens.filter(|p| !p.is_empty()) {
         let (name, dur) = tok.split_once(':').unwrap_or((tok, "1"));
-        let duration: f64 = dur.replace(',', ".").parse().map_err(|_| format!("Ungültige Dauer „{dur}“"))?;
-        let midi = parse_note(name).ok_or_else(|| format!("Unbekannter Ton „{name}“ (z. B. C4, Fis3, Bb2 oder 60)"))?;
+        let duration: f64 = dur.replace(',', ".").parse().map_err(|_| tr!("Invalid duration \"{duration}\"", duration = dur))?;
+        let midi = parse_note(name).ok_or_else(|| tr!("Unknown note \"{note}\" (e.g. C4, F#3, Bb2 or 60)", note = name))?;
         out.push(MelodyNote { onset: t, duration, midi });
         t += duration.max(0.01);
     }
@@ -285,7 +299,7 @@ pub fn search(
         _ => None,
     };
     let lib = lock(&st.library)?;
-    let lib = lib.as_ref().ok_or(NO_LIBRARY)?;
+    let lib = lib.as_ref().ok_or_else(no_library)?;
     match query {
         Some(q) => melody_hits(&lib.index, &q, text.as_deref(), limit),
         None if text.is_some() => Ok(lib
@@ -305,16 +319,18 @@ pub fn search(
                 query_len: 0,
             })
             .collect()),
-        None => Err("Suchtext oder Melodie angeben (oder einen Clip auswählen).".into()),
+        None => Err(tr!("Enter a search text or a melody (or select a clip).")),
     }
 }
 
-const NO_LIBRARY: &str = "Keine Bibliothek geladen – sie wird beim Start geladen (Fenster „Bibliothek“).";
+fn no_library() -> String {
+    tr!("No library loaded – it's loaded at startup (\"Library\" window).")
+}
 
 /// Melodiesuche, optional eingeschränkt auf Stücke, deren Titel/Komponist/Stimme alle Wörter von `text` enthält.
 fn melody_hits(index: &AnyIndex, q: &[MelodyNote], text: Option<&str>, limit: usize) -> CmdResult<Vec<LibHit>> {
     if q.len() < MIN_QUERY_NOTES {
-        return Err(format!("Für die Melodiesuche mindestens {MIN_QUERY_NOTES} Töne angeben (erkannt: {}).", q.len()));
+        return Err(tr!("Enter at least {min} notes for the melody search (detected: {found}).", min = MIN_QUERY_NOTES, found = q.len()));
     }
     let words: Vec<String> = text.unwrap_or("").split_whitespace().map(str::to_lowercase).collect();
     let matches_text = |i: &klang_music::index::DocInfo| {
@@ -360,7 +376,7 @@ pub fn format_melody(notes: &[MelodyNote]) -> String {
         .iter()
         .map(|n| {
             let beats = ((n.duration / unit) * 4.0).round().max(1.0) / 4.0;
-            let len = if (beats - beats.round()).abs() < 1e-9 { format!("{}", beats as i64) } else { format!("{beats}").replace('.', ",") };
+            let len = if (beats - beats.round()).abs() < 1e-9 { format!("{}", beats as i64) } else { klang_i18n::decimal(beats) };
             format!("{}{}:{len}", NOTE_NAMES_DE[n.midi as usize % 12], n.midi as i32 / 12 - 1)
         })
         .collect::<Vec<_>>()
@@ -381,16 +397,16 @@ pub struct ListenResult {
 /// Mikrofon aufnehmen, ohne etwas ins Projekt zu legen (für die Melodiesuche).
 pub fn listen_start(st: &AppState) -> CmdResult<()> {
     if lock(&st.library)?.is_none() {
-        return Err(NO_LIBRARY.into());
+        return Err(no_library());
     }
     let engine = st.engine()?;
     if engine.status().recording {
-        return Err("Es läuft schon eine Aufnahme.".into());
+        return Err(tr!("A recording is already running."));
     }
     LISTENING.store(true, Ordering::SeqCst);
     if let Err(e) = engine.start_recording() {
         LISTENING.store(false, Ordering::SeqCst);
-        return Err(format!("Mikrofon: {e}"));
+        return Err(tr!("Microphone: {error}", error = e));
     }
     Ok(())
 }
@@ -399,7 +415,7 @@ pub fn listen_start(st: &AppState) -> CmdResult<()> {
 /// `cancel` verwirft die Aufnahme nur.
 pub fn listen_stop(st: &AppState, text: Option<String>, cancel: Option<bool>) -> CmdResult<ListenResult> {
     if !LISTENING.swap(false, Ordering::SeqCst) {
-        return Err("Es läuft keine Vorsing-Aufnahme.".into());
+        return Err(tr!("No sing-to-search recording is running."));
     }
     let rec = st.engine()?.stop_recording().map_err(|e| e.to_string())?;
     let seconds = rec.samples.len() as f64 / rec.sample_rate.max(1) as f64;
@@ -407,28 +423,34 @@ pub fn listen_stop(st: &AppState, text: Option<String>, cancel: Option<bool>) ->
         return Ok(ListenResult { melody: String::new(), notes: 0, key: None, seconds, hits: Vec::new() });
     }
     if seconds < 1.0 {
-        return Err("Die Aufnahme war zu kurz – singe oder pfeife ein paar Takte.".into());
+        return Err(tr!("The recording was too short – sing or whistle a few bars."));
     }
     let mut samples = rec.samples;
     samples.truncate((LISTEN_MAX_SECS * rec.sample_rate as f64) as usize);
     let peak = klang_dsp::util::peak(&samples);
     if peak < 0.003 {
-        return Err("Es kam nichts an – ist das Mikrofon an und freigegeben?".into());
+        return Err(tr!("Nothing came through – is the microphone on and allowed?"));
     }
     if peak < 0.5 {
         klang_dsp::util::normalize(&mut samples, 0.5);
     }
     let (q, key) = crate::analysis::query_melody(&samples, rec.sample_rate);
     if q.len() < MIN_QUERY_NOTES {
-        let found = match q.len() {
-            0 => "Keine Töne erkannt".to_string(),
-            1 => "Nur 1 Ton erkannt".to_string(),
-            n => format!("Nur {n} Töne erkannt"),
-        };
-        return Err(format!("{found} – bitte mindestens {MIN_QUERY_NOTES} Töne deutlich und einzeln singen oder pfeifen (am besten auf „da“ oder „du“)."));
+        return Err(match q.len() {
+            0 => tr!(
+                "No notes detected – please sing or whistle at least {min} notes clearly and separately (ideally on \"da\" or \"doo\").",
+                min = MIN_QUERY_NOTES
+            ),
+            n => trn!(
+                n,
+                "Only 1 note detected – please sing or whistle at least {min} notes clearly and separately (ideally on \"da\" or \"doo\").",
+                "Only {n} notes detected – please sing or whistle at least {min} notes clearly and separately (ideally on \"da\" or \"doo\").",
+                min = MIN_QUERY_NOTES
+            ),
+        });
     }
     let lib = lock(&st.library)?;
-    let lib = lib.as_ref().ok_or(NO_LIBRARY)?;
+    let lib = lib.as_ref().ok_or_else(no_library)?;
     let text = text.map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
     let hits = melody_hits(&lib.index, &q, text.as_deref(), 40)?;
     Ok(ListenResult { melody: format_melody(&q), notes: q.len(), key, seconds, hits })
@@ -470,8 +492,8 @@ pub struct ScoreView {
 pub fn doc_and_score(st: &AppState, doc: u32) -> CmdResult<(klang_music::index::DocInfo, Score)> {
     let info = {
         let lib = lock(&st.library)?;
-        let lib = lib.as_ref().ok_or("Keine Bibliothek geladen")?;
-        lib.index.doc(doc).ok_or_else(|| format!("Eintrag {doc} nicht gefunden"))?
+        let lib = lib.as_ref().ok_or_else(|| tr!("No library loaded"))?;
+        lib.index.doc(doc).ok_or_else(|| tr!("Entry {doc} not found", doc = doc))?
     };
     let score = load_score(Path::new(&info.source)).map_err(|e| format!("{}: {e}", info.source))?;
     Ok((info, score))
@@ -518,13 +540,13 @@ pub fn open(
     }
     Ok(ScoreView {
         doc,
-        title: if info.title.is_empty() { "(ohne Titel)".into() } else { info.title },
+        title: if info.title.is_empty() { tr!("(untitled)") } else { info.title },
         composer: info.composer,
         source: info.source,
-        key_name: analysis.key_name.clone(),
+        key_name: analysis.key.map(|k| k.name()),
         tempo_bpm: score.tempo_bpm,
         time_signature: score.time_signature,
-        mood: analysis.mood.label.to_string(),
+        mood: klang_i18n::translate(analysis.mood.label),
         duration_quarters: analysis.duration_quarters,
         voices,
         cadences: analysis.cadences.iter().map(|c| (c.onset, c.label.to_string())).collect(),
@@ -578,7 +600,7 @@ pub fn play_range(st: &AppState, doc: u32, start: f64, end: f64, only: Option<&[
         })
         .collect();
     if notes.is_empty() {
-        return Err("An dieser Stelle klingt nichts".into());
+        return Err(tr!("Nothing plays at this point"));
     }
     let engine = st.engine()?;
     let sr = engine.info().sample_rate as f32;
@@ -691,7 +713,7 @@ pub fn play(
     // Cursor außerhalb des Bereichs: an dessen Anfang
     let start = if start.is_finite() && start >= from && start < to { start } else { from };
     if !notes.iter().any(|&(on, dur, _)| on < to && on + dur > if looping { from } else { start }) {
-        return Err(if looping { "Im markierten Bereich klingt nichts".into() } else { "Ab hier klingt nichts mehr".into() });
+        return Err(if looping { tr!("Nothing plays in the selected range") } else { tr!("Nothing plays from here on") });
     }
     let tempo = chosen_tempo(tempo, &score);
     let engine = st.engine()?;
@@ -734,7 +756,7 @@ pub fn to_track(
 ) -> CmdResult<Snapshot> {
     let (info, score) = doc_and_score(st, doc)?;
     if voices.is_empty() {
-        return Err("Keine Stimme gewählt.".into());
+        return Err(tr!("No voice selected."));
     }
     let (bpb, per_quarter) = {
         let s = lock(&st.session)?;
@@ -749,10 +771,11 @@ pub fn to_track(
     let bars = range.map(|(a, b)| {
         let (num, den) = score.time_signature.unwrap_or((4, 4));
         let bar_q = (num.max(1) as f64 * 4.0 / den.max(1) as f64).max(0.25);
-        format!(" (T. {}–{})", (a / bar_q).floor() as i64 + 1, ((b / bar_q) - 1e-6).ceil() as i64)
+        let (first, last) = ((a / bar_q).floor() as i64 + 1, ((b / bar_q) - 1e-6).ceil() as i64);
+        format!(" {}", tr!("(bars {from}–{to})", from = first, to = last))
     });
     let suffix = bars.unwrap_or_default();
-    let title = if info.title.is_empty() { "Bibliothek".to_string() } else { info.title.clone() };
+    let title = if info.title.is_empty() { tr!("Library") } else { info.title.clone() };
     // Mehrere Stimmen desselben Teils (z. B. Klavier oben/unten): Stimmbezeichnung mit in den Namen
     let shared_part = |part: &str| voices.iter().filter(|(p, _)| p == part).count() > 1;
     // Stimmen ohne Noten im Bereich werden übersprungen
@@ -764,7 +787,7 @@ pub fn to_track(
             .filter(|p| p.name == *part)
             .flat_map(|p| p.voices.iter())
             .find(|v| voice_label(v) == *label)
-            .ok_or_else(|| format!("Stimme „{part} {label}“ nicht gefunden"))?;
+            .ok_or_else(|| tr!("Voice \"{part} {voice}\" not found", part = part, voice = label))?;
         let notes: Vec<Note> = v
             .notes
             .iter()
@@ -783,8 +806,12 @@ pub fn to_track(
         tracks.push((name, kind, end, notes));
     }
     if tracks.is_empty() {
-        let what = if voices.len() == 1 { "Diese Stimme hat" } else { "Die gewählten Stimmen haben" };
-        return Err(if range.is_some() { format!("{what} im markierten Bereich keine Noten.") } else { format!("{what} keine Noten.") });
+        return Err(match (voices.len() == 1, range.is_some()) {
+            (true, true) => tr!("This voice has no notes in the selected range."),
+            (true, false) => tr!("This voice has no notes."),
+            (false, true) => tr!("The selected voices have no notes in the selected range."),
+            (false, false) => tr!("The selected voices have no notes."),
+        });
     }
     let cmd = {
         let mut s = lock(&st.session)?;
@@ -803,7 +830,11 @@ pub fn to_track(
                 Command::AddTrack { track, index: None }
             })
             .collect();
-        let label = if voices.len() > 1 { format!("{} Stimmen aus Bibliothek übernehmen", voices.len()) } else { "Aus Bibliothek übernehmen".into() };
+        let label = if voices.len() > 1 {
+            trn!(voices.len(), "Import {n} voice from library", "Import {n} voices from library")
+        } else {
+            tr!("Import from library")
+        };
         Command::Batch { label, commands }
     };
     st.execute(cmd, false)
@@ -926,7 +957,7 @@ mod tests {
         assert_eq!(got, want, "Intervalle: {q:?}");
         assert_eq!(q[0].midi, 93);
         // Aus zehn Tönen sind D-Dur und e-Moll gleich plausibel
-        assert!(matches!(key.as_deref(), Some("D-Dur" | "e-Moll")), "{key:?}");
+        assert!(matches!(key.as_deref(), Some("D major" | "E minor")), "{key:?}");
         assert!(format_melody(&q).starts_with("A6:1 Fis6:1 Fis6:2 G6:1"), "{}", format_melody(&q));
 
         let mut idx = klang_music::index::MelodyIndex::new();

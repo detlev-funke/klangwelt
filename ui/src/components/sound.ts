@@ -5,6 +5,7 @@
 
 import { backend } from "../bridge.js";
 import { fitCanvas, h, icon, noteName, setRange } from "../dom.js";
+import { language, plural, t } from "../i18n.js";
 import { act, errorText, findTrack, instrumentSpecs, notify, project, run, savedSounds, showPanel, snapshot, specFor } from "../store.js";
 import type { CurvePoint, FieldSpec, Instrument, InstrumentSpec, ParamSpec, PreviewPattern, SavedSound, VerlaufSpec, WaveView } from "../types.js";
 
@@ -73,9 +74,9 @@ interface FieldView {
 
 /** Ein Feld: Startpunkte als Marken (Klick setzt sie), Punkt zum Ziehen. */
 function fieldView(f: FieldSpec, pick: (name: string) => void, move: (x: number, y: number, phase: "start" | "move" | "end") => void): FieldView {
-  const dot = h("div", { class: "snd-dot", title: "Ziehen" });
+  const dot = h("div", { class: "snd-dot", title: t("Drag") });
   const marks = f.presets.map((p) => {
-    const b = h("button", { class: "snd-mark", title: `Startpunkt „${p.name}“ – setzt nur ${f.name}` }, h("i"), h("span", {}, p.name));
+    const b = h("button", { class: "snd-mark", title: t("Starting point \"{name}\" – only sets {field}", { name: t(p.name), field: f.name }) }, h("i"), h("span", {}, t(p.name)));
     b.dataset.name = p.name;
     b.dataset.edge = p.x > 0.86 ? "r" : p.x < 0.12 ? "l" : p.y > 0.9 ? "t" : "";
     b.style.left = `${p.x * 100}%`;
@@ -141,7 +142,7 @@ type Lane = "laut" | "hell";
 
 /** Zeitachse, Wellenform und – beim Synth – die gezeichneten Kurven. */
 function timeView(isSynth: boolean, edit: (lane: Lane, pts: CurvePoint[], merge: boolean, done: boolean) => void) {
-  const canvas = h("canvas", { class: `snd-wave${isSynth ? " synth" : ""}`, title: isSynth ? "Verlauf eines Tons: Punkte ziehen ändert Lautstärke (laut) und Helligkeit (hell) über die Zeit – Doppelklick setzt oder löscht einen Punkt" : "Wellenform eines Tons mit dem aktuellen Klang" }) as HTMLCanvasElement;
+  const canvas = h("canvas", { class: `snd-wave${isSynth ? " synth" : ""}`, title: isSynth ? t("Envelope of a note: dragging points changes volume (loud) and brightness (bright) over time – double-click adds or removes a point") : t("Waveform of a note with the current sound") }) as HTMLCanvasElement;
   let wave: WaveView | null = null;
   let curves: Record<Lane, CurvePoint[]> = { laut: [], hell: [] };
   let geo = { L: 34, R: 0, T: 1, lanes: {} as Record<Lane, [number, number]> };
@@ -176,7 +177,7 @@ function timeView(isSynth: boolean, edit: (lane: Lane, pts: CurvePoint[], merge:
       ctx.fillStyle = line;
       ctx.fillRect(Math.round(xOf(t)), 4, 1, axis - 4);
       ctx.fillStyle = muted;
-      ctx.fillText(geo.T > 1.2 ? `${t.toLocaleString("de-DE", { maximumFractionDigits: 2 })} s` : `${Math.round(t * 1000)} ms`, xOf(t), hh - 4);
+      ctx.fillText(geo.T > 1.2 ? `${t.toLocaleString(language(), { maximumFractionDigits: 2 })} s` : `${Math.round(t * 1000)} ms`, xOf(t), hh - 4);
     }
     // Wellenform (in der Lautstärke-Spur)
     if (wave?.peaks.length) {
@@ -201,11 +202,11 @@ function timeView(isSynth: boolean, edit: (lane: Lane, pts: CurvePoint[], merge:
         ctx.setLineDash([]);
         ctx.fillStyle = muted;
         ctx.textAlign = "left";
-        ctx.fillText("loslassen", xOf(wave.held) + 4, 14);
+        ctx.fillText(t("release"), xOf(wave.held) + 4, 14);
       }
     }
     if (!isSynth) return;
-    for (const [lane, color, label] of [["laut", "#ffb454", "Lautstärke"], ["hell", "#6ee7d8", "Helligkeit"]] as const) {
+    for (const [lane, color, label] of [["laut", "#ffb454", t("Volume")], ["hell", "#6ee7d8", t("Brightness")]] as const) {
       const pts = curves[lane];
       const [top, bot] = geo.lanes[lane];
       ctx.fillStyle = "rgba(255,255,255,0.025)";
@@ -337,7 +338,7 @@ function sameSound(spec: InstrumentSpec, a: Instrument, b: Instrument): boolean 
  * Klänge laden, umbenennen, löschen. Hervorgehoben ist, was gerade eingestellt ist.
  */
 function soundLibrary(spec: InstrumentSpec, trackId: number, loaded: (s: SavedSound) => void) {
-  const nameInput = h("input", { type: "text", class: "snd-lib-name", maxLength: 60, title: "Name des Klangs" }) as HTMLInputElement;
+  const nameInput = h("input", { type: "text", class: "snd-lib-name", maxLength: 60, title: t("Sound name") }) as HTMLInputElement;
   nameInput.spellcheck = false;
   const saveBtn = h("button", { class: "btn small primary snd-lib-save" }) as HTMLButtonElement;
   const list = h("div", { class: "snd-lib-list" });
@@ -354,7 +355,7 @@ function soundLibrary(spec: InstrumentSpec, trackId: number, loaded: (s: SavedSo
   /** Vorschlag: der gewählte Charakter-Startpunkt, sonst der Instrumentname – frei gemacht mit einer Zahl. */
   const suggestion = () => {
     const charakter = spec.fields.find((f) => f.key === "charakter");
-    const base = inst && charakter?.presets.some((p) => p.name === inst!.preset) ? inst.preset : spec.name;
+    const base = inst && charakter?.presets.some((p) => p.name === inst!.preset) ? t(inst.preset) : spec.name;
     if (!existing(base)) return base;
     for (let n = 2; ; n++) if (!existing(`${base} ${n}`)) return `${base} ${n}`;
   };
@@ -362,8 +363,8 @@ function soundLibrary(spec: InstrumentSpec, trackId: number, loaded: (s: SavedSo
     const name = clean(nameInput.value) || suggestion();
     const ex = existing(name);
     nameInput.placeholder = suggestion();
-    saveBtn.replaceChildren(icon("save"), ex ? "Ersetzen" : "Sichern");
-    saveBtn.title = ex ? `„${ex.name}“ mit der aktuellen Einstellung überschreiben` : `Aktuelle Einstellung als „${name}“ sichern`;
+    saveBtn.replaceChildren(icon("save"), ex ? t("Replace") : t("Save sound"));
+    saveBtn.title = ex ? t("Overwrite \"{name}\" with the current settings", { name: ex.name }) : t("Save the current settings as \"{name}\"", { name });
   };
   const save = async () => {
     const name = clean(nameInput.value) || suggestion();
@@ -372,7 +373,7 @@ function soundLibrary(spec: InstrumentSpec, trackId: number, loaded: (s: SavedSo
       savedSounds.value = r.sounds;
       nameInput.value = "";
       refreshSave();
-      notify(r.replaced ? `Klang „${r.name}“ ersetzt` : `Klang „${r.name}“ gesichert`);
+      notify(r.replaced ? t("Sound \"{name}\" replaced", { name: r.name }) : t("Sound \"{name}\" saved", { name: r.name }));
     } catch (e) {
       notify(errorText(e), "error");
     }
@@ -392,14 +393,14 @@ function soundLibrary(spec: InstrumentSpec, trackId: number, loaded: (s: SavedSo
   const row = (s: SavedSound, active: boolean, other: boolean) => {
     const label = h(
       "button",
-      { class: "snd-lib-load", title: other ? `„${s.name}“ laden – die Spur wird zu ${s.kindName}` : `„${s.name}“ laden` },
+      { class: "snd-lib-load", title: other ? t("Load \"{name}\" – the track becomes {kind}", { name: s.name, kind: s.kindName }) : t("Load \"{name}\"", { name: s.name }) },
       h("b", {}, s.name),
       h("span", {}, other ? `${s.kindName} · ${s.summary}` : s.summary),
     );
     label.addEventListener("click", () => {
       void act(backend.soundLoad(trackId, s.id)).then((ok) => ok && loaded(s));
     });
-    const ren = h("button", { class: "btn ghost small snd-lib-ren", title: "Umbenennen" }, icon("pencil"));
+    const ren = h("button", { class: "btn ghost small snd-lib-ren", title: t("Rename") }, icon("pencil"));
     ren.addEventListener("click", () => {
       editing = true;
       const input = h("input", { type: "text", class: "snd-lib-rename", maxLength: 60 }) as HTMLInputElement;
@@ -429,12 +430,12 @@ function soundLibrary(spec: InstrumentSpec, trackId: number, loaded: (s: SavedSo
     });
     // Löschen mit zweitem Klick (wie bei den Notenbibliotheken)
     let armed = false;
-    const del = h("button", { class: "btn ghost small snd-lib-del", title: "Aus „Meine Klänge“ löschen" }, icon("trash"));
+    const del = h("button", { class: "btn ghost small snd-lib-del", title: t("Delete from \"My sounds\"") }, icon("trash"));
     del.addEventListener("click", () => {
       if (!armed) {
         armed = true;
         del.classList.add("warn");
-        del.replaceChildren(icon("trash"), "Löschen?");
+        del.replaceChildren(icon("trash"), t("Delete?"));
         setTimeout(() => {
           armed = false;
           del.classList.remove("warn");
@@ -444,7 +445,7 @@ function soundLibrary(spec: InstrumentSpec, trackId: number, loaded: (s: SavedSo
       }
       backend.soundDelete(s.id).then((l) => {
         savedSounds.value = l;
-        notify(`Klang „${s.name}“ gelöscht`);
+        notify(t("Sound \"{name}\" deleted", { name: s.name }));
       }).catch((e) => notify(errorText(e), "error"));
     });
     const el = h("div", { class: `snd-lib-item${active ? " on" : ""}` }, label, ren, del);
@@ -464,15 +465,17 @@ function soundLibrary(spec: InstrumentSpec, trackId: number, loaded: (s: SavedSo
     list.replaceChildren(
       ...(own.length
         ? own.map((s) => row(s, active.has(s.id), false))
-        : [h("div", { class: "snd-lib-empty" }, all === null ? "Wird geladen …" : `Noch keine eigenen Klänge für ${spec.name} – Namen eingeben und sichern.`)]),
+        : [h("div", { class: "snd-lib-empty" }, all === null ? t("Loading…") : t("No sounds of your own for {instrument} yet – enter a name and save.", { instrument: spec.name }))]),
     );
     others.hidden = rest.length === 0;
-    others.replaceChildren(h("summary", {}, `Andere Instrumente (${rest.length})`), ...rest.map((s) => row(s, false, true)));
+    others.replaceChildren(h("summary", {}, t("Other instruments ({n})", { n: rest.length })), ...rest.map((s) => row(s, false, true)));
     others.open = othersOpen;
     // Kurzinfo für den eingeklappten Zustand: Anzahl und der gerade eingestellte Klang
     const on = own.find((s) => active.has(s.id));
     badge.textContent = all === null ? "" : `${own.length}${on ? ` · ${on.name}` : ""}`;
-    badge.title = on ? `Eingestellt: „${on.name}“` : `${own.length} eigene Klänge für ${spec.name}`;
+    badge.title = on
+      ? t("Current: \"{name}\"", { name: on.name })
+      : plural(own.length, "{n} custom sound for {instrument}", "{n} custom sounds for {instrument}", { instrument: spec.name });
     refreshSave();
   };
 
@@ -493,7 +496,7 @@ function soundLibrary(spec: InstrumentSpec, trackId: number, loaded: (s: SavedSo
 
 export function soundPanel(trackId: number): SoundPanel {
   const spec = specFor(findTrack(project(), trackId)?.instrument);
-  if (!spec) return { el: h("div", { class: "placeholder" }, "Instrumente werden geladen … (Klanggestaltung gibt es nur in der Desktop-App)"), update() {} };
+  if (!spec) return { el: h("div", { class: "placeholder" }, t("Loading instruments… (sound design is only available in the desktop app)")), update() {} };
   const isSynth = spec.kind === "synth";
   const prefs = viewPrefs();
   const current = (): Instrument | null => findTrack(project(), trackId)?.instrument ?? null;
@@ -527,10 +530,10 @@ export function soundPanel(trackId: number): SoundPanel {
     "div",
     { class: "presets" },
     ...spec.previews.map((pv, i) =>
-      h("button", { class: `btn small${i === 0 ? " primary" : ""}`, title: `Den Klang mit „${pv.label}“ anspielen`, onclick: () => preview(pv.key) }, i === 0 ? icon("play") : null, pv.label),
+      h("button", { class: `btn small${i === 0 ? " primary" : ""}`, title: t("Play the sound with \"{label}\"", { label: pv.label }), onclick: () => preview(pv.key) }, i === 0 ? icon("play") : null, pv.label),
     ),
   );
-  const insert = h("button", { class: "btn small", title: "Ein Takt Beispielmuster hinter dem letzten Clip einfügen", onclick: () => act(backend.insertPattern(trackId)) }, icon("plus"), "Muster einfügen");
+  const insert = h("button", { class: "btn small", title: t("Insert one bar of an example pattern after the last clip"), onclick: () => act(backend.insertPattern(trackId)) }, icon("plus"), t("Insert pattern"));
 
   // Felder (Charakter immer, Klangfarbe und Raum zuschaltbar)
   let dragging: string | null = null;
@@ -592,7 +595,7 @@ export function soundPanel(trackId: number): SoundPanel {
   };
   const toggles = (["klangfarbe", "raum"] as const).map((key) => {
     const name = spec.fields.find((f) => f.key === key)?.name ?? key;
-    const b = h("button", { class: `btn small snd-toggle${prefs[key] ? " on" : ""}`, title: `Feld „${name}“ ein- oder ausblenden (die Einstellung bleibt)` }, name);
+    const b = h("button", { class: `btn small snd-toggle${prefs[key] ? " on" : ""}`, title: t("Show or hide the \"{name}\" field (the setting is kept)", { name }) }, name);
     b.dataset.field = key;
     const apply = (on: boolean) => {
       b.classList.toggle("on", on);
@@ -608,11 +611,12 @@ export function soundPanel(trackId: number): SoundPanel {
     apply(prefs[key]);
     return b;
   });
-  const single = spec.kind === "drums" ? "Einzelschlag" : "Einzelton";
+  const single = spec.kind === "drums" ? t("Single hit") : t("Single note");
+  const patternLabel = spec.previews[0]?.label ?? t("Pattern");
   const playBtns = ([
-    ["aus", "aus", "Nach Änderungen nichts anspielen"],
-    ["ton", single, spec.kind === "drums" ? "Nach dem Loslassen einen Bassdrum-Schlag anspielen" : "Nach dem Loslassen einen einzelnen Ton anspielen"],
-    ["muster", spec.previews[0]?.label ?? "Muster", `Nach dem Loslassen „${spec.previews[0]?.label ?? "Muster"}“ anspielen`],
+    ["aus", t("off"), t("Don't play anything after changes")],
+    ["ton", single, spec.kind === "drums" ? t("Play a kick hit after releasing") : t("Play a single note after releasing")],
+    ["muster", patternLabel, t("Play \"{label}\" after releasing", { label: patternLabel })],
   ] as const).map(([mode, label, title]) => {
     const b = h("button", { class: `seg-btn${mode === playMode ? " on" : ""}`, title }, label);
     b.dataset.mode = mode;
@@ -635,8 +639,8 @@ export function soundPanel(trackId: number): SoundPanel {
   let verlaufBox: HTMLElement | null = null;
   const vchips: Array<{ v: VerlaufSpec; b: HTMLElement }> = [];
   const pulsBtns: HTMLElement[] = [];
-  const pulsDepth = h("input", { type: "range", min: 0, max: 1, step: 0.01, title: "Wie tief der Puls die Lautstärke absenkt" }) as HTMLInputElement;
-  const release = h("input", { type: "range", min: 0.05, max: 6, step: 0.05, title: "Ausklang nach dem Loslassen" }) as HTMLInputElement;
+  const pulsDepth = h("input", { type: "range", min: 0, max: 1, step: 0.01, title: t("How far the pulse lowers the volume") }) as HTMLInputElement;
+  const release = h("input", { type: "range", min: 0.05, max: 6, step: 0.05, title: t("Ring-out after the note is released") }) as HTMLInputElement;
   const releaseVal = h("b");
   if (isSynth) {
     for (const v of spec.verlauf) {
@@ -646,11 +650,11 @@ export function soundPanel(trackId: number): SoundPanel {
           params: { ...cur.params, "verlauf.ausklang": v.ausklang, "verlauf.puls": v.puls, "verlauf.pulstiefe": v.pulstiefe } }).then((ok) => {
           if (ok) autoPreview();
         });
-      } }, v.name);
+      } }, t(v.name));
       vchips.push({ v, b });
     }
-    [["aus", 0], ["¼", 1], ["⅛", 2], ["1/16", 3]].forEach(([label, n]) => {
-      const b = h("button", { class: "seg-btn", title: n ? `Puls in ${label}-Noten im Takt` : "Kein Puls", onclick: () => {
+    [[t("off"), 0], ["¼", 1], ["⅛", 2], ["1/16", 3]].forEach(([label, n]) => {
+      const b = h("button", { class: "seg-btn", title: n ? t("Pulse in {label} notes, in time with the beat", { label: label as string }) : t("No pulse"), onclick: () => {
         const cur = base().params;
         const depth = n && (cur["verlauf.pulstiefe"] ?? 0) < 0.05 ? 0.8 : cur["verlauf.pulstiefe"] ?? 0;
         void setParams({ "verlauf.puls": n as number, "verlauf.pulstiefe": depth }, base().preset, false);
@@ -670,12 +674,12 @@ export function soundPanel(trackId: number): SoundPanel {
     verlaufBox = h(
       "div",
       { class: "snd-verlauf" },
-      h("div", { class: "snd-vchips" }, h("span", { class: "muted" }, "Verlauf:"), ...vchips.map((c) => c.b)),
+      h("div", { class: "snd-vchips" }, h("span", { class: "muted" }, t("Envelope:")), ...vchips.map((c) => c.b)),
       h("div", { class: "snd-vctl" },
-        h("label", {}, "Puls"), h("div", { class: "seg" }, ...pulsBtns),
-        h("label", {}, "Tiefe"), pulsDepth,
-        h("label", {}, "Ausklang"), release, releaseVal),
-      h("div", { class: "hint" }, "Punkte ziehen · Doppelklick fügt einen Punkt hinzu bzw. entfernt ihn"),
+        h("label", {}, t("Pulse")), h("div", { class: "seg" }, ...pulsBtns),
+        h("label", {}, t("Depth")), pulsDepth,
+        h("label", {}, t("Release")), release, releaseVal),
+      h("div", { class: "hint" }, t("Drag points · double-click adds or removes a point")),
     );
   }
 
@@ -709,10 +713,10 @@ export function soundPanel(trackId: number): SoundPanel {
   for (const p of spec.params.filter((p) => !p.hidden)) groups.set(p.group, [...(groups.get(p.group) ?? []), p]);
   const groupEls = [...groups].map(([name, ps]) => {
     const pv = spec.kind === "drums" ? GROUP_PREVIEW[name] : undefined;
-    const head = h("h4", {}, name, pv ? h("button", { class: "btn ghost small", title: `${name} anspielen`, onclick: () => preview(pv) }, icon("play")) : null);
+    const head = h("h4", {}, t(name), pv ? h("button", { class: "btn ghost small", title: t("Play {name}", { name: t(name) }), onclick: () => preview(pv) }, icon("play")) : null);
     return h("div", { class: "pgroup" }, head, h("div", { class: "sliders" }, ...ps.map(makeSlider)));
   });
-  const fine = h("details", { class: "snd-fine", open: prefs.feinschliff }, h("summary", {}, "Feinschliff – alle Regler"), ...groupEls) as HTMLDetailsElement;
+  const fine = h("details", { class: "snd-fine", open: prefs.feinschliff }, h("summary", {}, t("Fine-tuning – all controls")), ...groupEls) as HTMLDetailsElement;
   fine.addEventListener("toggle", () => setViewPref("feinschliff", fine.open));
 
   // Messwerte – dieselben Zahlen und Wörter sieht der Agent.
@@ -750,13 +754,13 @@ export function soundPanel(trackId: number): SoundPanel {
 
   // Meine Klänge einklappbar (anfangs zu); eingeklappt zeigt die Zeile Anzahl und eingestellten Klang
   const libBox = h("details", { class: "prop snd-lib-box", open: prefs.klaenge },
-    h("summary", { title: "Eigene Klänge – in jedem Projekt verfügbar" }, h("span", { class: "snd-lib-title" }, "Meine Klänge"), lib.badge),
+    h("summary", { title: t("Your own sounds – available in every project") }, h("span", { class: "snd-lib-title" }, t("My sounds")), lib.badge),
     lib.el) as HTMLDetailsElement;
   libBox.addEventListener("toggle", () => setViewPref("klaenge", libBox.open));
 
   // Zeitverlauf einklappbar
   const timeBox = h("details", { class: "snd-time", open: prefs.zeitverlauf },
-    h("summary", { class: "snd-time-head" }, h("b", {}, "Zeitverlauf"), testton),
+    h("summary", { class: "snd-time-head" }, h("b", {}, t("Over time")), testton),
     time.el,
     verlaufBox) as HTMLDetailsElement;
   timeBox.addEventListener("toggle", () => {
@@ -772,17 +776,17 @@ export function soundPanel(trackId: number): SoundPanel {
       h("div", { class: "snd-head" },
         kinds,
         h("div", { class: "snd-head-right" },
-          h("span", { class: "muted" }, "Felder:"), ...toggles,
-          h("span", { class: "muted snd-play-label", title: "Was nach einer Änderung kurz erklingt" }, "anspielen:"), playSwitch)),
+          h("span", { class: "muted" }, t("Fields:")), ...toggles,
+          h("span", { class: "muted snd-play-label", title: t("What plays briefly after a change") }, t("play:")), playSwitch)),
       fieldBox,
       timeBox,
       fine),
     h("div", { class: "sound-side" },
       libBox,
-      h("div", { class: "prop" }, h("label", {}, "Vorhören"), listen),
+      h("div", { class: "prop" }, h("label", {}, t("Preview")), listen),
       h("div", { class: "prop snd-insert" }, insert,
-        spec.kind === "drums" ? h("button", { class: "btn small", title: "Genre-Muster und Schritt-Raster im Fenster „Rhythmus“", onclick: () => showPanel("rhythmus") }, icon("grid"), "Genre-Muster …") : null),
-      h("div", { class: "prop" }, h("label", {}, "Gemessen · ", measureTon), measures),
+        spec.kind === "drums" ? h("button", { class: "btn small", title: t("Genre patterns and step grid in the \"Rhythm\" window"), onclick: () => showPanel("rhythmus") }, icon("grid"), t("Genre patterns…")) : null),
+      h("div", { class: "prop" }, h("label", {}, t("Measured"), " · ", measureTon), measures),
       agentNote),
   );
   new ResizeObserver(() => time.draw()).observe(time.el);
@@ -834,7 +838,7 @@ export function soundPanel(trackId: number): SoundPanel {
         setRange(pulsDepth, prm("verlauf.pulstiefe", 0));
         pulsDepth.disabled = puls === 0;
         setRange(release, prm("verlauf.ausklang", 1.6));
-        releaseVal.textContent = `${prm("verlauf.ausklang", 1.6).toLocaleString("de-DE", { maximumFractionDigits: 2 })} s`;
+        releaseVal.textContent = `${prm("verlauf.ausklang", 1.6).toLocaleString(language(), { maximumFractionDigits: 2 })} s`;
         const same = (a: CurvePoint[], b: CurvePoint[]) => JSON.stringify(a) === JSON.stringify(b);
         for (const { v, b } of vchips) {
           b.classList.toggle("on", same(laut, v.laut) && same(hell, v.hell) && Math.round(prm("verlauf.puls", 0)) === v.puls);
@@ -842,8 +846,8 @@ export function soundPanel(trackId: number): SoundPanel {
       }
       const url = snapshot.peek()?.agent.url;
       agentNote.textContent = url
-        ? `Agent: z. B. „Mach die Kick mächtiger“, „Fläche dunkler und rauer“, „lass den Synth atmen“ oder „sichere das als Mein Beat“ – im Agent-Chat oder über Claude Code (${url}).`
-        : "Agent-Schnittstelle (MCP) ist nicht aktiv.";
+        ? t("Agent: e.g. \"Make the kick bigger\", \"pad darker and rougher\", \"let the synth breathe\" or \"save this as My Beat\" – in the agent chat or via Claude Code ({url}).", { url })
+        : t("Agent interface (MCP) is not active.");
       lib.update(inst);
       refresh();
     },

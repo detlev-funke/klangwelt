@@ -175,6 +175,12 @@ class WebApp {
     await ready(this);
   }
 
+  /** The page reloads itself (e.g. when switching the language): wait until it's back. */
+  async afterReload() {
+    await this.waitFor(() => !window.T, { timeout: 15000, what: "Neuladen" });
+    await ready(this);
+  }
+
   /** Server beenden (z. B. um offline zu testen); `startServer` startet ihn neu. */
   stopServer() {
     this.server.kill();
@@ -265,8 +271,10 @@ async function ready(app) {
   });
 }
 
-/** Server und Edge (ohne Fenster) starten, Seite laden. */
-export async function startWeb() {
+/** Start the server and Edge (without a window), load the page. `languages`: the
+ *  browser's preferred languages (navigator.languages) – German by default, because the
+ *  tests check German texts; the UI detects its language from them (ui/src/i18n.ts). */
+export async function startWeb({ languages = "de-DE,de" } = {}) {
   if (!existsSync(join(ROOT, "ui", "dist-web", "klang_web.wasm"))) throw new Error("ui/dist-web fehlt – erst „npm run build:web“ in ui/");
   if (!existsSync(EDGE)) throw new Error(`Edge nicht gefunden: ${EDGE} (KLANGWELT_EDGE setzen)`);
   const tmp = mkdtempSync(join(tmpdir(), "klangwelt-web-"));
@@ -292,6 +300,7 @@ export async function startWeb() {
       "--use-fake-ui-for-media-stream",
       "--use-fake-device-for-media-stream",
       "--window-size=1600,1000",
+      `--accept-lang=${languages}`,
       "about:blank",
     ],
     { stdio: "ignore" },

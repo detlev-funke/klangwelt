@@ -18,6 +18,7 @@ use crate::state::{lock, AppState, CmdResult, Snapshot};
 use klang_core::edit::{self, AudioKeep};
 use klang_core::{Clip, ClipSource, Command, Id, InstrumentKind, Note, Track, TrackKind};
 use klang_dsp::hits;
+use klang_i18n::{tr, trn};
 use klang_music::theory::{quantize, TimedNote};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -170,14 +171,14 @@ impl AppState {
         for (name, bytes) in files {
             let shown = name.rsplit(['/', '\\']).next().unwrap_or(&name).to_string();
             match bytes.and_then(|b| audiofile::decode(&b)) {
-                Ok(d) if d.duration_secs() > MAX_IMPORT_SECS => errors.push(format!("„{shown}“: länger als 30 Minuten")),
-                Ok(d) if d.samples.len() < 64 => errors.push(format!("„{shown}“: zu kurz")),
+                Ok(d) if d.duration_secs() > MAX_IMPORT_SECS => errors.push(tr!("\"{name}\": longer than 30 minutes", name = shown)),
+                Ok(d) if d.samples.len() < 64 => errors.push(tr!("\"{name}\": too short", name = shown)),
                 Ok(d) => decoded.push((stem(&name), d)),
-                Err(e) => errors.push(format!("„{shown}“: {e}")),
+                Err(e) => errors.push(tr!("\"{name}\": {error}", name = shown, error = e)),
             }
         }
         if decoded.is_empty() {
-            return Err(if errors.is_empty() { "Keine Dateien".into() } else { errors.join("\n") });
+            return Err(if errors.is_empty() { tr!("No files") } else { errors.join("\n") });
         }
         let start = if start_beats.is_finite() { start_beats.max(0.0) } else { 0.0 };
         let (cmd, imported) = {
@@ -213,8 +214,8 @@ impl AppState {
                 imported.push(Imported { track_id, clip_id, name, format, seconds, channels });
             }
             let label = match imported.as_slice() {
-                [one] => format!("Audio einfügen: {}", one.name),
-                many => format!("{} Audiodateien einfügen", many.len()),
+                [one] => tr!("Insert audio: {name}", name = one.name),
+                many => trn!(many.len(), "Insert {n} audio file", "Insert {n} audio files"),
             };
             (Command::Batch { label, commands }, imported)
         };
@@ -229,7 +230,7 @@ impl AppState {
         let (track, index, bpm, bpb) = {
             let s = lock(&self.session)?;
             let p = &s.project;
-            let i = p.track_index(track_id).ok_or_else(|| format!("Spur {track_id} nicht gefunden"))?;
+            let i = p.track_index(track_id).ok_or_else(|| tr!("Track {id} not found", id = track_id))?;
             (p.tracks[i].clone(), i, p.tempo_bpm, p.beats_per_bar.max(1) as f64)
         };
         let mut clips: Vec<&Clip> = track
@@ -239,8 +240,12 @@ impl AppState {
             .collect();
         if clips.is_empty() {
             return Err(match clip_id {
-                Some(id) => format!("Clip {id} ist kein Audio-Clip in „{}“ – umwandeln lassen sich nur Aufnahmen und eingefügte Audiodateien.", track.name),
-                None => format!("„{}“ enthält keine Audio-Clips.", track.name),
+                Some(id) => tr!(
+                    "Clip {id} in \"{name}\" is not an audio clip – only recordings and inserted audio files can be converted.",
+                    id = id,
+                    name = track.name
+                ),
+                None => tr!("\"{name}\" contains no audio clips.", name = track.name),
             });
         }
         clips.sort_by(|a, b| a.start_beats.total_cmp(&b.start_beats));
@@ -256,7 +261,7 @@ impl AppState {
                 Target::Rhythmus => {
                     let (samples, sr) = {
                         let pool = lock(&self.pool)?;
-                        let asset = pool.get(asset_id).ok_or("Audiodatei nicht gefunden")?;
+                        let asset = pool.get(asset_id).ok_or_else(|| tr!("Audio file not found"))?;
                         (asset.samples.clone(), asset.sample_rate)
                     };
                     rhythm_notes(&a, &samples, sr as f32, spb)
@@ -268,19 +273,19 @@ impl AppState {
             pitches.extend(notes.iter().map(|n| n.pitch));
             let length_beats = (clip.length_beats(bpm) / bpb - 1e-9).ceil().max(1.0) * bpb;
             let name = match (target, &a.key) {
-                (Target::Melodie, Some(k)) => format!("Melodie · {}", k.name),
-                (Target::Melodie, None) => "Melodie".to_string(),
+                (Target::Melodie, Some(k)) => tr!("Melody · {key}", key = k.name),
+                (Target::Melodie, None) => tr!("Melody"),
                 (Target::Rhythmus, _) => match a.tempo_estimate {
-                    Some(t) => format!("Rhythmus · ≈ {} BPM", t.round()),
-                    None => "Rhythmus".to_string(),
+                    Some(t) => tr!("Rhythm · ≈ {bpm} BPM", bpm = t.round()),
+                    None => tr!("Rhythm"),
                 },
             };
             out.push(Clip { id: Id::NEW, name, start_beats: clip.start_beats, source: ClipSource::Notes { length_beats, notes } });
         }
         if out.is_empty() {
             return Err(match target {
-                Target::Melodie => "Darin wurde keine Melodie erkannt – für Schlagzeug „In Rhythmus-Spur umwandeln“ nehmen.".into(),
-                Target::Rhythmus => "Darin wurden keine Anschläge erkannt.".into(),
+                Target::Melodie => tr!("No melody was detected in it – for drums, use \"Convert to rhythm track\"."),
+                Target::Rhythmus => tr!("No hits were detected in it."),
             });
         }
         pitches.sort_unstable();
@@ -291,17 +296,17 @@ impl AppState {
             Target::Melodie => InstrumentKind::Pluck,
         };
         let base = if clips.len() == 1 { clips[0].name.clone() } else { track.name.clone() };
-        let word = match (target, kind) {
-            (Target::Rhythmus, _) => "Rhythmus",
-            (_, InstrumentKind::Bass) => "Bass",
-            _ => "Melodie",
+        let track_name = match (target, kind) {
+            (Target::Rhythmus, _) => tr!("Rhythm from {name}", name = base),
+            (_, InstrumentKind::Bass) => tr!("Bass from {name}", name = base),
+            _ => tr!("Melody from {name}", name = base),
         };
         let notes: usize = out.iter().map(|c| match &c.source { ClipSource::Notes { notes, .. } => notes.len(), _ => 0 }).sum();
         let (cmd, new_id) = {
             let mut s = lock(&self.session)?;
             let p = &mut s.project;
             let new_id = p.alloc_id();
-            let mut t = Track::new(new_id, format!("{word} aus {base}"), TrackKind::Instrument);
+            let mut t = Track::new(new_id, track_name, TrackKind::Instrument);
             t.instrument = Some(sound::default_instrument(kind));
             for mut c in out {
                 c.id = p.alloc_id();
@@ -320,10 +325,10 @@ impl AppState {
         let project = lock(&self.session)?.project.clone();
         let mut cut = |clip: &Clip, keep: &AudioKeep| -> Result<ClipSource, String> {
             let ClipSource::Audio { source_bpm, warp, .. } = &clip.source else {
-                return Err("Kein Audio-Clip".into());
+                return Err(tr!("No audio clip"));
             };
             let mut pool = lock(&self.pool)?;
-            let asset = pool.get(&keep.asset_id).ok_or("Audiodatei nicht gefunden")?;
+            let asset = pool.get(&keep.asset_id).ok_or_else(|| tr!("Audio file not found"))?;
             let sr = asset.sample_rate;
             let samples = splice(&asset.samples, sr, &keep.parts);
             let name = asset.name.clone();
@@ -340,17 +345,29 @@ impl AppState {
     pub fn quantize_notes(&self, track_id: Id, clip_id: Id, indices: Option<Vec<usize>>, grid: f64, lengths: bool, label: Option<&str>) -> CmdResult<Quantized> {
         let (clip, beat_unit) = {
             let s = lock(&self.session)?;
-            (s.project.clip(track_id, clip_id).cloned().ok_or_else(|| format!("Clip {clip_id} auf Spur {track_id} nicht gefunden"))?, s.project.beat_unit)
+            let clip = s.project.clip(track_id, clip_id).cloned();
+            (clip.ok_or_else(|| tr!("Clip {clip} not found on track {track}", clip = clip_id, track = track_id))?, s.project.beat_unit)
         };
         let ClipSource::Notes { notes, .. } = &clip.source else {
-            return Err("Ausrichten geht nur bei Noten-Clips.".into());
+            return Err(tr!("Quantizing only works on note clips."));
         };
         if let Some(bad) = indices.as_ref().and_then(|ix| ix.iter().find(|&&i| i >= notes.len())) {
-            return Err(format!("Note {bad} gibt es in diesem Clip nicht (er hat {} Noten).", notes.len()));
+            return Err(trn!(
+                notes.len(),
+                "Note {nr} doesn't exist in this clip (it has {n} note).",
+                "Note {nr} doesn't exist in this clip (it has {n} notes).",
+                nr = bad
+            ));
         }
         let (quantized, selected) = edit::quantize_notes(notes, indices.as_deref(), clip.start_beats, grid, lengths).map_err(|e| e.to_string())?;
-        let what = if lengths { "Anfang und Länge" } else { "Anfänge" };
-        let label = label.map(str::to_string).unwrap_or_else(|| format!("Noten am Raster ausrichten ({}, {what})", edit::grid_name(grid, beat_unit)));
+        let label = label.map(str::to_string).unwrap_or_else(|| {
+            let grid = edit::grid_name(grid, beat_unit);
+            if lengths {
+                tr!("Quantize notes ({grid}, start and length)", grid = grid)
+            } else {
+                tr!("Quantize notes ({grid}, starts)", grid = grid)
+            }
+        });
         let cmd = Command::Batch { label, commands: vec![Command::SetClipNotes { track_id, clip_id, notes: quantized, length_beats: None }] };
         Ok(Quantized { snapshot: self.execute(cmd, false)?, selected })
     }

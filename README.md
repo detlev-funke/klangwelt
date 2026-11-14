@@ -14,6 +14,8 @@ as an audio file. The web version is not a trimmed-down preview: the browser
 runs **the same core as the desktop app**, written in Rust and compiled to
 WebAssembly. Sound is generated in real time on your own machine.
 
+![Klangwelt with a whole song in five tracks and the harmony band above them, the song structure below, the circle of fifths and the agent chat on the right](docs/images/overview.png)
+
 The app speaks English, German, French, Italian, Spanish, Dutch and Polish –
 it follows your browser's language, and the gear menu switches it.
 
@@ -41,6 +43,26 @@ it follows your browser's language, and the gear menu switches it.
   agent window has a ready-made prompt for Claude with the "Claude in Chrome"
   extension; then you simply type requests like "make the bass warmer" into
   the app's chat.
+
+## A closer look
+
+**Notes as a piano roll** – the lead melody at the song's peak, its chords
+in the harmony band above (coloured by mood), the rhythm and velocity lanes
+below.
+
+![Piano roll of the lead melody with the harmony band above and rhythm and velocity lanes below](docs/images/notes.png)
+
+**Sound fields for the bass** – character, timbre and space as three fields.
+Each dot is a preset (Acid, Growl, Pluck bass, Finger, Sub bass …), the yellow
+point is the current sound: drag it anywhere in between.
+
+![The three sound fields of a bass track with their presets](docs/images/sound-bass.png)
+
+**Circle of fifths** – the key of the piece, where the chords lead and how
+each step feels (the coloured arrows), and the classic paths to a cadence:
+listen to them, then write them into a track with one click.
+
+![Circle of fifths with chord suggestions and paths to a cadence](docs/images/circle-of-fifths.png)
 
 ## Getting started
 

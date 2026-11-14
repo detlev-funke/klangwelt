@@ -472,6 +472,8 @@ const dict: Dict = {
 
   // ui/src/components/library.ts
   "The library is still loading – try again in a moment.": "De bibliotheek wordt nog geladen – probeer het zo nog eens.",
+  "My scores": "Mijn bladmuziek",
+  "The score library server limits requests – continuing in {n} s…": "De server van de bladmuziekbibliotheek beperkt het aantal verzoeken – verder over {n} s…",
   "Only MusicXML files (.mxl, .musicxml, .xml) or folders can be added to the library.": "Alleen MusicXML-bestanden (.mxl, .musicxml, .xml) of mappen kunnen aan de bibliotheek worden toegevoegd.",
   "Download music library": "Muziekbibliotheek downloaden",
   "Once downloaded, it's added to the active library. For Bach, Mozart and Beethoven in good quality: KernScores, OpenScore and DCML.": "Na het downloaden wordt het in de actieve bibliotheek opgenomen. Voor Bach, Mozart en Beethoven in goede kwaliteit: KernScores, OpenScore en DCML.",
@@ -518,11 +520,29 @@ const dict: Dict = {
   "Libraries": "Bibliotheken",
   "Each library is a separate index – only the active one is searched. Downloaded and added scores go into the active one.": "Elke bibliotheek is een eigen index – er wordt alleen in de actieve gezocht. Gedownloade en toegevoegde partituren komen in de actieve terecht.",
   "Create new": "Nieuw aanmaken",
+  "Score library": "Bladmuziekbibliotheek",
+  "Version {version}": "Versie {version}",
+  "Connecting to the score library…": "Verbinden met de bladmuziekbibliotheek…",
+  "Score library offline – your own scores and what you've used before are available.": "Bladmuziekbibliotheek offline – je eigen bladmuziek en wat je al hebt gebruikt blijven beschikbaar.",
+  "Score library unavailable: {error}": "Bladmuziekbibliotheek niet beschikbaar: {error}",
+  "No score library configured – only your own scores (see docs/LIBRARY.md).": "Geen bladmuziekbibliotheek ingesteld – alleen je eigen bladmuziek (zie docs/LIBRARY.md).",
+  "Open the dataset page": "Pagina van de dataset openen",
+  "Cache cleared.": "Cache geleegd.",
+  "Clear cache": "Cache legen",
+  "Sources and licenses": "Bronnen en licenties",
+  "{size} of the score library are kept in this browser for offline use.": "{size} van de bladmuziekbibliotheek wordt in deze browser bewaard voor offline gebruik.",
+  "Remove from my scores": "Verwijderen uit ‘Mijn bladmuziek’",
+  "Really remove?": "Echt verwijderen?",
+  "Remove": "Verwijderen",
+  "No own scores yet – add MusicXML/MXL files or drag them onto the window.": "Nog geen eigen bladmuziek – voeg MusicXML/MXL-bestanden toe of sleep ze naar het venster.",
+  "Searching covers both: the score library on the server and your own scores. Only what you open or search is kept in this browser.": "Er wordt in beide gezocht: in de bladmuziekbibliotheek op de server en in je eigen bladmuziek. In deze browser blijft alleen wat je opent of zoekt.",
+  "Add files": "Bestanden toevoegen",
   "Manage libraries: switch, create, rename, delete": "Bibliotheken beheren: wisselen, nieuw aanmaken, hernoemen, verwijderen",
   "Path to a MusicXML/MXL file or a folder – separate several with ;": "Pad van een MusicXML/MXL-bestand of een map – meerdere scheiden met ;",
   "Enter the path of a MusicXML file (or a folder) – or drag the files onto the window.": "Voer het pad van een MusicXML-bestand (of een map) in – of sleep de bestanden naar het venster.",
   "Add": "Toevoegen",
   "Add to \"{library}\" (or drag files onto the window):": "Opnemen in “{library}” (of bestanden naar het venster slepen):",
+  "Add your own MusicXML/MXL files – or drag them onto the window. They're kept in this browser.": "Eigen MusicXML/MXL-bestanden toevoegen – of naar het venster slepen. Ze blijven in deze browser.",
   "Add MusicXML/MXL files or whole folders to the active library – or just drag them onto the window.": "MusicXML/MXL-bestanden of hele mappen in de actieve bibliotheek opnemen – of gewoon naar het venster slepen.",
   "Title, composer, instrument…": "Titel, componist, instrument …",
   "Melody: C4 D4 E4 F4 G4 (F♯ or F#, B♭ or Bb …) or 60 62 64 – duration e.g. G4:2": "Melodie: C4 D4 E4 F4 G4 (Fis, Bes; B = b …) of 60 62 64 – duur bijv. G4:2",
@@ -1319,6 +1339,7 @@ const dict: Dict = {
   // ui/src/web/host.ts
   "There's no agent server (MCP) in the browser – a web page can't open a port. An agent can still operate Klangwelt: via a browser extension or the Chrome DevTools Protocol, see docs/WEB.md.": "In de browser is er geen agentserver (MCP) – een website kan geen poort openen. Een agent kan Klangwelt toch bedienen: via een browserextensie of het Chrome DevTools Protocol, zie docs/WEB.md.",
   "Not yet available in the browser – see docs/WEB.md.": "In de browser nog niet beschikbaar – zie docs/WEB.md.",
+  "The score library on the server can't be reached right now – offline, only scores you've used before are available.": "De bladmuziekbibliotheek op de server is nu niet bereikbaar – offline is alleen bladmuziek beschikbaar die je al hebt gebruikt.",
   "Web core: {message}": "Webkern: {message}",
   "No audio in the browser": "Geen audio in de browser",
   "This browser doesn't allow microphone access (only via https or localhost).": "Deze browser geeft geen toegang tot de microfoon (alleen via https of localhost).",
@@ -2019,6 +2040,13 @@ const dict: Dict = {
   // crates/klang-app/src/vfs.rs
   "{path} doesn't exist": "{path} bestaat niet",
 
+  // crates/klang-app/src/weblib.rs
+  "{path}: not a score (MusicXML, MXL, **kern)": "{path}: geen partituur (MusicXML, MXL, **kern)",
+  "\"{name}\" is already in \"{library}\".": "“{name}” zit al in “{library}”.",
+  "{file}: no voice is long enough to search (at least 8 notes).": "{file}: geen stem is lang genoeg om te zoeken (minstens 8 noten).",
+  "Added {n} scores to \"My scores\".": { one: "Eén partituur toegevoegd aan ‘Mijn bladmuziek’.", other: "{n} partituren toegevoegd aan ‘Mijn bladmuziek’." },
+  "Index file incomplete or corrupted": "Indexbestand onvolledig of beschadigd",
+
   // crates/klang-core/src/command.rs
   "The project name can't be empty": "De projectnaam mag niet leeg zijn",
   "Tempo {t} BPM is outside 20–400": "Tempo {t} BPM ligt buiten 20–400",
@@ -2149,7 +2177,6 @@ const dict: Dict = {
   "canceled": "afgebroken",
   "not a Klangwelt index file (format 3/4)": "geen Klangwelt-indexbestand (formaat 3/4)",
   "Header corrupted": "Header beschadigd",
-  "Index file incomplete or corrupted": "Indexbestand onvolledig of beschadigd",
   "Key table corrupted": "Sleuteltabel beschadigd",
   "Index file too short": "Indexbestand te kort",
   "Occurrence list corrupted": "Vindplaatsen beschadigd",
@@ -2480,7 +2507,6 @@ const dict: Dict = {
   "Not supported: {e}": "Niet ondersteund: {e}",
 
   // crates/klang-music/src/library.rs
-  "{path}: not a score (MusicXML, MXL, **kern)": "{path}: geen partituur (MusicXML, MXL, **kern)",
   "{path}: not found": "{path}: niet gevonden",
 
   // crates/klang-music/src/pdmx.rs
@@ -2507,14 +2533,10 @@ const dict: Dict = {
   "As": "As",
   "B": "Bes",
 
-  // crates/klang-web/src/lib.rs
+  // not used in this repo (e.g. the desktop shell, klangwelt-desktop/app/src)
   "There's no score library in the browser yet (downloading and indexing are missing) – see docs/WEB.md.": "In de browser is er nog geen partituurbibliotheek (downloaden en indexeren ontbreken) – zie docs/WEB.md.",
-
-  // ../klangwelt-desktop/app/src/lib.rs
   "{path} no longer exists": "{path} bestaat niet meer",
   "Cancelled: {error}": "Geannuleerd: {error}",
-
-  // ../klangwelt-desktop/app/src/libraries.rs
   "Library list locked": "Bibliotheeklijst vergrendeld",
   "The library list is still missing (it is created at startup).": "De bibliotheeklijst ontbreekt nog (wordt bij het starten aangemaakt).",
   "The library list is still missing.": "De bibliotheeklijst ontbreekt nog.",
@@ -2535,8 +2557,6 @@ const dict: Dict = {
   "Libraries set up: \"{name}\" with {count} scores; separate libraries: {libraries}.": { one: "Bibliotheken ingesteld: “{name}” met {count} partituur; aparte bibliotheken: {libraries}.", other: "Bibliotheken ingesteld: “{name}” met {count} partituren; aparte bibliotheken: {libraries}." },
   "Libraries set up: \"{name}\" with {count} scores (from {folders}); separate libraries: {libraries}.": { one: "Bibliotheken ingesteld: “{name}” met {count} partituur (uit {folders}); aparte bibliotheken: {libraries}.", other: "Bibliotheken ingesteld: “{name}” met {count} partituren (uit {folders}); aparte bibliotheken: {libraries}." },
   "Library \"{name}\": {count} scores": { one: "Bibliotheek “{name}”: {count} partituur", other: "Bibliotheek “{name}”: {count} partituren" },
-
-  // ../klangwelt-desktop/app/src/library.rs
   "The library is busy loading, indexing or adding scores.": "De bibliotheek is bezig met laden, indexeren of partituren opnemen.",
   "The library is still loading – just a moment.": "De bibliotheek wordt nog geladen – een ogenblik.",
   "No file given": "Geen bestand opgegeven",
@@ -2605,7 +2625,6 @@ const dict: Dict = {
   "{name}: genre/composer not loaded: {error}": "{name}: genre/componist niet geladen: {error}",
   "Unknown pack: {id} (available: {ids})": "Onbekend pakket: {id} (beschikbaar: {ids})",
   "The library \"{library}\" no longer exists.": "De bibliotheek “{library}” bestaat niet meer.",
-  "\"{name}\" is already in \"{library}\".": "“{name}” zit al in “{library}”.",
   "\"{name}\" is already in \"{library}\" (via \"{via}\").": "“{name}” zit al in “{library}” (via “{via}”).",
   "\"{name}\" is being downloaded right now.": "“{name}” wordt nu gedownload.",
   "\"{name}\" is being downloaded right now (via \"{via}\").": "“{name}” wordt nu gedownload (via “{via}”).",
@@ -2629,8 +2648,6 @@ const dict: Dict = {
   "{name}: download stopped after {count} scores ({error}) – \"Download\" continues, scores already there are skipped.": { one: "{name}: download gestopt na {count} partituur ({error}) – “Downloaden” gaat verder, al aanwezige partituren worden overgeslagen.", other: "{name}: download gestopt na {count} partituren ({error}) – “Downloaden” gaat verder, al aanwezige partituren worden overgeslagen." },
   "{name}: connection interrupted ({why}) – resuming at {position} (connection {connection}) …": "{name}: verbinding onderbroken ({why}) – verder bij {position} (verbinding {connection}) …",
   "Can't create the folder {folder}: {error}": "Map {folder} kan niet worden aangemaakt: {error}",
-
-  // ../klangwelt-desktop/app/src/mcp.rs
   "Port {port} is in use or not available: {error}": "Poort {port} is bezet of niet beschikbaar: {error}",
 };
 

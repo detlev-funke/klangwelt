@@ -47,6 +47,8 @@ sw.addEventListener("activate", (e) => {
 sw.addEventListener("fetch", (e) => {
   const req = e.request;
   if (req.method !== "GET" || new URL(req.url).origin !== location.origin) return;
+  // Ranges of the score library: the worker caches them itself (web/remote.ts)
+  if (req.headers.has("range")) return;
   e.respondWith(
     caches.open(CACHE).then(async (c) => {
       const hit = (await c.match(req, { ignoreSearch: req.mode === "navigate" })) ?? (req.mode === "navigate" ? await c.match(new URL("index.html", sw.registration.scope).href) : undefined);

@@ -7,6 +7,9 @@
 //! * [`index`]    – n-Gramm-Index für die Melodiesuche („Summ mal was“)
 //! * [`theory`]   – Tonarten, Bereinigung aufgenommener Noten
 //! * [`analysis`] – Stimmfunktionen, Kadenzen, Stimmung (Heuristik, Stufe 1)
+//! * [`source`]   – byte sources: file, memory, ranges of a file on a web server
+//! * [`webpack`]  – the library package for the web (text index, facet table, chord statistics)
+//! * [`scorezip`] – the ZIP with the scores of a package (written and read entry by entry)
 
 pub mod analysis;
 pub mod chordstats;
@@ -23,7 +26,10 @@ pub mod library;
 pub mod melody;
 pub mod pdmx;
 pub mod score;
+pub mod scorezip;
+pub mod source;
 pub mod theory;
+pub mod webpack;
 
 use std::fmt;
 

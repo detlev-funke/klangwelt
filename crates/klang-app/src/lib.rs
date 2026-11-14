@@ -38,6 +38,7 @@ pub mod sound;
 pub mod sound_library;
 pub mod state;
 pub mod vfs;
+pub mod weblib;
 
 pub use host::Host;
 pub use state::{lock, AppState, CmdResult, Snapshot};

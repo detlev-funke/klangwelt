@@ -309,7 +309,7 @@ pub struct TreeScore {
 }
 
 /// Inhalt eines Knotens: weitere Zweige oder (auf der untersten Ebene) Partituren.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TreeLevel {
     /// Ebene der Zweige (None bei Partituren).
@@ -333,19 +333,119 @@ pub fn value_label(dim: &str, value: &str) -> String {
     klang_i18n::translate(value)
 }
 
-fn matches(f: &ScoreFacets, levels: &[&str], path: &[String]) -> bool {
-    path.iter().enumerate().all(|(i, want)| levels.get(i).map(|d| values(f, d).contains(&want.as_str())).unwrap_or(true))
+/// Rows of facets for the tree: a list of [`ScoreFacets`], the compact facet
+/// table of a web package ([`crate::webpack::FacetTable`]) or both together.
+pub trait FacetRows {
+    fn row_count(&self) -> usize;
+    /// Values of row `i` for a level (like [`values`]).
+    fn row_values(&self, i: usize, dim: &str) -> Vec<&str>;
+    fn row_doc(&self, i: usize) -> u32;
+    /// Title – empty if the rows don't carry it (it's read afterwards).
+    fn row_title(&self, i: usize) -> &str;
+    fn row_composer(&self, i: usize) -> &str;
+    /// Raw value for the short description of a listed score: "tonart" (key),
+    /// "takt" (time signature), "tempo", "besetzung" (ensemble).
+    fn row_field(&self, i: usize, dim: &str) -> &str;
+    /// Order of listed scores.
+    fn row_cmp(&self, a: usize, b: usize) -> std::cmp::Ordering;
+}
+
+/// Sort key of a listed score: title (untitled ones last), then doc.
+fn title_key(f: &ScoreFacets) -> String {
+    if f.title.is_empty() {
+        "\u{10FFFF}".to_string()
+    } else {
+        f.title.to_lowercase()
+    }
+}
+
+impl FacetRows for [ScoreFacets] {
+    fn row_count(&self) -> usize {
+        self.len()
+    }
+    fn row_values(&self, i: usize, dim: &str) -> Vec<&str> {
+        values(&self[i], dim)
+    }
+    fn row_doc(&self, i: usize) -> u32 {
+        self[i].doc
+    }
+    fn row_title(&self, i: usize) -> &str {
+        &self[i].title
+    }
+    fn row_composer(&self, i: usize) -> &str {
+        &self[i].composer
+    }
+    fn row_field(&self, i: usize, dim: &str) -> &str {
+        let f = &self[i];
+        match dim {
+            "tonart" => &f.key,
+            "takt" => &f.meter,
+            "tempo" => &f.tempo,
+            "besetzung" => &f.ensemble,
+            _ => "",
+        }
+    }
+    fn row_cmp(&self, a: usize, b: usize) -> std::cmp::Ordering {
+        title_key(&self[a]).cmp(&title_key(&self[b])).then(self[a].doc.cmp(&self[b].doc))
+    }
+}
+
+/// Two row lists as one: first all rows of `first`, then those of `then`.
+pub struct ChainRows<'a, A: FacetRows + ?Sized, B: FacetRows + ?Sized> {
+    pub first: &'a A,
+    pub then: &'a B,
+}
+
+impl<A: FacetRows + ?Sized, B: FacetRows + ?Sized> FacetRows for ChainRows<'_, A, B> {
+    fn row_count(&self) -> usize {
+        self.first.row_count() + self.then.row_count()
+    }
+    fn row_values(&self, i: usize, dim: &str) -> Vec<&str> {
+        let n = self.first.row_count();
+        if i < n { self.first.row_values(i, dim) } else { self.then.row_values(i - n, dim) }
+    }
+    fn row_doc(&self, i: usize) -> u32 {
+        let n = self.first.row_count();
+        if i < n { self.first.row_doc(i) } else { self.then.row_doc(i - n) }
+    }
+    fn row_title(&self, i: usize) -> &str {
+        let n = self.first.row_count();
+        if i < n { self.first.row_title(i) } else { self.then.row_title(i - n) }
+    }
+    fn row_composer(&self, i: usize) -> &str {
+        let n = self.first.row_count();
+        if i < n { self.first.row_composer(i) } else { self.then.row_composer(i - n) }
+    }
+    fn row_field(&self, i: usize, dim: &str) -> &str {
+        let n = self.first.row_count();
+        if i < n { self.first.row_field(i, dim) } else { self.then.row_field(i - n, dim) }
+    }
+    fn row_cmp(&self, a: usize, b: usize) -> std::cmp::Ordering {
+        let n = self.first.row_count();
+        match (a < n, b < n) {
+            (true, true) => self.first.row_cmp(a, b),
+            (false, false) => self.then.row_cmp(a - n, b - n),
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+        }
+    }
 }
 
 /// Kinder des Knotens `path` (Werte der ersten `path.len()` Ebenen).
 /// Ist `path` so lang wie `levels`, kommen die Partituren (alphabetisch).
 pub fn tree_children(all: &[ScoreFacets], levels: &[&str], path: &[String], offset: usize, limit: usize) -> TreeLevel {
-    let hits: Vec<&ScoreFacets> = all.iter().filter(|f| matches(f, levels, path)).collect();
+    tree_children_rows(all, levels, path, offset, limit)
+}
+
+/// Like [`tree_children`], for any rows of facets.
+pub fn tree_children_rows<R: FacetRows + ?Sized>(rows: &R, levels: &[&str], path: &[String], offset: usize, limit: usize) -> TreeLevel {
+    let matches = |i: usize| path.iter().enumerate().all(|(k, want)| levels.get(k).map(|d| rows.row_values(i, d).contains(&want.as_str())).unwrap_or(true));
+    let hits: Vec<usize> = (0..rows.row_count()).filter(|&i| matches(i)).collect();
     let matching = hits.len();
     if let Some(&dim) = levels.get(path.len()) {
         let mut counts: HashMap<&str, usize> = HashMap::new();
-        for f in &hits {
-            for v in values(f, dim) {
+        for &i in &hits {
+            for v in rows.row_values(i, dim) {
                 *counts.entry(v).or_default() += 1;
             }
         }
@@ -364,22 +464,20 @@ pub fn tree_children(all: &[ScoreFacets], levels: &[&str], path: &[String], offs
         let nodes = nodes.into_iter().skip(offset).take(limit).collect();
         return TreeLevel { dimension: dimension(dim).map(|d| d.key), nodes, scores: Vec::new(), total, matching };
     }
-    let mut scores: Vec<&ScoreFacets> = hits;
-    scores.sort_by(|a, b| {
-        let key = |f: &ScoreFacets| if f.title.is_empty() { "\u{10FFFF}".to_string() } else { f.title.to_lowercase() };
-        key(a).cmp(&key(b)).then(a.doc.cmp(&b.doc))
-    });
+    let mut scores: Vec<usize> = hits;
+    scores.sort_by(|&a, &b| rows.row_cmp(a, b));
     let total = scores.len();
     let scores = scores
         .into_iter()
         .skip(offset)
         .take(limit)
-        .map(|f| TreeScore {
-            doc: f.doc,
-            title: f.title.clone(),
-            composer: f.composer.clone(),
-            facts: [("tonart", f.key.as_str()), ("takt", f.meter.as_str()), ("tempo", f.tempo.as_str()), ("besetzung", f.ensemble.as_str())]
+        .map(|i| TreeScore {
+            doc: rows.row_doc(i),
+            title: rows.row_title(i).to_string(),
+            composer: rows.row_composer(i).to_string(),
+            facts: ["tonart", "takt", "tempo", "besetzung"]
                 .iter()
+                .map(|d| (*d, rows.row_field(i, d)))
                 .filter(|(_, s)| !s.is_empty() && *s != "ohne Angabe")
                 .map(|(d, s)| value_label(d, s))
                 .collect::<Vec<_>>()

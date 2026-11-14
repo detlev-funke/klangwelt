@@ -53,8 +53,10 @@ test("lädt mit dem echten Kern: Engine im Worklet, Agent erklärt, keine Fehler
   // Befehl aus dem Kern, den die Attrappe nicht kann: Quintenzirkel aus klang-music
   const view = await app.eval(() => T.backend.harmonyView(null));
   assert.equal(view.circle.length, 36, "Quintenzirkel: drei Ringe zu zwölf Feldern");
-  // Bibliothek: erklärt, warum es noch keine gibt
-  assert.match((await app.eval(() => T.backend.libraryInfo())).message, /Browser/);
+  // Bibliothek: ohne eingerichtetes Paket (library.json leer) nur die eigenen Noten
+  const lib = await app.waitFor(async () => { const i = await T.backend.libraryInfo(); return i.web?.remote === "none" ? i : null; }, { what: "Bibliothek ohne Paket" });
+  assert.equal(lib.id, "browser");
+  assert.equal(lib.message, null);
   assert.deepEqual(app.errors, []);
 });
 

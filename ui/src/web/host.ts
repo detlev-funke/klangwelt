@@ -47,6 +47,10 @@ const AGENT_HINT = t(
 
 const NOT_IN_BROWSER = t("Not yet available in the browser – see docs/WEB.md.");
 
+/** The worker's code for "the package on the server can't be reached" (web/worker.ts). */
+const LIBRARY_OFFLINE = "klangwelt:library-offline";
+const LIBRARY_OFFLINE_TEXT = t("The score library on the server can't be reached right now – offline, only scores you've used before are available.");
+
 /** Ordner im Dateibaum des Kerns, in den hereingezogene Dateien kommen. */
 const IMPORT_DIR = "/Klangwelt/Import";
 const PROJECTS_DIR = "/Klangwelt/Projekte";
@@ -85,7 +89,7 @@ export function createWebLink(): CoreLink {
       };
       worker!.onerror = (e) => reject(new Error(t("Web core: {message}", { message: e.message })));
     });
-    const init = { sampleRate: audio.ctx?.sampleRate ?? 48000, audio: !!port, agentHint: AGENT_HINT, port };
+    const init = { sampleRate: audio.ctx?.sampleRate ?? 48000, audio: !!port, agentHint: AGENT_HINT, port, page: location.href };
     worker.postMessage({ init }, port ? [port] : []);
     await started;
   })();
@@ -96,7 +100,7 @@ export function createWebLink(): CoreLink {
     if (!p) return;
     pending.delete(m.id);
     if (!m.ok) {
-      p.reject(m.error);
+      p.reject(m.error === LIBRARY_OFFLINE ? LIBRARY_OFFLINE_TEXT : m.error);
       return;
     }
     if (p.binary) {
@@ -156,7 +160,12 @@ export function createWebLink(): CoreLink {
     app_close: async () => null,
     // Statt „Im Ordner zeigen“: herunterladen
     export_reveal: async (a) => download(String(a.path)),
-    library_add: async () => Promise.reject(NOT_IN_BROWSER),
+    // files of the computer into the core's file tree (e.g. for the own scores)
+    web_import_files: async (a) => {
+      const paths: string[] = [];
+      for (const f of (a.files as File[]) ?? []) paths.push(await importFile(f));
+      return paths;
+    },
     library_list: async () => [],
     library_create: async () => Promise.reject(NOT_IN_BROWSER),
     library_switch: async () => Promise.reject(NOT_IN_BROWSER),

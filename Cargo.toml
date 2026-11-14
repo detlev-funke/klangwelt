@@ -11,6 +11,7 @@ members = [
     "crates/klang-app",
     "crates/klang-web",
     "crates/klang-worklet",
+    "crates/klang-libbuild",
 ]
 
 [workspace.package]

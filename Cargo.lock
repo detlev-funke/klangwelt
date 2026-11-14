@@ -454,6 +454,17 @@ name = "klang-i18n"
 version = "0.1.0"
 
 [[package]]
+name = "klang-libbuild"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "klang-music",
+ "serde",
+ "serde_json",
+ "tar",
+]
+
+[[package]]
 name = "klang-mcp"
 version = "0.1.0"
 dependencies = [
@@ -488,6 +499,8 @@ dependencies = [
  "klang-engine",
  "klang-i18n",
  "klang-mcp",
+ "klang-music",
+ "serde",
  "serde_json",
 ]
 

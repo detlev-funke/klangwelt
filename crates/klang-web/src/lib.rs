@@ -20,6 +20,7 @@
 
 use klang_app::{commands, settings, vfs, AppState, Host};
 use klang_engine::wire::Kind;
+use klang_music::source::remote;
 use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
@@ -178,10 +179,9 @@ pub extern "C" fn kw_init(sample_rate: u32, audio: u32) {
         let _ = st.set_metronome(on);
     }
     *st.settings_file.lock().unwrap_or_else(|e| e.into_inner()) = Some(file);
-    // Herunterladen und Indizieren macht auf dem Desktop dessen Hülle – im Browser gibt es das noch nicht.
-    // a key, translated when asked for (`library::info`) – no language has been chosen yet.
-    st.library_status.lock().unwrap_or_else(|e| e.into_inner()).message =
-        Some(klang_i18n::tk!("There's no score library in the browser yet (downloading and indexing are missing) – see docs/WEB.md.").into());
+    // Library: own scores now (from the file tree), the package on the server
+    // when the worker script attaches it (`library_web_attach`).
+    klang_app::weblib::init(&st);
     let _ = STATE.set(st);
 }
 
@@ -202,7 +202,10 @@ pub unsafe extern "C" fn kw_agent_hint(ptr: *const u8, len: usize) {
 // ---------------------------------------------------------------- Befehle
 
 /// Befehl der Oberfläche ausführen (Name, Argumente als JSON). 0 = Antwort
-/// (JSON) im Ausgabepuffer, 1 = Fehlertext im Ausgabepuffer.
+/// (JSON) im Ausgabepuffer, 1 = Fehlertext im Ausgabepuffer, 2 = es fehlen
+/// Daten vom Server: im Ausgabepuffer `[{file, start, end}, …]` – das Skript
+/// holt sie, übergibt sie mit [`kw_lib_feed`] und ruft den Befehl erneut auf
+/// (siehe `klang_music::source::remote`).
 ///
 /// # Safety
 /// Zeiger und Längen gültiger UTF-8-Texte.
@@ -222,7 +225,16 @@ pub unsafe extern "C" fn kw_invoke(cmd: *const u8, cmd_len: usize, args: *const 
             }
         },
     };
-    match commands::call(st, text(cmd, cmd_len), &args) {
+    remote::begin();
+    let result = match web_command(st, text(cmd, cmd_len), &args) {
+        Some(r) => r,
+        None => commands::call(st, text(cmd, cmd_len), &args),
+    };
+    if let Some(need) = missing() {
+        set_out(need);
+        return 2;
+    }
+    match result {
         Ok(json) => {
             set_out(json.into_bytes());
             0
@@ -232,6 +244,43 @@ pub unsafe extern "C" fn kw_invoke(cmd: *const u8, cmd_len: usize, args: *const 
             1
         }
     }
+}
+
+/// Ranges the last command missed (JSON), if any.
+fn missing() -> Option<Vec<u8>> {
+    let need = remote::take_missing();
+    (!need.is_empty()).then(|| serde_json::to_vec(&need).unwrap_or_default())
+}
+
+/// Commands that only the browser has – on the desktop its shell handles
+/// libraries (`app/src/library.rs`). The work is done in the core (`weblib`).
+fn web_command(st: &AppState, cmd: &str, args: &Value) -> Option<Result<String, String>> {
+    use klang_app::weblib;
+    let str_arg = |k: &str| args.get(k).and_then(Value::as_str).map(str::to_string);
+    fn json<T: serde::Serialize>(r: Result<T, String>) -> Result<String, String> {
+        r.and_then(|v| serde_json::to_string(&v).map_err(|e| e.to_string()))
+    }
+    Some(match cmd {
+        "library_add" => {
+            let paths: Vec<String> = args.get("paths").and_then(|p| serde_json::from_value(p.clone()).ok()).unwrap_or_default();
+            json(weblib::add(st, &paths))
+        }
+        "library_own_list" => json(weblib::list(st)),
+        "library_own_remove" => json(weblib::remove(st, &str_arg("path").unwrap_or_default())),
+        "library_web_attach" => json(weblib::attach(st, args.get("manifest").unwrap_or(&Value::Null))),
+        "library_web_state" => json(weblib::set_remote_state(st, &str_arg("state").unwrap_or_default(), str_arg("error"))),
+        _ => return None,
+    })
+}
+
+/// Bytes of a file of the library package (`file`, from `start`) – the
+/// answer to status 2 of [`kw_invoke`]. 0 = taken, 1 = unknown file.
+///
+/// # Safety
+/// Zeiger und Längen gültiger Bereiche.
+#[no_mangle]
+pub unsafe extern "C" fn kw_lib_feed(file: *const u8, file_len: usize, start: f64, data: *const u8, data_len: usize) -> u32 {
+    u32::from(!remote::feed(text(file, file_len), start.max(0.0) as u64, bytes(data, data_len).to_vec()))
 }
 
 /// Die Plattform „Browser“ für die Agent-Werkzeuge: alles außer Bibliotheken
@@ -246,21 +295,28 @@ impl klang_app::agent::AgentShell for WebAgentShell {
 
 /// Eine MCP-Nachricht (JSON-RPC) an die Agent-Werkzeuge – dieselben wie der
 /// MCP-Server des Desktops. Antwort als JSON im Ausgabepuffer (leer bei
-/// Benachrichtigungen).
+/// Benachrichtigungen). 0 = Antwort, 2 = es fehlen Daten vom Server (wie bei
+/// [`kw_invoke`]).
 ///
 /// # Safety
 /// Zeiger und Länge eines gültigen UTF-8-Texts.
 #[no_mangle]
-pub unsafe extern "C" fn kw_mcp(msg: *const u8, len: usize) {
+pub unsafe extern "C" fn kw_mcp(msg: *const u8, len: usize) -> u32 {
     if STATE.get().is_none() {
         set_out(br#"{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"Der Web-Kern ist noch nicht gestartet."}}"#.to_vec());
-        return;
+        return 0;
     }
+    remote::begin();
     let reply = match serde_json::from_slice::<Value>(bytes(msg, len)) {
         Ok(m) => klang_mcp::handle(&klang_app::agent::Agent::new(WebAgentShell), &m),
         Err(e) => Some(serde_json::json!({ "jsonrpc": "2.0", "id": null, "error": { "code": -32700, "message": format!("Ungültiges JSON: {e}") } })),
     };
+    if let Some(need) = missing() {
+        set_out(need);
+        return 2;
+    }
     set_out(reply.map(|r| r.to_string().into_bytes()).unwrap_or_default());
+    0
 }
 
 /// Status für die Oberfläche („engine-status“) als JSON im Ausgabepuffer –

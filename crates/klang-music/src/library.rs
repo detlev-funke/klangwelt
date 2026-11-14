@@ -62,7 +62,7 @@ pub fn score_entries(score: &Score, source: &str) -> Vec<(DocInfo, Vec<MelodyNot
                 composer: score.composer.clone().unwrap_or_default(),
                 part: p.name.clone(),
                 voice: voice_label(v),
-                note_count: 0,
+                ..Default::default()
             };
             (info, skyline(&v.notes))
         })

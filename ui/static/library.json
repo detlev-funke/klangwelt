@@ -1,0 +1,5 @@
+{
+  "zenodoRecord": "24231432",
+  "baseUrl": "",
+  "_doc": "Where the score library package lies: the Zenodo record id (e.g. \"12345678\") or a base URL ending in /. Empty: no package, only own scores. See docs/LIBRARY.md."
+}

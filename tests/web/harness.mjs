@@ -187,7 +187,7 @@ class WebApp {
   }
 
   async startServer() {
-    this.server = await serve(this.port);
+    this.server = await serve(this.port, this.serverArgs);
   }
 
   async close() {
@@ -211,9 +211,9 @@ class WebApp {
   }
 }
 
-/** Statischen Server starten (ui/dist-web). */
-async function serve(port) {
-  const server = spawn(process.execPath, [join(ROOT, "ui", "scripts", "serve.mjs"), "--web", `--port=${port}`], { stdio: ["ignore", "pipe", "inherit"] });
+/** Statischen Server starten (ui/dist-web); `args`: more options of serve.mjs (e.g. --library=…). */
+async function serve(port, args = []) {
+  const server = spawn(process.execPath, [join(ROOT, "ui", "scripts", "serve.mjs"), "--web", `--port=${port}`, ...args], { stdio: ["ignore", "pipe", "inherit"] });
   await new Promise((res, rej) => {
     const timer = setTimeout(() => rej(new Error("Server startet nicht")), 10000);
     server.stdout.on("data", (d) => {
@@ -273,15 +273,19 @@ async function ready(app) {
 
 /** Start the server and Edge (without a window), load the page. `languages`: the
  *  browser's preferred languages (navigator.languages) – German by default, because the
- *  tests check German texts; the UI detects its language from them (ui/src/i18n.ts). */
-export async function startWeb({ languages = "de-DE,de" } = {}) {
+ *  tests check German texts; the UI detects its language from them (ui/src/i18n.ts).
+ *  `library`: folder of a score library package (klang-libbuild), served under
+ *  /library/ like Zenodo (ranges, CORS) – see docs/LIBRARY.md. Without it the
+ *  app gets no package (never the Zenodo record from ui/static/library.json). */
+export async function startWeb({ languages = "de-DE,de", library = null } = {}) {
   if (!existsSync(join(ROOT, "ui", "dist-web", "klang_web.wasm"))) throw new Error("ui/dist-web fehlt – erst „npm run build:web“ in ui/");
   if (!existsSync(EDGE)) throw new Error(`Edge nicht gefunden: ${EDGE} (KLANGWELT_EDGE setzen)`);
   const tmp = mkdtempSync(join(tmpdir(), "klangwelt-web-"));
   const downloads = join(tmp, "downloads");
   mkdirSync(downloads, { recursive: true });
   const [port, cdpPort] = [await freePort(), await freePort()];
-  const server = await serve(port);
+  const serverArgs = library ? [`--library=${library}`] : ["--no-library"];
+  const server = await serve(port, serverArgs);
   const edge = spawn(
     EDGE,
     [
@@ -318,6 +322,7 @@ export async function startWeb({ languages = "de-DE,de" } = {}) {
   const url = `http://127.0.0.1:${port}/`;
   const app = new WebApp({ server, edge, page, browser, tmp, url, downloads });
   app.port = port;
+  app.serverArgs = serverArgs;
   app.cdpPort = cdpPort;
   await browser.send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: downloads, eventsEnabled: true });
   await app.send("Runtime.enable");

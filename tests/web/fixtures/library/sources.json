@@ -1,0 +1,19 @@
+{
+  "title": "Klangwelt test library",
+  "license": "CC BY 4.0",
+  "scoreLicenses": "Test melodies (traditional tunes and a made-up one), CC0 1.0.",
+  "creators": ["Klangwelt tests"],
+  "dedupe": true,
+  "sources": [
+    {
+      "id": "probe",
+      "collection": "Klangwelt test scores",
+      "license": "CC0-1.0",
+      "url": "https://github.com/DevFunke/klangwelt",
+      "attribution": "Klangwelt test melodies (traditional tunes), CC0 1.0.",
+      "genre": "folk",
+      "kind": "local",
+      "path": "scores"
+    }
+  ]
+}

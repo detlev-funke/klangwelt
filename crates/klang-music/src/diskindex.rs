@@ -22,15 +22,18 @@
 //! besten Kandidaten. KWIX03-Dateien (ohne Akkordstatistik) bleiben lesbar.
 
 use crate::chordstats::{composer_groups, ChordStats, Progression, GROUPS};
-use crate::facets::ScoreFacets;
+use crate::facets::{tree_children, tree_children_rows, ScoreFacets, TreeLevel};
 use crate::index::{gram_key, search_in, DocInfo, MelodyIndex, Posting, SearchData, SearchHit, LEVELS, MAX_POSTINGS_PER_GRAM};
 use crate::melody::{features, Feature, MelodyNote};
+use crate::source::{read_vec, ReadAt};
+use crate::webpack::WebParts;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::OnceLock;
 
 pub const MAGIC: &[u8; 6] = b"KWIX04";
 /// Vorgänger ohne Akkordstatistik – wird weiter gelesen.
@@ -69,41 +72,9 @@ fn get_varint(buf: &[u8], i: &mut usize) -> Option<u64> {
     }
 }
 
-/// Liest genau `buf.len()` Bytes ab `off`, ohne die Dateiposition zu teilen.
-fn read_at(f: &File, buf: &mut [u8], off: u64) -> io::Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::FileExt;
-        f.read_exact_at(buf, off)
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::FileExt;
-        let (mut done, mut off) = (0usize, off);
-        while done < buf.len() {
-            let n = f.seek_read(&mut buf[done..], off)?;
-            if n == 0 {
-                return Err(io::Error::new(io::ErrorKind::UnexpectedEof, klang_i18n::tr!("Index file too short")));
-            }
-            done += n;
-            off += n as u64;
-        }
-        Ok(())
-    }
-    // Andere Ziele (z. B. wasm32 im Browser): Position setzen und lesen.
-    #[cfg(not(any(unix, windows)))]
-    {
-        use std::io::{Read, Seek, SeekFrom};
-        let mut f = f;
-        f.seek(SeekFrom::Start(off))?;
-        f.read_exact(buf)
-    }
-}
-
-fn read_vec(f: &File, off: u64, len: u64) -> io::Result<Vec<u8>> {
-    let mut buf = vec![0u8; usize::try_from(len).map_err(io::Error::other)?];
-    read_at(f, &mut buf, off)?;
-    Ok(buf)
+/// Liest genau `buf.len()` Bytes ab `off` (Datei, Speicher oder entfernte Datei).
+fn read_at(f: &dyn ReadAt, buf: &mut [u8], off: u64) -> io::Result<()> {
+    f.read_at(buf, off)
 }
 
 fn u64s(bytes: &[u8]) -> Vec<u64> {
@@ -138,6 +109,8 @@ pub struct IndexWriter {
     chunk: Vec<(u64, u32, u32)>,
     runs: Vec<PathBuf>,
     chunk_limit: usize,
+    /// Herkunft (JSON) zwischen Kopf und Stimmangaben, siehe [`DiskIndex::provenance`].
+    provenance: Vec<u8>,
 }
 
 impl IndexWriter {
@@ -160,7 +133,15 @@ impl IndexWriter {
             chunk: Vec::new(),
             runs: Vec::new(),
             chunk_limit,
+            provenance: Vec::new(),
         })
+    }
+
+    /// Provenance of the index (a JSON object: sources, versions, checksums,
+    /// builder). It is written between the header and the voice entries; every
+    /// KWIX04 reader skips it, because all sections are found by their offsets.
+    pub fn set_provenance(&mut self, json: &str) {
+        self.provenance = json.as_bytes().to_vec();
     }
 
     /// Akkordfolge einer Partitur für die Statistik (doc = ihre erste Stimme);
@@ -264,7 +245,8 @@ impl IndexWriter {
     fn write_final(&mut self, part: &Path, cancel: &AtomicBool) -> io::Result<WriteStats> {
         let mut w = BufWriter::with_capacity(1 << 20, File::create(part)?);
         w.write_all(&[0u8; HEADER_LEN])?;
-        let mut pos = HEADER_LEN as u64;
+        w.write_all(&self.provenance)?;
+        let mut pos = (HEADER_LEN + self.provenance.len()) as u64;
         let copy = |w: &mut BufWriter<File>, path: &Path| -> io::Result<u64> { io::copy(&mut BufReader::new(File::open(path)?), w) };
 
         let docs_off = pos;
@@ -418,86 +400,330 @@ impl RunReader {
 
 // ---------------------------------------------------------------- Lesen
 
-pub struct DiskIndex {
-    file: File,
+/// Offsets of the voice entries or feature sequences: in memory, or – for a
+/// large remote index in the browser – read whole on first use instead of at
+/// opening. Read whole, a table costs one range once (the browser keeps it);
+/// read entry by entry, every search would need a round of requests more.
+enum Offsets {
+    All(Vec<u64>),
+    Later { at: u64, len: u64, loaded: OnceLock<Vec<u64>> },
+}
+
+/// Up to this size, the offset tables of a remote index are loaded at
+/// opening; larger ones with the first search.
+const SMALL_TABLE: u64 = 256 << 10;
+
+impl Offsets {
+    fn later(at: u64, len: u64) -> Self {
+        Offsets::Later { at, len, loaded: OnceLock::new() }
+    }
+
+    /// The whole table (`None` while a remote table is still missing).
+    fn load(&self, src: &dyn ReadAt) -> Option<&[u64]> {
+        match self {
+            Offsets::All(v) => Some(v),
+            Offsets::Later { at, len, loaded } => {
+                if let Some(v) = loaded.get() {
+                    return Some(v);
+                }
+                let raw = read_vec(src, *at, *len).ok()?;
+                let _ = loaded.set(u64s(&raw));
+                loaded.get().map(Vec::as_slice)
+            }
+        }
+    }
+
+    /// (start, end) of entry `i` (of `n`) relative to its section.
+    fn span(&self, src: &dyn ReadAt, i: usize, n: usize) -> Option<(u64, u64)> {
+        if i >= n {
+            return None;
+        }
+        let v = self.load(src)?;
+        Some((*v.get(i)?, *v.get(i + 1)?))
+    }
+
+    fn all(&self) -> io::Result<&[u64]> {
+        match self {
+            Offsets::All(v) => Ok(v),
+            Offsets::Later { loaded, .. } => loaded.get().map(Vec::as_slice).ok_or_else(|| io::Error::other("remote index: offset table not loaded")),
+        }
+    }
+}
+
+/// The 13 numbers of the header.
+struct Header {
     docs_off: u64,
-    docs_idx: Vec<u64>,
+    docs_idx_off: u64,
     seqs_off: u64,
-    seqs_idx: Vec<u64>,
+    seqs_idx_off: u64,
+    facets_off: u64,
+    post_off: u64,
+    keys_off: u64,
+    sparse_off: u64,
+    sparse_end: u64,
+    end: u64,
+    n_docs: u64,
+    n_keys: u64,
+    chords_off: u64,
+}
+
+fn read_header(file: &dyn ReadAt) -> io::Result<Header> {
+    let mut head = [0u8; HEADER_LEN];
+    read_at(file, &mut head, 0)?;
+    let v4 = &head[..6] == MAGIC;
+    if !v4 && &head[..6] != MAGIC_V3 {
+        return Err(invalid(&klang_i18n::tr!("not a Klangwelt index file (format 3/4)")));
+    }
+    let v = u64s(&head[8..]);
+    let [docs_off, docs_idx_off, seqs_off, seqs_idx_off, facets_off, post_off, keys_off, sparse_off, end, n_docs, n_keys, _n_post, chords_off] =
+        v[..13].try_into().map_err(|_| invalid(&klang_i18n::tr!("Header corrupted")))?;
+    let chords_off = if v4 { chords_off } else { 0 };
+    let sparse_end = if chords_off > 0 { chords_off } else { end };
+    if file.size()? < end
+        || !(HEADER_LEN as u64 <= docs_off
+            && docs_off <= docs_idx_off
+            && docs_idx_off <= seqs_off
+            && seqs_off <= seqs_idx_off
+            && seqs_idx_off <= facets_off
+            && facets_off <= post_off
+            && post_off <= keys_off
+            && keys_off <= sparse_off
+            && sparse_off <= sparse_end
+            && sparse_end <= end)
+    {
+        return Err(invalid(&klang_i18n::tr!("Index file incomplete or corrupted")));
+    }
+    if keys_off + n_keys * KEY_ENTRY as u64 != sparse_off || docs_idx_off + 8 * (n_docs + 1) > seqs_off {
+        return Err(invalid(&klang_i18n::tr!("Key table corrupted")));
+    }
+    Ok(Header { docs_off, docs_idx_off, seqs_off, seqs_idx_off, facets_off, post_off, keys_off, sparse_off, sparse_end, end, n_docs, n_keys, chords_off })
+}
+
+/// Provenance between header and voice entries (if the index has one).
+fn provenance_range(h: &Header) -> Option<(u64, u64)> {
+    let len = h.docs_off - HEADER_LEN as u64;
+    (len > 0 && len <= 4 << 20).then_some((HEADER_LEN as u64, len))
+}
+
+fn parse_provenance(raw: &[u8]) -> Option<String> {
+    let s = std::str::from_utf8(raw).ok()?.trim();
+    s.starts_with('{').then(|| s.to_string())
+}
+
+/// The provenance of an index file, reading only the header and the JSON
+/// (without opening the index).
+pub fn read_provenance(file: &dyn ReadAt) -> io::Result<Option<String>> {
+    let h = read_header(file)?;
+    Ok(match provenance_range(&h) {
+        Some((off, len)) => parse_provenance(&read_vec(file, off, len)?),
+        None => None,
+    })
+}
+
+pub struct DiskIndex {
+    file: Box<dyn ReadAt>,
+    n_docs: usize,
+    docs_off: u64,
+    docs_idx: Offsets,
+    seqs_off: u64,
+    seqs_idx: Offsets,
     post_off: u64,
     keys_off: u64,
     n_keys: u64,
-    sparse: Vec<u64>,
+    sparse_off: u64,
+    sparse_end: u64,
+    /// Dünnes Inhaltsverzeichnis – beim Öffnen geladen, bei einem entfernten
+    /// Index bei der ersten Melodiesuche.
+    sparse: OnceLock<Vec<u64>>,
     facets: Vec<ScoreFacets>,
     chords: Vec<ChordStats>,
+    provenance: Option<String>,
+    /// Package for the web (remote index): text index, tree, chord statistics.
+    web: Option<Box<WebParts>>,
+    /// The ZIP with the scores, if there is one ([`crate::scorezip`]).
+    scores: Option<Box<dyn ReadAt>>,
 }
 
 impl DiskIndex {
+    /// Opens an index file. Lies the ZIP of a package next to it
+    /// ([`crate::webpack::SCORES_FILE`]), scores are read from there.
     pub fn open(path: &Path) -> io::Result<Self> {
-        let file = File::open(path)?;
-        let mut head = [0u8; HEADER_LEN];
-        read_at(&file, &mut head, 0)?;
-        let v4 = &head[..6] == MAGIC;
-        if !v4 && &head[..6] != MAGIC_V3 {
-            return Err(invalid(&klang_i18n::tr!("not a Klangwelt index file (format 3/4)")));
+        let mut me = Self::open_source(Box::new(File::open(path)?))?;
+        let zip = path.with_file_name(crate::webpack::SCORES_FILE);
+        if zip.is_file() {
+            if let Ok(f) = File::open(&zip) {
+                me.scores = Some(Box::new(f));
+            }
         }
-        let v = u64s(&head[8..]);
-        let [docs_off, docs_idx_off, seqs_off, seqs_idx_off, facets_off, post_off, keys_off, sparse_off, end, n_docs, n_keys, _n_post, chords_off] =
-            v[..13].try_into().map_err(|_| invalid(&klang_i18n::tr!("Header corrupted")))?;
-        let chords_off = if v4 { chords_off } else { 0 };
-        let sparse_end = if chords_off > 0 { chords_off } else { end };
-        if file.metadata()?.len() < end || !(docs_off <= docs_idx_off && docs_idx_off <= seqs_off && seqs_off <= seqs_idx_off
-            && seqs_idx_off <= facets_off && facets_off <= post_off && post_off <= keys_off && keys_off <= sparse_off && sparse_off <= sparse_end
-            && sparse_end <= end)
-        {
-            return Err(invalid(&klang_i18n::tr!("Index file incomplete or corrupted")));
-        }
-        let docs_idx = u64s(&read_vec(&file, docs_idx_off, 8 * (n_docs + 1))?);
-        let seqs_idx = u64s(&read_vec(&file, seqs_idx_off, 8 * (n_docs + 1))?);
-        let facets: Vec<ScoreFacets> = serde_json::from_slice(&read_vec(&file, facets_off, post_off - facets_off)?).map_err(io::Error::other)?;
-        let sparse = u64s(&read_vec(&file, sparse_off, sparse_end - sparse_off)?);
-        if keys_off + n_keys * KEY_ENTRY as u64 != sparse_off {
-            return Err(invalid(&klang_i18n::tr!("Key table corrupted")));
-        }
-        let chords = if chords_off > 0 { ChordStats::decode_groups(&read_vec(&file, chords_off, end - chords_off)?)? } else { Vec::new() };
-        Ok(Self { file, docs_off, docs_idx, seqs_off, seqs_idx, post_off, keys_off, n_keys, sparse, facets, chords })
+        Ok(me)
+    }
+
+    /// Opens an index from any byte source; offsets, key directory, facets and
+    /// chord statistics are loaded into memory.
+    pub fn open_source(file: Box<dyn ReadAt>) -> io::Result<Self> {
+        let h = read_header(&*file)?;
+        let docs_idx = u64s(&read_vec(&*file, h.docs_idx_off, 8 * (h.n_docs + 1))?);
+        let seqs_idx = u64s(&read_vec(&*file, h.seqs_idx_off, 8 * (h.n_docs + 1))?);
+        let facets: Vec<ScoreFacets> = serde_json::from_slice(&read_vec(&*file, h.facets_off, h.post_off - h.facets_off)?).map_err(io::Error::other)?;
+        let sparse = u64s(&read_vec(&*file, h.sparse_off, h.sparse_end - h.sparse_off)?);
+        let chords = if h.chords_off > 0 { ChordStats::decode_groups(&read_vec(&*file, h.chords_off, h.end - h.chords_off)?)? } else { Vec::new() };
+        let provenance = match provenance_range(&h) {
+            Some((at, len)) => parse_provenance(&read_vec(&*file, at, len)?),
+            None => None,
+        };
+        Ok(Self {
+            n_docs: h.n_docs as usize,
+            docs_off: h.docs_off,
+            docs_idx: Offsets::All(docs_idx),
+            seqs_off: h.seqs_off,
+            seqs_idx: Offsets::All(seqs_idx),
+            post_off: h.post_off,
+            keys_off: h.keys_off,
+            n_keys: h.n_keys,
+            sparse_off: h.sparse_off,
+            sparse_end: h.sparse_end,
+            sparse: OnceLock::from(sparse),
+            facets,
+            chords,
+            provenance,
+            web: None,
+            scores: None,
+            file,
+        })
+    }
+
+    /// Opens a remote index (browser): now only the header, the provenance
+    /// and – for small indexes – the offset tables; everything else when a
+    /// search needs it. Text search, tree and chord statistics come from the
+    /// package's own files (`web`), scores from its ZIP. While data is still
+    /// missing this fails with `WouldBlock` ([`crate::source::remote`]).
+    pub fn open_remote(file: Box<dyn ReadAt>, web: WebParts, scores: Option<Box<dyn ReadAt>>) -> io::Result<Self> {
+        Self::open_remote_with(file, web, scores, SMALL_TABLE)
+    }
+
+    fn open_remote_with(file: Box<dyn ReadAt>, web: WebParts, scores: Option<Box<dyn ReadAt>>, small_table: u64) -> io::Result<Self> {
+        let h = read_header(&*file)?;
+        let table = 8 * (h.n_docs + 1);
+        // all reads of this round first, then the errors (one round of requests)
+        let prov = provenance_range(&h).map(|(at, len)| read_vec(&*file, at, len));
+        let (docs_idx, seqs_idx) = if table <= small_table {
+            let d = read_vec(&*file, h.docs_idx_off, table);
+            let s = read_vec(&*file, h.seqs_idx_off, table);
+            (Offsets::All(u64s(&d?)), Offsets::All(u64s(&s?)))
+        } else {
+            (Offsets::later(h.docs_idx_off, table), Offsets::later(h.seqs_idx_off, table))
+        };
+        let provenance = match prov {
+            Some(raw) => parse_provenance(&raw?),
+            None => None,
+        };
+        Ok(Self {
+            n_docs: h.n_docs as usize,
+            docs_off: h.docs_off,
+            docs_idx,
+            seqs_off: h.seqs_off,
+            seqs_idx,
+            post_off: h.post_off,
+            keys_off: h.keys_off,
+            n_keys: h.n_keys,
+            sparse_off: h.sparse_off,
+            sparse_end: h.sparse_end,
+            sparse: OnceLock::new(),
+            facets: Vec::new(),
+            chords: Vec::new(),
+            provenance,
+            web: Some(Box::new(web)),
+            scores,
+            file,
+        })
+    }
+
+    /// Provenance written by the package builder (JSON), if any.
+    pub fn provenance(&self) -> Option<&str> {
+        self.provenance.as_deref()
+    }
+
+    /// Is this a remote index (browser) with the package's own files?
+    pub fn is_remote(&self) -> bool {
+        self.web.is_some()
     }
 
     /// Akkordfolgen-Statistik aller Stücke (None bei Indexdateien vor KWIX04).
     pub fn chords(&self) -> Option<&ChordStats> {
-        self.chords.first()
+        self.chords_group(0)
     }
 
     /// Statistik einer Gruppe (0 = alle, 1 = Barock, 2 = Bach), falls vorhanden.
+    /// A remote index loads it on first use.
     pub fn chords_group(&self, g: usize) -> Option<&ChordStats> {
-        self.chords.get(g)
+        match &self.web {
+            Some(w) => w.chords()?.get(g),
+            None => self.chords.get(g),
+        }
+    }
+
+    /// Scores with a chord progression [major, minor] – without loading anything.
+    pub fn chord_counts(&self) -> Option<[u32; 2]> {
+        match &self.web {
+            Some(w) => w.chord_scores(),
+            None => self.chords.first().map(|c| c.scores),
+        }
     }
 
     pub fn doc_count(&self) -> usize {
-        self.docs_idx.len() - 1
+        self.n_docs
     }
 
     pub fn gram_count(&self) -> usize {
         self.n_keys as usize
     }
 
+    /// Facets of all scores in memory (empty for a remote index – its tree
+    /// comes from the package's facet table, see [`DiskIndex::tree`]).
     pub fn facets(&self) -> &[ScoreFacets] {
         &self.facets
     }
 
+    /// Number of scores (with a searchable voice).
+    pub fn score_count(&self) -> usize {
+        match &self.web {
+            Some(w) => w.score_count(),
+            None => self.facets.len(),
+        }
+    }
+
+    /// Scores in the tree (0 = index without facets).
+    pub fn tree_score_count(&self) -> usize {
+        match &self.web {
+            Some(w) if w.has_tree() => w.score_count(),
+            Some(_) => 0,
+            None => self.facets.len(),
+        }
+    }
+
     pub fn doc(&self, id: u32) -> Option<DocInfo> {
-        let i = id as usize;
-        let (a, b) = (*self.docs_idx.get(i)?, *self.docs_idx.get(i + 1)?);
-        let raw = read_vec(&self.file, self.docs_off + a, b - a).ok()?;
+        let (a, b) = self.docs_idx.span(&*self.file, id as usize, self.n_docs)?;
+        let raw = read_vec(&*self.file, self.docs_off + a, b - a).ok()?;
         serde_json::from_slice(&raw).ok()
+    }
+
+    /// The key directory (a remote index reads it on first use).
+    fn sparse(&self) -> Option<&[u64]> {
+        if let Some(s) = self.sparse.get() {
+            return Some(s);
+        }
+        let raw = read_vec(&*self.file, self.sparse_off, self.sparse_end - self.sparse_off).ok()?;
+        let _ = self.sparse.set(u64s(&raw));
+        self.sparse.get().map(Vec::as_slice)
     }
 
     /// Schlüssel → (Offset, Länge) der Fundstellen.
     fn lookup(&self, key: u64) -> Option<(u64, u32)> {
-        let block = self.sparse.partition_point(|&k| k <= key).checked_sub(1)?;
+        let sparse = self.sparse()?;
+        let block = sparse.partition_point(|&k| k <= key).checked_sub(1)?;
         let start = block as u64 * SPARSE_STEP;
         let end = (start + SPARSE_STEP).min(self.n_keys);
-        let raw = read_vec(&self.file, self.keys_off + start * KEY_ENTRY as u64, (end - start) * KEY_ENTRY as u64).ok()?;
+        let raw = read_vec(&*self.file, self.keys_off + start * KEY_ENTRY as u64, (end - start) * KEY_ENTRY as u64).ok()?;
         let entries: Vec<(u64, u64, u32)> = raw
             .chunks_exact(KEY_ENTRY)
             .map(|c| (u64::from_le_bytes(c[..8].try_into().unwrap()), u64::from_le_bytes(c[8..16].try_into().unwrap()), u32::from_le_bytes(c[16..].try_into().unwrap())))
@@ -507,20 +733,66 @@ impl DiskIndex {
     }
 
     pub fn search(&self, query: &[MelodyNote], limit: usize) -> Vec<SearchHit> {
+        if self.web.is_some() {
+            // a remote index: what every search needs, in the first round together
+            let _ = self.sparse();
+            let _ = self.seqs_idx.load(&*self.file);
+            let _ = self.docs_idx.load(&*self.file);
+        }
         search_in(self, query, limit)
     }
 
     /// Textsuche über Titel, Komponist, Stimmnamen, Genre, Instrumentengruppen,
     /// Tonart und Stimmung (je Partitur; alle Wörter müssen vorkommen).
     pub fn search_text(&self, query: &str, limit: usize) -> Vec<(u32, DocInfo)> {
-        facet_text_search(self.facets.iter(), query).take(limit).filter_map(|doc| self.doc(doc).map(|d| (doc, d))).collect()
+        if self.web.is_some() {
+            // the hits' voice entries need it: fetched in the round of the terms
+            let _ = self.docs_idx.load(&*self.file);
+        }
+        let docs: Vec<u32> = match &self.web {
+            Some(w) => w.search_text(query, limit),
+            None => facet_text_search(self.facets.iter(), query).take(limit).collect(),
+        };
+        docs.into_iter().filter_map(|doc| self.doc(doc).map(|d| (doc, d))).collect()
+    }
+
+    /// Children of a tree node (see [`crate::facets::tree_children`]); a remote
+    /// index uses the package's facet table and reads the titles of the listed scores.
+    pub fn tree(&self, levels: &[&str], path: &[String], offset: usize, limit: usize) -> TreeLevel {
+        match &self.web {
+            Some(w) => {
+                let Some(table) = w.table() else { return TreeLevel::default() };
+                let mut level = tree_children_rows(table, levels, path, offset, limit);
+                self.fill_titles(&mut level);
+                level
+            }
+            None => tree_children(&self.facets, levels, path, offset, limit),
+        }
+    }
+
+    /// Titles of listed scores that the facet table doesn't carry (from the voice entries).
+    fn fill_titles(&self, level: &mut TreeLevel) {
+        let infos: Vec<Option<DocInfo>> = level.scores.iter().map(|s| if s.title.is_empty() { self.doc(s.doc) } else { None }).collect();
+        for (s, info) in level.scores.iter_mut().zip(infos) {
+            if let Some(i) = info {
+                s.title = i.title.trim().to_string();
+            }
+        }
+    }
+
+    /// The score of a voice entry from the package's ZIP: `None` if it doesn't
+    /// lie in a ZIP (then `info.source` is a path).
+    pub fn score_bytes(&self, info: &DocInfo) -> Option<io::Result<(String, Vec<u8>)>> {
+        let at = info.zip?;
+        let zip = self.scores.as_deref()?;
+        Some(crate::scorezip::read_entry(zip, at))
     }
 }
 
 impl SearchData for DiskIndex {
     fn postings(&self, key: u64) -> Option<Vec<Posting>> {
         let (rel, len) = self.lookup(key)?;
-        let raw = read_vec(&self.file, self.post_off + rel, len as u64).ok()?;
+        let raw = read_vec(&*self.file, self.post_off + rel, len as u64).ok()?;
         let mut out = Vec::new();
         let (mut i, mut doc) = (0usize, 0u64);
         while i < raw.len() {
@@ -532,15 +804,18 @@ impl SearchData for DiskIndex {
     }
 
     fn seq(&self, doc: u32) -> Vec<Feature> {
-        let i = doc as usize;
-        let (Some(&a), Some(&b)) = (self.seqs_idx.get(i), self.seqs_idx.get(i + 1)) else { return Vec::new() };
-        read_vec(&self.file, self.seqs_off + a, b - a)
+        let Some((a, b)) = self.seqs_idx.span(&*self.file, doc as usize, self.n_docs) else { return Vec::new() };
+        read_vec(&*self.file, self.seqs_off + a, b - a)
             .map(|raw| raw.chunks_exact(2).map(|c| Feature { interval: c[0] as i8, rhythm: c[1] as i8 }).collect())
             .unwrap_or_default()
     }
 
     fn info(&self, doc: u32) -> DocInfo {
         self.doc(doc).unwrap_or_default()
+    }
+
+    fn pending(&self) -> bool {
+        crate::source::remote::pending()
     }
 }
 
@@ -692,8 +967,104 @@ impl AnyIndex {
     pub fn score_count(&self) -> usize {
         match self {
             Self::Mem(m) => m.score_count(),
-            Self::Disk(d) => d.facets().len(),
+            Self::Disk(d) => d.score_count(),
             Self::Layered(l) => l.base_scores + l.extra.facets().len(),
+        }
+    }
+
+    /// Scores in the tree (0 = no facets, reindex) – without loading anything.
+    pub fn tree_score_count(&self) -> usize {
+        match self {
+            Self::Mem(m) => m.facets().len(),
+            Self::Disk(d) => d.tree_score_count(),
+            Self::Layered(l) if l.base.is_remote() => l.base.tree_score_count() + l.extra.facets().len(),
+            Self::Layered(l) => l.facets.len(),
+        }
+    }
+
+    /// Scores with a chord progression [major, minor] – without loading anything.
+    pub fn chord_counts(&self) -> Option<[u32; 2]> {
+        match self {
+            Self::Mem(_) => None,
+            Self::Disk(d) => d.chord_counts(),
+            Self::Layered(l) => l.base.chord_counts(),
+        }
+    }
+
+    /// A remote index (browser), possibly with own scores layered over it.
+    pub fn is_remote(&self) -> bool {
+        match self {
+            Self::Mem(_) => false,
+            Self::Disk(d) => d.is_remote(),
+            Self::Layered(l) => l.base.is_remote(),
+        }
+    }
+
+    /// Provenance of the (base) index, see [`DiskIndex::provenance`].
+    pub fn provenance(&self) -> Option<&str> {
+        match self {
+            Self::Mem(_) => None,
+            Self::Disk(d) => d.provenance(),
+            Self::Layered(l) => l.base.provenance(),
+        }
+    }
+
+    /// Voice numbers from here on belong to the layered scores (`None`: nothing layered).
+    pub fn extra_offset(&self) -> Option<u32> {
+        match self {
+            Self::Layered(l) => Some(l.offset),
+            _ => None,
+        }
+    }
+
+    /// The score of a voice entry from a package's ZIP (`None`: it lies in a file of its own).
+    pub fn score_bytes(&self, info: &DocInfo) -> Option<io::Result<(String, Vec<u8>)>> {
+        match self {
+            Self::Mem(_) => None,
+            Self::Disk(d) => d.score_bytes(info),
+            Self::Layered(l) => l.base.score_bytes(info),
+        }
+    }
+
+    /// Children of a tree node over all scores (see [`tree_children`]). Own
+    /// scores layered over a remote index are listed before its scores.
+    pub fn tree(&self, levels: &[&str], path: &[String], offset: usize, limit: usize) -> TreeLevel {
+        match self {
+            Self::Mem(m) => tree_children(m.facets(), levels, path, offset, limit),
+            Self::Disk(d) => d.tree(levels, path, offset, limit),
+            Self::Layered(l) => match &l.base {
+                Self::Disk(d) if d.is_remote() => {
+                    let Some(table) = d.web.as_ref().and_then(|w| w.table()) else { return TreeLevel::default() };
+                    let rows = crate::facets::ChainRows { first: &l.facets[..], then: table };
+                    let mut level = tree_children_rows(&rows, levels, path, offset, limit);
+                    d.fill_titles(&mut level);
+                    level
+                }
+                _ => tree_children(&l.facets, levels, path, offset, limit),
+            },
+        }
+    }
+
+    /// Takes the layered scores off again: the base index and the extra one
+    /// (to layer a changed extra index over the same base).
+    pub fn split(self) -> (AnyIndex, Option<MelodyIndex>) {
+        match self {
+            Self::Layered(l) => {
+                let Layered { mut base, extra, offset, facets, base_has_facets, .. } = *l;
+                if base_has_facets {
+                    base.restore_facets(facets.into_iter().filter(|f| f.doc < offset).collect());
+                }
+                (base, Some(extra))
+            }
+            other => (other, None),
+        }
+    }
+
+    fn restore_facets(&mut self, facets: Vec<ScoreFacets>) {
+        match self {
+            Self::Mem(m) => m.set_facets(facets),
+            Self::Disk(d) => d.facets = facets,
+            Self::Layered(l) => l.facets = facets,
         }
     }
 
@@ -745,6 +1116,15 @@ impl AnyIndex {
         match self {
             Self::Mem(m) => m.search_text(query, limit),
             Self::Disk(d) => d.search_text(query, limit),
+            Self::Layered(l) if l.base.is_remote() => {
+                // own scores first (few), then the remote index
+                let mut out: Vec<(u32, DocInfo)> = facet_text_search(l.facets.iter(), query).take(limit).filter_map(|doc| self.doc(doc).map(|d| (doc, d))).collect();
+                let rest = limit.saturating_sub(out.len());
+                if rest > 0 {
+                    out.extend(l.base.search_text(query, rest));
+                }
+                out
+            }
             Self::Layered(l) => {
                 // Ohne eigene Merkmale sucht der Grundindex selbst (über seine Stimmen).
                 let mut out = if l.base_has_facets { Vec::new() } else { l.base.search_text(query, limit) };
@@ -810,7 +1190,7 @@ fn collect_parts<'a>(any: &'a AnyIndex, offset: u32, out: &mut Vec<(Part<'a>, u3
 
 /// Liest einen Bereich der Datei der Reihe nach in großen Blöcken.
 struct BlockReader<'a> {
-    file: &'a File,
+    file: &'a dyn ReadAt,
     /// Dateiposition des ersten Bytes in `buf`.
     start: u64,
     buf: Vec<u8>,
@@ -821,7 +1201,7 @@ struct BlockReader<'a> {
 impl<'a> BlockReader<'a> {
     const BLOCK: u64 = 4 << 20;
 
-    fn new(file: &'a File, pos: u64, end: u64) -> Self {
+    fn new(file: &'a dyn ReadAt, pos: u64, end: u64) -> Self {
         Self { file, start: pos, buf: Vec::new(), at: 0, end }
     }
 
@@ -870,7 +1250,7 @@ impl Part<'_> {
     /// `f(i, json)` für jede Stimmangabe der Reihe nach.
     fn each_doc(&self, mut f: impl FnMut(usize, &[u8]) -> io::Result<()>) -> io::Result<()> {
         match self {
-            Part::Disk(d) => each_slice(&d.file, d.docs_off, &d.docs_idx, f),
+            Part::Disk(d) => each_slice(&*d.file, d.docs_off, d.docs_idx.all()?, f),
             Part::Mem(m) => {
                 for (i, doc) in m.parts().0.iter().enumerate() {
                     f(i, &serde_json::to_vec(doc).map_err(io::Error::other)?)?;
@@ -883,7 +1263,7 @@ impl Part<'_> {
     /// `f(i, folge)` für jede Merkmalsfolge (2 Byte je Merkmal) der Reihe nach.
     fn each_seq(&self, mut f: impl FnMut(usize, &[u8]) -> io::Result<()>) -> io::Result<()> {
         match self {
-            Part::Disk(d) => each_slice(&d.file, d.seqs_off, &d.seqs_idx, f),
+            Part::Disk(d) => each_slice(&*d.file, d.seqs_off, d.seqs_idx.all()?, f),
             Part::Mem(m) => {
                 let mut raw = Vec::new();
                 for (i, s) in m.parts().1.iter().enumerate() {
@@ -899,8 +1279,8 @@ impl Part<'_> {
     fn keys(&self) -> KeyCursor<'_> {
         let src = match *self {
             Part::Disk(d) => {
-                let table = BlockReader::new(&d.file, d.keys_off, d.keys_off + d.n_keys * KEY_ENTRY as u64);
-                let posts = BlockReader::new(&d.file, d.post_off, d.keys_off);
+                let table = BlockReader::new(&*d.file, d.keys_off, d.keys_off + d.n_keys * KEY_ENTRY as u64);
+                let posts = BlockReader::new(&*d.file, d.post_off, d.keys_off);
                 KeySrc::Disk { d, next: 0, table, posts }
             }
             Part::Mem(m) => {
@@ -914,7 +1294,7 @@ impl Part<'_> {
 }
 
 /// Einträge `idx[i]..idx[i+1]` ab `base` der Reihe nach, in Blöcken gelesen.
-fn each_slice(file: &File, base: u64, idx: &[u64], mut f: impl FnMut(usize, &[u8]) -> io::Result<()>) -> io::Result<()> {
+fn each_slice(file: &dyn ReadAt, base: u64, idx: &[u64], mut f: impl FnMut(usize, &[u8]) -> io::Result<()>) -> io::Result<()> {
     let n = idx.len().saturating_sub(1);
     let mut i = 0;
     let mut buf = Vec::new();
@@ -1538,6 +1918,108 @@ mod tests {
         assert_eq!(i, buf.len());
     }
 
+    /// Runs `f` like the web shell does: as long as data is missing, hand over
+    /// the missing ranges (from `files`) and run again. Returns the result and
+    /// the number of rounds with requests.
+    fn in_rounds<T>(files: &[(&str, &[u8])], mut f: impl FnMut() -> T) -> (T, usize) {
+        use crate::source::remote;
+        let mut rounds = 0;
+        loop {
+            remote::begin();
+            let r = f();
+            let need = remote::take_missing();
+            if need.is_empty() {
+                return (r, rounds);
+            }
+            rounds += 1;
+            assert!(rounds < 12, "no progress: {need:?}");
+            for n in need {
+                let bytes = files.iter().find(|(name, _)| *name == n.file).expect("known file").1;
+                assert!(remote::feed(&n.file, n.start, bytes[n.start as usize..n.end as usize].to_vec()));
+            }
+        }
+    }
+
+    #[test]
+    fn remote_index_reads_in_rounds_and_matches_the_file() {
+        use crate::source::remote::RemoteFile;
+        use crate::webpack::{write_facet_table, write_text_index};
+        let tunes = melodies(300);
+        let dir = std::env::temp_dir().join(format!("klang-disk-remote-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut w = IndexWriter::new(&dir.join("tmp")).unwrap();
+        w.set_provenance(r#"{"format":"KWIX04","sources":["test"]}"#);
+        let mut facets = Vec::new();
+        for (i, t) in tunes.iter().enumerate() {
+            let doc = w.add_melody(info(i), t).unwrap().unwrap();
+            if i % 2 == 0 {
+                let f = ScoreFacets { doc, title: format!("Stück {}", i / 2), composer: if i % 4 == 0 { "Bach".into() } else { "Händel".into() }, genres: vec!["Klassik".into()], ..Default::default() };
+                w.add_facets(f.clone());
+                facets.push(f);
+            }
+        }
+        let out = dir.join("t.kwix");
+        w.finish(&out, &AtomicBool::new(false)).unwrap();
+        let local = DiskIndex::open(&out).unwrap();
+        assert_eq!(local.provenance(), Some(r#"{"format":"KWIX04","sources":["test"]}"#));
+        let (index, text, table) = (std::fs::read(&out).unwrap(), write_text_index(&facets), write_facet_table(&facets));
+        let tag = std::process::id();
+        for small in [SMALL_TABLE, 0] {
+            let names = [format!("idx-{tag}-{small}"), format!("txt-{tag}-{small}"), format!("tab-{tag}-{small}")];
+            let files: Vec<(&str, &[u8])> = vec![(&names[0], &index), (&names[1], &text), (&names[2], &table)];
+            let open = || {
+                let web = WebParts::new(
+                    Some(Box::new(RemoteFile::new(&names[1], text.len() as u64))),
+                    Some(Box::new(RemoteFile::new(&names[2], table.len() as u64))),
+                    None,
+                    facets.len(),
+                    None,
+                );
+                DiskIndex::open_remote_with(Box::new(RemoteFile::new(&names[0], index.len() as u64)), web, None, small)
+            };
+            let (remote, rounds) = in_rounds(&files, open);
+            let remote = remote.unwrap();
+            assert_eq!(rounds, 2, "header, then provenance (and small tables)");
+            assert_eq!(remote.provenance(), local.provenance());
+            assert_eq!((remote.doc_count(), remote.score_count()), (local.doc_count(), local.score_count()));
+            // melody search: the same hits in a few rounds
+            for i in [3usize, 77, 150] {
+                let q: Vec<MelodyNote> = tunes[i][2..12].to_vec();
+                let (hits, rounds) = in_rounds(&files, || remote.search(&q, 5));
+                let want = local.search(&q, 5);
+                assert_eq!(hits.iter().map(|h| (h.doc, h.note_index, h.info.clone())).collect::<Vec<_>>(), want.iter().map(|h| (h.doc, h.note_index, h.info.clone())).collect::<Vec<_>>());
+                assert!(rounds <= 5, "rounds: {rounds}");
+            }
+            // text search through the text index, tree through the facet table
+            let (hits, _) = in_rounds(&files, || remote.search_text("bach", 50));
+            assert_eq!(hits, local.search_text("bach", 50));
+            assert!(!hits.is_empty());
+            let (top, _) = in_rounds(&files, || remote.tree(&["komponist"], &[], 0, 10));
+            assert_eq!(top.nodes, local.tree(&["komponist"], &[], 0, 10).nodes);
+            let path = vec!["Bach".to_string()];
+            let (leaves, _) = in_rounds(&files, || remote.tree(&["komponist"], &path, 0, 5));
+            let want = local.tree(&["komponist"], &path, 0, 5);
+            assert_eq!(leaves.scores.iter().map(|s| (s.doc, s.title.clone())).collect::<Vec<_>>(), want.scores.iter().map(|s| (s.doc, s.title.clone())).collect::<Vec<_>>());
+            // an own index layered over the remote one: own scores first in text search and tree
+            let mut own = MelodyIndex::new();
+            let doc = own.add_melody(DocInfo { source: "/Klangwelt/Bibliothek/Eigene/mein.musicxml".into(), title: "Mein Bach".into(), ..Default::default() }, &tunes[0]).unwrap();
+            own.add_facets(ScoreFacets { doc, title: "Mein Bach".into(), composer: "Bach".into(), ..Default::default() });
+            let layered = AnyIndex::layered(AnyIndex::Disk(remote), own);
+            let (hits, _) = in_rounds(&files, || layered.search_text("bach", 3));
+            assert_eq!(hits[0].1.title, "Mein Bach");
+            assert_eq!(hits.len(), 3);
+            let (leaves, _) = in_rounds(&files, || layered.tree(&["komponist"], &path, 0, 3));
+            assert_eq!(leaves.scores[0].title, "Mein Bach");
+            assert_eq!(leaves.matching, want.matching + 1);
+            assert_eq!(layered.tree_score_count(), facets.len() + 1);
+            let (hits, _) = in_rounds(&files, || layered.search(&tunes[0][1..11], 3));
+            assert!(hits.iter().any(|h| h.info.title == "Mein Bach"));
+            let (base, extra) = layered.split();
+            assert!(base.is_remote() && extra.is_some());
+        }
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     #[test]
     fn rejects_truncated_files() {
         let dir = std::env::temp_dir().join(format!("klang-disk-kaputt-{}", std::process::id()));
@@ -1552,5 +2034,148 @@ mod tests {
         std::fs::write(&out, &bytes[..bytes.len() / 2]).unwrap();
         assert!(DiskIndex::open(&out).is_err());
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// The browser's network, simulated: fetches what a command misses the way
+    /// the web worker does (per file, ranges merged across gaps under 2 KB, at
+    /// most `per_request` per request, a range read once is cached) and counts it.
+    struct Net {
+        dir: PathBuf,
+        seen: std::collections::HashSet<(String, u64, u64)>,
+        per_request: usize,
+    }
+
+    impl Net {
+        /// Runs `f` until nothing is missing: (result, rounds, requests, bytes).
+        fn run<T>(&mut self, mut f: impl FnMut() -> T) -> (T, usize, usize, u64) {
+            use crate::source::remote;
+            let (mut rounds, mut requests, mut bytes) = (0, 0, 0);
+            loop {
+                remote::begin();
+                let r = f();
+                let need = remote::take_missing();
+                if need.is_empty() {
+                    return (r, rounds, requests, bytes);
+                }
+                let mut by_file: std::collections::BTreeMap<String, Vec<(u64, u64)>> = Default::default();
+                for n in &need {
+                    if self.seen.insert((n.file.clone(), n.start, n.end)) {
+                        by_file.entry(n.file.clone()).or_default().push((n.start, n.end));
+                    }
+                    let file = File::open(self.dir.join(&n.file)).unwrap();
+                    assert!(remote::feed(&n.file, n.start, read_vec(&file, n.start, n.end - n.start).unwrap()));
+                }
+                if !by_file.is_empty() {
+                    rounds += 1;
+                }
+                for (_, mut list) in by_file {
+                    list.sort();
+                    let mut spans: Vec<(u64, u64)> = Vec::new();
+                    for (a, b) in list {
+                        match spans.last_mut() {
+                            Some(last) if a <= last.1 + 2048 => last.1 = last.1.max(b),
+                            _ => spans.push((a, b)),
+                        }
+                    }
+                    requests += spans.len().div_ceil(self.per_request);
+                    bytes += spans.iter().map(|(a, b)| b - a).sum::<u64>();
+                }
+                assert!(rounds < 30, "no progress");
+            }
+        }
+    }
+
+    /// Notes back from a voice's transitions (pitch 60, first spacing 1).
+    fn notes_of(seq: &[u8]) -> Vec<MelodyNote> {
+        let (mut midi, mut onset, mut ioi) = (60i32, 0.0f64, 1.0f64);
+        let mut out = vec![MelodyNote { onset, duration: ioi, midi: 60 }];
+        for f in seq.chunks_exact(2) {
+            midi = (midi + f[0] as i8 as i32).clamp(0, 127);
+            onset += ioi;
+            ioi *= 2f64.powf(f[1] as i8 as f64 / 2.0);
+            out.push(MelodyNote { onset, duration: ioi, midi: midi as u8 });
+        }
+        out
+    }
+
+    /// What the browser version asks of a built package: rounds, HTTP requests
+    /// and bytes per action, with 80 and with 250 ranges per request. Run with
+    /// `KLANG_PACKAGE=target/library/package cargo test --release -p klang-music requests_against_a_package -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn requests_against_a_package() {
+        use crate::source::remote::{self, RemoteFile};
+        use crate::webpack::{CHORDS_FILE, FACETS_FILE, INDEX_FILE, MANIFEST_FILE, SCORES_FILE, TEXT_FILE};
+        let Ok(dir) = std::env::var("KLANG_PACKAGE") else { return };
+        let dir = PathBuf::from(dir);
+        let manifest: serde_json::Value = serde_json::from_slice(&std::fs::read(dir.join(MANIFEST_FILE)).unwrap()).unwrap();
+        let len = |n: &str| std::fs::metadata(dir.join(n)).unwrap().len();
+        let index_file = File::open(dir.join(INDEX_FILE)).unwrap();
+        let h = read_header(&index_file).unwrap();
+        let mb = |a: u64, b: u64| (b - a) as f64 / 1e6;
+        eprintln!(
+            "voices {}, keys {}, occurrences {} · voice entries {:.1} MB, offsets 2 × {:.1} MB, sequences {:.1} MB, facets {:.1} MB, lists {:.1} MB, key table {:.1} MB, sparse table {:.2} MB",
+            h.n_docs, h.n_keys, _n_post(&index_file), mb(h.docs_off, h.docs_idx_off), mb(h.docs_idx_off, h.seqs_off), mb(h.seqs_off, h.seqs_idx_off),
+            mb(h.facets_off, h.post_off), mb(h.post_off, h.keys_off), mb(h.keys_off, h.sparse_off), mb(h.sparse_off, h.sparse_end)
+        );
+        // queries: known tunes and windows of real voices
+        let tune = |m: &[u8]| m.iter().enumerate().map(|(i, &midi)| MelodyNote { onset: i as f64, duration: 1.0, midi }).collect::<Vec<_>>();
+        let mut queries: Vec<(String, Vec<MelodyNote>)> = vec![
+            ("Ode to Joy".into(), tune(&[64, 64, 65, 67, 67, 65, 64, 62, 60, 60, 62, 64])),
+            ("Twinkle".into(), tune(&[60, 60, 67, 67, 69, 69, 67, 65, 65, 64, 64, 62, 62, 60])),
+            ("Für Elise".into(), tune(&[76, 75, 76, 75, 76, 71, 74, 72, 69])),
+        ];
+        for d in [10u64, 5_000, 40_000, 120_000, 250_000].into_iter().filter(|&d| d < h.n_docs) {
+            let o = u64s(&read_vec(&index_file, h.seqs_idx_off + 8 * d, 16).unwrap());
+            let seq = read_vec(&index_file, h.seqs_off + o[0], o[1] - o[0]).unwrap();
+            if seq.len() >= 2 * 14 {
+                queries.push((format!("voice {d}"), notes_of(&seq[6..6 + 2 * 11])));
+            }
+        }
+        for per_request in [80, 250] {
+            eprintln!("\n--- {per_request} ranges per request");
+            remote::reset();
+            let mut net = Net { dir: dir.clone(), seen: Default::default(), per_request };
+            let report = |what: &str, rounds: usize, requests: usize, bytes: u64| eprintln!("{what:<34} rounds {rounds:>2}  requests {requests:>3}  {:>8.1} kB", bytes as f64 / 1e3);
+            let open = || {
+                let file = |n: &str| -> Option<Box<dyn ReadAt>> { Some(Box::new(RemoteFile::new(n, len(n)))) };
+                let chord_scores = manifest["chordScores"].as_array().map(|a| [a[0].as_u64().unwrap_or(0) as u32, a[1].as_u64().unwrap_or(0) as u32]);
+                let web = WebParts::new(file(TEXT_FILE), file(FACETS_FILE), file(CHORDS_FILE), manifest["scores"].as_u64().unwrap() as usize, chord_scores);
+                DiskIndex::open_remote(Box::new(RemoteFile::new(INDEX_FILE, len(INDEX_FILE))), web, file(SCORES_FILE))
+            };
+            let (index, r, q, b) = net.run(open);
+            let index = index.unwrap();
+            report("open", r, q, b);
+            let mut all = (0, 0, 0u64);
+            for (name, query) in &queries {
+                let (hits, r, q, b) = net.run(|| index.search(query, 10));
+                all = (all.0 + r, all.1 + q, all.2 + b);
+                let top = hits.first().map(|h| format!("{} ({:.2}) {}", h.doc, h.score, h.info.title)).unwrap_or_default();
+                report(&format!("melody: {name}"), r, q, b);
+                eprintln!("{:<34} → {top}", "");
+                if let Some(hit) = hits.first() {
+                    let (bytes, r, q, b) = net.run(|| index.score_bytes(&hit.info).map(|r| r.map(|(_, b)| b.len())));
+                    report(&format!("  open the score ({} kB)", bytes.and_then(Result::ok).unwrap_or(0) / 1000), r, q, b);
+                }
+            }
+            eprintln!("melody searches on average: {:.1} rounds, {:.1} requests, {:.0} kB", all.0 as f64 / queries.len() as f64, all.1 as f64 / queries.len() as f64, all.2 as f64 / 1e3 / queries.len() as f64);
+            for words in ["bach", "mozart sonate", "ave maria", "lied"] {
+                let (hits, r, q, b) = net.run(|| index.search_text(words, 50).len());
+                report(&format!("text: {words} ({hits} hits)"), r, q, b);
+            }
+            let (top, r, q, b) = net.run(|| index.tree(&["genre", "komponist"], &[], 0, 50));
+            report(&format!("browse: genres ({} values)", top.nodes.len()), r, q, b);
+            if let Some(first) = top.nodes.first() {
+                let path = vec![first.value.clone()];
+                let (level, r, q, b) = net.run(|| index.tree(&["genre", "komponist"], &path, 0, 50));
+                report(&format!("browse: {} ({} composers)", first.value, level.nodes.len()), r, q, b);
+            }
+            let (_, r, q, b) = net.run(|| index.chords().map(|c| c.scores));
+            report("chord statistics", r, q, b);
+        }
+    }
+
+    fn _n_post(file: &File) -> u64 {
+        u64s(&read_vec(file, 96, 8).unwrap())[0]
     }
 }

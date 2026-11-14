@@ -1,0 +1,17 @@
+[package]
+name = "klang-libbuild"
+description = "Builds the Klangwelt score library package for the web (index, scores ZIP, text index, facet table, chord statistics) from pinned sources"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[[bin]]
+name = "klang-libbuild"
+path = "src/main.rs"
+
+[dependencies]
+klang-music = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+flate2 = { workspace = true }
+tar = { workspace = true }

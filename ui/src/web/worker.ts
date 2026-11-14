@@ -9,6 +9,12 @@
 // * Dateien: beim Start aus OPFS in den Dateibaum des Kerns, Änderungen nach
 //   jedem Befehl zurück nach OPFS. Exporte bleiben nur im Speicher (sie werden
 //   heruntergeladen).
+// * Score library: the package on the server is read by range – a command
+//   that misses data answers with status 2 and the missing ranges; this
+//   worker fetches them (`remote.ts`, cache first), hands them to the core and
+//   runs the command again. Own scores live in the core's file tree (OPFS).
+
+import { cachedBytes, clearCache, configure, fetchNeeds, manifest, onWait, setPage, type Need } from "./remote.js";
 
 interface Exports {
   memory: WebAssembly.Memory;
@@ -19,8 +25,9 @@ interface Exports {
   kw_init(sampleRate: number, audio: number): void;
   kw_agent_hint(ptr: number, len: number): void;
   kw_invoke(cmd: number, cmdLen: number, args: number, argsLen: number): number;
+  kw_lib_feed(file: number, fileLen: number, start: number, data: number, dataLen: number): number;
   kw_status(): void;
-  kw_mcp(ptr: number, len: number): void;
+  kw_mcp(ptr: number, len: number): number;
   kw_tick(): void;
   kw_engine_report(playing: number, previewing: number, position: number, peakOut: number, peakIn: number): void;
   kw_record_input(ptr: number, len: number): void;
@@ -37,6 +44,8 @@ interface Init {
   audio: boolean;
   agentHint: string;
   port: MessagePort | null;
+  /** Address of the page (for `?library=`). */
+  page: string;
 }
 
 interface Request {
@@ -143,6 +152,10 @@ async function start(init: Init): Promise<void> {
   if (port) port.onmessage = (e: MessageEvent<FromWorklet>) => fromWorklet(e.data);
   wasm.kw_init(init.sampleRate, init.audio ? 1 : 0);
   withText(init.agentHint, (p, l) => wasm.kw_agent_hint(p, l));
+  setPage(init.page);
+  // the request limit of the server: tell the page when a request has to wait
+  onWait((seconds) => scope.postMessage({ ev: "library-wait", payload: JSON.stringify({ seconds }) }));
+  void attachLibrary();
   // Status wie der Status-Thread des Desktops; Vorhören nachfüllen wie der Engine-Thread
   // Nach einem internen Fehler des Kerns nicht alle paar Millisekunden dieselbe Meldung
   const timers = [
@@ -258,6 +271,68 @@ async function store(path: string, data: Uint8Array | null): Promise<void> {
   await w.close();
 }
 
+// ---------------------------------------------------------------- Score library (package on the server)
+
+/** Error text for the page (translated there, see host.ts). */
+export const LIBRARY_OFFLINE = "klangwelt:library-offline";
+/** Rounds of data a command may need before it's given up. */
+const MAX_ROUNDS = 16;
+
+/** Hands fetched ranges to the core. */
+async function feedNeeds(needs: Need[]): Promise<void> {
+  const got = await fetchNeeds(needs);
+  for (const [n, bytes] of got) withText(n.file, (fp, fl) => withBytes(bytes, (dp, dl) => wasm.kw_lib_feed(fp, fl, n.start, dp, dl)));
+}
+
+/** Runs a core function that may miss data (status 2) until it has everything. */
+async function withData(run: () => number): Promise<{ status: number; out: string }> {
+  for (let round = 0; ; round++) {
+    const status = run();
+    const out = outText();
+    if (status !== 2) return { status, out };
+    if (round >= MAX_ROUNDS) return { status: 1, out: "Score library: no progress while reading" };
+    try {
+      await feedNeeds(JSON.parse(out) as Need[]);
+    } catch (e) {
+      console.warn("Klangwelt (score library):", e);
+      return { status: 1, out: LIBRARY_OFFLINE };
+    }
+  }
+}
+
+function invokeOnce(cmd: string, args: string): number {
+  return withText(cmd, (cp, cl) => withText(args, (ap, al) => wasm.kw_invoke(cp, cl, ap, al)));
+}
+
+const invoke = (cmd: string, args: unknown) => withData(() => invokeOnce(cmd, JSON.stringify(args)));
+
+/** At start: attach the package from the configuration (library.json). */
+async function attachLibrary(): Promise<void> {
+  try {
+    const src = await configure();
+    if (!src) {
+      await invoke("library_web_state", { state: "none" });
+      return;
+    }
+    await invoke("library_web_state", { state: "loading" });
+    let m: Awaited<ReturnType<typeof manifest>>;
+    try {
+      m = await manifest();
+    } catch (e) {
+      await invoke("library_web_state", { state: "offline", error: String((e as Error).message ?? e) });
+      return;
+    }
+    const json = m!.json as Record<string, unknown>;
+    if (src.page && !json.url) json.url = src.page;
+    const r = await invoke("library_web_attach", { manifest: json });
+    if (r.status !== 0) await invoke("library_web_state", { state: r.out === LIBRARY_OFFLINE ? "offline" : "error", error: r.out === LIBRARY_OFFLINE ? null : r.out });
+  } catch (e) {
+    console.error("Klangwelt (score library):", e);
+  } finally {
+    persistChanges();
+  }
+}
+
 // ---------------------------------------------------------------- Agent: wartender chat_poll
 //
 // Auf dem Desktop wartet `chat_poll` im Kern (ein Thread je Verbindung). Hier
@@ -281,6 +356,13 @@ function mcpCore(message: string): string {
   return outText() || "null";
 }
 
+/** Like `mcpCore`, with the data a library tool may need from the server. */
+async function mcpWithData(message: string): Promise<string> {
+  const r = await withData(() => withText(message, (p, l) => wasm.kw_mcp(p, l)));
+  if (r.status === 2 || r.out === LIBRARY_OFFLINE) return JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32603, message: "score library not reachable" } });
+  return r.out || "null";
+}
+
 /** Zahl der Aufträge in einer Antwort auf chat_poll; −1 bei Fehlern (dann nicht warten). */
 function pollTasks(json: string): number {
   try {
@@ -293,14 +375,14 @@ function pollTasks(json: string): number {
   }
 }
 
-function mcp(message: string): Promise<string> {
+async function mcp(message: string): Promise<string> {
   let req: { method?: string; params?: { name?: string; arguments?: { timeoutSeconds?: unknown } } } | null = null;
   try {
     req = JSON.parse(message);
   } catch {
     // ungültiges JSON beantwortet der Kern (Parse-Fehler)
   }
-  const first = mcpCore(message);
+  const first = await mcpWithData(message);
   if (req?.method !== "tools/call" || req.params?.name !== "chat_poll" || pollTasks(first) !== 0) return Promise.resolve(first);
   // wie im Kern: Standard 50 s, höchstens 590 s
   const secs = Math.min(590, Math.max(1, Number(req.params.arguments?.timeoutSeconds) || 50));
@@ -356,6 +438,16 @@ async function handle(r: Request): Promise<void> {
         reply({ id: r.id, ok: true, json: "null" });
         return;
       }
+      // Score library: what the browser cache holds, emptying it
+      case "web_library_cache": {
+        reply({ id: r.id, ok: true, json: JSON.stringify(await cachedBytes()) });
+        return;
+      }
+      case "web_library_clear": {
+        await clearCache();
+        reply({ id: r.id, ok: true, json: "null" });
+        return;
+      }
       case "web_write_file": {
         const { path } = JSON.parse(r.args) as { path: string };
         const data = new Uint8Array(r.data ?? new ArrayBuffer(0));
@@ -366,9 +458,9 @@ async function handle(r: Request): Promise<void> {
       }
       default: {
         if (r.cmd === "record_stop" || r.cmd === "library_listen_stop") await flushRecording();
-        const status = withText(r.cmd, (cp, cl) => withText(r.args, (ap, al) => wasm.kw_invoke(cp, cl, ap, al)));
-        if (status === 0) reply({ id: r.id, ok: true, json: outText() });
-        else reply({ id: r.id, ok: false, error: outText() });
+        const { status, out } = await withData(() => invokeOnce(r.cmd, r.args));
+        if (status === 0) reply({ id: r.id, ok: true, json: out });
+        else reply({ id: r.id, ok: false, error: out });
         if (status === 0 && r.cmd === "chat_send") wakePolls();
       }
     }

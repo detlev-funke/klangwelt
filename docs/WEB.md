@@ -148,6 +148,11 @@ at build time, not only in the browser. Emscripten is not needed.
   in the browser).
 * Saving and opening projects; they live in the browser's storage (OPFS)
   and survive reloads and browser restarts.
+* Score library: a prebuilt package on Zenodo, read by HTTP range (only
+  what a search or an opened score reads is cached – no "download the whole
+  index"), plus own MusicXML/MXL files (drag & drop or "Add", indexed in the
+  core, kept in OPFS). Text search, melody search and the tree cover both;
+  hits show source and license. See [LIBRARY.md](LIBRARY.md).
 * Downloading and uploading the project file ("File" menu), `.klangwelt`
   also via drag & drop onto the window.
 * Export as WAV, FLAC, Opus, stems and MIDI – as a download. Opus is encoded
@@ -161,7 +166,7 @@ at build time, not only in the browser. Emscripten is not needed.
 | What | Why | Replacement / next step |
 |---|---|---|
 | MCP server over HTTP | A web page can't open a port. | The same tools in the page and via a stdio bridge (see below). |
-| Score library (download, index, melody search) | On the desktop, downloading runs via curl in background threads, and the index is a file on disk (`klang_music::diskindex`). | Feasible: the sources (GitHub API, raw.githubusercontent.com, Zenodo) send `Access-Control-Allow-Origin: *`, so the browser may load from them directly. Missing: download with `fetch`, streaming decompression, index in memory or in OPFS. Files downloaded manually could be added via drag & drop – the path for that (files into the core's file tree) already exists. |
+| Downloading library packs and managing several libraries (the desktop's catalog) | The desktop downloads sources and indexes them on disk; some of them have non-commercial licenses (KernScores, DCML) and must not be hosted. | The browser reads the prebuilt package by range and adds own files ([LIBRARY.md](LIBRARY.md)). |
 | "Show in folder" | A web page can't see folders. | "Download again". |
 | Multiple cores for rendering | Threads would need SharedArrayBuffer (COOP/COEP) and a custom-built standard library (nightly). | Rendering happens sequentially – long songs take somewhat longer. |
 | Choosing a project folder | Projects live in the browser's storage, separate per address. Clearing the website's data deletes them. | Download/upload; later the File System Access API. |

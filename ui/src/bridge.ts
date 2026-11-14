@@ -7,7 +7,7 @@
 import type {
   AgentActivity, Analysis, CatalogEntry, CheckView, ExportInfo, ExportOptions, ExportResult, Chord, ChordInfo, ChatView, Command, Countersubject, Dimension, EngineStatus, FugueOptions,
   FuguePlan, HarmonyView, InstrumentKind, InstrumentSpec, SubjectView, TransformSpec, VNote,
-  ConvertResult, ConvertTarget, ImportResult, QuantizeResult, KeySpec, LibEntry, LibHit, LibraryInfo, ListenResult, PlacedChord, PlayInfo, PreviewPattern, ProjectFile, RecordResult, HarmonyLine, SongPlan, SongWritten, ClipGrid, RhythmGrid, RhythmInfo, RhythmWritten, SavedSound, ScoreView, Snapshot, SoundReport, SoundSaveResult, SuggestResult, TreeLevel, WaveView,
+  AddResult, ConvertResult, ConvertTarget, ImportResult, QuantizeResult, KeySpec, LibEntry, LibHit, LibraryInfo, ListenResult, OwnScore, PlacedChord, PlayInfo, PreviewPattern, ProjectFile, RecordResult, HarmonyLine, SongPlan, SongWritten, ClipGrid, RhythmGrid, RhythmInfo, RhythmWritten, SavedSound, ScoreView, Snapshot, SoundReport, SoundSaveResult, SuggestResult, TreeLevel, WaveView,
 } from "./types.js";
 import type { AudioDevices, AudioKind } from "./types.js";
 import { createMock } from "./mock.js";
@@ -108,8 +108,16 @@ export interface Backend {
   createInstrumentTrack(kind: InstrumentKind): Promise<Snapshot>;
   insertPattern(trackId: number): Promise<Snapshot>;
   libraryInfo(): Promise<LibraryInfo>;
-  /** Dateien oder Ordner in die aktive Bibliothek aufnehmen (im Hintergrund). */
-  libraryAdd(paths: string[]): Promise<LibraryInfo>;
+  /** Dateien oder Ordner in die aktive Bibliothek aufnehmen (im Hintergrund). Browser: into the own scores, answers with an `AddResult`. */
+  libraryAdd(paths: string[]): Promise<LibraryInfo | AddResult>;
+  /** Browser: the own scores, remove one. */
+  libraryOwnList(): Promise<OwnScore[]>;
+  libraryOwnRemove(path: string): Promise<OwnScore[]>;
+  /** Browser: what the browser cache holds of the package on the server; empty it. */
+  libraryCacheInfo(): Promise<{ entries: number; bytes: number }>;
+  libraryCacheClear(): Promise<void>;
+  /** Browser: files of the computer into the core's file tree (paths there). */
+  importFiles(files: File[]): Promise<string[]>;
   /** Bibliotheken verwalten (je ein Index; gesucht wird nur in der aktiven). */
   libraryList(): Promise<LibEntry[]>;
   libraryCreate(name: string): Promise<LibEntry[]>;
@@ -165,6 +173,8 @@ export interface Backend {
   harmonyTimeline(key: KeySpec | null): Promise<HarmonyLine>;
   harmonyPlayExample(doc: number, start: number, end: number): Promise<number>;
   onLibraryChanged(cb: (i: LibraryInfo) => void): void;
+  /** Browser: a request to the score library server waits for its request limit (seconds). */
+  onLibraryWait(cb: (seconds: number) => void): void;
   chatSend(text: string): Promise<ChatView>;
   chatHistory(): Promise<ChatView>;
   onChatChanged(cb: (c: ChatView) => void): void;
@@ -247,6 +257,11 @@ function coreBackend(link: CoreLink, platform: "desktop" | "web"): Backend {
     insertPattern: (trackId) => call("insert_pattern", { trackId }),
     libraryInfo: () => call("library_info"),
     libraryAdd: (paths) => call("library_add", { paths }),
+    libraryOwnList: () => call("library_own_list"),
+    libraryOwnRemove: (path) => call("library_own_remove", { path }),
+    libraryCacheInfo: () => call("web_library_cache"),
+    libraryCacheClear: () => call("web_library_clear"),
+    importFiles: (files) => call("web_import_files", { files }),
     libraryList: () => call("library_list"),
     libraryCreate: (name) => call("library_create", { name }),
     librarySwitch: (id) => call("library_switch", { id }),
@@ -292,6 +307,9 @@ function coreBackend(link: CoreLink, platform: "desktop" | "web"): Backend {
     harmonyPlayExample: (doc, start, end) => call("harmony_play_example", { doc, start, end }),
     onLibraryChanged: (cb) => {
       listen<LibraryInfo>("library-changed", (p) => cb(p));
+    },
+    onLibraryWait: (cb) => {
+      listen<{ seconds: number }>("library-wait", (p) => cb(p.seconds));
     },
     chatSend: (text) => call("chat_send", { text }),
     chatHistory: () => call("chat_history"),

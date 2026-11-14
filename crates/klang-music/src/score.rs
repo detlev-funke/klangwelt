@@ -137,10 +137,29 @@ fn load_any(path: &Path) -> Result<Score, MusicError> {
     parse_musicxml(&text)
 }
 
+/// Loads a score from its bytes; `name` (file name or path) tells the format:
+/// .mxl, .musicxml, .xml or .krn. For scores that don't lie in a file of their
+/// own – in a package's ZIP or in the browser's storage.
+pub fn load_score_bytes(name: &str, bytes: &[u8]) -> Result<Score, MusicError> {
+    let lower = name.to_ascii_lowercase();
+    if lower.ends_with(".krn") {
+        return crate::kern::parse_kern(&decode_text(bytes));
+    }
+    if lower.ends_with(".mxl") {
+        return parse_musicxml(&read_mxl_from(std::io::Cursor::new(bytes))?);
+    }
+    if lower.ends_with(".musicxml") || lower.ends_with(".xml") {
+        return parse_musicxml(&decode_text(bytes));
+    }
+    Err(MusicError::Unsupported(name.to_string()))
+}
+
 fn read_mxl(path: &Path) -> Result<String, MusicError> {
-    let file = std::fs::File::open(path)?;
-    let mut zip = zip::ZipArchive::new(std::io::BufReader::new(file))
-        .map_err(|e| MusicError::Zip(e.to_string()))?;
+    read_mxl_from(std::io::BufReader::new(std::fs::File::open(path)?))
+}
+
+fn read_mxl_from<R: std::io::Read + std::io::Seek>(reader: R) -> Result<String, MusicError> {
+    let mut zip = zip::ZipArchive::new(reader).map_err(|e| MusicError::Zip(e.to_string()))?;
 
     let mut root: Option<String> = None;
     if let Ok(mut c) = zip.by_name("META-INF/container.xml") {

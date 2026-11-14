@@ -13,4 +13,6 @@ klang-app = { workspace = true, features = ["opus"] }
 klang-engine = { workspace = true }
 klang-i18n = { workspace = true }
 klang-mcp = { workspace = true }
+klang-music = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }

@@ -11,7 +11,10 @@ import { highOnTop } from "../pianoroll.js";
 import { treeView } from "./libtree.js";
 import { effect, signal } from "../signals.js";
 import { act, errorText, findClip, notify, project, selection, showPanel, status as engineStatus } from "../store.js";
-import type { CatalogEntry, LibEntry, LibHit, LibraryInfo, PlayInfo, ScoreView } from "../types.js";
+import type { CatalogEntry, LibEntry, LibHit, LibraryInfo, OwnScore, PlayInfo, ScoreView } from "../types.js";
+
+/** Browser version: the library is a package on a server plus own scores (no downloads, no library management). */
+const WEB = backend.platform === "web";
 
 /** Zustand bleibt erhalten, auch wenn der Tab gewechselt wird. */
 const state = {
@@ -48,7 +51,36 @@ function addToLibrary(paths: string[]): void {
     notify(t("The library is still loading – try again in a moment."), "error");
     return;
   }
-  backend.libraryAdd(paths).then((i) => (state.info.value = i)).catch((e) => notify(errorText(e), "error"));
+  backend
+    .libraryAdd(paths)
+    .then((r) => {
+      // browser: the own scores answer with what was added (the state comes as "library-changed")
+      if ("added" in r) {
+        if (r.message) notify(r.message, r.added ? "info" : "error");
+        ownChanged();
+      } else state.info.value = r;
+    })
+    .catch((e) => notify(errorText(e), "error"));
+}
+
+/** The own scores changed (browser): the management view refreshes itself. */
+let ownChanged = () => {};
+
+/** Browser: choose MusicXML/MXL files of the computer and add them to the own scores. */
+function pickOwnFiles(): void {
+  const input = h("input", { type: "file", multiple: true, accept: ".mxl,.musicxml,.xml" }) as HTMLInputElement;
+  input.addEventListener("change", () => {
+    const files = [...(input.files ?? [])];
+    if (!files.length) return;
+    backend.importFiles(files).then(addToLibrary).catch((e) => notify(errorText(e), "error"));
+  });
+  input.click();
+}
+
+/** Short source line of a score: own, or collection · license. */
+function sourceText(x: { origin?: string; collection?: string; license?: string }): string {
+  if (x.origin === "own") return t("My scores");
+  return [x.collection, x.license].filter(Boolean).join(" · ");
 }
 
 let listening = false;
@@ -61,6 +93,13 @@ function ensureListening(): void {
   if (listening) return;
   listening = true;
   backend.onLibraryChanged((i) => (state.info.value = i));
+  // Browser: the server's request limit makes a search wait (rare: a search takes a few requests)
+  let waitShown = 0;
+  backend.onLibraryWait((seconds) => {
+    if (Date.now() - waitShown < 10_000) return;
+    waitShown = Date.now();
+    notify(t("The score library server limits requests – continuing in {n} s…", { n: seconds }));
+  });
   // MusicXML-Dateien aufs Fenster ziehen: bei offener Bibliothek in den Index aufnehmen.
   backend.onFileDrop((paths) => {
     const panel = dropTarget;
@@ -96,6 +135,8 @@ let libMode: "suchen" | "stoebern" = (() => {
 
 const fmt = (n: number) => Math.round(n).toLocaleString(language());
 const mb = (bytes: number) => `${(bytes / 1e6).toLocaleString(language(), { maximumFractionDigits: bytes < 1e8 ? 1 : 0 })} MB`;
+/** Size of small files, too (kB below 1 MB). */
+const size = (bytes: number) => (bytes >= 1e6 ? mb(bytes) : `${Math.max(1, Math.round(bytes / 1e3)).toLocaleString(language())} kB`);
 
 /** Katalog herunterladbarer Bibliotheken: je Sammlung ein aufklappbares Panel
  *  mit Karten (Größe, Format, Lizenz, Zielordner). */
@@ -358,6 +399,91 @@ function manageView(onClose: () => void): { el: HTMLElement; refresh(): void } {
   return { el, refresh };
 }
 
+/** Browser: the score library on the server (state, sources, licenses, what's
+ *  cached) and the own scores (list, remove, add). */
+function webLibraryView(onClose: () => void): { el: HTMLElement; refresh(): void } {
+  const remote = h("div", { class: "lib-libs" });
+  const own = h("div", { class: "lib-libs lib-own" });
+  const err = (e: unknown) => notify(errorText(e), "error");
+  const renderRemote = (info: LibraryInfo | null, cache: { bytes: number } | null) => {
+    const w = info?.web;
+    const state = w?.remote ?? "none";
+    const title = h("div", { class: "lib-lib-name" }, h("span", { class: "n" }, w?.remoteTitle ?? t("Score library")),
+      w?.remoteVersion ? h("span", { class: "tag" }, t("Version {version}", { version: w.remoteVersion })) : null);
+    const facts = state === "ready"
+      ? [plural(w!.remoteScores, "{n} score", "{n} scores", { n: fmt(w!.remoteScores) }), w!.remoteLicense ?? ""].filter(Boolean).join(" · ")
+      : state === "loading"
+        ? t("Connecting to the score library…")
+        : state === "offline"
+          ? t("Score library offline – your own scores and what you've used before are available.")
+          : state === "error"
+            ? t("Score library unavailable: {error}", { error: w?.error ?? "" })
+            : t("No score library configured – only your own scores (see docs/LIBRARY.md).");
+    const actions = h("div", { class: "lib-lib-actions" });
+    if (w?.remoteUrl) actions.append(h("a", { class: "btn small", href: w.remoteUrl, target: "_blank", rel: "noreferrer", title: w.remoteUrl }, t("Open the dataset page")));
+    if (cache && cache.bytes > 0) {
+      actions.append(h("button", {
+        class: "btn small",
+        onclick: () => backend.libraryCacheClear().then(() => { notify(t("Cache cleared.")); refresh(); }).catch(err),
+      }, t("Clear cache")));
+    }
+    const sources = (w?.remoteSources ?? []).map((src) => h("div", {}, src));
+    remote.replaceChildren(
+      h("div", { class: "lib-lib active" }, title, h("div", { class: "lib-lib-facts" }, facts), actions,
+        sources.length ? h("div", { class: "lib-lib-facts lib-sources" }, h("b", {}, t("Sources and licenses")), ...sources) : null,
+        cache && cache.bytes > 0 ? h("div", { class: "lib-lib-facts" }, t("{size} of the score library are kept in this browser for offline use.", { size: size(cache.bytes) })) : null),
+    );
+  };
+  const renderOwn = (list: OwnScore[]) => {
+    const row = (o: OwnScore) => {
+      let armed = false;
+      const del = h("button", {
+        class: "btn small",
+        title: t("Remove from my scores"),
+        onclick: () => {
+          if (!armed) {
+            armed = true;
+            del.classList.add("warn");
+            del.replaceChildren(icon("trash"), t("Really remove?"));
+            setTimeout(() => {
+              armed = false;
+              del.classList.remove("warn");
+              del.replaceChildren(icon("trash"), t("Remove"));
+            }, 5000);
+            return;
+          }
+          backend.libraryOwnRemove(o.path).then(renderOwn).catch(err);
+        },
+      }, icon("trash"), t("Remove"));
+      const el = h("div", { class: "lib-lib" },
+        h("div", { class: "lib-lib-name" }, h("span", { class: "n" }, o.title), o.composer ? h("span", { class: "muted" }, o.composer) : null),
+        h("div", { class: "lib-lib-facts" }, [o.file, o.bytes ? size(o.bytes) : ""].filter(Boolean).join(" · ")),
+        h("div", { class: "lib-lib-actions" }, del));
+      el.dataset.path = o.path;
+      return el;
+    };
+    own.replaceChildren(...(list.length ? list.map(row) : [h("div", { class: "lib-empty" }, t("No own scores yet – add MusicXML/MXL files or drag them onto the window."))]));
+  };
+  const refresh = () => {
+    Promise.all([backend.libraryInfo(), backend.libraryCacheInfo().catch(() => null)]).then(([i, c]) => renderRemote(i, c)).catch(() => renderRemote(null, null));
+    backend.libraryOwnList().then(renderOwn).catch(() => renderOwn([]));
+  };
+  const el = h(
+    "div",
+    { class: "lib-manage lib-web" },
+    h("div", { class: "lib-catalog-head" },
+      h("b", {}, t("Score library")),
+      h("span", { class: "muted" }, t("Searching covers both: the score library on the server and your own scores. Only what you open or search is kept in this browser.")),
+      h("button", { class: "btn small ghost", title: t("Close"), onclick: onClose }, icon("close"))),
+    h("div", { class: "lib-manage-body" },
+      remote,
+      h("div", { class: "lib-own-head" }, h("b", {}, t("My scores")),
+        h("button", { class: "btn small blue", onclick: pickOwnFiles }, icon("plus"), t("Add files"))),
+      own),
+  );
+  return { el, refresh };
+}
+
 /** Auf- und zugeklappte Panels merken (nur Bequemlichkeit, darf fehlen). */
 const PANEL_KEY = "klangwelt.bibliothek.panels";
 function panelState(): Record<string, boolean> {
@@ -577,13 +703,18 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
   };
   const addBtn = h("button", {
     class: "btn small",
-    title: t("Add MusicXML/MXL files or whole folders to the active library – or just drag them onto the window."),
-    onclick: () => setAddBox(!!addBox.hidden),
+    title: WEB
+      ? t("Add your own MusicXML/MXL files – or drag them onto the window. They're kept in this browser.")
+      : t("Add MusicXML/MXL files or whole folders to the active library – or just drag them onto the window."),
+    onclick: () => (WEB ? pickOwnFiles() : setAddBox(!!addBox.hidden)),
   }, icon("plus"), t("Add"));
   setAddBox(false);
 
   // Bibliotheken verwalten (Panel an Stelle der Suche, wie der Katalog)
-  const manage = manageView(() => setManage(false));
+  const manage = WEB ? webLibraryView(() => setManage(false)) : manageView(() => setManage(false));
+  ownChanged = () => {
+    if (!manage.el.hidden) manage.refresh();
+  };
   const setManage = (open: boolean) => {
     manage.el.hidden = !open;
     libName.classList.toggle("on", open);
@@ -903,6 +1034,8 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
   }, icon("download"), t("Download"));
   const cancel = h("button", { class: "btn small", title: t("Cancel download or indexing"), onclick: () => void backend.libraryCancel() }, t("Cancel"));
   setCatalog(false);
+  // the browser has no downloads (the score library is read from the server)
+  downloadBtn.hidden = WEB;
 
   // Warteschlange: beauftragte Pakete, die nach dem laufenden Auftrag drankommen.
   const queueRow = h("div", { class: "lib-queue", hidden: true, "data-help": "lib-warteschlange" });
@@ -1101,14 +1234,21 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
       } else if (info?.loading) {
         frac = 0.05;
         status.textContent = info.message ?? t("Loading the library…");
+      } else if (info?.web && info.web.remote === "loading") {
+        frac = 0.05;
+        status.textContent = t("Connecting to the score library…");
       } else {
         status.textContent = info
           ? info.message ?? (info.id
             ? info.scores
               ? t("{scores} scores · {voices} voices", { scores: fmt(info.scores), voices: fmt(info.voices) })
-              : t("Still empty – \"Download\" or add scores.")
+              : WEB
+                ? t("No own scores yet – add MusicXML/MXL files or drag them onto the window.")
+                : t("Still empty – \"Download\" or add scores.")
             : t("No library loaded."))
           : "";
+        if (info?.web?.remote === "offline") status.textContent += ` · ${t("Score library offline – your own scores and what you've used before are available.")}`;
+        if (info?.web?.remote === "error") status.textContent += ` · ${t("Score library unavailable: {error}", { error: info.web.error ?? "" })}`;
       }
       status.title = dl?.folder ?? "";
       renderQueue(info);
@@ -1129,7 +1269,7 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
         if (!manage.el.hidden) manage.refresh();
       }
       // Leere Bibliothek: den Katalog von selbst zeigen (bis man ihn schließt).
-      if (info?.id && !info.loading && !info.scores && !dl && !info.building && merging == null && !info.adding && !catalogOpen && !catalogTouched && manage.el.hidden) setCatalog(true);
+      if (!WEB && info?.id && !info.loading && !info.scores && !dl && !info.building && merging == null && !info.adding && !catalogOpen && !catalogTouched && manage.el.hidden) setCatalog(true);
 
       const hits = state.hits.value;
       if (hits !== renderedHits) {
@@ -1139,10 +1279,11 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
             ? hits.map((hit) =>
                 h(
                   "button",
-                  { class: "lib-hit", onclick: () => void open(hit), title: hit.source },
+                  { class: `lib-hit${hit.origin ? ` ${hit.origin}` : ""}`, onclick: () => void open(hit), title: hit.source },
                   h("div", { class: "t" }, hit.title || t("(untitled)"), hit.composer ? h("span", {}, ` – ${hit.composer}`) : null),
                   h("div", { class: "s" }, `${hit.part || t("Voice")} · ${hit.voice}`,
                     hit.score != null ? h("b", {}, `${Math.round(hit.score * 100)} %`) : h("b", {}, plural(hit.noteCount, "{n} note", "{n} notes"))),
+                  sourceText(hit) ? h("div", { class: "src" }, sourceText(hit)) : null,
                   hit.score != null ? h("i", { style: `width:${Math.round(hit.score * 100)}%` }) : null,
                 ),
               )
@@ -1315,6 +1456,7 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
             h("div", { class: "lib-facts" },
               [s.keyName, s.timeSignature ? `${s.timeSignature[0]}/${s.timeSignature[1]}` : null, s.tempoBpm ? `${Math.round(s.tempoBpm)} BPM` : null, s.mood]
                 .filter(Boolean).join(" · ")),
+            ...(sourceText(s) ? [h("div", { class: "lib-source", title: s.source }, sourceText(s))] : []),
             h("div", { class: "lib-voices", title: t("Click: one voice · Ctrl+click: select several voices") },
               // Alle Stimmen auf einmal wählen – Anhören und Übernehmen gelten dann für den ganzen Satz
               n > 1

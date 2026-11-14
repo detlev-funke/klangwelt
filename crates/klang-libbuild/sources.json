@@ -1,0 +1,49 @@
+{
+  "title": "Klangwelt score library",
+  "license": "CC BY 4.0",
+  "scoreLicenses": "The scores themselves are in the public domain or dedicated to it (CC0 1.0 / Public Domain Mark 1.0), as stated by their sources; PDMX scores are taken only if PDMX.csv marks them so and reports no license conflict.",
+  "creators": ["Detlev Funke"],
+  "dedupe": true,
+  "sources": [
+    {
+      "id": "openscore-lieder",
+      "collection": "OpenScore Lieder",
+      "license": "CC0-1.0",
+      "url": "https://github.com/OpenScore/Lieder",
+      "attribution": "OpenScore Lieder Corpus, OpenScore / MuseScore volunteers, CC0 1.0 (https://openscore.cc).",
+      "genre": "classical",
+      "kind": "github",
+      "repo": "OpenScore/Lieder",
+      "commit": "38c5db510224d9facdc4b08d741fc788cfb58ea8",
+      "prefix": "scores/",
+      "suffix": ".mxl"
+    },
+    {
+      "id": "openscore-quartets",
+      "collection": "OpenScore String Quartets",
+      "license": "CC0-1.0",
+      "url": "https://github.com/OpenScore/StringQuartets",
+      "attribution": "OpenScore String Quartets Corpus, OpenScore / MuseScore volunteers, CC0 1.0 (https://openscore.cc).",
+      "genre": "classical",
+      "kind": "github",
+      "repo": "OpenScore/StringQuartets",
+      "commit": "2614b0b2958dd1ce3f52e172a43e5f4d0e29570f",
+      "prefix": "scores/",
+      "suffix": ".mxl"
+    },
+    {
+      "id": "pdmx",
+      "collection": "PDMX",
+      "license": "Public domain / CC0 (per score)",
+      "url": "https://doi.org/10.5281/zenodo.15571083",
+      "attribution": "Long, P., Novack, Z., McAuley, J., Berg-Kirkpatrick, T. (2025). PDMX: A Large-Scale Public Domain MusicXML Dataset for Symbolic Music Processing [Data set]. Zenodo.",
+      "kind": "pdmx",
+      "record": "15571083",
+      "csv": { "name": "PDMX.csv", "size": 225399738, "md5": "30392ccf38bb63ce70e7afae70f9c88c" },
+      "mxl": { "name": "mxl.tar.gz", "size": 1894335797, "md5": "49ffd75ecf5489c0be6d41182eb11ff7" },
+      "licenses": ["publicdomain", "cc-zero"],
+      "licenseNames": { "publicdomain": "Public Domain Mark 1.0", "cc-zero": "CC0-1.0" },
+      "subset": "subset:deduplicated"
+    }
+  ]
+}

@@ -24,6 +24,16 @@ pub struct DocInfo {
     pub part: String,
     pub voice: String,
     pub note_count: u32,
+    /// License of the score (packages for the web: e.g. "CC0-1.0"); empty = unknown.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub license: String,
+    /// Collection the score comes from (e.g. "PDMX", "OpenScore Lieder").
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub collection: String,
+    /// Where the score lies in the package's ZIP: offset of the entry's local
+    /// header and length of header plus data ([`crate::scorezip`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zip: Option<[u64; 2]>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -139,6 +149,12 @@ pub(crate) trait SearchData {
     fn postings(&self, key: u64) -> Option<Vec<Posting>>;
     fn seq(&self, doc: u32) -> Vec<Feature>;
     fn info(&self, doc: u32) -> DocInfo;
+    /// Some data couldn't be read yet (a remote index in the browser): the
+    /// result would be incomplete, so the search stops early and is run again
+    /// once the missing ranges have arrived ([`crate::source::remote`]).
+    fn pending(&self) -> bool {
+        false
+    }
 }
 
 /// Melodiesuche: Abstimmung über n-Gramme, dann Alignment der besten Kandidaten.
@@ -165,6 +181,10 @@ pub(crate) fn search_in(data: &impl SearchData, query: &[MelodyNote], limit: usi
             }
         }
     }
+    // Incomplete votes would pick the wrong candidates – fetch the lists first.
+    if data.pending() {
+        return Vec::new();
+    }
 
     let mut cands: Vec<((u32, i64), f32)> = votes.into_iter().collect();
     cands.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
@@ -186,6 +206,9 @@ pub(crate) fn search_in(data: &impl SearchData, query: &[MelodyNote], limit: usi
         if score > e.0 {
             *e = (score, from + start);
         }
+    }
+    if data.pending() {
+        return Vec::new();
     }
 
     let mut ranked: Vec<(u32, f32, usize)> = best.into_iter().map(|(doc, (score, idx))| (doc, score, idx)).collect();
@@ -292,6 +315,10 @@ impl MelodyIndex {
         std::mem::take(&mut self.facets)
     }
 
+    pub(crate) fn set_facets(&mut self, facets: Vec<ScoreFacets>) {
+        self.facets = facets;
+    }
+
     /// Stimmangaben, Merkmalsfolgen und Fundstellen (zum Verschmelzen).
     pub(crate) fn parts(&self) -> (&[DocInfo], &[Vec<Feature>], &HashMap<u64, Vec<Posting>>) {
         (&self.docs, &self.seqs, &self.postings)
@@ -329,7 +356,7 @@ impl MelodyIndex {
                     composer: score.composer.clone().unwrap_or_default(),
                     part: part.name.clone(),
                     voice: format!("System {} · Stimme {}", v.staff, v.voice),
-                    note_count: 0,
+                    ..Default::default()
                 };
                 if self.add_melody(info, &skyline(&v.notes)).is_some() {
                     added += 1;
@@ -358,6 +385,24 @@ impl MelodyIndex {
 
     fn write_to(&self, path: &Path) -> io::Result<()> {
         let mut w = io::BufWriter::new(std::fs::File::create(path)?);
+        self.write(&mut w)?;
+        w.flush()
+    }
+
+    /// The index file as bytes (same format as [`MelodyIndex::save`]) – e.g.
+    /// for the browser, which keeps its files in its own storage.
+    pub fn to_bytes(&self) -> io::Result<Vec<u8>> {
+        let mut out = Vec::new();
+        self.write(&mut out)?;
+        Ok(out)
+    }
+
+    /// Reads an index from bytes (see [`MelodyIndex::to_bytes`]).
+    pub fn from_bytes(bytes: &[u8]) -> io::Result<Self> {
+        Self::read(io::BufReader::new(bytes))
+    }
+
+    fn write(&self, w: &mut impl Write) -> io::Result<()> {
         w.write_all(Self::MAGIC)?;
         let docs = serde_json::to_vec(&self.docs).map_err(io::Error::other)?;
         w.write_all(&(docs.len() as u64).to_le_bytes())?;
@@ -383,12 +428,14 @@ impl MelodyIndex {
         }
         let facets = serde_json::to_vec(&self.facets).map_err(io::Error::other)?;
         w.write_all(&(facets.len() as u64).to_le_bytes())?;
-        w.write_all(&facets)?;
-        w.flush()
+        w.write_all(&facets)
     }
 
     pub fn load(path: &Path) -> io::Result<Self> {
-        let mut r = io::BufReader::new(std::fs::File::open(path)?);
+        Self::read(io::BufReader::new(std::fs::File::open(path)?))
+    }
+
+    fn read<R: Read>(mut r: io::BufReader<R>) -> io::Result<Self> {
         let mut magic = [0u8; 6];
         r.read_exact(&mut magic)?;
         let v2 = &magic == Self::MAGIC;
@@ -397,7 +444,7 @@ impl MelodyIndex {
         }
         let mut b8 = [0u8; 8];
         let mut b4 = [0u8; 4];
-        let mut u64r = |r: &mut io::BufReader<std::fs::File>| -> io::Result<u64> {
+        let mut u64r = |r: &mut io::BufReader<R>| -> io::Result<u64> {
             r.read_exact(&mut b8)?;
             Ok(u64::from_le_bytes(b8))
         };
@@ -406,7 +453,7 @@ impl MelodyIndex {
         r.read_exact(&mut docs_buf)?;
         let docs: Vec<DocInfo> = serde_json::from_slice(&docs_buf).map_err(io::Error::other)?;
 
-        let mut u32r = |r: &mut io::BufReader<std::fs::File>| -> io::Result<u32> {
+        let mut u32r = |r: &mut io::BufReader<R>| -> io::Result<u32> {
             r.read_exact(&mut b4)?;
             Ok(u32::from_le_bytes(b4))
         };

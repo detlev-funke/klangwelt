@@ -11,11 +11,11 @@ use klang_dsp::synth::NoteSpec;
 use klang_i18n::{tr, trn};
 use klang_music::analysis::analyze_score;
 use klang_music::diskindex::AnyIndex;
-use klang_music::facets::{dimension, tree_children, Dimension, TreeLevel, DIMENSIONS};
+use klang_music::facets::{dimension, Dimension, TreeLevel, DIMENSIONS};
 use klang_music::index::MIN_QUERY_NOTES;
 use klang_music::library::voice_label;
 use klang_music::melody::{skyline, MelodyNote};
-use klang_music::score::{load_score, Score};
+use klang_music::score::{load_score, load_score_bytes, Score};
 use serde::Serialize;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -47,6 +47,30 @@ pub struct LibStatus {
     pub queue: Vec<QueuedDownload>,
     /// Der Faden, der die Warteschlange abarbeitet, läuft.
     pub queue_runner: bool,
+    /// Browser: state of the two parts of the library (package on the server, own scores).
+    pub web: Option<WebLibInfo>,
+}
+
+/// Browser: the library consists of a package on a server (Zenodo), read by
+/// range, and the person's own scores (in the browser's storage).
+#[derive(Serialize, Clone, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct WebLibInfo {
+    /// The package: "none" (not configured), "loading", "ready", "offline" (unreachable, nothing cached), "error"
+    pub remote: String,
+    /// Title, version and number of scores of the package (from its manifest).
+    pub remote_title: Option<String>,
+    pub remote_version: Option<String>,
+    pub remote_scores: usize,
+    /// Page of the package (e.g. the Zenodo record or DOI).
+    pub remote_url: Option<String>,
+    /// License of the package and of its scores (from the manifest, shown as is).
+    pub remote_license: Option<String>,
+    /// Sources with attribution (from the manifest).
+    pub remote_sources: Vec<String>,
+    pub own_scores: usize,
+    /// Why the package isn't available (if so).
+    pub error: Option<String>,
 }
 
 /// Ein beauftragtes Paket (läuft gerade oder wartet in der Warteschlange).
@@ -112,6 +136,9 @@ pub struct LibraryInfo {
     current_pack: Option<String>,
     /// Wartende Pakete in der Reihenfolge, in der sie drankommen
     queue: Vec<QueuedDownload>,
+    /// Browser only: package on the server and own scores.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    web: Option<WebLibInfo>,
 }
 
 pub fn info(st: &AppState) -> CmdResult<LibraryInfo> {
@@ -119,21 +146,23 @@ pub fn info(st: &AppState) -> CmdResult<LibraryInfo> {
     let lib = lock(&st.library)?;
     Ok(LibraryInfo {
         id: lib.as_ref().map(|l| l.id.clone()),
-        name: lib.as_ref().map(|l| l.name.clone()),
+        // the browser library has no name of its own: in the chosen language
+        name: lib.as_ref().map(|l| if l.id == "browser" { tr!("Library") } else { l.name.clone() }),
         voices: lib.as_ref().map(|l| l.index.doc_count()).unwrap_or(0),
         scores: lib.as_ref().map(|l| l.index.score_count()).unwrap_or(0),
         building: status.building,
         download: status.download.clone(),
         // fixed messages (e.g. the web core's, `tk!`) are made before the language is chosen – translate them here
         message: status.message.as_deref().map(klang_i18n::translate),
-        tree_scores: lib.as_ref().map(|l| l.index.facets().len()).unwrap_or(0),
+        tree_scores: lib.as_ref().map(|l| l.index.tree_score_count()).unwrap_or(0),
         has_meta: lib.as_ref().map(|l| l.has_meta).unwrap_or(true),
-        chord_scores: lib.as_ref().and_then(|l| l.index.chords()).map(|c| c.scores),
+        chord_scores: lib.as_ref().and_then(|l| l.index.chord_counts()),
         adding: status.adding,
         merging: status.merging,
         loading: status.loading,
         current_pack: status.pipeline.as_ref().map(|p| p.id.clone()).filter(|id| !id.is_empty()),
         queue: status.queue.clone(),
+        web: status.web.clone(),
     })
 }
 
@@ -181,7 +210,7 @@ pub fn dimensions() -> CmdResult<Vec<Dimension>> {
 pub fn tree(st: &AppState, levels: &[String], path: &[String], offset: usize, limit: usize) -> CmdResult<TreeLevel> {
     let lib = lock(&st.library)?;
     let lib = lib.as_ref().ok_or_else(|| tr!("No library loaded."))?;
-    if lib.index.facets().is_empty() {
+    if lib.index.tree_score_count() == 0 {
         return Err(tr!("This library has no features yet – please reindex."));
     }
     let mut lv: Vec<&str> = Vec::new();
@@ -190,7 +219,20 @@ pub fn tree(st: &AppState, levels: &[String], path: &[String], offset: usize, li
             .ok_or_else(|| tr!("Unknown level: {level} (available: {list})", level = l, list = DIMENSIONS.map(|d| d.key).join(", ")))?;
         lv.push(d.key);
     }
-    Ok(tree_children(lib.index.facets(), &lv, path, offset, limit.clamp(1, 1000)))
+    Ok(lib.index.tree(&lv, path, offset, limit.clamp(1, 1000)))
+}
+
+/// Where a voice entry comes from: "own" (the person's scores in the browser,
+/// layered over the package), "remote" (the package on the server) or "" (a
+/// library on disk).
+fn origin(index: &AnyIndex, doc: u32) -> &'static str {
+    match index.extra_offset() {
+        Some(o) if doc >= o && index.is_remote() => "own",
+        _ if index.is_remote() => "remote",
+        // browser without a package: everything is own
+        _ if matches!(index, AnyIndex::Mem(_)) && cfg!(target_arch = "wasm32") => "own",
+        _ => "",
+    }
 }
 
 // ---------------------------------------------------------------- Suche
@@ -281,6 +323,14 @@ pub struct LibHit {
     score: Option<f32>,
     note_index: Option<usize>,
     query_len: usize,
+    /// Collection and license of the score (packages; empty = unknown)
+    #[serde(skip_serializing_if = "String::is_empty")]
+    collection: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    license: String,
+    /// Browser: "own" (own scores) or "remote" (package on the server) – an identifier, see `origin`
+    #[serde(skip_serializing_if = "str::is_empty")]
+    origin: &'static str,
 }
 
 pub fn search(
@@ -317,6 +367,9 @@ pub fn search(
                 score: None,
                 note_index: None,
                 query_len: 0,
+                collection: i.collection,
+                license: i.license,
+                origin: origin(&lib.index, doc),
             })
             .collect()),
         None => Err(tr!("Enter a search text or a melody (or select a clip).")),
@@ -343,6 +396,7 @@ fn melody_hits(index: &AnyIndex, q: &[MelodyNote], text: Option<&str>, limit: us
         .filter(|h| matches_text(&h.info))
         .take(limit)
         .map(|h| LibHit {
+            origin: origin(index, h.doc),
             doc: h.doc,
             title: h.info.title,
             composer: h.info.composer,
@@ -353,6 +407,8 @@ fn melody_hits(index: &AnyIndex, q: &[MelodyNote], text: Option<&str>, limit: us
             score: Some(h.score),
             note_index: Some(h.note_index),
             query_len: q.len(),
+            collection: h.info.collection,
+            license: h.info.license,
         })
         .collect())
 }
@@ -415,6 +471,12 @@ pub fn listen_start(st: &AppState) -> CmdResult<()> {
 /// `cancel` verwirft die Aufnahme nur.
 pub fn listen_stop(st: &AppState, text: Option<String>, cancel: Option<bool>) -> CmdResult<ListenResult> {
     if !LISTENING.swap(false, Ordering::SeqCst) {
+        // Browser: the search waited for data from the server and the command
+        // runs again – with the melody detected the first time.
+        let waiting = PENDING_LISTEN.lock().unwrap_or_else(|e| e.into_inner()).take();
+        if let Some((q, key, seconds)) = waiting {
+            return listen_search(st, text, q, key, seconds);
+        }
         return Err(tr!("No sing-to-search recording is running."));
     }
     let rec = st.engine()?.stop_recording().map_err(|e| e.to_string())?;
@@ -449,10 +511,21 @@ pub fn listen_stop(st: &AppState, text: Option<String>, cancel: Option<bool>) ->
             ),
         });
     }
+    listen_search(st, text, q, key, seconds)
+}
+
+/// Detected melody of a sing-to-search whose search still waits for data (browser).
+type ListenQuery = (Vec<MelodyNote>, Option<String>, f64);
+static PENDING_LISTEN: std::sync::Mutex<Option<ListenQuery>> = std::sync::Mutex::new(None);
+
+fn listen_search(st: &AppState, text: Option<String>, q: Vec<MelodyNote>, key: Option<String>, seconds: f64) -> CmdResult<ListenResult> {
     let lib = lock(&st.library)?;
     let lib = lib.as_ref().ok_or_else(no_library)?;
     let text = text.map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
     let hits = melody_hits(&lib.index, &q, text.as_deref(), 40)?;
+    if klang_music::source::remote::pending() {
+        *PENDING_LISTEN.lock().unwrap_or_else(|e| e.into_inner()) = Some((q.clone(), key.clone(), seconds));
+    }
     Ok(ListenResult { melody: format_melody(&q), notes: q.len(), key, seconds, hits })
 }
 
@@ -487,15 +560,31 @@ pub struct ScoreView {
     cadences: Vec<(f64, String)>,
     /// Hervorgehobene Stelle über alle Stimmen (z. B. ein Akkordwechsel), in Vierteln.
     range: Option<(f64, f64)>,
+    /// Collection, license and origin, as in [`LibHit`]
+    #[serde(skip_serializing_if = "String::is_empty")]
+    collection: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    license: String,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    origin: &'static str,
 }
 
 pub fn doc_and_score(st: &AppState, doc: u32) -> CmdResult<(klang_music::index::DocInfo, Score)> {
-    let info = {
+    let (info, bytes) = {
         let lib = lock(&st.library)?;
         let lib = lib.as_ref().ok_or_else(|| tr!("No library loaded"))?;
-        lib.index.doc(doc).ok_or_else(|| tr!("Entry {doc} not found", doc = doc))?
+        let info = lib.index.doc(doc).ok_or_else(|| tr!("Entry {doc} not found", doc = doc))?;
+        // in a package's ZIP (read by range in the browser) or a file of its own
+        let bytes = lib.index.score_bytes(&info).transpose().map_err(|e| format!("{}: {e}", info.source))?;
+        (info, bytes)
     };
-    let score = load_score(Path::new(&info.source)).map_err(|e| format!("{}: {e}", info.source))?;
+    let score = match bytes {
+        Some((name, data)) => load_score_bytes(&name, &data),
+        // the browser keeps files in the core's file tree, the desktop on disk
+        None if cfg!(target_arch = "wasm32") => crate::vfs::read(Path::new(&info.source)).map_err(Into::into).and_then(|data| load_score_bytes(&info.source, &data)),
+        None => load_score(Path::new(&info.source)),
+    }
+    .map_err(|e| format!("{}: {e}", info.source))?;
     Ok((info, score))
 }
 
@@ -551,6 +640,9 @@ pub fn open(
         voices,
         cadences: analysis.cadences.iter().map(|c| (c.onset, c.label.to_string())).collect(),
         range,
+        collection: info.collection,
+        license: info.license,
+        origin: lock(&st.library)?.as_ref().map(|l| origin(&l.index, doc)).unwrap_or(""),
     })
 }
 

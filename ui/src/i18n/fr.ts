@@ -472,6 +472,8 @@ const dict: Dict = {
 
   // ui/src/components/library.ts
   "The library is still loading – try again in a moment.": "La bibliothèque est encore en cours de chargement – réessayez dans un instant.",
+  "My scores": "Mes partitions",
+  "The score library server limits requests – continuing in {n} s…": "Le serveur de la bibliothèque de partitions limite les requêtes – reprise dans {n} s…",
   "Only MusicXML files (.mxl, .musicxml, .xml) or folders can be added to the library.": "Seuls des fichiers MusicXML (.mxl, .musicxml, .xml) ou des dossiers peuvent être ajoutés à la bibliothèque.",
   "Download music library": "Télécharger une bibliothèque musicale",
   "Once downloaded, it's added to the active library. For Bach, Mozart and Beethoven in good quality: KernScores, OpenScore and DCML.": "Après le téléchargement, le contenu est intégré à la bibliothèque active. Pour Bach, Mozart et Beethoven en bonne qualité : KernScores, OpenScore et DCML.",
@@ -518,11 +520,29 @@ const dict: Dict = {
   "Libraries": "Bibliothèques",
   "Each library is a separate index – only the active one is searched. Downloaded and added scores go into the active one.": "Chaque bibliothèque a son propre index – la recherche ne porte que sur la bibliothèque active. Les partitions téléchargées et ajoutées y sont placées.",
   "Create new": "Créer",
+  "Score library": "Bibliothèque de partitions",
+  "Version {version}": "Version {version}",
+  "Connecting to the score library…": "Connexion à la bibliothèque de partitions…",
+  "Score library offline – your own scores and what you've used before are available.": "Bibliothèque de partitions hors ligne – vos propres partitions et celles déjà utilisées restent disponibles.",
+  "Score library unavailable: {error}": "Bibliothèque de partitions indisponible : {error}",
+  "No score library configured – only your own scores (see docs/LIBRARY.md).": "Aucune bibliothèque de partitions configurée – seulement vos propres partitions (voir docs/LIBRARY.md).",
+  "Open the dataset page": "Ouvrir la page du jeu de données",
+  "Cache cleared.": "Cache vidé.",
+  "Clear cache": "Vider le cache",
+  "Sources and licenses": "Sources et licences",
+  "{size} of the score library are kept in this browser for offline use.": "{size} de la bibliothèque de partitions sont conservés dans ce navigateur pour une utilisation hors ligne.",
+  "Remove from my scores": "Retirer de « Mes partitions »",
+  "Really remove?": "Vraiment retirer ?",
+  "Remove": "Retirer",
+  "No own scores yet – add MusicXML/MXL files or drag them onto the window.": "Pas encore de partitions personnelles – ajoutez des fichiers MusicXML/MXL ou faites-les glisser sur la fenêtre.",
+  "Searching covers both: the score library on the server and your own scores. Only what you open or search is kept in this browser.": "La recherche couvre les deux : la bibliothèque de partitions sur le serveur et vos propres partitions. Seul ce que vous ouvrez ou cherchez est conservé dans ce navigateur.",
+  "Add files": "Ajouter des fichiers",
   "Manage libraries: switch, create, rename, delete": "Gérer les bibliothèques : changer, créer, renommer, supprimer",
   "Path to a MusicXML/MXL file or a folder – separate several with ;": "Chemin d'un fichier MusicXML/MXL ou d'un dossier – séparer plusieurs chemins par ;",
   "Enter the path of a MusicXML file (or a folder) – or drag the files onto the window.": "Saisissez le chemin d'un fichier MusicXML (ou d'un dossier) – ou faites glisser les fichiers sur la fenêtre.",
   "Add": "Ajouter",
   "Add to \"{library}\" (or drag files onto the window):": "Ajouter à « {library} » (ou faire glisser des fichiers sur la fenêtre) :",
+  "Add your own MusicXML/MXL files – or drag them onto the window. They're kept in this browser.": "Ajouter vos propres fichiers MusicXML/MXL – ou les faire glisser sur la fenêtre. Ils restent dans ce navigateur.",
   "Add MusicXML/MXL files or whole folders to the active library – or just drag them onto the window.": "Ajouter des fichiers MusicXML/MXL ou des dossiers entiers à la bibliothèque active – ou simplement les faire glisser sur la fenêtre.",
   "Title, composer, instrument…": "Titre, compositeur, instrument …",
   "Melody: C4 D4 E4 F4 G4 (F♯ or F#, B♭ or Bb …) or 60 62 64 – duration e.g. G4:2": "Mélodie : C4 D4 E4 F4 G4 (F♯ ou F#, B♭ ou Bb …) ou 60 62 64 – durée p. ex. G4:2",
@@ -1319,6 +1339,7 @@ const dict: Dict = {
   // ui/src/web/host.ts
   "There's no agent server (MCP) in the browser – a web page can't open a port. An agent can still operate Klangwelt: via a browser extension or the Chrome DevTools Protocol, see docs/WEB.md.": "Le navigateur n'a pas de serveur d'agent (MCP) – une page web ne peut pas ouvrir de port. Un agent peut tout de même piloter Klangwelt : via une extension de navigateur ou le protocole Chrome DevTools, voir docs/WEB.md.",
   "Not yet available in the browser – see docs/WEB.md.": "Pas encore disponible dans le navigateur – voir docs/WEB.md.",
+  "The score library on the server can't be reached right now – offline, only scores you've used before are available.": "La bibliothèque de partitions sur le serveur est injoignable pour le moment – hors ligne, seules les partitions déjà utilisées sont disponibles.",
   "Web core: {message}": "Cœur web : {message}",
   "No audio in the browser": "Pas d'audio dans le navigateur",
   "This browser doesn't allow microphone access (only via https or localhost).": "Ce navigateur ne donne pas accès au microphone (uniquement via https ou localhost).",
@@ -2019,6 +2040,13 @@ const dict: Dict = {
   // crates/klang-app/src/vfs.rs
   "{path} doesn't exist": "{path} n'existe pas",
 
+  // crates/klang-app/src/weblib.rs
+  "{path}: not a score (MusicXML, MXL, **kern)": "{path} : pas une partition (MusicXML, MXL, **kern)",
+  "\"{name}\" is already in \"{library}\".": "« {name} » est déjà dans « {library} ».",
+  "{file}: no voice is long enough to search (at least 8 notes).": "{file} : aucune voix n’est assez longue pour la recherche (au moins 8 notes).",
+  "Added {n} scores to \"My scores\".": { one: "Une partition ajoutée à « Mes partitions ».", other: "{n} partitions ajoutées à « Mes partitions »." },
+  "Index file incomplete or corrupted": "Fichier d'index incomplet ou endommagé",
+
   // crates/klang-core/src/command.rs
   "The project name can't be empty": "Le nom du projet ne peut pas être vide",
   "Tempo {t} BPM is outside 20–400": "Le tempo {t} BPM est hors de la plage 20–400",
@@ -2149,7 +2177,6 @@ const dict: Dict = {
   "canceled": "annulé",
   "not a Klangwelt index file (format 3/4)": "pas un fichier d'index Klangwelt (format 3/4)",
   "Header corrupted": "En-tête endommagé",
-  "Index file incomplete or corrupted": "Fichier d'index incomplet ou endommagé",
   "Key table corrupted": "Table des clés endommagée",
   "Index file too short": "Fichier d'index trop court",
   "Occurrence list corrupted": "Occurrences endommagées",
@@ -2480,7 +2507,6 @@ const dict: Dict = {
   "Not supported: {e}": "Non pris en charge : {e}",
 
   // crates/klang-music/src/library.rs
-  "{path}: not a score (MusicXML, MXL, **kern)": "{path} : pas une partition (MusicXML, MXL, **kern)",
   "{path}: not found": "{path} : introuvable",
 
   // crates/klang-music/src/pdmx.rs
@@ -2507,14 +2533,10 @@ const dict: Dict = {
   "As": "A♭",
   "B": "B♭",
 
-  // crates/klang-web/src/lib.rs
+  // not used in this repo (e.g. the desktop shell, klangwelt-desktop/app/src)
   "There's no score library in the browser yet (downloading and indexing are missing) – see docs/WEB.md.": "Le navigateur n'a pas encore de bibliothèque de partitions (téléchargement et indexation manquants) – voir docs/WEB.md.",
-
-  // ../klangwelt-desktop/app/src/lib.rs
   "{path} no longer exists": "{path} n'existe plus",
   "Cancelled: {error}": "Annulé : {error}",
-
-  // ../klangwelt-desktop/app/src/libraries.rs
   "Library list locked": "Liste des bibliothèques verrouillée",
   "The library list is still missing (it is created at startup).": "La liste des bibliothèques n'existe pas encore (elle est créée au démarrage).",
   "The library list is still missing.": "La liste des bibliothèques n'existe pas encore.",
@@ -2535,8 +2557,6 @@ const dict: Dict = {
   "Libraries set up: \"{name}\" with {count} scores; separate libraries: {libraries}.": { one: "Bibliothèques configurées : « {name} » avec {count} partition ; bibliothèques séparées : {libraries}.", other: "Bibliothèques configurées : « {name} » avec {count} partitions ; bibliothèques séparées : {libraries}." },
   "Libraries set up: \"{name}\" with {count} scores (from {folders}); separate libraries: {libraries}.": { one: "Bibliothèques configurées : « {name} » avec {count} partition (à partir de {folders}) ; bibliothèques séparées : {libraries}.", other: "Bibliothèques configurées : « {name} » avec {count} partitions (à partir de {folders}) ; bibliothèques séparées : {libraries}." },
   "Library \"{name}\": {count} scores": { one: "Bibliothèque « {name} » : {count} partition", other: "Bibliothèque « {name} » : {count} partitions" },
-
-  // ../klangwelt-desktop/app/src/library.rs
   "The library is busy loading, indexing or adding scores.": "La bibliothèque est occupée : chargement, indexation ou intégration de partitions en cours.",
   "The library is still loading – just a moment.": "La bibliothèque est encore en cours de chargement – un instant.",
   "No file given": "Aucun fichier indiqué",
@@ -2605,7 +2625,6 @@ const dict: Dict = {
   "{name}: genre/composer not loaded: {error}": "{name} : genre/compositeur non chargés : {error}",
   "Unknown pack: {id} (available: {ids})": "Paquet inconnu : {id} (disponibles : {ids})",
   "The library \"{library}\" no longer exists.": "La bibliothèque « {library} » n'existe plus.",
-  "\"{name}\" is already in \"{library}\".": "« {name} » est déjà dans « {library} ».",
   "\"{name}\" is already in \"{library}\" (via \"{via}\").": "« {name} » est déjà dans « {library} » (via « {via} »).",
   "\"{name}\" is being downloaded right now.": "« {name} » est en cours de téléchargement.",
   "\"{name}\" is being downloaded right now (via \"{via}\").": "« {name} » est en cours de téléchargement (via « {via} »).",
@@ -2629,8 +2648,6 @@ const dict: Dict = {
   "{name}: download stopped after {count} scores ({error}) – \"Download\" continues, scores already there are skipped.": { one: "{name} : téléchargement arrêté après {count} partition ({error}) – « Télécharger » reprend, les partitions déjà présentes sont ignorées.", other: "{name} : téléchargement arrêté après {count} partitions ({error}) – « Télécharger » reprend, les partitions déjà présentes sont ignorées." },
   "{name}: connection interrupted ({why}) – resuming at {position} (connection {connection}) …": "{name} : connexion interrompue ({why}) – reprise à {position} (connexion {connection}) …",
   "Can't create the folder {folder}: {error}": "Impossible de créer le dossier {folder} : {error}",
-
-  // ../klangwelt-desktop/app/src/mcp.rs
   "Port {port} is in use or not available: {error}": "Le port {port} est occupé ou indisponible : {error}",
 };
 

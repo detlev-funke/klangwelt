@@ -325,6 +325,39 @@ export interface LibraryInfo {
   currentPack?: string | null;
   /** Wartende Pakete, in der Reihenfolge, in der sie drankommen. */
   queue?: QueuedDownload[];
+  /** Browser: the package on the server and the own scores. */
+  web?: WebLibInfo;
+}
+
+/** Browser: the two parts of the library (see crates/klang-app/src/weblib.rs). */
+export interface WebLibInfo {
+  /** "none" (not configured), "loading", "ready", "offline", "error" */
+  remote: "none" | "loading" | "ready" | "offline" | "error";
+  remoteTitle: string | null;
+  remoteVersion: string | null;
+  remoteScores: number;
+  remoteUrl: string | null;
+  remoteLicense: string | null;
+  remoteSources: string[];
+  ownScores: number;
+  error: string | null;
+}
+
+/** An own score in the browser. */
+export interface OwnScore {
+  file: string;
+  path: string;
+  doc: number;
+  title: string;
+  composer: string;
+  bytes: number;
+}
+
+/** Result of adding own scores. */
+export interface AddResult {
+  added: number;
+  skipped: string[];
+  message: string;
 }
 
 /** Ein beauftragtes Paket in der Download-Warteschlange. */
@@ -439,6 +472,11 @@ export interface LibHit {
   score: number | null;
   noteIndex: number | null;
   queryLen: number;
+  /** Collection and license of the score (library packages). */
+  collection?: string;
+  license?: string;
+  /** Browser: "own" (own scores) or "remote" (the package on the server). */
+  origin?: "own" | "remote";
 }
 
 /** Ergebnis von „Vorsingen“: erkannte Töne und Treffer. */
@@ -475,6 +513,9 @@ export interface ScoreView {
   cadences: Array<[number, string]>;
   /** Hervorgehobene Stelle über alle Stimmen (Viertel), z. B. ein Akkordwechsel. */
   range: [number, number] | null;
+  collection?: string;
+  license?: string;
+  origin?: "own" | "remote";
 }
 
 /** Laufendes Vorspielen einer Partitur (Viertel; Tempo in Vierteln je Minute). */

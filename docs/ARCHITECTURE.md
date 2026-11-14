@@ -663,6 +663,16 @@ default layout.
   also opens older files (format 1/2, in memory).
   Measured with 30,000 scores: build 12–31 s at ≈ 0.2 GB of memory,
   index file 157 MB (previously 241 MB in the in-memory format, ≈ 0.6 GB RAM).
+  `DiskIndex` reads through `klang_music::source::ReadAt` – a file, bytes in
+  memory, or a file on a web server read by range (`source::remote`: a read
+  that isn't there yet fails with `WouldBlock` and is noted; the browser
+  fetches the noted ranges and runs the command again). `IndexWriter::set_provenance`
+  writes a JSON block between header and voice entries (sources, versions,
+  checksums); all readers skip it, since every section is found by its offset.
+  The browser version reads a prebuilt package like this (index, scores ZIP,
+  text index, facet table, chord statistics – `klang_music::webpack`,
+  `scorezip`; built by `crates/klang-libbuild`) and layers the own scores over
+  it (`klang_app::weblib`) – see [LIBRARY.md](LIBRARY.md).
 * **Chord progression statistics** (`klang_music::chordstats`, part of `KWIX04`):
   during indexing, `score_progression` detects the chord progression of each
   score (all voices except drums, grid of half a bar, or a whole bar in

@@ -1,30 +1,30 @@
-//! Audiodateien lesen – mit eigenen Dekodern (nur Opus über libopus, das
-//! Klangwelt für den Export ohnehin mitbringt):
+//! Reads audio files with its own decoders (only Opus goes through libopus, which
+//! Klangwelt bundles for export anyway):
 //!
-//! * **WAV**: PCM mit 8, 16, 24 oder 32 Bit, Gleitkomma mit 32 oder 64 Bit,
-//!   auch als WAVE_FORMAT_EXTENSIBLE (so speichern viele Programme 24 Bit).
-//! * **AIFF/AIFC**: PCM (big endian), „sowt“ (little endian), fl32/fl64.
-//! * **FLAC**: vollständig – konstante, wörtliche, feste und LPC-Teilblöcke,
-//!   Rice-Partitionen, alle Stereo-Arten, beliebige Blockgrößen.
-//! * **Ogg Opus**: bis zwei Kanäle.
+//! * **WAV**: PCM with 8, 16, 24 or 32 bits, floating point with 32 or 64 bits,
+//!   also as WAVE_FORMAT_EXTENSIBLE (how many programs store 24 bit).
+//! * **AIFF/AIFC**: PCM (big endian), "sowt" (little endian), fl32/fl64.
+//! * **FLAC**: complete - constant, verbatim, fixed and LPC subframes,
+//!   Rice partitions, all stereo modes, arbitrary block sizes.
+//! * **Ogg Opus**: up to two channels.
 //!
-//! Klangwelt hält Audio mono; mehrkanaliges Material wird gemittelt.
-//! MP3, AAC/M4A, Ogg Vorbis und WMA werden am Dateianfang erkannt und mit einer
-//! klaren Meldung abgelehnt (Dekoder dafür gibt es noch nicht).
+//! Klangwelt keeps audio mono; multichannel material is averaged.
+//! MP3, AAC/M4A, Ogg Vorbis and WMA are recognized at the start of the file and rejected with a
+//! clear message (there is no decoder for them yet).
 
 use klang_i18n::tr;
 
 /// For messages: what can be opened (spelled out in the messages below).
 pub const SUPPORTED: &str = "WAV, AIFF, FLAC und Opus";
 
-/// Dekodiertes Audio (mono).
+/// Decoded audio (mono).
 #[derive(Debug)]
 pub struct Decoded {
     pub samples: Vec<f32>,
     pub sample_rate: u32,
-    /// Kanäle der Datei (vor dem Mitteln).
+    /// Channels of the file (before averaging).
     pub channels: u16,
-    /// Format in Worten, z. B. „WAV 24 Bit“.
+    /// Format in words, e.g. "WAV 24 bit".
     pub format: String,
 }
 
@@ -42,7 +42,7 @@ fn unsupported(what: &str) -> String {
     )
 }
 
-/// Erkennt das Format am Inhalt (nicht an der Endung) und dekodiert.
+/// Detects the format from the content (not the extension) and decodes.
 pub fn decode(bytes: &[u8]) -> Result<Decoded, String> {
     let b = bytes;
     if b.len() < 12 {
@@ -61,7 +61,7 @@ pub fn decode(bytes: &[u8]) -> Result<Decoded, String> {
         return flac(b);
     }
     if &b[..3] == b"ID3" {
-        // ID3v2-Etikett: steht vor MP3, manchmal auch vor FLAC
+        // ID3v2 tag: comes before MP3, sometimes before FLAC too
         let size = ((b[6] as usize & 0x7f) << 21) | ((b[7] as usize & 0x7f) << 14) | ((b[8] as usize & 0x7f) << 7) | (b[9] as usize & 0x7f);
         let skip = 10 + size + if b[5] & 0x10 != 0 { 10 } else { 0 };
         return match b.get(skip..) {
@@ -79,7 +79,7 @@ pub fn decode(bytes: &[u8]) -> Result<Decoded, String> {
         return Err(unsupported("WMA"));
     }
     if b[0] == 0xFF && b[1] & 0xE0 == 0xE0 {
-        // Rahmen-Synchronwort: Layer-Bits 00 = AAC (ADTS), sonst MPEG-Audio (MP3)
+        // Frame sync word: layer bits 00 = AAC (ADTS), otherwise MPEG audio (MP3)
         return Err(unsupported(if b[1] & 0x06 == 0 { "AAC (ADTS)" } else { "MP3" }));
     }
     Err(tr!("Unknown file format – Klangwelt reads WAV, AIFF, FLAC and Opus."))
@@ -103,7 +103,7 @@ fn u32le(b: &[u8], i: usize) -> u32 {
     u32::from_le_bytes([b[i], b[i + 1], b[i + 2], b[i + 3]])
 }
 
-/// PCM-Samples (Ganzzahl oder Gleitkomma) → f32; `big` = big endian.
+/// PCM samples (integer or floating point) → f32; `big` = big endian.
 fn pcm(data: &[u8], bytes: usize, float: bool, big: bool, unsigned8: bool) -> Result<Vec<f32>, String> {
     let get = |c: &[u8]| -> f32 {
         let mut a = [0u8; 8];
@@ -131,13 +131,13 @@ fn wav(b: &[u8]) -> Result<Decoded, String> {
     while i + 8 <= b.len() {
         let id = &b[i..i + 4];
         let len = u32le(b, i + 4) as usize;
-        // abgeschnittene oder unbestimmt lange data-Blöcke (Aufnahme-Programme) tolerieren
+        // tolerate truncated or indeterminate-length data chunks (recording programs)
         let body = &b[i + 8..(i + 8).saturating_add(len).min(b.len())];
         match id {
             b"fmt " if body.len() >= 16 => {
                 let mut tag = u16le(body, 0);
                 if tag == 0xFFFE && body.len() >= 26 {
-                    tag = u16le(body, 24); // Unterformat (GUID beginnt mit dem Formatcode)
+                    tag = u16le(body, 24); // subformat (GUID starts with the format code)
                 }
                 fmt = Some((tag, u16le(body, 2).max(1), u32le(body, 4), u16le(body, 12), u16le(body, 14)));
             }
@@ -177,7 +177,7 @@ fn u32be(b: &[u8], i: usize) -> u32 {
     u32::from_be_bytes([b[i], b[i + 1], b[i + 2], b[i + 3]])
 }
 
-/// 80-Bit-Gleitkommazahl (IEEE extended) der Abtastrate.
+/// 80-bit floating-point number (IEEE extended) of the sample rate.
 fn extended(b: &[u8]) -> f64 {
     let exp = (((b[0] as i32) & 0x7f) << 8) | b[1] as i32;
     let mant = u64::from_be_bytes([b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9]]);
@@ -237,7 +237,7 @@ fn aiff(b: &[u8]) -> Result<Decoded, String> {
 
 struct BitReader<'a> {
     d: &'a [u8],
-    /// Position in Bits.
+    /// Position in bits.
     pos: usize,
 }
 
@@ -246,7 +246,7 @@ impl<'a> BitReader<'a> {
         BitReader { d, pos: 0 }
     }
 
-    /// Acht Bytes ab `byte` (hinter dem Ende mit Nullen aufgefüllt).
+    /// Eight bytes starting at `byte` (padded with zeros past the end).
     fn window(&self, byte: usize) -> u64 {
         if byte + 8 <= self.d.len() {
             return u64::from_be_bytes(self.d[byte..byte + 8].try_into().unwrap());
@@ -258,7 +258,7 @@ impl<'a> BitReader<'a> {
         u64::from_be_bytes(a)
     }
 
-    /// `n` Bits (höchstens 57) ohne Vorzeichen.
+    /// `n` bits (at most 57), unsigned.
     fn read(&mut self, n: u32) -> Result<u64, String> {
         if n == 0 {
             return Ok(0);
@@ -279,7 +279,7 @@ impl<'a> BitReader<'a> {
         Ok(((v << (64 - n)) as i64) >> (64 - n))
     }
 
-    /// Nullen bis zur nächsten Eins zählen (die Eins wird verbraucht).
+    /// Counts zeros up to the next one (the one is consumed).
     fn unary(&mut self) -> Result<u32, String> {
         let mut q = 0u32;
         loop {
@@ -352,7 +352,7 @@ fn flac(b: &[u8]) -> Result<Decoded, String> {
                 bps_seen = fr_bps;
             }
             Err(e) => {
-                // beschädigter Block: zum nächsten Synchronwort weiter (Rest einer Datei mit Etiketten am Ende o. Ä.)
+                // corrupt block: continue to the next sync word (rest of a file with tags at the end, etc.)
                 let mut k = start / 8 + 1;
                 let d = r.d;
                 while k + 1 < d.len() && !(d[k] == 0xFF && d[k + 1] & 0xFE == 0xF8) {
@@ -378,18 +378,18 @@ fn flac(b: &[u8]) -> Result<Decoded, String> {
     Ok(Decoded { samples: out, sample_rate: rate, channels: info.channels as u16, format })
 }
 
-/// Ein FLAC-Block → mono an `out` anhängen; liefert (Abtastrate, Bits) des Blocks.
+/// Appends one FLAC block to `out` as mono; returns (sample rate, bits) of the block.
 fn flac_frame(r: &mut BitReader, info: &StreamInfo, out: &mut Vec<f32>) -> Result<(u32, u32), String> {
     if r.read(14)? != 0x3FFE {
         return Err(tr!("Sync code missing"));
     }
-    r.read(2)?; // reserviert, Blockart
+    r.read(2)?; // reserved, block type
     let bs_code = r.read(4)?;
     let sr_code = r.read(4)?;
     let ch_code = r.read(4)? as u32;
     let ss_code = r.read(3)?;
     r.read(1)?;
-    // Block-/Samplenummer (UTF-8-artig kodiert)
+    // block/sample number (UTF-8-like coding)
     let first = r.read(8)?;
     let extra = match first {
         0x00..=0x7F => 0,
@@ -440,7 +440,7 @@ fn flac_frame(r: &mut BitReader, info: &StreamInfo, out: &mut Vec<f32>) -> Resul
         7 => 32,
         _ => return Err(tr!("invalid bit depth")),
     };
-    r.read(8)?; // CRC-8 des Kopfs
+    r.read(8)?; // CRC-8 of the header
     let channels = match ch_code {
         0..=7 => ch_code as usize + 1,
         8..=10 => 2,
@@ -448,12 +448,12 @@ fn flac_frame(r: &mut BitReader, info: &StreamInfo, out: &mut Vec<f32>) -> Resul
     };
     let mut chans: Vec<Vec<i64>> = Vec::with_capacity(channels);
     for c in 0..channels {
-        // Seitenkanal (Differenz) braucht ein Bit mehr
+        // side channel (difference) needs one more bit
         let side = matches!((ch_code, c), (8, 1) | (9, 0) | (10, 1));
         chans.push(flac_subframe(r, block, bps + side as u32)?);
     }
     r.align();
-    r.read(16)?; // CRC-16 des Blocks
+    r.read(16)?; // CRC-16 of the block
     match ch_code {
         8 => {
             let (l, s) = (&chans[0], &chans[1]);
@@ -578,7 +578,7 @@ fn flac_residual(r: &mut BitReader, block: usize, order: usize) -> Result<Vec<i6
 
 // ---------------------------------------------------------------- Ogg
 
-/// Pakete des ersten logischen Datenstroms einer Ogg-Datei und die letzte Granule-Position.
+/// Packets of the first logical stream of an Ogg file and the last granule position.
 fn ogg_packets(b: &[u8]) -> Result<(Vec<Vec<u8>>, u64), String> {
     let (mut pos, mut packets, mut cur, mut serial, mut granule) = (0usize, Vec::new(), Vec::new(), None, 0u64);
     while pos + 27 <= b.len() {
@@ -592,7 +592,7 @@ fn ogg_packets(b: &[u8]) -> Result<(Vec<Vec<u8>>, u64), String> {
         let body_len: usize = lacing.iter().map(|&l| l as usize).sum();
         let mut off = pos + 27 + nseg;
         if off + body_len > b.len() {
-            break; // abgeschnittene letzte Seite
+            break; // truncated last page
         }
         let mine = *serial.get_or_insert(ser) == ser;
         if mine {
@@ -665,7 +665,7 @@ mod tests {
         b.extend_from_slice(b"fmt ");
         b.extend_from_slice(&(fmt.len() as u32).to_le_bytes());
         b.extend_from_slice(fmt);
-        b.extend_from_slice(b"LIST\x04\0\0\0abcd"); // fremder Block dazwischen
+        b.extend_from_slice(b"LIST\x04\0\0\0abcd"); // foreign chunk in between
         b.extend_from_slice(b"data");
         b.extend_from_slice(&(data.len() as u32).to_le_bytes());
         b.extend_from_slice(data);
@@ -687,7 +687,7 @@ mod tests {
     #[test]
     fn wav_bit_depths_and_extensible() {
         let x = sine(400, 8000.0);
-        // 24 Bit Stereo als WAVE_FORMAT_EXTENSIBLE (rechts stumm → mono = halbe Lautstärke)
+        // 24-bit stereo as WAVE_FORMAT_EXTENSIBLE (right silent → mono = half the volume)
         let mut f = fmt(0xFFFE, 2, 8000, 24);
         f.extend_from_slice(&22u16.to_le_bytes());
         f.extend_from_slice(&24u16.to_le_bytes());
@@ -703,7 +703,7 @@ mod tests {
         assert_eq!((d.sample_rate, d.channels, d.samples.len()), (8000, 2, 400));
         assert!(d.samples.iter().zip(&x).all(|(a, b)| (a - b / 2.0).abs() < 1e-5));
         assert_eq!(d.format, "WAV 24-bit");
-        // 8 Bit (vorzeichenlos), 32 Bit PCM, 64 Bit Gleitkomma
+        // 8 bit (unsigned), 32-bit PCM, 64-bit floating point
         let d8 = decode(&riff(&fmt(1, 1, 8000, 8), &x.iter().map(|v| (v * 127.0 + 128.0) as u8).collect::<Vec<_>>())).unwrap();
         assert!(d8.samples.iter().zip(&x).all(|(a, b)| (a - b).abs() < 0.02));
         let d32: Vec<u8> = x.iter().flat_map(|v| ((v * 2_147_483_000.0) as i32).to_le_bytes()).collect();
@@ -720,7 +720,7 @@ mod tests {
             comm.extend_from_slice(&1u16.to_be_bytes());
             comm.extend_from_slice(&(x.len() as u32).to_be_bytes());
             comm.extend_from_slice(&16u16.to_be_bytes());
-            // 22050 als 80-Bit-Zahl: Exponent 16383+14, Mantisse 22050 << 49
+            // 22050 as an 80-bit number: exponent 16383+14, mantissa 22050 << 49
             comm.extend_from_slice(&((16383u16 + 14).to_be_bytes()));
             comm.extend_from_slice(&((22_050u64) << 49).to_be_bytes());
             if let Some(c) = comp {
@@ -750,7 +750,7 @@ mod tests {
 
     #[test]
     fn flac_from_the_own_encoder_with_all_stereo_modes() {
-        // Stereo mit unterschiedlichen Kanälen (zwingt Seitenkanal-Arten), 16 Bit, mehrere Blöcke
+        // stereo with different channels (forces side-channel modes), 16 bit, several blocks
         let n = 10_000;
         let l: Vec<i32> = (0..n).map(|i| ((i as f32 * 0.03).sin() * 12_000.0) as i32).collect();
         let r: Vec<i32> = (0..n).map(|i| ((i as f32 * 0.031).sin() * 11_000.0 + (i % 7) as f32 * 30.0) as i32).collect();
@@ -765,7 +765,7 @@ mod tests {
         assert_eq!(d.format, "FLAC 16-bit");
     }
 
-    /// Kleiner Bitschreiber für handgebaute FLAC-Blöcke.
+    /// Small bit writer for hand-built FLAC blocks.
     struct W(Vec<u8>, u32);
     impl W {
         fn put(&mut self, v: u64, n: u32) {
@@ -791,7 +791,7 @@ mod tests {
 
     #[test]
     fn flac_lpc_subframe_and_wasted_bits() {
-        // Mono, 16 Bit, Block 32: LPC 2. Ordnung (2·s[n-1] − s[n-2], Genauigkeit 4, Verschiebung 0)
+        // mono, 16 bit, block 32: 2nd-order LPC (2·s[n-1] − s[n-2], precision 4, shift 0)
         let sig: Vec<i64> = (0..32).map(|i| 100 + 7 * i + (i * i) % 5).collect();
         let mut w = W(Vec::new(), 0);
         // STREAMINFO
@@ -800,49 +800,49 @@ mod tests {
         let mut si = vec![0u8; 34];
         si[0..2].copy_from_slice(&32u16.to_be_bytes());
         si[2..4].copy_from_slice(&32u16.to_be_bytes());
-        // Rate 16000 (20 Bit), 1 Kanal (0), 16 Bit (15), Samples 64
+        // rate 16000 (20 bits), 1 channel (0), 16 bit (15), samples 64
         let packed: u64 = (16_000u64 << 44) | (0 << 41) | (15 << 36) | 64;
         si[10..18].copy_from_slice(&packed.to_be_bytes());
         b.extend_from_slice(&si);
         for frame in 0..2u64 {
             w.put(0x3FFE, 14);
             w.put(0, 2);
-            w.put(7, 4); // Blockgröße: 16 Bit folgen
-            w.put(0, 4); // Rate aus STREAMINFO
-            w.put(0, 4); // 1 Kanal
-            w.put(4, 3); // 16 Bit
+            w.put(7, 4); // block size: 16 bits follow
+            w.put(0, 4); // rate from STREAMINFO
+            w.put(0, 4); // 1 channel
+            w.put(4, 3); // 16 bit
             w.put(0, 1);
             w.put(frame, 8);
             w.put(31, 16); // 32 − 1
-            w.put(0, 8); // CRC-8 (nicht geprüft)
+            w.put(0, 8); // CRC-8 (not checked)
             if frame == 0 {
-                // LPC-Teilblock
+                // LPC subframe
                 w.put(0, 1);
-                w.put(32 + 1, 6); // LPC, Ordnung 2
+                w.put(32 + 1, 6); // LPC, order 2
                 w.put(0, 1);
                 w.put(sig[0] as u64, 16);
                 w.put(sig[1] as u64, 16);
-                w.put(3, 4); // Genauigkeit 4
-                w.put(0, 5); // Verschiebung 0
+                w.put(3, 4); // precision 4
+                w.put(0, 5); // shift 0
                 w.put(2, 4); // +2
                 w.put(0b1111, 4); // −1
                 w.put(0, 2);
-                w.put(0, 4); // eine Partition
+                w.put(0, 4); // one partition
                 w.put(2, 4); // Rice k = 2
                 for n in 2..32 {
                     w.rice(sig[n] - (2 * sig[n - 1] - sig[n - 2]), 2);
                 }
             } else {
-                // Konstant mit einem ungenutzten Bit: 2 × (−3) = −6
+                // constant with one unused bit: 2 × (−3) = −6
                 w.put(0, 1);
                 w.put(0, 6);
                 w.put(1, 1);
-                w.put(1, 1); // unär: 0 Nullen → 1 ungenutztes Bit
+                w.put(1, 1); // unary: 0 zeros → 1 unused bit
                 w.put((-3i64 as u64) & 0x7fff, 15);
             }
             let pad = (8 - w.1 % 8) % 8;
             w.put(0, pad);
-            w.put(0, 16); // CRC-16 (nicht geprüft)
+            w.put(0, 16); // CRC-16 (not checked)
         }
         b.extend_from_slice(&w.0);
         let d = decode(&b).unwrap();

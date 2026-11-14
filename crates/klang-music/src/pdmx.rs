@@ -1,9 +1,9 @@
-//! PDMX-Metadaten (MuseScore): Genre, Komponist, Schwierigkeit je Partitur.
+//! PDMX metadata (MuseScore): genre, composer, difficulty per score.
 //!
-//! `PDMX.csv` (≈ 225 MB) wird als Datenstrom gelesen; behalten werden nur die
-//! Zeilen der Partituren, die im Bibliotheksordner liegen (Bezug über den
-//! Dateinamen `Qm….mxl`). Gespeichert wird eine kleine Tabelle
-//! `pdmx-metadaten.tsv` neben den Noten.
+//! `PDMX.csv` (≈ 225 MB) is read as a stream; only the rows of the
+//! scores that are in the library folder are kept (matched via the
+//! file name `Qm….mxl`). A small table `pdmx-metadaten.tsv` is saved
+//! next to the notes.
 
 use std::collections::{HashMap, HashSet};
 use std::io::{self, BufRead, Write};
@@ -12,20 +12,20 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 pub const META_FILE: &str = "pdmx-metadaten.tsv";
 
-/// Metadaten einer Partitur aus PDMX.
+/// Metadata of a score from PDMX.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PdmxMeta {
-    /// Genres (roh, z. B. „classical“, „rbfunksoul“).
+    /// Genres (raw, e.g. "classical", "rbfunksoul").
     pub genres: Vec<String>,
-    /// Komponist (bzw. Interpret, wenn kein Komponist angegeben ist).
+    /// Composer (or performer, if no composer is given).
     pub composer: String,
-    /// MuseScore-Schwierigkeit 0…3.
+    /// MuseScore difficulty 0…3.
     pub complexity: Option<u8>,
     pub license_conflict: bool,
 }
 
-/// Liest CSV (RFC 4180: Anführungszeichen, verdoppelte Anführungszeichen,
-/// Zeilenumbrüche in Feldern) Datensatz für Datensatz.
+/// Reads CSV (RFC 4180: quotes, doubled quotes,
+/// line breaks in fields) record by record.
 pub fn for_each_record(mut r: impl BufRead, cancel: &AtomicBool, mut f: impl FnMut(&[String]) -> bool) -> io::Result<()> {
     let mut row: Vec<String> = Vec::new();
     let mut field: Vec<u8> = Vec::new();
@@ -96,8 +96,8 @@ fn na(s: &str) -> &str {
     if t == "NA" || t == "nan" { "" } else { t }
 }
 
-/// Filtert `PDMX.csv` auf die Partituren `wanted` (Dateinamen ohne Endung).
-/// Hört auf, sobald alle gefunden sind.
+/// Filters `PDMX.csv` down to the scores `wanted` (file names without extension).
+/// Stops as soon as all are found.
 pub fn filter_metadata(r: impl BufRead, wanted: &HashSet<String>, cancel: &AtomicBool) -> io::Result<HashMap<String, PdmxMeta>> {
     let mut out = HashMap::new();
     let mut cols: Option<HashMap<String, usize>> = None;
@@ -126,7 +126,7 @@ pub fn filter_metadata(r: impl BufRead, wanted: &HashSet<String>, cancel: &Atomi
     Ok(out)
 }
 
-/// Speichert die gefilterten Metadaten als Tabelle (Tab-getrennt).
+/// Saves the filtered metadata as a table (tab-separated).
 pub fn save_meta(path: &Path, meta: &HashMap<String, PdmxMeta>) -> io::Result<()> {
     let mut w = io::BufWriter::new(std::fs::File::create(path)?);
     writeln!(w, "datei\tgenres\tkomponist\tschwierigkeit\tlizenzkonflikt")?;
@@ -204,10 +204,10 @@ pub fn genre_label(raw: &str) -> String {
     .to_string()
 }
 
-/// Komponistenname vereinheitlichen: Lebensdaten weg, Leerraum, Traditionals.
+/// Normalize composer name: drop life dates, whitespace, traditionals.
 pub fn composer_label(raw: &str) -> String {
     let mut s = raw.trim().to_string();
-    // „(1685–1750)“, „(c.1540-1623)“ usw. am Ende entfernen
+    // remove "(1685–1750)", "(c.1540-1623)" etc. at the end
     if let Some(open) = s.rfind('(') {
         if s.ends_with(')') && s[open..].chars().any(|c| c.is_ascii_digit()) {
             s.truncate(open);

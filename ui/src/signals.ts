@@ -1,4 +1,4 @@
-// Minimale Reaktivität: Signale + Effekte, gebündelt per Microtask.
+// Minimal reactivity: signals + effects, batched via microtask.
 
 interface Effect {
   run(): void;
@@ -49,7 +49,7 @@ export class Signal<T> implements Source {
     for (const e of this.#subs) schedule(e);
   }
 
-  /** Lesen ohne Abhängigkeit. */
+  /** Read without a dependency. */
   peek(): T {
     return this.#value;
   }
@@ -67,7 +67,7 @@ export function signal<T>(value: T): Signal<T> {
   return new Signal(value);
 }
 
-/** Führt `fn` sofort aus und erneut, sobald ein gelesenes Signal sich ändert. */
+/** Runs `fn` immediately and again as soon as a signal it read changes. */
 export function effect(fn: () => void): () => void {
   const e: Effect = {
     deps: new Set(),

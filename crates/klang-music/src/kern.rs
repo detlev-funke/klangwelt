@@ -1,18 +1,18 @@
-//! Humdrum-`**kern`-Leser (KernScores/CCARH: Bach-Choräle, Wohltemperiertes
-//! Klavier, Klaviersonaten von Mozart und Beethoven …).
+//! Humdrum `**kern` reader (KernScores/CCARH: Bach chorales, Well-Tempered
+//! Clavier, piano sonatas by Mozart and Beethoven …).
 //!
-//! `**kern` ist ein Textformat: Zeilen sind Zeitpunkte, Tabulator-getrennte
-//! Spalten („Spines“) sind Stimmen bzw. Systeme. Gelesen wird, was das
-//! Partiturmodell braucht: Noten, Akkorde, Haltebögen, Spaltenteilung (`*^`,
-//! `*v`, `*x`, `*-`, `*+`), Vorzeichen (`*k[…]`), Tonart (`*G:` / `*e:`),
-//! Taktart (`*M3/4`), Tempo (`*MM100`), Stimmnamen (`*I"Sopran`) und die
-//! Kopfzeilen (`!!!OTL:` Titel, `!!!COM:` Komponist, `!!!SCT:` Werkverzeichnis).
+//! `**kern` is a text format: lines are points in time, tab-separated
+//! columns ("spines") are voices or staves. What the score model needs is read:
+//! notes, chords, ties, spine splitting (`*^`,
+//! `*v`, `*x`, `*-`, `*+`), key signatures (`*k[…]`), key (`*G:` / `*e:`),
+//! time signature (`*M3/4`), tempo (`*MM100`), voice names (`*I"Sopran`) and the
+//! header lines (`!!!OTL:` title, `!!!COM:` composer, `!!!SCT:` catalog number).
 //!
-//! Jede Spalte hat ihre eigene Uhr: Eine Note beginnt, wo die letzte Note
-//! derselben Spalte aufgehört hat, und `.` (Nullmarke) rückt nichts vor.
-//! Wiederholungsanweisungen (`*>[A,A,B]`) bleiben unbeachtet – jeder
-//! Abschnitt zählt einmal. Vorschlagsnoten und unsichtbare Noten fallen weg,
-//! ebenso Alternativfassungen (`*S/ossia`).
+//! Each column has its own clock: A note begins where the last note
+//! of the same column ended, and `.` (null token) advances nothing.
+//! Repeat instructions (`*>[A,A,B]`) are ignored – each
+//! section counts once. Grace notes and invisible notes are dropped,
+//! as are alternative versions (`*S/ossia`).
 
 use crate::score::{Part, Score, ScoreNote, Voice};
 use crate::MusicError;
@@ -20,13 +20,13 @@ use std::collections::{BTreeMap, HashMap};
 
 #[derive(Clone, Debug)]
 struct Column {
-    /// Index der ursprünglichen `**kern`-Spalte, None = andere Darstellung (`**dynam` …).
+    /// Index of the original `**kern` column, None = other representation (`**dynam` …).
     spine: Option<usize>,
-    /// Uhr dieser Spalte in Viertelnoten.
+    /// Clock of this column in quarter notes.
     time: f64,
-    /// Stimme innerhalb der Spalte (nach `*^` zählt die rechte Hälfte weiter).
+    /// Voice within the column (after `*^` the right half keeps counting).
     voice: u32,
-    /// Alternativfassung (`*S/ossia`) – Noten zählen nicht.
+    /// Alternative version (`*S/ossia`) – notes do not count.
     ignore: bool,
 }
 
@@ -35,22 +35,22 @@ struct Spine {
     name: Option<String>,
     instrument: Option<String>,
     part_tag: Option<String>,
-    /// System aus `*staff1` (1 = oben)
+    /// Staff from `*staff1` (1 = top)
     staff: Option<u32>,
     notes: BTreeMap<u32, Vec<ScoreNote>>,
     open_ties: HashMap<(u32, u8), usize>,
 }
 
-/// Eine Note (oder Pause) aus einem Datentoken.
+/// A note (or rest) from a data token.
 #[derive(Debug, PartialEq)]
 struct Token {
-    /// Dauer in Viertelnoten.
+    /// Duration in quarter notes.
     duration: Option<f64>,
-    /// None = Pause.
+    /// None = rest.
     midi: Option<u8>,
     tie_start: bool,
     tie_end: bool,
-    /// Vorschlagsnote oder unsichtbar – zählt nicht.
+    /// Grace note or invisible – does not count.
     skip: bool,
 }
 
@@ -58,7 +58,7 @@ fn parse_token(tok: &str) -> Token {
     let b = tok.as_bytes();
     let mut t = Token { duration: None, midi: None, tie_start: false, tie_end: false, skip: false };
     let mut i = 0;
-    // Dauer: Kehrwert (4 = Viertel, 0 = Brevis, 00 = Longa), „3%2“ = rational, Punkte.
+    // Duration: reciprocal (4 = quarter, 0 = breve, 00 = longa), "3%2" = rational, dots.
     let mut letters: Option<(u8, usize)> = None;
     let mut alter = 0i32;
     let mut rest = false;
@@ -143,8 +143,8 @@ fn parse_token(tok: &str) -> Token {
     t
 }
 
-/// Kopfzeilen enthalten mitunter HTML: „W&auml;lder“, „K<sup>1</sup> 279“
-/// (Köchel, 1. Auflage → „KV 279“).
+/// Header lines sometimes contain HTML: "W&auml;lder", "K<sup>1</sup> 279"
+/// (Köchel, 1st edition → "KV 279").
 fn html_text(s: &str) -> String {
     let mut out = s.trim().to_string();
     if let Some(rest) = out.strip_prefix("K<sup>") {
@@ -172,7 +172,7 @@ fn comment_title(c: &str) -> (Option<String>, Option<String>) {
     (Some(who).filter(|w| !w.is_empty() && w.len() < 60), Some(title).filter(|t| !t.is_empty()))
 }
 
-/// „Bach, Johann Sebastian“ → „Johann Sebastian Bach“.
+/// "Bach, Johann Sebastian" → "Johann Sebastian Bach".
 fn composer_name(raw: &str) -> String {
     match raw.split_once(',') {
         Some((last, first)) if !first.trim().is_empty() && !last.trim().is_empty() => format!("{} {}", first.trim(), last.trim()),
@@ -180,7 +180,7 @@ fn composer_name(raw: &str) -> String {
     }
 }
 
-/// Vorzeichen aus `*k[f#c#]` bzw. `*k[b-e-]`.
+/// Key signature from `*k[f#c#]` or `*k[b-e-]`.
 fn key_fifths(tok: &str) -> Option<i8> {
     let inner = tok.strip_prefix("*k[")?.strip_suffix(']')?;
     let sharps = inner.matches('#').count() as i8;
@@ -188,7 +188,7 @@ fn key_fifths(tok: &str) -> Option<i8> {
     Some(sharps - flats)
 }
 
-/// Tonart `*G:` (Dur) oder `*f#:` (Moll); Kirchentonarten (`*G:dor`) zählen nicht.
+/// Key `*G:` (major) or `*f#:` (minor); church modes (`*G:dor`) do not count.
 fn key_mode(tok: &str) -> Option<&'static str> {
     let body = tok.strip_prefix('*')?.strip_suffix(':')?;
     let mut ch = body.chars();
@@ -256,7 +256,7 @@ pub fn parse_kern(text: &str) -> Result<Score, MusicError> {
             continue;
         }
         if toks.len() != cols.len() {
-            // Unstimmige Zeile (oder Ende einer Datei mit mehreren Abschnitten): überspringen.
+            // Inconsistent line (or end of a file with several sections): skip.
             continue;
         }
         let first = toks[0];
@@ -266,12 +266,12 @@ pub fn parse_kern(text: &str) -> Result<Score, MusicError> {
         if first.starts_with('*') {
             cols = interpret(&toks, &cols, &mut spines, &mut score);
             if cols.is_empty() {
-                // alle Spalten beendet (`*-`): ein weiterer Abschnitt dürfte mit `**` neu beginnen
+                // all columns ended (`*-`): a further section may start anew with `**`
                 started = false;
             }
             continue;
         }
-        // Datenzeile
+        // data line
         for (col, tok) in cols.iter_mut().zip(&toks) {
             let Some(si) = col.spine else { continue };
             if *tok == "." {
@@ -318,7 +318,7 @@ pub fn parse_kern(text: &str) -> Result<Score, MusicError> {
 
     let get = |prefix: &str| refs.iter().find(|(k, v)| k.starts_with(prefix) && !v.is_empty()).map(|(_, v)| html_text(v));
     let mut title = get("OTL").or_else(|| get("OPR"));
-    // Satzbezeichnung ohne Metronomangabe: „(Allegro) ([quarter]=126)“ → „(Allegro)“
+    // Movement title without a metronome mark: "(Allegro) ([quarter]=126)" → "(Allegro)"
     let movement = get("OMD").map(|m| {
         let mut m = m;
         while let Some(i) = m.find("([") {
@@ -335,14 +335,14 @@ pub fn parse_kern(text: &str) -> Result<Score, MusicError> {
     if let (Some(t), Some(cat)) = (title.as_mut(), get("SCT")) {
         *t = format!("{t} ({cat})");
     }
-    // Ohne Kopfzeilen: erster Kommentar „Komponist, "Titel"“ (Foster, Gershwin)
+    // Without header lines: first comment "Composer, "Title"" (Foster, Gershwin)
     let (c_composer, c_title) = first_comment.as_deref().map(comment_title).unwrap_or((None, None));
     score.title = title.or(c_title);
     score.composer = get("COM").or_else(|| get("COA")).map(|c| composer_name(&c)).or(c_composer);
 
-    // Spalten zu Teilen: gleiche `*part`-Angabe, sonst gleiches Instrument
-    // nebeneinander (Klavier: linke und rechte Hand), sonst jede für sich.
-    // In **kern steht die tiefste Stimme links – Teile von oben nach unten.
+    // Columns into parts: same `*part` entry, otherwise the same instrument
+    // next to each other (piano: left and right hand), otherwise each on its own.
+    // In **kern the lowest voice is on the left – parts from top to bottom.
     let mut groups: Vec<(Option<String>, Vec<usize>)> = Vec::new();
     for (i, s) in spines.iter().enumerate() {
         let key = s.part_tag.clone().or_else(|| s.instrument.clone().filter(|i| instrument_label(i) == Some("Klavier")));
@@ -351,8 +351,8 @@ pub fn parse_kern(text: &str) -> Result<Score, MusicError> {
             _ => groups.push((key, vec![i])),
         }
     }
-    // Zwei Spalten ohne Namen und Instrument auf zwei Systemen: ein Tasteninstrument
-    // (Haydn-Sonaten, Inventionen …). Mehrere Fugenstimmen bleiben getrennt.
+    // Two columns without a name and instrument on two staves: a keyboard instrument
+    // (Haydn sonatas, inventions …). Several fugue voices stay separate.
     let bare = |i: usize| spines[i].name.is_none() && spines[i].instrument.is_none() && spines[i].part_tag.is_none();
     if groups.len() == 2 && spines.len() == 2 && bare(0) && bare(1) {
         if let (Some(a), Some(b)) = (spines[0].staff, spines[1].staff) {
@@ -393,9 +393,9 @@ pub fn parse_kern(text: &str) -> Result<Score, MusicError> {
     Ok(score)
 }
 
-/// Eine Interpretationszeile: Angaben übernehmen und Spalten umbauen.
+/// An interpretation line: take over the entries and rebuild the columns.
 fn interpret(toks: &[&str], cols: &[Column], spines: &mut Vec<Spine>, score: &mut Score) -> Vec<Column> {
-    // Alternativfassungen: je Spalte die erste *S/-Marke einer Zeile gilt, die anderen nicht.
+    // Alternative versions: per column the first *S/ mark of a line counts, the others do not.
     let mut first_label: HashMap<usize, String> = HashMap::new();
     let mut out: Vec<Column> = Vec::new();
     let mut i = 0;

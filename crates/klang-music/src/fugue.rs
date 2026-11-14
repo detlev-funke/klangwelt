@@ -1,12 +1,12 @@
-//! Fuge: Thema und Antwort (real oder tonal), Verwandlungen (Umkehrung,
-//! Krebs, Vergrößerung, Verkleinerung, Versetzung), Engführungen,
-//! Gegensatz-Vorschläge im doppelten Kontrapunkt und ein Fugenplan als
-//! Gerüst (Exposition, Zwischenspiele, Durchführungen, Engführung,
-//! Orgelpunkt, Schlusskadenz).
+//! Fugue: subject and answer (real or tonal), transformations (inversion,
+//! retrograde, augmentation, diminution, transposition), strettos,
+//! countersubject suggestions in double counterpoint and a fugue plan as a
+//! framework (exposition, episodes, middle entries, stretto,
+//! pedal point, final cadence).
 //!
-//! Alles arbeitet auf [`VNote`] (Tonhöhe, Einsatz, Dauer in Schlägen).
-//! Freie Stimmen erzeugt [`generate_line`]; der Plan ist ein Ausgangspunkt
-//! zum Weiterschreiben, kein fertiger Bach.
+//! Everything works on [`VNote`] (pitch, entry, duration in beats).
+//! Free voices are produced by [`generate_line`]; the plan is a starting point
+//! for further writing, not a finished Bach.
 
 use crate::counterpoint::{check, complementary_rhythm, generate_line, tally, IssueKind, LineSpec, Severity, VNote};
 use crate::harmony::{parse_roman, voice_progression};
@@ -22,7 +22,7 @@ fn key(tonic: u8, minor: bool) -> Key {
     Key { tonic: tonic % 12, minor, confidence: 1.0 }
 }
 
-/// Auf Beginn 0 verschieben und sortieren.
+/// Shift to start 0 and sort.
 pub fn normalize(s: &[VNote]) -> Vec<VNote> {
     let mut v = s.to_vec();
     v.sort_by(|a, b| a.start.total_cmp(&b.start).then(b.pitch.cmp(&a.pitch)));
@@ -49,9 +49,9 @@ fn mean(s: &[VNote]) -> f64 {
     s.iter().map(|n| n.pitch as f64 * n.len).sum::<f64>() / s.iter().map(|n| n.len).sum::<f64>().max(EPS)
 }
 
-// ------------------------------------------------------------------ Stufen
+// ------------------------------------------------------------------ Scale degrees
 
-/// Tonhöhe → (Stufe absolut = Oktave·7 + Stufe, Alteration).
+/// Pitch → (absolute scale degree = octave·7 + degree, alteration).
 fn to_degree(p: u8, k: &Key) -> (i32, i32) {
     let steps = if k.minor { MINOR } else { MAJOR };
     let rel = p as i32 - k.tonic as i32;
@@ -69,7 +69,7 @@ fn from_degree(pos: i32, alt: i32, k: &Key) -> u8 {
     (k.tonic as i32 + oct * 12 + steps[d as usize] + alt).clamp(0, 127) as u8
 }
 
-/// In Moll: kleine Septime vor der Tonika (aufwärts) wird zum Leitton erhöht.
+/// In minor: the minor seventh before the tonic (ascending) is raised to the leading tone.
 fn fix_leading_tones(s: &mut [VNote], k: &Key) {
     if !k.minor {
         return;
@@ -83,7 +83,7 @@ fn fix_leading_tones(s: &mut [VNote], k: &Key) {
     }
 }
 
-/// Diatonisch versetzen (Stufen innerhalb der Tonart).
+/// Transpose diatonically (scale degrees within the key).
 pub fn transpose_diatonic(s: &[VNote], k: &Key, steps: i32) -> Vec<VNote> {
     let mut v: Vec<VNote> = s
         .iter()
@@ -96,23 +96,23 @@ pub fn transpose_diatonic(s: &[VNote], k: &Key, steps: i32) -> Vec<VNote> {
     v
 }
 
-// ------------------------------------------------------------------ Verwandlungen
+// ------------------------------------------------------------------ Transformations
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "type", content = "value")]
 pub enum Transform {
-    /// Spiegelung um den ersten Ton, innerhalb der Tonart.
+    /// Mirroring around the first note, within the key.
     Umkehrung,
-    /// Rückwärts.
+    /// Backwards.
     Krebs,
     Krebsumkehrung,
-    /// Doppelte Notenwerte.
+    /// Doubled note values.
     Vergroesserung,
-    /// Halbe Notenwerte.
+    /// Halved note values.
     Verkleinerung,
-    /// Um Stufen innerhalb der Tonart versetzen.
+    /// Transpose by scale degrees within the key.
     Versetzung(i32),
-    /// Um Halbtöne versetzen.
+    /// Transpose by semitones.
     Chromatisch(i32),
 }
 
@@ -164,7 +164,7 @@ pub fn transform(s: &[VNote], k: &Key, t: Transform) -> Vec<VNote> {
     }
 }
 
-// ------------------------------------------------------------------ Antwort
+// ------------------------------------------------------------------ Answer
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -177,15 +177,15 @@ pub enum AnswerKind {
 #[serde(rename_all = "camelCase")]
 pub struct Answer {
     pub kind: AnswerKind,
-    /// Eine Quinte höher (bzw. bei tonaler Antwort im Kopf eine Quarte).
+    /// A fifth higher (or, with a tonal answer, a fourth in the head).
     pub notes: Vec<VNote>,
-    /// Indizes der Töne, die gegenüber der realen Antwort verändert sind.
+    /// Indices of the notes that are altered compared to the real answer.
     pub mutated: Vec<usize>,
     pub reason: String,
 }
 
-/// Antwort (Comes) in der Dominante. Steht die Dominante im Kopf des Themas
-/// (nur Grundton und Quinte am Anfang), wird tonal beantwortet: Quinte → Grundton.
+/// Answer (comes) in the dominant. If the dominant is in the head of the subject
+/// (only root and fifth at the start), the answer is tonal: fifth → root.
 pub fn answer(subject: &[VNote], k: &Key) -> Answer {
     let s = normalize(subject);
     let off = |p: u8| (p as i32 - k.tonic as i32).rem_euclid(12);
@@ -215,21 +215,21 @@ pub fn answer(subject: &[VNote], k: &Key) -> Answer {
     Answer { kind: if tonal { AnswerKind::Tonal } else { AnswerKind::Real }, notes, mutated, reason }
 }
 
-// ------------------------------------------------------------------ Engführung
+// ------------------------------------------------------------------ Stretto
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Stretto {
-    /// Einsatzabstand in Schlägen.
+    /// Entry distance in beats.
     pub delay: f64,
-    /// Intervall der zweiten Stimme in Halbtönen (nach Versetzung).
+    /// Interval of the second voice in semitones (after transposition).
     pub semitones: i32,
     pub label: String,
     pub errors: usize,
     pub warnings: usize,
-    /// Anteil, in dem beide Stimmen gleichzeitig das Thema spielen.
+    /// Portion in which both voices play the subject at the same time.
     pub overlap: f64,
-    /// Die zweite Stimme (Comes) in Schlägen relativ zum Dux.
+    /// The second voice (comes) in beats relative to the dux.
     pub follower: Vec<VNote>,
 }
 
@@ -245,8 +245,8 @@ const STRETTO_INTERVALS: [(&str, i32, bool); 9] = [
     (tk!("Twelfth lower"), -11, true),
 ];
 
-/// Engführungen: Einsatzabstände und Intervalle, bei denen das Thema mit
-/// sich selbst ohne Satzfehler zusammenklingt – engste zuerst.
+/// Strettos: entry distances and intervals at which the subject sounds together
+/// with itself without voice-leading errors – tightest first.
 pub fn strettos(subject: &[VNote], k: &Key, beats_per_bar: u32) -> Vec<Stretto> {
     let s = normalize(subject);
     let len = length(&s);
@@ -261,7 +261,7 @@ pub fn strettos(subject: &[VNote], k: &Key, beats_per_bar: u32) -> Vec<Stretto> 
             let issues = check(&[top, bottom], &["Oben".into(), "Unten".into()], Some(k), beats_per_bar);
             let vertical: Vec<_> = issues.into_iter().filter(|i| i.voices.len() == 2).collect();
             let (errors, warnings) = tally(&vertical);
-            // freie Dissonanzen auf leichter Zeit zählen mit: höchstens eine je vier gemeinsame Schläge
+            // free dissonances on weak beats count too: at most one per four shared beats
             let free = vertical.iter().filter(|i| i.kind == IssueKind::Dissonanz && i.severity == Severity::Hinweis).count();
             let together = (len - d).max(0.0);
             if errors == 0 && warnings <= 1 && (free as f64) <= (together / 4.0).max(1.0) {
@@ -282,23 +282,23 @@ pub fn strettos(subject: &[VNote], k: &Key, beats_per_bar: u32) -> Vec<Stretto> 
     out
 }
 
-// ------------------------------------------------------------------ Gegensatz
+// ------------------------------------------------------------------ Countersubject
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Countersubject {
     pub notes: Vec<VNote>,
-    /// Oberhalb des Themas erzeugt.
+    /// Generated above the subject.
     pub above: bool,
     pub errors: usize,
     pub warnings: usize,
-    /// Mit Oktavtausch (Gegensatz auf der anderen Seite) noch fehlerfrei.
+    /// Still error-free with octave swap (countersubject on the other side).
     pub invertible: bool,
     pub inverted_errors: usize,
     pub inverted_warnings: usize,
 }
 
-/// Auf die andere Seite des Themas versetzen (Oktaven).
+/// Move to the other side of the subject (octaves).
 fn swap_side(cs: &[VNote], subject: &[VNote], above: bool) -> Vec<VNote> {
     let (mc, ms) = (mean(cs), mean(subject));
     let mut k = 0;
@@ -314,7 +314,7 @@ fn swap_side(cs: &[VNote], subject: &[VNote], above: bool) -> Vec<VNote> {
     shift(cs, 0.0, 12 * k)
 }
 
-/// Gegensatz-Vorschläge zum Thema, die beste zuerst.
+/// Countersubject suggestions for the subject, best first.
 pub fn countersubjects(subject: &[VNote], k: &Key, beats_per_bar: u32, count: usize) -> Vec<Countersubject> {
     let s = normalize(subject);
     let len = length(&s);
@@ -384,7 +384,7 @@ pub struct FuguePlan {
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FugueOptions {
-    /// 2 bis 4 Stimmen.
+    /// 2 to 4 voices.
     pub voices: usize,
     #[serde(default)]
     pub beats_per_bar: u32,
@@ -392,7 +392,7 @@ pub struct FugueOptions {
     pub countersubject: bool,
     #[serde(default = "yes")]
     pub stretto: bool,
-    /// In Moll mit Dur-Schlussakkord.
+    /// In minor with a major final chord.
     #[serde(default = "yes")]
     pub picardy: bool,
 }
@@ -437,7 +437,7 @@ fn voice_name(d: &VoiceDef) -> String {
     klang_i18n::translate(d.name)
 }
 
-/// In die Lage einer Stimme oktavieren.
+/// Octave-shift into the range of a voice.
 fn fit_octave(s: &[VNote], range: (u8, u8), center: f64) -> Vec<VNote> {
     let m = mean(s);
     let best = (-4..=4)
@@ -451,7 +451,7 @@ fn fit_octave(s: &[VNote], range: (u8, u8), center: f64) -> Vec<VNote> {
     shift(s, 0.0, 12 * best)
 }
 
-/// Oberhalb bzw. unterhalb einer anderen Stimme in die eigene Lage oktavieren.
+/// Octave-shift into its own range above or below another voice.
 fn fit_side(s: &[VNote], other: &[VNote], above: bool, range: (u8, u8), center: f64) -> Vec<VNote> {
     let (m, mo) = (mean(s), mean(other));
     let best = (-4..=4)
@@ -468,7 +468,7 @@ fn fit_side(s: &[VNote], other: &[VNote], above: bool, range: (u8, u8), center: 
     }
 }
 
-/// Ruhiger Rhythmus für freie Stimmen: Viertel, Halbe wo die Hauptstimme sehr bewegt ist.
+/// Calm rhythm for free voices: quarters, halves where the main voice is very busy.
 fn calm_rhythm(reference: &[VNote], from: f64, to: f64) -> Vec<(f64, f64)> {
     let mut slots = Vec::new();
     let mut t = from;
@@ -502,12 +502,12 @@ impl Builder<'_> {
         self.voices[v].iter().filter(|n| n.end() > a + EPS && n.start < b - EPS).copied().collect()
     }
 
-    /// Freie Stimme in [a, b) gegen alles, was dort schon steht.
+    /// Free voice in [a, b) against everything already there.
     fn free(&mut self, v: usize, a: f64, b: f64, k: &Key, reference: &[VNote], calm: bool) {
         let others: Vec<Vec<VNote>> = (0..self.voices.len()).filter(|&o| o != v).map(|o| self.window(o, a, b)).collect();
         let refs: Vec<&[VNote]> = others.iter().map(|x| x.as_slice()).collect();
         let slots = if calm { calm_rhythm(reference, a, b) } else { complementary_rhythm(reference, a, b, self.bpb) };
-        // Nachbarstimmen (kleinere Nummer = höher) begrenzen die Lage
+        // neighboring voices (smaller number = higher) limit the range
         let ceiling = if v > 0 { self.window(v - 1, a, b) } else { Vec::new() };
         let floor = if v + 1 < self.voices.len() { self.window(v + 1, a, b) } else { Vec::new() };
         let spec = LineSpec { variant: (a as u32) % 7, ceiling, floor, ..LineSpec::new(self.defs[v].range, slots) };
@@ -515,7 +515,7 @@ impl Builder<'_> {
         self.put(v, line);
     }
 
-    /// Einsatz: Material in die Lage der Stimme bringen und ab t setzen.
+    /// Entry: bring the material into the range of the voice and place it from t.
     fn entry(&mut self, v: usize, material: &[VNote], t: f64) -> Vec<VNote> {
         let fitted = shift(&fit_octave(material, self.defs[v].range, self.defs[v].center), t, 0);
         self.put(v, fitted.clone());
@@ -526,7 +526,7 @@ impl Builder<'_> {
         for v in &mut self.voices {
             v.sort_by(|a, b| a.start.total_cmp(&b.start).then(b.pitch.cmp(&a.pitch)));
             v.dedup_by(|b, a| (a.start - b.start).abs() < EPS);
-            // Überlappungen innerhalb einer Stimme kürzen
+            // shorten overlaps within a voice
             for i in 0..v.len().saturating_sub(1) {
                 let next = v[i + 1].start;
                 if v[i].end() > next + EPS {
@@ -540,7 +540,7 @@ impl Builder<'_> {
     }
 }
 
-/// Fugenplan: aus einem Thema ein Gerüst für 2–4 Stimmen.
+/// Fugue plan: from a subject, a framework for 2–4 voices.
 pub fn plan_fugue(subject: &[VNote], k: &Key, opt: &FugueOptions) -> FuguePlan {
     let n = opt.voices.clamp(2, 4);
     let bpb = opt.beats_per_bar.max(1);
@@ -576,7 +576,7 @@ pub fn plan_fugue(subject: &[VNote], k: &Key, opt: &FugueOptions) -> FuguePlan {
         let mut handled = vec![v];
         if let Some(c) = &cs {
             let mat = if is_answer { shift(&c.notes, 0.0, 7) } else { c.notes.clone() };
-            let above = prev < v; // kleinere Nummer = höhere Stimme
+            let above = prev < v; // smaller number = higher voice
             let placed = fit_side(&shift(&mat, t, 0), &entered, above, b.defs[prev].range, b.defs[prev].center);
             b.put(prev, placed);
             handled.push(prev);
@@ -602,7 +602,7 @@ pub fn plan_fugue(subject: &[VNote], k: &Key, opt: &FugueOptions) -> FuguePlan {
         },
     });
 
-    // Zwischenspiel: Sequenz des Themenkopfs oben, Quintfall im Bass, Mitte frei
+    // Episode: sequence of the subject head on top, descending fifths in the bass, middle free
     let head_len = len.min(bar);
     let head: Vec<VNote> = s.iter().filter(|x| x.start < head_len - EPS).map(|x| VNote::new(x.pitch, x.start, x.len.min(head_len - x.start))).collect();
     let episode = |b: &mut Builder, t0: f64, target: &Key, sections: &mut Vec<Section>, nr: usize| -> f64 {
@@ -616,7 +616,7 @@ pub fn plan_fugue(subject: &[VNote], k: &Key, opt: &FugueOptions) -> FuguePlan {
         }
         let seq = fit_octave(&seq, b.defs[top].range, b.defs[top].center);
         b.put(top, seq.clone());
-        // Quintfall-Grundtöne im Bass, je halber Takt, zuletzt die Dominante der Zieltonart
+        // descending-fifth roots in the bass, half a bar each, finally the dominant of the target key
         let half = (bar / 2.0).max(1.0);
         let m = (dur / half).round() as i32;
         let mut bassline = Vec::new();
@@ -643,7 +643,7 @@ pub fn plan_fugue(subject: &[VNote], k: &Key, opt: &FugueOptions) -> FuguePlan {
         t0 + dur
     };
 
-    // Durchführung: Thema in einer Stimme, Gegensatz in einer anderen, Rest frei
+    // Middle entry: subject in one voice, countersubject in another, the rest free
     let middle_entry = |b: &mut Builder, t0: f64, material: &[VNote], cs_mat: Option<Vec<VNote>>, v: usize, kk: &Key, sections: &mut Vec<Section>, (kind, name): (&'static str, String)| -> f64 {
         let entered = b.entry(v, material, t0);
         let mut handled = vec![v];
@@ -672,7 +672,7 @@ pub fn plan_fugue(subject: &[VNote], k: &Key, opt: &FugueOptions) -> FuguePlan {
 
     let mut t = expo_end;
     t = episode(&mut b, t, &rel, &mut sections, 1);
-    // Paralleltonart: diatonisch zwei Stufen (Dur → Moll abwärts, Moll → Dur aufwärts)
+    // Relative key: diatonically two scale degrees (major → minor downwards, minor → major upwards)
     let steps = if k.minor { 2 } else { -2 };
     let mut rel_subject = transpose_diatonic(&s, k, steps);
     fix_leading_tones(&mut rel_subject, &rel);
@@ -689,7 +689,7 @@ pub fn plan_fugue(subject: &[VNote], k: &Key, opt: &FugueOptions) -> FuguePlan {
     t = middle_entry(&mut b, t, &sub_subject, sub_cs, 0, &sub, &mut sections, ("durchfuehrung", tr!("Middle entries (subdominant)")));
     t = episode(&mut b, t, k, &mut sections, 3);
 
-    // ---------------- Engführung (oder Schlussdurchführung)
+    // ---------------- Stretto (or final middle entry)
     let st = if opt.stretto { strettos(&s, k, bpb).into_iter().next() } else { None };
     let stretto_name = st.as_ref().map(|x| tr!("{label}, {delay} beats apart", label = x.label, delay = x.delay));
     match &st {
@@ -703,7 +703,7 @@ pub fn plan_fugue(subject: &[VNote], k: &Key, opt: &FugueOptions) -> FuguePlan {
             for o in 1..n - 1 {
                 b.free(o, t, end, k, &lead, true);
             }
-            // Lücke der folgenden Stimme vor ihrem Einsatz füllen
+            // fill the gap of the following voice before its entry
             b.free(follow_v, t, t + x.delay, k, &lead, true);
             sections.push(Section {
                 kind: "engfuehrung",
@@ -720,7 +720,7 @@ pub fn plan_fugue(subject: &[VNote], k: &Key, opt: &FugueOptions) -> FuguePlan {
         }
     }
 
-    // ---------------- Orgelpunkt auf der Dominante
+    // ---------------- Pedal point on the dominant
     let pedal_len = 2.0 * bar;
     let mut dp = 36 + ((k.tonic as i32 + 7) % 12);
     while dp < 40 {
@@ -743,7 +743,7 @@ pub fn plan_fugue(subject: &[VNote], k: &Key, opt: &FugueOptions) -> FuguePlan {
     });
     t += pedal_len;
 
-    // ---------------- Schlusskadenz
+    // ---------------- Final cadence
     let tonic_id = if k.minor && opt.picardy { "I" } else if k.minor { "i" } else { "I" };
     let six_four = if k.minor { "i64" } else { "I64" };
     let chords: Vec<_> = [six_four, "V7", tonic_id].iter().filter_map(|id| parse_roman(id, k)).collect();
@@ -751,7 +751,7 @@ pub fn plan_fugue(subject: &[VNote], k: &Key, opt: &FugueOptions) -> FuguePlan {
     let durs = [bar / 2.0, bar / 2.0, bar];
     let mut tt = t;
     for (ci, v4) in voicing.iter().enumerate() {
-        // v4 = [Bass, Tenor, Alt, Sopran]
+        // v4 = [bass, tenor, alto, soprano]
         let pick: Vec<u8> = match n {
             2 => vec![v4[3], v4[0]],
             3 => vec![v4[3], v4[2], v4[0]],
@@ -795,7 +795,7 @@ mod tests {
         key(0, false)
     }
 
-    /// Thema im Stil eines Fugenthemas in C-Dur (2 Takte).
+    /// Subject in the style of a fugue subject in C major (2 bars).
     fn subject() -> Vec<VNote> {
         line(&[(60, 1.0), (62, 0.5), (64, 0.5), (65, 1.5), (64, 0.5), (62, 0.5), (64, 0.5), (60, 1.0), (67, 1.0), (65, 0.5), (64, 0.5), (62, 1.0)])
     }
@@ -807,7 +807,7 @@ mod tests {
         assert_eq!(real.kind, AnswerKind::Real);
         assert_eq!(real.notes[0].pitch, 67);
         assert!(real.mutated.is_empty());
-        // beginnt mit g–c: tonal, g wird mit c beantwortet
+        // begins with g–c: tonal, g is answered with c
         let s = line(&[(67, 1.0), (60, 1.0), (62, 1.0), (64, 1.0), (65, 1.0), (64, 2.0)]);
         let t = answer(&s, &k);
         assert_eq!(t.kind, AnswerKind::Tonal);
@@ -828,22 +828,22 @@ mod tests {
         let aug = transform(&s, &k, Transform::Vergroesserung);
         assert_eq!(length(&aug), 8.0);
         assert_eq!(transform(&s, &k, Transform::Versetzung(1)).iter().map(|n| n.pitch).collect::<Vec<_>>(), vec![62, 64, 65]);
-        // in Moll: Leitton vor der Tonika
+        // in minor: leading tone before the tonic
         let am = key(9, true);
-        let m = line(&[(64, 1.0), (62, 1.0), (60, 1.0), (59, 1.0)]); // e d c h → um 1 Stufe tiefer: d c h a?
+        let m = line(&[(64, 1.0), (62, 1.0), (60, 1.0), (59, 1.0)]); // e d c b → one scale degree lower: d c b a?
         let down = transform(&m, &am, Transform::Versetzung(-1));
         assert_eq!(down.iter().map(|n| n.pitch).collect::<Vec<_>>(), vec![62, 60, 59, 57]);
-        // e g a: g steigt stufenweise zur Tonika a → Leitton gis (melodisch Moll aufwärts)
+        // e g a: g rises stepwise to the tonic a → leading tone g-sharp (melodic minor ascending)
         let up = line(&[(64, 1.0), (67, 1.0), (69, 1.0)]);
         assert_eq!(transform(&up, &am, Transform::Versetzung(0))[1].pitch, 68);
-        // abwärts bleibt g
+        // descending, g stays
         let down2 = line(&[(69, 1.0), (67, 1.0), (65, 1.0)]);
         assert_eq!(transform(&down2, &am, Transform::Versetzung(0))[1].pitch, 67);
     }
 
     #[test]
     fn finds_a_canonic_stretto() {
-        // Bruder Jakob ist ein Kanon im Abstand von zwei Takten
+        // Frère Jacques is a canon at a distance of two bars
         let s = line(&[
             (60, 1.0), (62, 1.0), (64, 1.0), (60, 1.0), (60, 1.0), (62, 1.0), (64, 1.0), (60, 1.0),
             (64, 1.0), (65, 1.0), (67, 2.0), (64, 1.0), (65, 1.0), (67, 2.0),
@@ -873,7 +873,7 @@ mod tests {
             assert!(names.contains(&"Exposition") && names.contains(&"Pedal point") && names.contains(&"Final cadence"), "{names:?}");
             assert!(plan.sections.windows(2).all(|w| (w[0].end - w[1].start).abs() < 1e-6), "lückenlos");
             assert!((plan.length - plan.sections.last().unwrap().end).abs() < 1e-6);
-            // Satzfehler zählen (Gerüst: wenige erlaubt)
+            // count voice-leading errors (framework: a few allowed)
             let voices: Vec<Vec<VNote>> = plan.voices.iter().map(|v| v.notes.clone()).collect();
             let names: Vec<String> = plan.voices.iter().map(|v| v.name.clone()).collect();
             let issues = check(&voices, &names, Some(&k), 4);

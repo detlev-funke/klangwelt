@@ -1,16 +1,16 @@
-//! Klangwelt-DSP – alles selbst geschrieben, ohne externe DSP-Bibliotheken.
+//! Klangwelt DSP – all self-written, without external DSP libraries.
 //!
-//! * [`features`] – messbare Klangeigenschaften (Helligkeit, Wärme, Anschlag, Ausklingen)
-//! * [`fft`]     – Radix-2-FFT
-//! * [`fx`]      – Klangformung (Wärme, Schwebung, Farbe, Rauheit, Entfernung, Breite)
-//! * [`hits`]    – Anschläge einer Aufnahme Trommeln zuordnen (Bassdrum, Snare, Hi-Hat)
-//! * [`pad`]     – Synthesizer für Flächen mit gezeichnetem Verlauf
-//! * [`pitch`]   – Tonhöhenerkennung (YIN)
-//! * [`notes`]   – Tonhöhenkurve → einzelne Noten
-//! * [`onset`]   – Einsätze (Spectral Flux) und Tempo-Schätzung
-//! * [`stretch`] – Tempo/Tonhöhe ändern (WSOLA + Sinc-Resampling)
-//! * [`synth`]   – Klangerzeugung (Zupf-Modell, Drums) – Keimzelle der Soundwerkstatt
-//! * [`util`]    – kleine Helfer (Pegel, Median, Wellenform-Übersicht)
+//! * [`features`] – measurable sound properties (brightness, warmth, attack, decay)
+//! * [`fft`]     – radix-2 FFT
+//! * [`fx`]      – sound shaping (warmth, shimmer, color, roughness, distance, width)
+//! * [`hits`]    – assign the hits of a recording to drums (bass drum, snare, hi-hat)
+//! * [`pad`]     – synthesizer for pads with a drawn envelope
+//! * [`pitch`]   – pitch detection (YIN)
+//! * [`notes`]   – pitch curve → individual notes
+//! * [`onset`]   – onsets (spectral flux) and tempo estimation
+//! * [`stretch`] – change tempo/pitch (WSOLA + sinc resampling)
+//! * [`synth`]   – sound generation (plucked-string model, drums) – germ of the sound workshop
+//! * [`util`]    – small helpers (level, median, waveform overview)
 
 pub mod bass;
 pub mod drums;

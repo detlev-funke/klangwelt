@@ -1,11 +1,11 @@
-//! Model Context Protocol (MCP) – schlank und ohne Async-Laufzeit.
+//! Model Context Protocol (MCP) – lean and without an async runtime.
 //!
-//! * [`protocol`] – JSON-RPC-Verarbeitung: `initialize`, `ping`, `tools/list`, `tools/call`
-//! * [`http`]     – „Streamable HTTP“-Transport auf `127.0.0.1` (nur JSON-Antworten, kein SSE)
-//! * [`client`]   – Minimal-HTTP-Client für die stdio-Brücke
-//! * [`bridge`]   – stdio-Brücke zur laufenden App (`klangwelt --mcp`)
+//! * [`protocol`] – JSON-RPC handling: `initialize`, `ping`, `tools/list`, `tools/call`
+//! * [`http`]     – "Streamable HTTP" transport on `127.0.0.1` (JSON responses only, no SSE)
+//! * [`client`]   – minimal HTTP client for the stdio bridge
+//! * [`bridge`]   – stdio bridge to the running app (`klangwelt --mcp`)
 //!
-//! Die Anwendung implementiert [`Handler`]; alles Weitere erledigt diese Crate.
+//! The application implements [`Handler`]; this crate takes care of everything else.
 
 pub mod bridge;
 pub mod client;
@@ -15,5 +15,5 @@ pub mod protocol;
 pub use http::{caller_gone, serve, Presence, ServerHandle};
 pub use protocol::{handle, Handler, Prompt, ServerInfo, Tool, PROTOCOL_VERSIONS};
 
-/// Standard-Port der Klangwelt-App.
+/// Default port of the Klangwelt app.
 pub const DEFAULT_PORT: u16 = 7419;

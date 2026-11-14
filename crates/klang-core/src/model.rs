@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 
-/// Stabile ID für Spuren und Clips. `Id(0)` bedeutet in Befehlen „bitte vergeben“.
+/// Stable ID for tracks and clips. `Id(0)` in commands means "please assign".
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Id(pub u64);
@@ -93,40 +93,40 @@ pub enum TrackKind {
     Instrument,
 }
 
-/// Darstellung einer Spur in der Zeitleiste.
+/// Presentation of a track in the timeline.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum TrackView {
-    /// Flache Zeile: Wellenform bzw. angedeutete Noten.
+    /// Flat row: waveform or hinted notes.
     #[default]
     Compact,
-    /// Hohe Zeile mit Tonhöhenachse (Pianorolle); bei Instrumentspuren bearbeitbar.
+    /// Tall row with pitch axis (piano roll); editable for instrument tracks.
     Notes,
 }
 
-/// Art des Klangerzeugers einer Instrumentspur.
+/// Kind of sound generator of an instrument track.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum InstrumentKind {
-    /// Zupf-Instrument (Gitarre, Harfe, Fingerbass)
+    /// Plucked instrument (guitar, harp, fingered bass)
     #[default]
     Pluck,
-    /// Schlagzeug: jede Taste eine Trommel
+    /// Drums: each key is a drum
     Drums,
-    /// Bass-Synthesizer
+    /// Bass synthesizer
     Bass,
-    /// Pfeifenorgel (Register 16′ … Mixtur)
+    /// Pipe organ (stops 16′ … mixture)
     Organ,
-    /// Cembalo (8′/4′-Chor, Lautenzug)
+    /// Harpsichord (8′/4′ choir, lute stop)
     Harpsichord,
-    /// Synthesizer für Flächen und lange Klänge: Oszillatoren mit Verstimmung,
-    /// Filter und gezeichnetem Verlauf (Lautstärke, Helligkeit, Puls)
+    /// Synthesizer for pads and long sounds: oscillators with detuning,
+    /// filter and drawn curves (volume, brightness, pulse)
     Synth,
 }
 
-/// Klangerzeuger einer Instrumentspur. Die Parameter tragen sprechende Namen
-/// (z. B. „helligkeit“, „kick.grundton“), damit Menschen und Agent sie
-/// gleichermaßen verstehen.
+/// Sound generator of an instrument track. The parameters have descriptive names
+/// (e.g. "helligkeit", "kick.grundton") so that humans and the agent
+/// understand them equally well.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Instrument {
@@ -134,8 +134,8 @@ pub struct Instrument {
     pub kind: InstrumentKind,
     pub preset: String,
     pub params: BTreeMap<String, f32>,
-    /// Gezeichnete Verläufe über die Zeit (Synth: „laut“, „hell“): Punkte
-    /// [Sekunden ab Tonbeginn, Wert 0…1], nach der Zeit sortiert.
+    /// Drawn curves over time (synth: "laut", "hell"): points
+    /// [seconds from note start, value 0…1], sorted by time.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub curves: BTreeMap<String, Vec<[f32; 2]>>,
 }
@@ -168,9 +168,9 @@ pub struct Track {
     pub pitch_semitones: f32,
     pub instrument: Option<Instrument>,
     pub view: TrackView,
-    /// Zeilenhöhe in der kompakten Ansicht (Pixel, 0 = Standard).
+    /// Row height in the compact view (pixels, 0 = default).
     pub compact_height: f32,
-    /// Zeilenhöhe in der Notenansicht (Pixel, 0 = Standard).
+    /// Row height in the score view (pixels, 0 = default).
     pub notes_height: f32,
     pub clips: Vec<Clip>,
 }
@@ -197,7 +197,7 @@ impl Default for Track {
 }
 
 impl Track {
-    /// Instrumentspuren starten in der Notenansicht, Audiospuren kompakt.
+    /// Instrument tracks start in the score view, audio tracks compact.
     pub fn new(id: Id, name: impl Into<String>, kind: TrackKind) -> Self {
         let instrument = kind == TrackKind::Instrument;
         Self {
@@ -221,7 +221,7 @@ pub struct Clip {
 }
 
 impl Clip {
-    /// Länge in Schlägen beim aktuellen Projekttempo.
+    /// Length in beats at the current project tempo.
     pub fn length_beats(&self, project_bpm: f64) -> f64 {
         match &self.source {
             ClipSource::Audio { source_bpm, warp, duration_secs, .. } => {
@@ -236,36 +236,36 @@ impl Clip {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum ClipSource {
-    /// Audiomaterial. Mit `warp` wird es vom Quelltempo auf das Projekttempo
-    /// gedehnt – so laufen Rhythmen verschiedener Spuren synchron.
+    /// Audio material. With `warp` it is stretched from the source tempo to the project tempo
+    /// - this keeps rhythms of different tracks in sync.
     Audio {
         asset_id: String,
         source_bpm: f64,
         warp: bool,
         duration_secs: f64,
     },
-    /// Noten in Schlägen relativ zum Clipanfang.
+    /// Notes in beats relative to the clip start.
     Notes { length_beats: f64, notes: Vec<Note> },
 }
 
-/// Eine Note mit Ausdruck. Die Ausdruckswerte sind 0 = neutral und werden
-/// dann im JSON weggelassen.
+/// A note with expression. The expression values are 0 = neutral and are
+/// then omitted from the JSON.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Note {
     pub pitch: u8,
     pub start_beats: f64,
     pub length_beats: f64,
-    /// Anschlagstärke 1–127.
+    /// Velocity 1–127.
     pub velocity: u8,
-    /// Vibrato-Tiefe in Halbtönen (0 = keins, ≈ 0,3 wie beim Singen, max. 1).
+    /// Vibrato depth in semitones (0 = none, ≈ 0.3 as in singing, max. 1).
     #[serde(default, skip_serializing_if = "is_zero")]
     pub vibrato: f32,
-    /// Helligkeit relativ zum Klang des Instruments (−1 dunkler … +1 heller).
+    /// Brightness relative to the instrument's sound (−1 darker … +1 brighter).
     #[serde(default, skip_serializing_if = "is_zero")]
     pub brightness: f32,
-    /// Anschleifen: Der Ton beginnt so viele Halbtöne versetzt und gleitet
-    /// hinein (−12 … +12; negativ = von unten).
+    /// Scoop: the note starts this many semitones off and glides
+    /// into pitch (−12 … +12; negative = from below).
     #[serde(default, skip_serializing_if = "is_zero")]
     pub bend: f32,
 }
@@ -275,7 +275,7 @@ fn is_zero(v: &f32) -> bool {
 }
 
 impl Note {
-    /// Note ohne besonderen Ausdruck.
+    /// Note without particular expression.
     pub fn new(pitch: u8, start_beats: f64, length_beats: f64, velocity: u8) -> Self {
         Self { pitch, start_beats, length_beats, velocity, ..Default::default() }
     }

@@ -1,4 +1,4 @@
-//! Zeigt Vorschläge, Kadenzen und einen vierstimmigen Satz:
+//! Shows suggestions, cadences and a four-part setting:
 //! `cargo run -p klang-music --example harmonie -- "C-Dur" I IV V7 I`
 use klang_music::harmony::{cadences, describe, parse_chord, parse_key, suggest, voice_progression};
 use klang_music::theory::Key;

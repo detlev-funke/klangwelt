@@ -1,18 +1,18 @@
-//! Mischer im AudioWorklet (Browser) – das Gegenstück zum Audio-Callback des
-//! Desktops (`klang-engine/src/device.rs`): derselbe [`Mixer`] mit denselben
-//! Nachrichten, nur dass sie per `postMessage` aus dem Web-Kern kommen
+//! Mixer in the AudioWorklet (browser) – the counterpart to the audio callback of the
+//! desktop (`klang-engine/src/device.rs`): the same [`Mixer`] with the same
+//! messages, except that they arrive via `postMessage` from the web core
 //! ([`klang_engine::wire`]).
 //!
-//! Schnittstelle zum Worklet-Skript (`ui/src/web/worklet.ts`), alles über den
-//! linearen Speicher:
-//! * `kwl_init(rate)` – Mischer anlegen
-//! * `kwl_msg_buf(n)` → Zeiger auf `n` f64; danach `kwl_msg(art, n)`
-//! * `kwl_buffer_alloc(id, len)` → Zeiger auf `len` f32 zum Befüllen;
-//!   `kwl_buffer_done(id)` macht ihn benutzbar
-//! * `kwl_process(frames)` → Zeiger auf `2·frames` f32 (links/rechts verschränkt)
-//! * `kwl_status()` → Zeiger auf [spielt, Vorhören, Position, Spitzenpegel]
+//! Interface to the worklet script (`ui/src/web/worklet.ts`), everything via
+//! linear memory:
+//! * `kwl_init(rate)` – create the mixer
+//! * `kwl_msg_buf(n)` → pointer to `n` f64; then `kwl_msg(art, n)`
+//! * `kwl_buffer_alloc(id, len)` → pointer to `len` f32 to fill;
+//!   `kwl_buffer_done(id)` makes it usable
+//! * `kwl_process(frames)` → pointer to `2·frames` f32 (left/right interleaved)
+//! * `kwl_status()` → pointer to [playing, preview, position, peak level]
 //!
-//! Auf anderen Zielen als wasm32 ist die Crate leer.
+//! On targets other than wasm32 the crate is empty.
 
 #![cfg(target_arch = "wasm32")]
 
@@ -23,9 +23,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 struct Worklet {
     mixer: Mixer,
-    /// Puffer, auf die Nachrichten verweisen dürfen.
+    /// Buffers that messages may refer to.
     buffers: HashMap<u32, Arc<[f32]>>,
-    /// Puffer, die gerade befüllt werden.
+    /// Buffers that are currently being filled.
     pending: HashMap<u32, Arc<[f32]>>,
     msg: Vec<f64>,
     out: Vec<f32>,
@@ -50,7 +50,7 @@ pub extern "C" fn kwl_init(sample_rate: f32) {
     });
 }
 
-/// Platz für eine Nachricht mit `n` Zahlen.
+/// Space for a message with `n` numbers.
 #[no_mangle]
 pub extern "C" fn kwl_msg_buf(n: usize) -> *mut f64 {
     let mut g = worklet();
@@ -60,7 +60,7 @@ pub extern "C" fn kwl_msg_buf(n: usize) -> *mut f64 {
     w.msg.as_mut_ptr()
 }
 
-/// Nachricht (Art, die ersten `n` Zahlen aus `kwl_msg_buf`) an den Mischer.
+/// Message (kind, the first `n` numbers from `kwl_msg_buf`) to the mixer.
 #[no_mangle]
 pub extern "C" fn kwl_msg(kind: u32, n: usize) {
     let mut g = worklet();
@@ -74,7 +74,7 @@ pub extern "C" fn kwl_msg(kind: u32, n: usize) {
                 w.buffers.remove(&(*id as u32));
             }
         }
-        // Aufnahme sammelt das Worklet-Skript selbst (Mikrofon-Eingang)
+        // The worklet script collects the recording itself (microphone input)
         Kind::Record => {}
         _ => {
             if let Some(msg) = wire::decode(kind, d, &w.buffers) {
@@ -84,7 +84,7 @@ pub extern "C" fn kwl_msg(kind: u32, n: usize) {
     }
 }
 
-/// Neuer Puffer mit `len` Samples (Nullen); das Skript füllt ihn über den Zeiger.
+/// New buffer with `len` samples (zeros); the script fills it via the pointer.
 #[no_mangle]
 pub extern "C" fn kwl_buffer_alloc(id: u32, len: usize) -> *mut f32 {
     let mut g = worklet();
@@ -95,7 +95,7 @@ pub extern "C" fn kwl_buffer_alloc(id: u32, len: usize) -> *mut f32 {
     ptr
 }
 
-/// Puffer ist befüllt – ab jetzt dürfen Nachrichten auf ihn verweisen.
+/// Buffer is filled – from now on messages may refer to it.
 #[no_mangle]
 pub extern "C" fn kwl_buffer_done(id: u32) {
     let mut g = worklet();
@@ -105,7 +105,7 @@ pub extern "C" fn kwl_buffer_done(id: u32) {
     }
 }
 
-/// Mischt `frames` Frames; Zeiger auf die verschränkten Samples (links, rechts).
+/// Mixes `frames` frames; pointer to the interleaved samples (left, right).
 #[no_mangle]
 pub extern "C" fn kwl_process(frames: usize) -> *const f32 {
     let mut g = worklet();
@@ -117,7 +117,7 @@ pub extern "C" fn kwl_process(frames: usize) -> *const f32 {
     w.out.as_ptr()
 }
 
-/// [spielt (0/1), Vorhören (0/1), Position (Frames), Spitzenpegel seit dem letzten Aufruf]
+/// [playing (0/1), preview (0/1), position (frames), peak level since the last call]
 #[no_mangle]
 pub extern "C" fn kwl_status() -> *const f64 {
     let mut g = worklet();
@@ -133,7 +133,7 @@ trait IntoInit {
 
 impl IntoInit for Arc<[std::mem::MaybeUninit<f32>]> {
     fn into_init(self) -> Arc<[f32]> {
-        // SAFETY: mit Nullen angelegt (`new_zeroed_slice`) – 0.0 ist ein gültiges f32.
+        // SAFETY: created with zeros (`new_zeroed_slice`) – 0.0 is a valid f32.
         unsafe { self.assume_init() }
     }
 }

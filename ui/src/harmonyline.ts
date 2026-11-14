@@ -1,7 +1,7 @@
-// Harmonie in der Zeitleiste: die Akkordfolge des ganzen Satzes (vom Rust-Kern
-// erkannt) mit der Stimmung jedes Übergangs – dieselben Farben wie im
-// Quintenzirkel – und markierten harmonischen Brüchen. Sichtbar, wenn
-// eingeschaltet oder solange man im Harmonie-Fenster arbeitet.
+// Harmony in the timeline: the chord progression of the whole piece (detected by
+// the Rust core) with the mood of each transition – the same colors as in the
+// circle of fifths – and marked harmonic breaks. Visible when switched on
+// or while working in the Harmony window.
 
 import { backend } from "./bridge.js";
 import { t } from "./i18n.js";
@@ -19,13 +19,13 @@ function readOn(): boolean {
   }
 }
 
-/** Harmonie-Band in der Zeitleiste dauerhaft an. */
+/** Harmony band in the timeline permanently on. */
 export const harmonyLaneOn = signal(readOn());
-/** Maus oder Tastaturfokus im Harmonie-Fenster: Band erscheint von selbst. */
+/** Mouse or keyboard focus in the Harmony window: the band appears by itself. */
 export const harmonyFocus = signal(false);
-/** Im Harmonie-Fenster gewählte Tonart (null = automatisch aus den Noten). */
+/** Key chosen in the Harmony window (null = automatic from the notes). */
 export const harmonyKey = signal<KeySpec | null>(null);
-/** Erkannte Akkordfolge des Projekts (null = noch nicht geladen). */
+/** Detected chord progression of the project (null = not loaded yet). */
 export const harmonyLine = signal<HarmonyLine | null>(null);
 
 export function setHarmonyLane(on: boolean): void {
@@ -33,11 +33,11 @@ export function setHarmonyLane(on: boolean): void {
   try {
     localStorage.setItem(LANE_KEY, on ? "an" : "aus");
   } catch {
-    /* ohne Speicher */
+    /* without storage */
   }
 }
 
-/** Farben der Stimmungen – wie im Quintenzirkel (CSS --mood-…). */
+/** Colors of the moods – as in the circle of fifths (CSS --mood-…). */
 export const MOOD_COLORS: Record<Mood, string> = {
   loesend: "#5ee08f",
   spannend: "#ffb454",
@@ -54,7 +54,7 @@ export const MOOD_LABELS: Record<Mood, string> = {
 };
 
 let installed = false;
-/** Akkordfolge laden und mit dem Projekt aktuell halten (gebremst – Bearbeiten erzeugt viele Schnappschüsse). */
+/** Load the chord progression and keep it up to date with the project (throttled – editing creates many snapshots). */
 export function watchHarmonyLine(): void {
   if (installed || !backend.native) return;
   installed = true;
@@ -70,13 +70,13 @@ export function watchHarmonyLine(): void {
         const line = await backend.harmonyTimeline(key);
         if (my === seq) harmonyLine.value = line;
       } catch {
-        /* ohne Harmonie eben kein Band */
+        /* no harmony, no band */
       }
     }, 300);
   });
 }
 
-/** Index des Akkords an Schlag `beat` (der letzte, der davor begonnen hat); -1 = vor dem ersten. */
+/** Index of the chord at beat `beat` (the last one that began before it); -1 = before the first. */
 export function chordIndexAt(line: HarmonyLine | null, beat: number): number {
   if (!line) return -1;
   let i = -1;

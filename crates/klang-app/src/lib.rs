@@ -1,20 +1,20 @@
-//! Klangwelt-Kern: alles, was die App tut – ohne Plattform.
+//! Klangwelt core: everything the app does – without the platform.
 //!
-//! Desktop (Tauri, `app/`) und Browser (WebAssembly, `crates/klang-web`) sind
-//! nur dünne Hüllen um diesen Kern:
+//! Desktop (Tauri, `app/`) and browser (WebAssembly, `crates/klang-web`) are
+//! just thin shells around this core:
 //!
-//! * [`commands`] – die eine Befehlstabelle der Oberfläche: Name + JSON rein,
-//!   JSON raus. Beide Hüllen leiten jeden Aufruf dorthin weiter.
-//! * [`state::AppState`] – Sitzung (Projekt + Undo), Klänge, Engine, Bibliothek.
-//! * [`Host`] – was der Kern von der Plattform braucht (Ereignisse, Ablageorte).
-//! * [`agent`] – die Werkzeuge für den Agenten (MCP), ebenfalls gemeinsam.
-//! * [`vfs`], [`clock`] – Dateien und Uhr (Desktop: `std`, Browser: im Speicher
-//!   bzw. die Uhr der Seite).
-//! * Die Audio-Engine ([`klang_engine::Engine`]) hat auf beiden Plattformen
-//!   dieselbe Schnittstelle.
+//! * [`commands`] – the one command table of the UI: name + JSON in,
+//!   JSON out. Both shells forward every call there.
+//! * [`state::AppState`] – session (project + undo), sounds, engine, library.
+//! * [`Host`] – what the core needs from the platform (events, storage locations).
+//! * [`agent`] – the tools for the agent (MCP), also shared.
+//! * [`vfs`], [`clock`] – files and clock (desktop: `std`, browser: in memory
+//!   and the page's clock respectively).
+//! * The audio engine ([`klang_engine::Engine`]) has the same interface on
+//!   both platforms.
 //!
-//! Wer einen Befehl hinzufügt, trägt ihn in [`commands`] ein – dann gibt es
-//! ihn auf beiden Plattformen.
+//! Whoever adds a command registers it in [`commands`] – then it exists
+//! on both platforms.
 
 pub mod agent;
 pub mod analysis;

@@ -1,9 +1,9 @@
-//! JSON-RPC 2.0 nach MCP-Spezifikation (nur Server-Seite: Werkzeuge und Prompts).
+//! JSON-RPC 2.0 according to the MCP specification (server side only: tools and prompts).
 
 use serde_json::{json, Value};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
-/// Unterstützte Protokollversionen, neueste zuerst.
+/// Supported protocol versions, newest first.
 pub const PROTOCOL_VERSIONS: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
 #[derive(Clone, Debug)]
@@ -11,20 +11,20 @@ pub struct Tool {
     pub name: &'static str,
     pub title: &'static str,
     pub description: &'static str,
-    /// JSON-Schema der Argumente (`type: object`).
+    /// JSON schema of the arguments (`type: object`).
     pub input_schema: Value,
-    /// Werkzeug verändert nichts.
+    /// Tool changes nothing.
     pub read_only: bool,
 }
 
-/// Vorgefertigte Anweisung, die Clients als Befehl anbieten
+/// Predefined instruction that clients offer as a command
 /// (Claude Code: `/mcp__<server>__<name>`).
 #[derive(Clone, Debug)]
 pub struct Prompt {
     pub name: &'static str,
     pub title: &'static str,
     pub description: &'static str,
-    /// Text der Nutzernachricht, die der Prompt erzeugt.
+    /// Text of the user message that the prompt produces.
     pub text: String,
 }
 
@@ -33,17 +33,17 @@ pub struct ServerInfo {
     pub name: String,
     pub title: String,
     pub version: String,
-    /// Hinweise für das Modell, wie der Server zu benutzen ist.
+    /// Hints for the model on how to use the server.
     pub instructions: String,
 }
 
 pub trait Handler: Send + Sync + 'static {
     fn info(&self) -> ServerInfo;
     fn tools(&self) -> Vec<Tool>;
-    /// `Ok(wert)` wird als Text und (bei Objekten) als `structuredContent`
-    /// zurückgegeben; `Err(text)` als Werkzeugfehler (`isError`), den das Modell sieht.
+    /// `Ok(wert)` is returned as text and (for objects) as `structuredContent`;
+    /// `Err(text)` as a tool error (`isError`) that the model sees.
     fn call(&self, name: &str, arguments: Value) -> Result<Value, String>;
-    /// Prompts (Standard: keine).
+    /// Prompts (default: none).
     fn prompts(&self) -> Vec<Prompt> {
         Vec::new()
     }
@@ -57,7 +57,7 @@ fn prompts_get(h: &dyn Handler, params: &Value) -> Result<Value, (i64, String)> 
     let name = params
         .get("name")
         .and_then(Value::as_str)
-        .ok_or((-32602, "Parameter „name“ fehlt".to_string()))?;
+        .ok_or((-32602, "Parameter 'name' is missing".to_string()))?;
     let p = h
         .prompts()
         .into_iter()
@@ -108,14 +108,14 @@ fn tools_call(h: &dyn Handler, params: &Value) -> Result<Value, (i64, String)> {
     let name = params
         .get("name")
         .and_then(Value::as_str)
-        .ok_or((-32602, "Parameter „name“ fehlt".to_string()))?;
+        .ok_or((-32602, "Parameter 'name' is missing".to_string()))?;
     if !h.tools().iter().any(|t| t.name == name) {
         return Err((-32602, format!("Unbekanntes Werkzeug: {name}")));
     }
     let args = match params.get("arguments") {
         None | Some(Value::Null) => json!({}),
         Some(v) if v.is_object() => v.clone(),
-        Some(_) => return Err((-32602, "„arguments“ muss ein Objekt sein".to_string())),
+        Some(_) => return Err((-32602, "'arguments' must be an object".to_string())),
     };
     let outcome = catch_unwind(AssertUnwindSafe(|| h.call(name, args)))
         .unwrap_or_else(|_| Err("Interner Fehler im Werkzeug".to_string()));
@@ -135,18 +135,18 @@ fn tools_call(h: &dyn Handler, params: &Value) -> Result<Value, (i64, String)> {
     })
 }
 
-/// Verarbeitet eine einzelne JSON-RPC-Nachricht. `None` bei Benachrichtigungen
-/// und Antworten des Clients (darauf wird nicht geantwortet).
+/// Processes a single JSON-RPC message. `None` for notifications
+/// and responses from the client (these are not answered).
 pub fn handle(h: &dyn Handler, msg: &Value) -> Option<Value> {
     if !msg.is_object() || msg.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
-        return Some(error(msg.get("id").cloned().unwrap_or(Value::Null), -32600, "Ungültige JSON-RPC-Nachricht"));
+        return Some(error(msg.get("id").cloned().unwrap_or(Value::Null), -32600, "Invalid JSON-RPC message"));
     }
     let id = msg.get("id").cloned();
     let Some(method) = msg.get("method").and_then(Value::as_str) else {
-        // Antwort des Clients auf eine Server-Anfrage – wir stellen keine.
+        // Response of the client to a server request – we send none.
         return None;
     };
-    let id = id?; // Benachrichtigung (z. B. notifications/initialized)
+    let id = id?; // notification (e.g. notifications/initialized)
     let params = msg.get("params").cloned().unwrap_or_else(|| json!({}));
     let result = match method {
         "initialize" => Ok(initialize(h, &params)),
@@ -155,7 +155,7 @@ pub fn handle(h: &dyn Handler, msg: &Value) -> Option<Value> {
         "tools/call" => tools_call(h, &params),
         "prompts/list" => Ok(json!({ "prompts": h.prompts().iter().map(prompt_json).collect::<Vec<_>>() })),
         "prompts/get" => prompts_get(h, &params),
-        _ => Err((-32601, format!("Methode nicht unterstützt: {method}"))),
+        _ => Err((-32601, format!("Method not supported: {method}"))),
     };
     Some(match result {
         Ok(r) => json!({ "jsonrpc": "2.0", "id": id, "result": r }),

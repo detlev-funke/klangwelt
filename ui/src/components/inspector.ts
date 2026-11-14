@@ -36,11 +36,11 @@ function prop(label: string, value: Node | string, hint?: string): HTMLElement {
   );
 }
 
-// ---------------------------------------------------------------- Ausdruck
+// ---------------------------------------------------------------- Expression
 
 /**
- * Ausdruck der gewählten Noten (oder aller Noten des Clips): Vortragszeichen
- * als Knöpfe und je Ausdrucksform ein Regler, der den Mittelwert zeigt.
+ * Expression of the selected notes (or all notes of the clip): articulation marks
+ * as buttons and, per form of expression, a slider that shows the mean value.
  */
 function exprSection(trackId: number, clipId: number): Panel {
   const current = () => {
@@ -93,7 +93,7 @@ function exprSection(trackId: number, clipId: number): Panel {
     ),
   );
 
-  // Regler: zeigen den Mittelwert der Ziel-Noten; Ziehen setzt alle auf den Wert.
+  // Sliders: show the mean value of the target notes; dragging sets all of them to the value.
   const sliders = EXPR_ORDER.map((k) => {
     const d = EXPRS[k];
     const input = h("input", { type: "range", min: d.min, max: d.max, step: d.step });
@@ -247,7 +247,7 @@ function clipPanel(trackId: number, clipId: number): Panel {
   };
 }
 
-// ---------------------------------------------------------------- Analyse
+// ---------------------------------------------------------------- Analysis
 
 function analysisPanel(a: Analysis): Panel {
   const canvas = h("canvas");
@@ -290,7 +290,7 @@ function drawAnalysis(canvas: HTMLCanvasElement, a: Analysis): void {
   const hi = Math.ceil(Math.max(...all)) + 2;
   const padL = 40;
   const x = (t: number) => padL + (t / Math.max(a.durationSecs, 0.001)) * (w - padL - 8);
-  // Richtung wie in der Notenansicht (Einstellung „Tonachse“)
+  // Direction as in the note view ("Pitch axis" setting)
   const up = highOnTop.peek();
   const y = (m: number) => 8 + ((up ? hi - m : m - lo) / (hi - lo)) * (hh - 28);
 
@@ -338,14 +338,14 @@ function drawAnalysis(canvas: HTMLCanvasElement, a: Analysis): void {
   ctx.stroke();
 }
 
-// ---------------------------------------------------------------- Klang
+// ---------------------------------------------------------------- Sound
 
-// ---------------------------------------------------------------- Fenster
+// ---------------------------------------------------------------- Window
 
 /**
- * Inhalt eines Werkzeug-Fensters im Docksystem: `<kw-panel tab="klang">`.
- * Jedes Fenster folgt selbst der Auswahl und baut sich neu, wenn sich sein
- * Gegenstand ändert (anderer Clip, andere Spur, neue Analyse).
+ * Content of a tool window in the docking system: `<kw-panel tab="klang">`.
+ * Each window follows the selection itself and rebuilds when its
+ * subject changes (different clip, different track, new analysis).
  */
 class KwPanel extends HTMLElement {
   #body = h("div", { class: "tab-body" });
@@ -362,11 +362,11 @@ class KwPanel extends HTMLElement {
       const sel = selection.value;
       const snap = snapshot.value;
       const a = tab === "analyse" ? analysis.value : null;
-      if (tab === "agent") chat.value; // Chat neu zeichnen
-      if (tab === "analyse") highOnTop.value; // Kurve neu zeichnen, wenn die Tonachse wechselt
-      if (tab === "clip") noteSel.value; // Ausdruck folgt der Notenauswahl
+      if (tab === "agent") chat.value; // redraw chat
+      if (tab === "analyse") highOnTop.value; // redraw curve when the pitch axis changes
+      if (tab === "clip") noteSel.value; // expression follows the note selection
       if (tab === "bibliothek") librarySignals();
-      if (tab === "klang") savedSounds.value; // Meine Klänge neu zeichnen
+      if (tab === "klang") savedSounds.value; // redraw My sounds
       const specsReady = tab === "klang" ? instrumentSpecs.value.length : 0;
       const p = snap?.project ?? null;
       const track = findTrack(p, sel?.trackId);

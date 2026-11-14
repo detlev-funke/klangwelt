@@ -1,8 +1,8 @@
-//! Messbare Klangeigenschaften – die „Ohren“ des Agenten.
+//! Measurable sound properties – the agent's "ears".
 //!
-//! Aus einem Klang werden Zahlen, die mit Wörtern wie hell, warm, hart oder
-//! lang ausklingend zusammenhängen. So kann ein Sprachmodell prüfen, ob eine
-//! Änderung die gewünschte Wirkung hatte.
+//! A sound is turned into numbers that relate to words like bright, warm, hard or
+//! long-decaying. This lets a language model check whether a
+//! change had the desired effect.
 
 use crate::fft::{hann, Complex, Fft};
 use serde::Serialize;
@@ -10,21 +10,21 @@ use serde::Serialize;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SoundFeatures {
-    /// Spektraler Schwerpunkt in Hz (energiegewichtet) – höher = heller.
+    /// Spectral centroid in Hz (energy-weighted) – higher = brighter.
     pub centroid_hz: f32,
-    /// Unterhalb dieser Frequenz liegen 85 % der Energie.
+    /// 85 % of the energy lies below this frequency.
     pub rolloff_hz: f32,
-    /// 0 = rein tonal, 1 = rauschartig.
+    /// 0 = purely tonal, 1 = noise-like.
     pub flatness: f32,
-    /// Energieanteil 60–400 Hz – Wärme, Körper.
+    /// Energy share 60–400 Hz – warmth, body.
     pub low_share: f32,
-    /// Energieanteil über 3 kHz – Brillanz, Schärfe.
+    /// Energy share above 3 kHz – brilliance, sharpness.
     pub high_share: f32,
-    /// Anstiegszeit 10 % → 90 % des Spitzenpegels in ms.
+    /// Rise time 10 % → 90 % of the peak level in ms.
     pub attack_ms: f32,
-    /// Spektraler Schwerpunkt der ersten 40 ms – Härte des Anschlags.
+    /// Spectral centroid of the first 40 ms – hardness of the attack.
     pub onset_centroid_hz: f32,
-    /// Geschätzte Ausklingzeit T60 in Sekunden (aus dem −20-dB-Abfall).
+    /// Estimated decay time T60 in seconds (from the −20 dB drop).
     pub decay_s: f32,
     pub peak: f32,
     pub rms: f32,
@@ -75,7 +75,7 @@ pub fn analyze_sound(x: &[f32], sr: f32) -> SoundFeatures {
     if x.is_empty() {
         return SoundFeatures::default();
     }
-    // Hüllkurve in 2-ms-Blöcken.
+    // Envelope in 2 ms blocks.
     let block = ((sr * 0.002) as usize).max(1);
     let env: Vec<f32> = x
         .chunks(block)
@@ -111,8 +111,8 @@ pub fn analyze_sound(x: &[f32], sr: f32) -> SoundFeatures {
     let bins = n / 2 + 1;
     let bin_hz = sr / n as f32;
     let mut acc = vec![0f32; bins];
-    // Nur vollständige Fenster ab dem Pegelmaximum (max. 1 s), sonst verschmiert
-    // der harte Abbruch am Signalende das Spektrum.
+    // Only complete windows from the level maximum on (max. 1 s), otherwise
+    // the hard cut-off at the end of the signal smears the spectrum.
     let from = (peak_i * block).min(x.len().saturating_sub(n));
     let until = (from + sr as usize).min(x.len());
     let mut s = from;

@@ -1,9 +1,9 @@
-//! Tempo und Tonhöhe unabhängig voneinander ändern.
+//! Change tempo and pitch independently of each other.
 //!
-//! * Zeitdehnung: WSOLA (Waveform Similarity Overlap-Add). Jeder neue Frame
-//!   wird so gewählt, dass er möglichst nahtlos an den vorherigen anschließt.
-//! * Resampling: gefenstertes Sinc mit Tiefpass bei Abwärtswandlung.
-//! * Tonhöhe: dehnen um den Faktor 2^(n/12), dann zurück-resamplen.
+//! * Time stretching: WSOLA (Waveform Similarity Overlap-Add). Each new frame
+//!   is chosen so that it joins the previous one as seamlessly as possible.
+//! * Resampling: windowed sinc with a low-pass when converting down.
+//! * Pitch: stretch by the factor 2^(n/12), then resample back.
 
 use crate::fft::hann;
 
@@ -16,7 +16,7 @@ fn sample(x: &[f32], i: isize) -> f32 {
     }
 }
 
-/// Ändert die Dauer um `ratio` (Ausgabelänge / Eingabelänge), Tonhöhe bleibt.
+/// Changes the duration by `ratio` (output length / input length), pitch stays.
 pub fn time_stretch(input: &[f32], ratio: f64, sample_rate: f32) -> Vec<f32> {
     if input.is_empty() {
         return Vec::new();
@@ -63,9 +63,9 @@ pub fn time_stretch(input: &[f32], ratio: f64, sample_rate: f32) -> Vec<f32> {
     out
 }
 
-/// Korrelation von `x[a..]` und `x[b..]` über `hs` Samples (jedes
-/// `stride`-te). Liegen beide ganz im Signal (der Normalfall), ohne
-/// Grenzprüfung je Sample – gleiche Summenreihenfolge, gleiches Ergebnis wie
+/// Correlation of `x[a..]` and `x[b..]` over `hs` samples (every
+/// `stride`-th). If both lie entirely inside the signal (the normal case), without
+/// a bounds check per sample – same summation order, same result as
 /// [`correlate_edge`].
 fn correlate(x: &[f32], a: isize, b: isize, hs: usize, stride: usize) -> f32 {
     let inside = |p: isize| p >= 0 && p as usize + hs <= x.len();
@@ -82,7 +82,7 @@ fn correlate(x: &[f32], a: isize, b: isize, hs: usize, stride: usize) -> f32 {
     correlate_edge(x, a, b, hs, stride)
 }
 
-/// Wie [`correlate`], außerhalb des Signals mit Nullen.
+/// Like [`correlate`], with zeros outside the signal.
 fn correlate_edge(x: &[f32], a: isize, b: isize, hs: usize, stride: usize) -> f32 {
     let mut s = 0.0;
     let mut j = 0;
@@ -93,8 +93,8 @@ fn correlate_edge(x: &[f32], a: isize, b: isize, hs: usize, stride: usize) -> f3
     s
 }
 
-/// Sucht um `nominal` die Position, deren Anfang am besten zur natürlichen
-/// Fortsetzung `natural` des vorherigen Frames passt (grob, dann fein).
+/// Searches around `nominal` for the position whose start best matches the
+/// natural continuation `natural` of the previous frame (coarse, then fine).
 fn best_offset(x: &[f32], nominal: isize, natural: isize, hs: usize, tol: isize) -> isize {
     let corr = |cand: isize, stride: usize| correlate(x, cand, natural, hs, stride);
     let mut best = nominal;
@@ -124,14 +124,14 @@ fn best_offset(x: &[f32], nominal: isize, natural: isize, hs: usize, tol: isize)
     best
 }
 
-/// Ab so vielen Ausgabe-Samples je Kern lohnt es sich, das Resampling zu
-/// verteilen (Desktop; im Browser gibt es keine Threads).
+/// From this many output samples per core it is worth distributing the
+/// resampling (desktop; the browser has no threads).
 #[cfg(not(target_arch = "wasm32"))]
 const RESAMPLE_PER_THREAD: usize = 48_000;
 
-/// Resampling um `factor` = Ausgaberate / Eingaberate (bzw. Ausgabelänge / Eingabelänge).
-/// Große Puffer werden auf dem Desktop auf mehrere Kerne verteilt; jedes
-/// Ausgabe-Sample wird dabei genau gleich gerechnet.
+/// Resampling by `factor` = output rate / input rate (or output length / input length).
+/// On the desktop, large buffers are distributed across several cores; every
+/// output sample is computed in exactly the same way.
 pub fn resample(input: &[f32], factor: f64) -> Vec<f32> {
     if input.is_empty() || factor <= 0.0 {
         return Vec::new();
@@ -161,12 +161,12 @@ pub fn resample(input: &[f32], factor: f64) -> Vec<f32> {
     out
 }
 
-/// Gefenstertes Sinc (Hann) für das Resampling um einen festen Faktor.
+/// Windowed sinc (Hann) for resampling by a fixed factor.
 struct SincKernel {
     factor: f64,
     cutoff: f64,
     half: isize,
-    /// Drehung je Filterpunkt: Sinc-Winkel (π·cutoff) und Fensterwinkel (π/half).
+    /// Rotation per filter point: sinc angle (π·cutoff) and window angle (π/half).
     rot_sinc: (f64, f64),
     rot_win: (f64, f64),
 }
@@ -179,7 +179,7 @@ impl SincKernel {
         Self { factor, cutoff, half, rot_sinc: (PI * cutoff).sin_cos(), rot_win: (PI / half as f64).sin_cos() }
     }
 
-    /// Ausgabe-Samples ab Index `first_out` in `out`.
+    /// Output samples starting at index `first_out` in `out`.
     fn fill(&self, input: &[f32], first_out: usize, out: &mut [f32]) {
         use std::f64::consts::PI;
         let (cutoff, half) = (self.cutoff, self.half);
@@ -191,10 +191,10 @@ impl SincKernel {
             let center = x.floor() as isize;
             let first = center - half + 1;
             let d0 = x - first as f64;
-            // Von Filterpunkt zu Filterpunkt sinkt der Abstand d um genau 1:
-            // Sinc- und Fensterwinkel drehen sich um feste Schritte weiter,
-            // statt für jeden Punkt neu sin/cos zu rechnen (je Ausgabe-Sample
-            // 2 statt 4·half). sin(π·cutoff·d) für den Sinc, cos(π·d/half) für das Fenster.
+            // From filter point to filter point the distance d drops by exactly 1:
+            // the sinc and window angles advance by fixed steps,
+            // instead of recomputing sin/cos for every point (2 instead of
+            // 4·half per output sample). sin(π·cutoff·d) for the sinc, cos(π·d/half) for the window.
             let (mut s, mut c) = (PI * cutoff * d0).sin_cos();
             let (mut ws, mut wc) = (PI * d0 / hf).sin_cos();
             let mut acc = 0.0f64;
@@ -218,13 +218,13 @@ impl SincKernel {
     }
 }
 
-/// Tonhöhe um `semitones` verschieben, Dauer bleibt gleich.
+/// Shifts the pitch by `semitones`, duration stays the same.
 pub fn pitch_shift(input: &[f32], semitones: f64, sample_rate: f32) -> Vec<f32> {
     render_warp(input, sample_rate, 1.0, semitones, 1.0)
 }
 
-/// Alles in einem Durchgang: Dauer × `time_ratio`, Tonhöhe + `semitones`,
-/// Abtastrate × `rate_factor` (z. B. 48000/44100).
+/// Everything in one pass: duration × `time_ratio`, pitch + `semitones`,
+/// sample rate × `rate_factor` (e.g. 48000/44100).
 pub fn render_warp(
     input: &[f32],
     sample_rate: f32,
@@ -293,7 +293,7 @@ mod tests {
         assert!((p - 440.0).abs() < 2.0, "{p}");
     }
 
-    /// Die bisherige, direkte Rechnung (sin/cos an jedem Filterpunkt) als Maßstab.
+    /// The previous, direct computation (sin/cos at every filter point) as a yardstick.
     fn resample_direct(input: &[f32], factor: f64) -> Vec<f32> {
         let out_len = ((input.len() as f64) * factor).round() as usize;
         let cutoff = factor.min(1.0);
@@ -322,7 +322,7 @@ mod tests {
 
     #[test]
     fn resample_matches_the_direct_formula() {
-        // Rauschen plus Ton: alle Frequenzen, auch die, die der Tiefpass dämpft
+        // noise plus tone: all frequencies, including those the low-pass attenuates
         let mut seed = 7u32;
         let x: Vec<f32> = sine(523.0, 0.3, 48_000.0, 0.4)
             .iter()
@@ -331,7 +331,7 @@ mod tests {
                 v + ((seed >> 9) as f32 / (1u32 << 23) as f32 - 0.5) * 0.4
             })
             .collect();
-        // 48→44,1 kHz, 44,1→48 kHz, Tonhöhen-Faktoren, Oktaven
+        // 48→44.1 kHz, 44.1→48 kHz, pitch factors, octaves
         for factor in [44_100.0 / 48_000.0, 48_000.0 / 44_100.0, 2f64.powf(-3.0 / 12.0), 2f64.powf(7.0 / 12.0), 0.5, 2.0, 0.3] {
             let a = resample(&x, factor);
             let b = resample_direct(&x, factor);
@@ -371,7 +371,7 @@ mod tests {
                 assert_eq!(correlate(&x, a, b, hs, stride).to_bits(), correlate_edge(&x, a, b, hs, stride).to_bits(), "a={a} b={b} stride={stride}");
             }
         }
-        // am Rand: mit Nullen aufgefüllt
+        // at the edge: padded with zeros
         assert_eq!(correlate(&x, -10, 0, hs, 2), correlate_edge(&x, -10, 0, hs, 2));
         assert_eq!(correlate(&x, 9_500, 0, hs, 2), correlate_edge(&x, 9_500, 0, hs, 2));
     }

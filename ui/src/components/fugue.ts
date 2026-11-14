@@ -1,6 +1,6 @@
-// Fenster „Fuge“: Thema (ein Noten-Clip) → Antwort, Verwandlungen, Gegensatz,
-// Engführungen, Fugenplan; Kontrapunkt-Prüfer über alle Instrumentspuren mit
-// Markierungen in der Zeitleiste; ähnliche Themen in der Bibliothek.
+// "Fugue" window: subject (a note clip) → answer, transformations, countersubject,
+// strettos, fugue plan; counterpoint checker across all instrument tracks with
+// markers in the timeline; similar subjects in the library.
 
 import { backend } from "../bridge.js";
 import { keyText } from "../spelling.js";
@@ -27,7 +27,7 @@ const SECTION_COLORS: Record<string, string> = {
 };
 const sectionColor = (kind: string) => SECTION_COLORS[kind] ?? "#8a93a6";
 
-/** Zustand bleibt erhalten, wenn das Fenster neu aufgebaut wird. */
+/** State is kept when the window is rebuilt. */
 const st = {
   subject: null as { trackId: number; clipId: number } | null,
   keyChoice: null as KeySpec | null,
@@ -57,7 +57,7 @@ function projectEnd(): number {
   return Math.ceil(end / bpb) * bpb;
 }
 
-/** Kleine Notenrolle: mehrere Lagen (Farbe), optional hervorgehobene Noten. */
+/** Small note roll: several registers (color), optionally highlighted notes. */
 function drawRoll(canvas: HTMLCanvasElement, layers: Array<{ notes: VNote[]; color: string; marks?: Set<number> }>, beatsPerBar = 4): void {
   const { ctx, w, h: hh } = fitCanvas(canvas);
   ctx.clearRect(0, 0, w, hh);
@@ -112,7 +112,7 @@ export function fuguePanel(): { el: HTMLElement; update(): void } {
   };
   const voicesSeg = seg<number>([[2, "2"], [3, "3"], [4, "4"]], () => st.voices, (v) => { st.voices = v; st.plan = null; render(); }, t("Voices in the fugue"));
   const kindSeg = seg<InstrumentKind>([["organ", t("Organ")], ["harpsichord", t("Harpsichord")], ["pluck", t("Pluck")]], () => st.kind, (v) => (st.kind = v), t("Sound for listening and for new tracks"));
-  // Thema: Auswahlliste aller Noten-Clips (oder der in der Zeitleiste gewählte)
+  // Subject: selection list of all note clips (or the one chosen in the timeline)
   const subjectSel = h("select", { class: "hc-select fg-subject", title: t("Which note clip is the fugue subject") });
   subjectSel.addEventListener("change", () => {
     const [t, c] = subjectSel.value.split(":").map(Number);
@@ -193,7 +193,7 @@ export function fuguePanel(): { el: HTMLElement; update(): void } {
     if (await act(backend.fugueAddVoices(voices, start, st.kind, label))) notify(plural(voices.length, "{label}: created {n} track", "{label}: created {n} tracks", { label }));
   };
 
-  // ------------------------------------------------------------ Karten
+  // ------------------------------------------------------------ Cards
 
   function card(title: string, sub: string | null, ...kids: Array<Node | null>): HTMLElement {
     return h("section", { class: "fg-card" }, h("div", { class: "fg-title" }, title, sub ? h("span", { class: "muted" }, ` – ${sub}`) : null), ...kids);
@@ -412,11 +412,11 @@ export function fuguePanel(): { el: HTMLElement; update(): void } {
     body.replaceChildren(subjectCard(v), h("div", { class: "fg-cols" }, transformCard(v), strettoCard(v)), csCard(v), planCard(), checkEl);
   }
 
-  // ------------------------------------------------------------ Lebenszyklus
+  // ------------------------------------------------------------ Lifecycle
 
   let lastSnap: Snapshot | null = null;
   let timer = 0;
-  /** Fingerabdruck des Themen-Clips: nur bei Änderung neu analysieren. */
+  /** Fingerprint of the subject clip: re-analyze only on change. */
   const subjectSig = () => {
     const f = st.subject ? findClip(project(), { trackId: st.subject.trackId, clipId: st.subject.clipId }) : null;
     return f ? JSON.stringify([f.clip.source, f.clip.startBeats, f.track.pitchSemitones]) : "";
@@ -435,7 +435,7 @@ export function fuguePanel(): { el: HTMLElement; update(): void } {
       lastSnap = snap;
       fillSubjects();
       if (first) return;
-      // Thema geändert oder gelöscht?
+      // Subject changed or deleted?
       if (st.subject && !findClip(project(), { trackId: st.subject.trackId, clipId: st.subject.clipId })) {
         st.subject = null;
         st.view = null;

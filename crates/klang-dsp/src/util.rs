@@ -1,4 +1,4 @@
-//! Kleine Helfer rund um Pegel und Statistik.
+//! Small helpers around levels and statistics.
 
 pub fn rms(x: &[f32]) -> f32 {
     if x.is_empty() {
@@ -19,7 +19,7 @@ pub fn gain_to_db(gain: f32) -> f32 {
     20.0 * gain.max(1e-9).log10()
 }
 
-/// Median; sortiert den übergebenen Puffer. Leerer Puffer → 0.
+/// Median; sorts the buffer passed in. Empty buffer → 0.
 pub fn median(values: &mut [f32]) -> f32 {
     if values.is_empty() {
         return 0.0;
@@ -33,7 +33,7 @@ pub fn median(values: &mut [f32]) -> f32 {
     }
 }
 
-/// Skaliert so, dass die Spitze `target_peak` erreicht.
+/// Scales so that the peak reaches `target_peak`.
 pub fn normalize(x: &mut [f32], target_peak: f32) {
     let p = peak(x);
     if p > 1e-9 {
@@ -44,7 +44,7 @@ pub fn normalize(x: &mut [f32], target_peak: f32) {
     }
 }
 
-/// Wellenform-Übersicht für die Anzeige: `buckets` Paare aus (min, max).
+/// Waveform overview for display: `buckets` pairs of (min, max).
 pub fn overview(samples: &[f32], buckets: usize) -> Vec<f32> {
     let buckets = buckets.max(1);
     if samples.is_empty() {

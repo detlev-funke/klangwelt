@@ -1,19 +1,19 @@
-//! DCML-Korpora (Digital and Cognitive Musicology Lab, EPFL Lausanne):
-//! Klaviersonaten von Mozart und Beethoven, Beethovens Streichquartette,
-//! Bachs Suiten und Solowerke – mit einer Akkordanalyse von Fachleuten für
-//! jeden Takt.
+//! DCML corpora (Digital and Cognitive Musicology Lab, EPFL Lausanne):
+//! piano sonatas by Mozart and Beethoven, Beethoven's string quartets,
+//! Bach's suites and solo works – with a chord analysis by experts for
+//! every bar.
 //!
-//! Gelesen werden die Tabellen, die das Labor selbst aus seinen MuseScore-
-//! Dateien erzeugt (`ms3`), statt der viel größeren `.mscx`-Dateien:
+//! What is read are the tables that the lab itself generates from its MuseScore
+//! files (`ms3`), instead of the much larger `.mscx` files:
 //!
-//! * `notes/<Stück>.notes.tsv` – jede Note mit Einsatz und Dauer in Vierteln,
-//!   System, Stimme, MIDI-Ton und Haltebogen,
-//! * `harmonies/<Stück>.harmonies.tsv` – die Analyse (Stufe, Tonart,
-//!   Akkordtöne in Quinten relativ zur lokalen Tonika),
-//! * `metadata.tsv` – Titel, Komponist, Vorzeichen, Taktart, Besetzung.
+//! * `notes/<piece>.notes.tsv` – every note with onset and duration in quarters,
+//!   staff, voice, MIDI pitch and tie,
+//! * `harmonies/<piece>.harmonies.tsv` – the analysis (scale degree, key,
+//!   chord tones in fifths relative to the local tonic),
+//! * `metadata.tsv` – title, composer, key signature, time signature, instrumentation.
 //!
-//! Die Harmonien landen in [`Score::harmony`] und ersetzen beim Indizieren
-//! die automatische Akkorderkennung.
+//! The harmonies end up in [`Score::harmony`] and replace the automatic chord
+//! detection when indexing.
 
 use crate::harmony::{parse_roman, Chord, Quality};
 use crate::score::{LabeledChord, Part, Score, ScoreNote, Voice};
@@ -22,7 +22,7 @@ use crate::MusicError;
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
-/// Tabelle mit Kopfzeile: Spaltenname → Wert je Zeile.
+/// Table with a header row: column name → value per row.
 struct Table {
     cols: HashMap<String, usize>,
     rows: Vec<Vec<String>>,
@@ -48,7 +48,7 @@ impl Table {
     }
 }
 
-/// „17/2“, „8.5“ oder „3“ → Zahl.
+/// "17/2", "8.5" or "3" → number.
 fn number(s: &str) -> Option<f64> {
     let s = s.trim();
     if s.is_empty() {
@@ -63,13 +63,13 @@ fn number(s: &str) -> Option<f64> {
     }
 }
 
-/// Erster Wert aus „1: 4/4, 33: 3/4“.
+/// First value from "1: 4/4, 33: 3/4".
 fn first_value(s: &str) -> &str {
     let first = s.split(',').next().unwrap_or("");
     first.split_once(':').map(|(_, v)| v).unwrap_or(first).trim()
 }
 
-/// Tonhöhenklasse aus einem Tonnamen wie „F#“, „Bb“, „eb“, „a“.
+/// Pitch class from a note name like "F#", "Bb", "eb", "a".
 fn pitch_class(name: &str) -> Option<u8> {
     let mut ch = name.chars();
     let base: i32 = match ch.next()?.to_ascii_uppercase() {
@@ -103,19 +103,19 @@ fn quality(chord_type: &str) -> Option<Quality> {
         "mM7" => Quality::Minor,
         "o7" => Quality::Dim7,
         "%7" => Quality::HalfDim7,
-        // übermäßige Sextakkorde: klingen wie ein Dominantseptakkord auf dem Basston
+        // augmented sixth chords: sound like a dominant seventh chord on the bass note
         "It" | "Ger" | "Fr" => Quality::Dom7,
         _ => return None,
     })
 }
 
-/// Akkord aus einer Zeile der Harmonietabelle (None: nur Phrasen-/Tonartmarke).
+/// Chord from a row of the harmony table (None: only a phrase/key marker).
 fn labeled(t: &Table, row: &[String], global: &Key) -> Option<LabeledChord> {
     let onset = number(t.get(row, "quarterbeats"))?;
     let duration = number(t.get(row, "duration_qb")).unwrap_or(0.0);
     let chord_type = t.get(row, "chord_type");
     let q = quality(chord_type)?;
-    // Lokale Tonart als Stufe der Haupttonart („V“, „vi“, „bVI“ …)
+    // Local key as a scale degree of the main key ("V", "vi", "bVI" …)
     let local = t.get(row, "localkey");
     let local_tonic = if local.is_empty() || local == "I" || local == "i" {
         global.tonic
@@ -137,8 +137,8 @@ fn labeled(t: &Table, row: &[String], global: &Key) -> Option<LabeledChord> {
     Some(LabeledChord { onset, duration, chord, label: t.get(row, "label").to_string() })
 }
 
-/// Instrumentname aus den Metadaten auf Deutsch; None für Platzhalter
-/// („unbenannt2“, „MusicXML Default 1“).
+/// Instrument name from the metadata in German; None for placeholders
+/// ("unbenannt2", "MusicXML Default 1").
 fn instrument_de(raw: &str) -> Option<String> {
     let l = raw.to_lowercase().replace("(2)", "");
     let l = l.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -172,7 +172,7 @@ fn is_keyboard(name: &str) -> bool {
     matches!(name, "Klavier" | "Cembalo" | "Orgel")
 }
 
-/// Liest `…/notes/<Stück>.notes.tsv` samt Harmonien und Metadaten daneben.
+/// Reads `…/notes/<piece>.notes.tsv` together with the harmonies and metadata next to it.
 pub fn load_dcml(notes_path: &Path) -> Result<Score, MusicError> {
     let file = notes_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
     let piece = &file[..file.len().saturating_sub(".notes.tsv".len())];
@@ -180,12 +180,12 @@ pub fn load_dcml(notes_path: &Path) -> Result<Score, MusicError> {
     let base = notes_path.parent().and_then(Path::parent);
 
     let mut score = Score::default();
-    // Metadaten
+    // Metadata
     let mut instruments: BTreeMap<u32, String> = BTreeMap::new();
     let mut annotated_key = String::new();
     if let Some(meta) = base.and_then(|b| std::fs::read_to_string(b.join("metadata.tsv")).ok()) {
         let meta = Table::parse(&meta);
-        // Beim Herunterladen werden Dateinamen vereinfacht („001 Aus meines …“ → „001_Aus_meines_…“)
+        // File names are simplified when downloading ("001 Aus meines …" → "001_Aus_meines_…")
         let same = |p: &str| p == piece || crate::fetch::ascii_path(p).to_string_lossy() == piece;
         if let Some(row) = meta.rows.iter().find(|r| same(meta.get(r, "piece"))) {
             let work = meta.get(row, "workTitle");
@@ -227,7 +227,7 @@ pub fn load_dcml(notes_path: &Path) -> Result<Score, MusicError> {
         score.title = Some(piece.replace('_', " "));
     }
 
-    // Noten (Haltebögen: 1 = Anfang, 0 = Mitte, −1 = Ende)
+    // Notes (ties: 1 = start, 0 = middle, −1 = end)
     let mut voices: BTreeMap<(u32, u32), Vec<ScoreNote>> = BTreeMap::new();
     let mut open: HashMap<(u32, u32, u8), usize> = HashMap::new();
     let mut rows: Vec<(f64, f64, u32, u32, u8, i32)> = Vec::new();
@@ -263,15 +263,15 @@ pub fn load_dcml(notes_path: &Path) -> Result<Score, MusicError> {
         }
     }
 
-    // Teile: Systeme eines Tasteninstruments gehören zusammen; gleiche
-    // Instrumente nebeneinander werden durchnummeriert (Violine 1, Violine 2).
+    // Parts: staves of a keyboard instrument belong together; identical
+    // instruments next to each other are numbered (Violin 1, Violin 2).
     let staffs: Vec<u32> = {
         let mut s: Vec<u32> = voices.keys().map(|(s, _)| *s).collect();
         s.dedup();
         s
     };
-    // Systeme ohne brauchbaren Namen: vier = Streichquartett, sonst Klavier
-    // (wenn ein anderes System Klavier ist oder es höchstens zwei gibt).
+    // Staves without a usable name: four = string quartet, otherwise piano
+    // (if another staff is piano or there are at most two).
     let keyboard_named = instruments.values().any(|n| is_keyboard(n));
     let n_staffs = staffs.len();
     let name_of = |s: u32| {
@@ -329,7 +329,7 @@ pub fn load_dcml(notes_path: &Path) -> Result<Score, MusicError> {
         return Err(MusicError::Unsupported(klang_i18n::tr!("{piece}: no notes", piece = piece)));
     }
 
-    // Harmonien
+    // Harmonies
     if let Some(text) = base.and_then(|b| std::fs::read_to_string(b.join("harmonies").join(format!("{piece}.harmonies.tsv"))).ok()) {
         let h = Table::parse(&text);
         let global_name = h.rows.iter().map(|r| h.get(r, "globalkey")).find(|g| !g.is_empty()).map(str::to_string).unwrap_or(annotated_key.clone());
@@ -391,10 +391,10 @@ mod tests {
         assert_eq!(rh, vec![(0.0, 1.0, 64), (1.0, 3.0, 67), (4.0, 1.0, 65)], "Haltebogen verbunden, Vorschlag weg");
         assert_eq!(s.harmony.len(), 3, "Phrasenmarke ohne Akkord fällt weg");
         assert_eq!(s.harmony[0].chord, Chord::new(0, Quality::Major));
-        // V65/V in C: D-Dur-Septakkord mit Fis im Bass
+        // V65/V in C: D major seventh chord with F# in the bass
         assert_eq!(s.harmony[1].chord, Chord::new(2, Quality::Dom7).inverted(1));
         assert_eq!(s.harmony[1].label, "V65/V");
-        // vi in G-Dur (lokale Tonart V): e-Moll
+        // vi in G major (local key V): E minor
         assert_eq!(s.harmony[2].chord, Chord::new(4, Quality::Minor));
         let _ = std::fs::remove_dir_all(root);
     }

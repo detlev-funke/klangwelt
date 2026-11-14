@@ -1,13 +1,13 @@
-//! Song-Vorlagen: ein ganzes Stück aus Abschnitten (Intro, Aufbau, Break,
-//! Höhepunkt, Outro …) und Rollen (Fläche, Arpeggio, Bass, Lead, Kick, Hi-Hats,
-//! Clap, Percussion, Übergänge). Je Abschnitt und Rolle eine Stufe: 0 aus,
-//! 1 sparsam, 2 voll. Daraus entstehen Spuren mit einem Clip je Abschnitt –
-//! jede melodische Rolle eine Spur, alle Trommeln zusammen eine Schlagzeug-Spur.
+//! Song templates: a whole piece made of sections (intro, build-up, break,
+//! climax, outro …) and roles (pad, arpeggio, bass, lead, kick, hi-hats,
+//! clap, percussion, transitions). One level per section and role: 0 off,
+//! 1 sparse, 2 full. This produces tracks with one clip per section –
+//! each melodic role one track, all drums together one drums track.
 //!
-//! Die Art eines Abschnitts formt ihn: Ein Aufbau wird über seine Länge lauter
-//! und heller (Helligkeit der Noten öffnet den Filter) und endet mit einem
-//! Snare-Wirbel, ein Outro klingt aus. Alles ist deterministisch – dieselbe
-//! Vorlage ergibt dieselben Noten.
+//! The kind of a section shapes it: A build-up gets louder and brighter over
+//! its length (brightness of the notes opens the filter) and ends with a
+//! snare roll, an outro fades out. Everything is deterministic – the same
+//! template produces the same notes.
 
 use crate::rhythm;
 use crate::sound;
@@ -22,7 +22,7 @@ use std::collections::BTreeMap;
 const BEATS_PER_BAR: f64 = 4.0;
 pub const MAX_BARS: u32 = 400;
 
-/// Rolle einer Zeile im Song-Aufbau.
+/// Role of a row in the song structure.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum Role {
@@ -43,7 +43,7 @@ impl Role {
     }
 }
 
-/// Art eines Abschnitts.
+/// Kind of a section.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub enum SectionKind {
@@ -62,19 +62,19 @@ pub struct Layer {
     pub key: String,
     pub name: String,
     pub role: Role,
-    /// Instrument (Standard: Synth für Fläche/Arpeggio/Lead, Bass, Schlagzeug)
+    /// Instrument (default: synth for pad/arpeggio/lead, bass, drums)
     #[serde(default)]
     pub kind: Option<InstrumentKind>,
-    /// Startpunkt im Charakter-Feld
+    /// Starting point in the character field
     #[serde(default)]
     pub sound: Option<String>,
-    /// Verlaufsvorlage (Synth)
+    /// Envelope template (synth)
     #[serde(default)]
     pub verlauf: Option<String>,
-    /// Startpunkt im Raum-Feld
+    /// Starting point in the space field
     #[serde(default)]
     pub raum: Option<String>,
-    /// Lautstärke der Spur in dB
+    /// Volume of the track in dB
     #[serde(default)]
     pub gain_db: f32,
 }
@@ -86,7 +86,7 @@ pub struct Section {
     pub bars: u32,
     #[serde(default)]
     pub kind: SectionKind,
-    /// Stufe je Rolle (Schlüssel der Zeile): 0 aus, 1 sparsam, 2 voll
+    /// Level per role (key of the row): 0 off, 1 sparse, 2 full
     #[serde(default)]
     pub levels: BTreeMap<String, u8>,
 }
@@ -94,23 +94,23 @@ pub struct Section {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SongPlan {
-    /// Kennung der Vorlage, aus der der Plan stammt
+    /// Identifier of the template the plan comes from
     #[serde(default)]
     pub template: String,
     pub name: String,
     #[serde(default)]
     pub description: String,
     pub tempo: f64,
-    /// Tonart, z. B. „a-Moll“
+    /// Key, e.g. "a-Moll"
     pub key: String,
-    /// Akkorde (Symbole mit deutschen Tonnamen oder Stufen), reihum
+    /// Chords (symbols with German note names, or scale degrees), in rotation
     pub chords: Vec<String>,
-    /// Takte je Akkord
+    /// Bars per chord
     pub chord_bars: u32,
-    /// Klang des Schlagzeugs (Startpunkt im Charakter-Feld)
+    /// Sound of the drums (starting point in the character field)
     #[serde(default)]
     pub drums: Option<String>,
-    /// Swing der Trommeln in Prozent
+    /// Swing of the drums in percent
     #[serde(default)]
     pub swing: f64,
     pub layers: Vec<Layer>,
@@ -122,7 +122,7 @@ impl SongPlan {
         self.sections.iter().map(|s| s.bars).sum()
     }
 
-    /// Prüft den Plan; liefert Tonart und Akkorde.
+    /// Validates the plan; returns key and chords.
     pub fn check(&self) -> Result<(klang_music::theory::Key, Vec<kh::Chord>), String> {
         let key = kh::parse_key(&self.key).ok_or_else(|| tr!("Key \"{key}\" not understood – e.g. \"A minor\", \"C major\"", key = self.key))?;
         if self.chords.is_empty() {
@@ -162,7 +162,7 @@ impl SongPlan {
     }
 }
 
-// ---------------------------------------------------------------- Vorlagen
+// ---------------------------------------------------------------- Templates
 
 #[allow(clippy::too_many_arguments)]
 fn layer(key: &str, name: &str, role: Role, kind: Option<InstrumentKind>, sound: Option<&str>, verlauf: Option<&str>, raum: Option<&str>, gain_db: f32) -> Layer {
@@ -363,9 +363,9 @@ pub fn template(id: &str) -> Result<SongPlan, String> {
         .ok_or_else(|| tr!("No song template \"{id}\" (available: {list})", id = id, list = all.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().join(", ")))
 }
 
-// ---------------------------------------------------------------- Noten
+// ---------------------------------------------------------------- Notes
 
-/// Lautstärke- und Helligkeitsverlauf eines Abschnitts an Stelle `t` (0…1).
+/// Volume and brightness curve of a section at position `t` (0…1).
 fn shape(kind: SectionKind, t: f64) -> (f64, f32) {
     match kind {
         Aufbau => (0.55 + 0.45 * t, (-0.7 + 1.1 * t) as f32),
@@ -381,7 +381,7 @@ fn vel(v: f64) -> u8 {
     v.round().clamp(1.0, 127.0) as u8
 }
 
-/// Akkordtöne nahe `center`, aufsteigend (Grundton, Terz, Quinte …).
+/// Chord tones near `center`, ascending (root, third, fifth …).
 fn voiced(chord: &kh::Chord, center: i32) -> Vec<u8> {
     let mut out: Vec<u8> = chord
         .pcs()
@@ -413,7 +413,7 @@ fn note(pitch: u8, start: f64, len: f64, velocity: u8, brightness: f32) -> Note 
     Note { pitch, start_beats: start, length_beats: len, velocity, brightness: brightness.clamp(-1.0, 1.0), ..Default::default() }
 }
 
-/// Noten einer melodischen Rolle in einem Abschnitt (relativ zum Abschnittsanfang).
+/// Notes of a melodic role in a section (relative to the start of the section).
 fn melodic(role: Role, level: u8, sec: &Section, first_bar: u32, ctx: &Ctx) -> Vec<Note> {
     let mut out = Vec::new();
     let bars = sec.bars;
@@ -424,7 +424,7 @@ fn melodic(role: Role, level: u8, sec: &Section, first_bar: u32, ctx: &Ctx) -> V
         let at = |beat: f64| shape(sec.kind, (bar0 + beat) / total);
         match role {
             Role::Pad => {
-                // ein Akkord je Akkordwechsel, gehalten; voll mit tiefem Grundton dazu
+                // one chord per chord change, held; full adds a low root
                 let span = ctx.chord_bars.max(1);
                 if (first_bar + b) % span != 0 && b != 0 {
                     continue;
@@ -467,7 +467,7 @@ fn melodic(role: Role, level: u8, sec: &Section, first_bar: u32, ctx: &Ctx) -> V
                     }
                     m as u8
                 };
-                // sparsam: Achtel auf dem „und“; voll: rollende Sechzehntel (der Schlag bleibt der Kick)
+                // sparse: eighths on the "and"; full: rolling sixteenths (the beat stays the kick)
                 let hits: Vec<(f64, f64)> = if level >= 2 {
                     (0..4).flat_map(|q| [0.25, 0.5, 0.75].map(move |o| (q as f64 + o, 0.2))).collect()
                 } else {
@@ -479,7 +479,7 @@ fn melodic(role: Role, level: u8, sec: &Section, first_bar: u32, ctx: &Ctx) -> V
                 }
             }
             Role::Lead => {
-                // Motiv über zwei Takte aus Akkordtönen; sparsam nur jeden zweiten Takt
+                // motif over two bars from chord tones; sparse only every other bar
                 const A: &[(f64, f64, usize)] = &[(0.0, 0.5, 2), (0.75, 0.25, 1), (1.5, 0.5, 2), (2.5, 0.25, 3), (3.0, 0.75, 1)];
                 const B: &[(f64, f64, usize)] = &[(0.0, 0.75, 3), (1.0, 0.25, 2), (1.5, 0.5, 1), (2.0, 1.0, 0), (3.5, 0.5, 1)];
                 let phrase = if (first_bar + b) % 2 == 0 { A } else { B };
@@ -502,7 +502,7 @@ fn melodic(role: Role, level: u8, sec: &Section, first_bar: u32, ctx: &Ctx) -> V
     out
 }
 
-/// Schläge einer Trommel-Rolle als Raster-Zeilen je Takt (Schritte 0–15).
+/// Beats of a drum role as grid rows per bar (steps 0–15).
 fn drum_steps(role: Role, level: u8) -> Vec<(&'static str, Vec<usize>)> {
     let q = vec![0, 4, 8, 12];
     let off = vec![2, 6, 10, 14];
@@ -518,7 +518,7 @@ fn drum_steps(role: Role, level: u8) -> Vec<(&'static str, Vec<usize>)> {
     }
 }
 
-/// Trommeln eines Abschnitts (alle Trommel-Rollen zusammen).
+/// Drums of a section (all drum roles together).
 fn drum_notes(plan: &SongPlan, sec: &Section) -> Vec<Note> {
     let bars = sec.bars;
     let total = bars as f64 * BEATS_PER_BAR;
@@ -544,7 +544,7 @@ fn drum_notes(plan: &SongPlan, sec: &Section) -> Vec<Note> {
             }
         }
     }
-    // Snare-Wirbel am Ende eines Aufbaus: im vorletzten Takt Achtel, im letzten Sechzehntel
+    // Snare roll at the end of a build-up: eighths in the second-to-last bar, sixteenths in the last
     let roll_bars = if fx >= 2 { 4 } else { 2 };
     if fx > 0 && sec.kind == Aufbau && bars >= 2 {
         let e = grid.rows.entry("snare".to_string()).or_default();
@@ -564,23 +564,23 @@ fn drum_notes(plan: &SongPlan, sec: &Section) -> Vec<Note> {
         v.dedup();
     }
     let mut notes = rhythm::grid_notes(&grid, plan.swing);
-    // Becken zum Abschnittsbeginn (außer im Intro)
+    // Cymbal at the start of a section (except in the intro)
     if fx > 0 && sec.kind != Intro {
         notes.push(note(drums::CRASH, 0.0, 0.5, 104, 0.0));
     }
-    // Verlauf des Abschnitts: Aufbau wird lauter (der Wirbel besonders), Outro leiser
+    // Progression of the section: build-up gets louder (the roll especially), outro quieter
     for n in notes.iter_mut() {
         let (d, _) = shape(sec.kind, n.start_beats / total);
         let roll = n.pitch == drums::SNARE && sec.kind == Aufbau && n.start_beats >= total - roll_bars as f64 * BEATS_PER_BAR;
         if roll && fx > 0 {
-            // Wirbel: von leise bis kräftig, gleichmäßig über seine Länge
+            // Roll: from quiet to strong, evenly over its length
             let r = (n.start_beats - (total - roll_bars as f64 * BEATS_PER_BAR)) / (roll_bars as f64 * BEATS_PER_BAR);
             n.velocity = vel(40.0 + 80.0 * r);
         } else {
             n.velocity = vel(n.velocity as f64 * d.max(0.3));
         }
     }
-    // volle Kick: etwas mehr Druck
+    // full kick: a bit more punch
     if kick_level >= 2 {
         for n in notes.iter_mut().filter(|n| n.pitch == drums::KICK) {
             n.velocity = n.velocity.saturating_add(8).min(127);
@@ -590,12 +590,12 @@ fn drum_notes(plan: &SongPlan, sec: &Section) -> Vec<Note> {
     notes
 }
 
-/// Eine erzeugte Spur.
+/// A generated track.
 pub struct GenTrack {
     pub name: String,
     pub instrument: Instrument,
     pub gain_db: f32,
-    /// (Name, Anfang in Schlägen, Länge, Noten)
+    /// (name, start in beats, length, notes)
     pub clips: Vec<(String, f64, f64, Vec<Note>)>,
 }
 
@@ -623,7 +623,7 @@ fn layer_instrument(l: &Layer) -> Instrument {
     inst
 }
 
-/// Alle Spuren eines Plans.
+/// All tracks of a plan.
 pub fn generate(plan: &SongPlan) -> Result<Vec<GenTrack>, String> {
     let (_, chords) = plan.check()?;
     let ctx = Ctx { chords: &chords, chord_bars: plan.chord_bars.max(1) };
@@ -647,7 +647,7 @@ pub fn generate(plan: &SongPlan) -> Result<Vec<GenTrack>, String> {
             out.push(GenTrack { name: l.name.clone(), instrument: layer_instrument(l), gain_db: l.gain_db, clips });
         }
     }
-    // alle Trommeln in eine Spur
+    // all drums into one track
     let mut drum_clips = Vec::new();
     for (sec, &first) in plan.sections.iter().zip(&starts) {
         let any = plan.layers.iter().any(|l| l.role.is_drum() && sec.levels.get(&l.key).copied().unwrap_or(0) > 0);
@@ -669,22 +669,22 @@ pub fn generate(plan: &SongPlan) -> Result<Vec<GenTrack>, String> {
     Ok(out)
 }
 
-// ---------------------------------------------------------------- im Projekt
+// ---------------------------------------------------------------- in the project
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SongWritten {
     pub snapshot: Snapshot,
     pub track_ids: Vec<Id>,
-    /// ersetzte (zuletzt erzeugte) Spuren
+    /// replaced (most recently generated) tracks
     pub replaced: usize,
     pub bars: u32,
     pub seconds: f64,
 }
 
 impl AppState {
-    /// Schreibt den Song: setzt Tempo und 4/4, ersetzt die zuletzt erzeugten
-    /// Song-Spuren (wenn es sie noch gibt) und legt die neuen an – ein Rückgängig-Schritt.
+    /// Writes the song: sets tempo and 4/4, replaces the most recently generated
+    /// song tracks (if they still exist) and creates the new ones – one undo step.
     pub fn song_write(&self, plan: &SongPlan, replace: bool, label_prefix: &str) -> CmdResult<SongWritten> {
         let tracks = generate(plan)?;
         let previous: Vec<Id> = if replace { lock(&self.song_tracks)?.clone() } else { Vec::new() };
@@ -702,7 +702,7 @@ impl AppState {
                 let mut t = Track::new(id, g.name, TrackKind::Instrument);
                 t.instrument = Some(g.instrument);
                 t.gain_db = g.gain_db;
-                // flache Zeilen: der ganze Song auf einen Blick
+                // flat rows: the whole song at a glance
                 t.view = TrackView::Compact;
                 for (name, start, len, notes) in g.clips {
                     t.clips.push(Clip { id: p.alloc_id(), name, start_beats: start, source: ClipSource::Notes { length_beats: len, notes } });
@@ -724,7 +724,7 @@ impl AppState {
 }
 
 
-/// Stufen eines Abschnitts als Text für den Agenten, z. B. „pad 2 · arp 1 · kick 1“.
+/// Levels of a section as text for the agent, e.g. "pad 2 · arp 1 · kick 1".
 pub fn levels_text(sec: &Section, plan: &SongPlan) -> String {
     plan.layers
         .iter()
@@ -743,7 +743,7 @@ mod tests {
             t.check().unwrap_or_else(|e| panic!("{}: {e}", t.name));
             let tracks = generate(&t).unwrap();
             assert!(tracks.iter().any(|g| g.name == "Beat"), "{}: Schlagzeug", t.name);
-            // jede Spur: Clips im Raster der Abschnitte, alle Noten innerhalb ihres Clips
+            // each track: clips on the grid of the sections, all notes within their clip
             for g in &tracks {
                 for (name, start, len, notes) in &g.clips {
                     assert!(start % 4.0 == 0.0 && *len > 0.0, "{} {name}", g.name);
@@ -765,26 +765,26 @@ mod tests {
         let tracks = generate(&t).unwrap();
         let names: Vec<&str> = tracks.iter().map(|g| g.name.as_str()).collect();
         assert_eq!(names, ["Pad", "Arpeggio", "Bass", "Lead", "Beat"]);
-        // Intro: nur die Fläche, kein Beat
+        // Intro: only the pad, no beat
         let beat = tracks.iter().find(|g| g.name == "Beat").unwrap();
         assert!(beat.clips.iter().all(|c| c.1 >= 16.0 * 4.0), "Beat erst nach dem Intro");
         assert_eq!(tracks[0].clips[0].0, "Intro");
-        // Aufbau endet mit einem Snare-Wirbel, der lauter wird
+        // Build-up ends with a snare roll that gets louder
         let aufbau = beat.clips.iter().find(|c| c.0 == "Build-up").unwrap();
         let roll: Vec<&Note> = aufbau.3.iter().filter(|n| n.pitch == drums::SNARE).collect();
         assert!(roll.len() >= 16 + 8, "Wirbel: {}", roll.len());
         assert!(roll.last().unwrap().velocity > roll.first().unwrap().velocity + 30);
-        // Höhepunkt: Crash zu Beginn, mehr Trommeln als im Thema
+        // Climax: crash at the start, more drums than in the theme
         let hp = beat.clips.iter().find(|c| c.0 == "Peak").unwrap();
         assert!(hp.3.iter().any(|n| n.pitch == drums::CRASH && n.start_beats == 0.0));
         let thema = beat.clips.iter().find(|c| c.0 == "Subject").unwrap();
         assert!(hp.3.len() > 3 * thema.3.len());
-        // Aufbau: Arpeggio wird heller
+        // Build-up: arpeggio gets brighter
         let arp = tracks.iter().find(|g| g.name == "Arpeggio").unwrap();
         let a = &arp.clips.iter().find(|c| c.0 == "Build-up").unwrap().3;
         assert!(a.last().unwrap().brightness > a.first().unwrap().brightness + 0.6);
-        // Akkorde folgen a – F – C – G mit zwei Takten je Akkord
-        let pad = &tracks[0].clips[1].3; // Thema
+        // Chords follow a – F – C – G with two bars per chord
+        let pad = &tracks[0].clips[1].3; // Theme
         let roots: Vec<u8> = pad.iter().filter(|n| n.start_beats % 8.0 == 0.0).map(|n| n.pitch % 12).collect();
         assert!(roots.contains(&9) && roots.contains(&5), "{roots:?}");
     }

@@ -1,13 +1,13 @@
-// Leistungsmessung der Browser-Version (ui/dist-web in Edge ohne Fenster) –
-// dieselben Abläufe wie tests/perf/desktop.mjs, zum Vergleich der Plattformen.
-// Kein Test mit Grenzwerten, sondern eine Tabelle mit Medianen.
+// Performance measurement of the browser version (ui/dist-web in Edge without a window) –
+// the same flows as tests/perf/desktop.mjs, to compare the platforms.
+// Not a test with limits, but a table of medians.
 //
-//   cd ui && npm run build:web && cd .. && node tests/perf/web.mjs [Durchläufe]
+//   cd ui && npm run build:web && cd .. && node tests/perf/web.mjs [runs]
 import { startWeb } from "../web/harness.mjs";
 
 const runs = Number(process.argv[2] ?? 3);
 const app = await startWeb();
-// Ohne Threads rendert ein ganzer Song im Browser deutlich länger
+// Without threads, a whole song takes noticeably longer to render in the browser
 app.evalTimeout = 600000;
 const result = {};
 
@@ -44,7 +44,7 @@ try {
   await measure("create_demo", `await call("create_demo");`, { prep: `await call("project_new");` });
   await measure("song_write (Trance)", `await call("song_write", { plan, replace: false });`, { prep: `await call("project_new"); const plan = (await call("song_templates"))[0];` });
   await measure("harmony_timeline (Song)", `await call("harmony_timeline", { key: null });`);
-  // Export samt Download (der Kern rendert, die Seite lädt die Datei herunter)
+  // Export including download (the core renders, the page downloads the file)
   await measure("export WAV 16 Bit (Song)", `await call("export_run", { options: { format: "wav", bits: 16, name: "leistung" } });`, { n: Math.min(runs, 3) });
   const width = Math.max(...Object.keys(result).map((k) => k.length));
   console.log(`Browser, Median über ${runs} Durchläufe (ms):`);

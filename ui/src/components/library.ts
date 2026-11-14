@@ -1,6 +1,6 @@
-// Musikbibliothek: Pakete herunterladen und Partituren in die aktive Bibliothek
-// aufnehmen, Bibliotheken verwalten (je ein Index), nach Titel und Melodie
-// suchen, Partitur mit Stimmrollen anzeigen, Stimme als Spur übernehmen.
+// Music library: download packages and add scores to the active library,
+// manage libraries (one index each), search by title and melody,
+// show a score with part roles, take a part over as a track.
 
 import { backend } from "../bridge.js";
 import { chordsInput, chordsText } from "../spelling.js";
@@ -16,32 +16,32 @@ import type { CatalogEntry, LibEntry, LibHit, LibraryInfo, OwnScore, PlayInfo, S
 /** Browser version: the library is a package on a server plus own scores (no downloads, no library management). */
 const WEB = backend.platform === "web";
 
-/** Zustand bleibt erhalten, auch wenn der Tab gewechselt wird. */
+/** State is kept even when the tab is switched. */
 const state = {
   info: signal<LibraryInfo | null>(null),
   hits: signal<LibHit[]>([]),
   score: signal<ScoreView | null>(null),
-  /** Gewählte Stimmen (Indizes, nie leer bei offener Partitur): Klick wählt eine, Strg+Klick mehrere. */
+  /** Selected parts (indices, never empty when a score is open): click selects one, Ctrl+click several. */
   voices: signal<number[]>([]),
-  /** Markiertes Zeitfenster (Viertel) in der Partitur. */
+  /** Marked time window (quarters) in the score. */
   window: signal<[number, number] | null>(null),
-  /** Ab hier wird vorgespielt (Viertel); Klick in die Notenrolle setzt ihn. */
+  /** Preview plays from here (quarters); a click in the note roll sets it. */
   cursor: signal(0),
-  /** Gewähltes Tempo (Viertel je Minute) für Anhören und Übernehmen; null = das der Partitur. */
+  /** Selected tempo (quarters per minute) for listening and importing; null = that of the score. */
   tempo: signal<number | null>(null),
   text: "",
   melody: "",
 };
 
-/** Vorsing-Aufnahme (bleibt erhalten, falls das Fenster neu aufgebaut wird). */
+/** Sing-in recording (kept if the window is rebuilt). */
 const listen = { active: false, since: 0 };
-/** Danach wird automatisch gestoppt (das Backend wertet höchstens 45 s aus). */
+/** Stops automatically afterwards (the backend evaluates at most 45 s). */
 const LISTEN_MAX_SECS = 40;
 
-/** Bibliotheksfenster, das gezogene Dateien annimmt. */
+/** Library window that accepts dropped files. */
 let dropTarget: HTMLElement | null = null;
 
-/** Nimmt die Bibliothek gerade gezogene Dateien an (Fenster offen und sichtbar)? */
+/** Does the library currently accept dropped files (window open and visible)? */
 export function libraryTakesDrops(): boolean {
   return !!dropTarget && dropTarget.isConnected && !!dropTarget.offsetParent;
 }
@@ -84,8 +84,8 @@ function sourceText(x: { origin?: string; collection?: string; license?: string 
 }
 
 let listening = false;
-/** Beim Programmstart aufrufen: hört auf Bibliotheksänderungen – unabhängig davon, ob
- *  das Fenster „Bibliothek“ offen ist. Welche Bibliothek aktiv ist, merkt sich das Programm. */
+/** Call at program start: listens for library changes – regardless of whether
+ *  the "Library" window is open. The program remembers which library is active. */
 export function initLibrary(): void {
   ensureListening();
 }
@@ -100,13 +100,13 @@ function ensureListening(): void {
     waitShown = Date.now();
     notify(t("The score library server limits requests – continuing in {n} s…", { n: seconds }));
   });
-  // MusicXML-Dateien aufs Fenster ziehen: bei offener Bibliothek in den Index aufnehmen.
+  // Drag MusicXML files onto the window: with the library open, add them to the index.
   backend.onFileDrop((paths) => {
     const panel = dropTarget;
     if (!panel || !panel.isConnected || !panel.offsetParent) return;
     const scores = paths.filter((p) => /.(mxl|musicxml|xml)$/i.test(p) || !/.[a-z0-9]{1,8}$/i.test(p));
     if (!scores.length) {
-      if (paths.some(isAudioPath)) return; // Audiodateien werden Spuren (filedrop.ts)
+      if (paths.some(isAudioPath)) return; // Audio files become tracks (filedrop.ts)
       notify(t("Only MusicXML files (.mxl, .musicxml, .xml) or folders can be added to the library."), "error");
       return;
     }
@@ -116,11 +116,11 @@ function ensureListening(): void {
     .libraryInfo()
     .then((i) => (state.info.value = i))
     .catch(() => {});
-  // Früher merkte sich die Oberfläche den Pfad der Bibliothek – jetzt das Programm.
+  // The UI used to remember the library path – now the program does.
   try {
     localStorage.removeItem("klangwelt.bibliothek.pfad");
   } catch {
-    /* ohne Speicher eben nicht */
+    /* not without storage */
   }
 }
 
@@ -138,11 +138,11 @@ const mb = (bytes: number) => `${(bytes / 1e6).toLocaleString(language(), { maxi
 /** Size of small files, too (kB below 1 MB). */
 const size = (bytes: number) => (bytes >= 1e6 ? mb(bytes) : `${Math.max(1, Math.round(bytes / 1e3)).toLocaleString(language())} kB`);
 
-/** Katalog herunterladbarer Bibliotheken: je Sammlung ein aufklappbares Panel
- *  mit Karten (Größe, Format, Lizenz, Zielordner). */
+/** Catalog of downloadable libraries: one collapsible panel per collection
+ *  with cards (size, format, license, target folder). */
 function catalogView(onClose: () => void): { el: HTMLElement; refresh(): void; sync(info: LibraryInfo | null): void } {
   const panels = h("div", { class: "lib-panels" });
-  /** Knöpfe der Karten nach dem Stand (lädt gerade, wartet, Einreihen). */
+  /** Buttons of the cards according to the state (loading, waiting, enqueue). */
   let syncs: ((info: LibraryInfo | null) => void)[] = [];
   let lastInfo: LibraryInfo | null = null;
   const el = h(
@@ -161,18 +161,18 @@ function catalogView(onClose: () => void): { el: HTMLElement; refresh(): void; s
     const folder = h("input", { class: "lib-input mono small", value: c.folder, title: t("Folder for the scores – can be changed") });
     folder.addEventListener("keydown", (e) => e.stopPropagation());
     const isPdmx = c.group === "pdmx";
-    /** Platz in der Warteschlange (für die aktive Bibliothek), -1 = wartet nicht. */
+    /** Position in the queue (for the active library), -1 = not waiting. */
     const queuePos = (info: LibraryInfo | null) => (info?.queue ?? []).findIndex((q) => q.id === c.id && q.library === info?.id);
     const go = () => {
       if (c.inLibrary) return;
       const info = state.info.peek();
-      // Wartet schon: Klick nimmt es wieder heraus.
+      // Already waiting: a click takes it out again.
       if (queuePos(info) >= 0) {
         backend.libraryDequeue(c.id, info?.id ?? null).then((i) => (state.info.value = i)).catch((e) => notify(errorText(e), "error"));
         return;
       }
       const f = folder.value.trim();
-      // Große Pakete: erst nachfragen (zweiter Klick startet).
+      // Large packages: ask first (second click starts).
       if (!c.installed && c.downloadMb >= 1000 && !confirmArmed) {
         confirmArmed = true;
         goBtn.classList.add("warn");
@@ -204,7 +204,7 @@ function catalogView(onClose: () => void): { el: HTMLElement; refresh(): void; s
         ? [t("Import"), t("The scores are already in the folder – just add them to the active library"), "book"]
         : [t("Download"), t("Download and add to the active library"), "download"];
     const goBtn = h("button", { class: `btn small ${c.inLibrary || c.installed ? "" : "blue"}`, title: tip, disabled: !!c.inLibrary, onclick: go }, icon(ico), label);
-    // Läuft gerade ein Auftrag, wird das Paket eingereiht statt gestartet.
+    // If a job is running, the package is enqueued instead of started.
     let shown = "";
     const sync = (info: LibraryInfo | null) => {
       if (c.inLibrary || confirmArmed) return;
@@ -294,8 +294,8 @@ function catalogView(onClose: () => void): { el: HTMLElement; refresh(): void; s
   return { el, refresh, sync };
 }
 
-/** Bibliotheken verwalten: Liste (Name, Partituren, Pakete), wechseln, neu
- *  anlegen, umbenennen, löschen (nur den Index, nie Partituren). */
+/** Manage libraries: list (name, scores, packages), switch, create,
+ *  rename, delete (only the index, never scores). */
 function manageView(onClose: () => void): { el: HTMLElement; refresh(): void } {
   const list = h("div", { class: "lib-libs" });
   const newName = h("input", { class: "lib-input", placeholder: t("Name of the new library") });
@@ -309,7 +309,7 @@ function manageView(onClose: () => void): { el: HTMLElement; refresh(): void } {
       .libraryCreate(name)
       .then((libs) => {
         newName.value = "";
-        // neu angelegt = gleich aktiv (sie soll ja gefüllt werden)
+        // newly created = active right away (it is meant to be filled)
         const made = libs.find((l) => l.name === name);
         return made ? backend.librarySwitch(made.id) : libs;
       })
@@ -484,7 +484,7 @@ function webLibraryView(onClose: () => void): { el: HTMLElement; refresh(): void
   return { el, refresh };
 }
 
-/** Auf- und zugeklappte Panels merken (nur Bequemlichkeit, darf fehlen). */
+/** Remember expanded and collapsed panels (convenience only, may be missing). */
 const PANEL_KEY = "klangwelt.bibliothek.panels";
 function panelState(): Record<string, boolean> {
   try {
@@ -494,36 +494,36 @@ function panelState(): Record<string, boolean> {
   }
 }
 function panelOpen(id: string): boolean {
-  // Standard: die kuratierten Sammlungen offen, PDMX zu (lang und gemischt)
+  // Default: the curated collections open, PDMX closed (long and mixed)
   return panelState()[id] ?? id !== "pdmx";
 }
 function setPanelOpen(id: string, open: boolean) {
   try {
     localStorage.setItem(PANEL_KEY, JSON.stringify({ ...panelState(), [id]: open }));
   } catch {
-    /* ohne Speicher eben nicht */
+    /* not without storage */
   }
 }
 
 const VOICE_COLORS = ["#ffb454", "#6ee7d8", "#a78bfa", "#f472b6", "#60a5fa", "#4ade80", "#fb923c", "#facc15"];
 
-/** Anfangsauswahl einer Partitur: die Treffer-Stimme, ohne Treffer alle Stimmen. */
+/** Initial selection for a score: the part of the match, all parts if there is no match. */
 function defaultVoices(s: ScoreView): number[] {
   const hit = s.voices.findIndex((v) => v.isHit);
   return hit >= 0 ? [hit] : s.voices.map((_, i) => i);
 }
 
-/** Partitur zeigen und die Stimmenauswahl zurücksetzen. */
+/** Show a score and reset the part selection. */
 function showScore(s: ScoreView): void {
   state.voices.value = defaultVoices(s);
-  // Cursor an die Fundstelle (bzw. den Anfang), Tempo wieder wie in der Partitur
+  // Cursor to the match location (or the start), tempo back to that of the score
   const hit = s.voices.find((v) => v.highlight)?.highlight ?? s.range ?? null;
   if (s.doc !== state.score.peek()?.doc) state.tempo.value = null;
   state.cursor.value = hit ? hit[0] : 0;
   state.score.value = s;
 }
 
-/** Tempo der Partitur (Viertel je Minute) – wie im Backend: ohne brauchbare Angabe 90. */
+/** Tempo of the score (quarters per minute) – as in the backend: 90 without a usable value. */
 const scoreTempo = (s: ScoreView) => (s.tempoBpm && s.tempoBpm >= 30 && s.tempoBpm <= 240 ? s.tempoBpm : 90);
 const TEMPO_MIN = 10;
 const TEMPO_MAX = 400;
@@ -531,18 +531,18 @@ const TEMPO_MAX = 400;
 const voicePairs = (s: ScoreView, idx: number[]): Array<[string, string]> =>
   idx.map((i) => s.voices[i]).filter((v): v is ScoreView["voices"][number] => !!v).map((v) => [v.part, v.label]);
 
-/** Viertel je Takt der Partitur. */
+/** Quarters per bar of the score. */
 const barQuarters = (s: ScoreView) => (s.timeSignature ? (s.timeSignature[0] * 4) / s.timeSignature[1] : 4) || 4;
 const barLabel = (s: ScoreView, [a, b]: [number, number]) =>
   t("Bars {from}–{to}", { from: Math.floor(a / barQuarters(s)) + 1, to: Math.ceil(b / barQuarters(s) - 1e-6) });
 
-/** Sichtbarer Ausschnitt der Notenrolle: Pixel je Viertel und linker Rand (Inhaltspixel). */
+/** Visible section of the note roll: pixels per quarter and left margin (content pixels). */
 interface RollView {
   qw: number;
   ox: number;
 }
 
-/** Zeitleiste über der Notenrolle: Taktzahlen, Zählzeiten, markiertes Zeitfenster. */
+/** Timeline above the note roll: bar numbers, counts, marked time window. */
 function drawRuler(canvas: HTMLCanvasElement, s: ScoreView, view: RollView, win: [number, number] | null): void {
   const { ctx, w, h: hh } = fitCanvas(canvas);
   const { qw, ox } = view;
@@ -559,7 +559,7 @@ function drawRuler(canvas: HTMLCanvasElement, s: ScoreView, view: RollView, win:
     ctx.fillRect(x0, 0, x1 - x0, 3);
   }
   const bq = barQuarters(s);
-  // Taktzahlen mindestens ~40 px auseinander
+  // Bar numbers at least ~40 px apart
   const step = [1, 2, 4, 8, 16, 32, 64].find((n) => n * bq * qw >= 40) ?? 128;
   const first = Math.max(0, Math.floor(ox / qw / bq));
   const last = Math.ceil((ox + w) / qw / bq);
@@ -588,11 +588,11 @@ function drawScore(canvas: HTMLCanvasElement, s: ScoreView, selected: number[], 
   const lo = Math.min(...all) - 2;
   const hi = Math.max(...all) + 2;
   const { qw, ox } = view;
-  // nur der sichtbare Ausschnitt: alles um den linken Rand verschoben
+  // only the visible section: everything shifted by the left margin
   ctx.save();
   ctx.translate(-ox, 0);
   const lane = (hh - 16) / (hi - lo + 1);
-  // Richtung wie in der Notenansicht (Einstellung „Tonachse“)
+  // Direction as in the note view (setting "Pitch axis")
   const up = highOnTop.peek();
   const y = (m: number) => 8 + (up ? hi - m : m - lo) * lane;
   const q0 = ox / qw;
@@ -626,7 +626,7 @@ function drawScore(canvas: HTMLCanvasElement, s: ScoreView, selected: number[], 
   });
   ctx.globalAlpha = 1;
   if (s.range) {
-    // Stelle aus dem Quintenzirkel (Akkordwechsel): Rahmen über alle Stimmen
+    // Location from the circle of fifths (chord change): frame across all parts
     const [a, b] = s.range;
     ctx.fillStyle = "rgba(110, 231, 216, 0.10)";
     ctx.fillRect(a * qw, 0, (b - a) * qw, hh);
@@ -641,7 +641,7 @@ function drawScore(canvas: HTMLCanvasElement, s: ScoreView, selected: number[], 
   }
   ctx.restore();
   if (win) {
-    // markiertes Zeitfenster: nur das wird übernommen bzw. vorgespielt
+    // marked time window: only that is imported or previewed
     const [a, b] = win;
     const x0 = a * qw - ox;
     const x1 = b * qw - ox;
@@ -666,12 +666,12 @@ function drawScore(canvas: HTMLCanvasElement, s: ScoreView, selected: number[], 
 export function libraryPanel(): { el: HTMLElement; update(): void } {
   ensureListening();
 
-  // Aktive Bibliothek: Name, Stand, Fortschritt
+  // Active library: name, state, progress
   const libName = h("button", { class: "btn small ghost lib-name", title: t("Manage libraries: switch, create, rename, delete") }, icon("book"), h("b", {}, "…"));
   const status = h("div", { class: "lib-status" });
   const progress = h("div", { class: "lib-progress" }, h("i"));
 
-  // Hinzufügen: Dateien oder Ordner in die aktive Bibliothek (auch per Ziehen aufs Fenster)
+  // Add: files or folders to the active library (also by dragging onto the window)
   const addInput = h("input", { class: "lib-input mono", placeholder: t("Path to a MusicXML/MXL file or a folder – separate several with ;") });
   const addBox = h("div", { class: "lib-addbox" }) as HTMLDivElement;
   const doAdd = () => {
@@ -710,7 +710,7 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
   }, icon("plus"), t("Add"));
   setAddBox(false);
 
-  // Bibliotheken verwalten (Panel an Stelle der Suche, wie der Katalog)
+  // Manage libraries (panel in place of the search, like the catalog)
   const manage = WEB ? webLibraryView(() => setManage(false)) : manageView(() => setManage(false));
   ownChanged = () => {
     if (!manage.el.hidden) manage.refresh();
@@ -727,7 +727,7 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
   libName.addEventListener("click", () => setManage(!!manage.el.hidden));
   setManage(false);
 
-  // Suche
+  // Search
   const text = h("input", { class: "lib-input", placeholder: t("Title, composer, instrument…"), value: state.text });
   const melody = h("input", { class: "lib-input mono", placeholder: t("Melody: C4 D4 E4 F4 G4 (F♯ or F#, B♭ or Bb …) or 60 62 64 – duration e.g. G4:2"), value: state.melody });
   for (const i of [text, melody]) {
@@ -761,9 +761,9 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
 
   const results = h("div", { class: "lib-results" });
   const detail = h("div", { class: "lib-detail" });
-  // Notenrolle mit Zeitleiste: eine breite Inhaltsfläche sorgt für den Bildlauf,
-  // Zeitleiste und Rolle bleiben als sichtbarer Ausschnitt stehen (position: sticky)
-  // und zeichnen nur, was zu sehen ist – auch sehr lange Stücke in jedem Zoom.
+  // Note roll with timeline: a wide content area provides the scrolling,
+  // timeline and roll stay in place as a visible section (position: sticky)
+  // and draw only what can be seen – even very long pieces at any zoom.
   const ruler = h("canvas", { class: "lib-ruler", title: t("Drag: move through time · Click: set cursor · Shift/Ctrl+drag: select a time range · Ctrl+mouse wheel: zoom") });
   const canvas = h("canvas", { class: "lib-roll", title: t("Notes of the selected score – mouse wheel: scroll · Ctrl+mouse wheel: zoom · middle mouse button: drag") });
   const cursorEl = h("div", { class: "lib-cursor", title: t("Playback starts here") });
@@ -771,11 +771,11 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
   headEl.hidden = true;
   const content = h("div", { class: "lib-roll-content" }, ruler, canvas, cursorEl, headEl);
   const scroller = h("div", { class: "lib-roll-wrap" }, content);
-  /** Zoom: Pixel je Viertel (kurze Stücke füllen mindestens die Breite). */
+  /** Zoom: pixels per quarter (short pieces fill at least the width). */
   let zoom = 14;
   const qwOf = (s: ScoreView) => Math.max(zoom, scroller.clientWidth / Math.max(1, s.durationQuarters));
   const view = (s: ScoreView): RollView => ({ qw: qwOf(s), ox: scroller.scrollLeft });
-  /** Neu zeichnen: Breite der Inhaltsfläche, Zeitleiste, Rolle, Cursor. */
+  /** Redraw: width of the content area, timeline, roll, cursor. */
   const redraw = () => {
     const s = state.score.peek();
     if (!s) {
@@ -783,7 +783,7 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
       return;
     }
     content.style.width = `${Math.ceil(qwOf(s) * s.durationQuarters)}px`;
-    // die beiden Leinwände sind so breit wie der sichtbare Bereich
+    // the two canvases are as wide as the visible area
     ruler.style.width = canvas.style.width = `${scroller.clientWidth}px`;
     const v = view(s);
     drawRuler(ruler, s, v, state.window.peek());
@@ -800,7 +800,7 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
     });
   };
   scroller.addEventListener("scroll", queueRedraw);
-  /** Linie an Viertel `q` der Partitur ausrichten. */
+  /** Align the line to quarter `q` of the score. */
   const placeAt = (el: HTMLElement, q: number) => {
     const s = state.score.peek();
     el.style.left = `${s ? q * qwOf(s) : 0}px`;
@@ -814,7 +814,7 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
   new ResizeObserver(() => {
     if (state.score.peek()) redraw();
   }).observe(scroller);
-  // Mausrad: in der Zeit blättern; Strg+Mausrad: Zoom um die Mausposition
+  // Mouse wheel: scroll through time; Ctrl+mouse wheel: zoom around the mouse position
   scroller.addEventListener("wheel", (e) => {
     const s = state.score.peek();
     if (!s) return;
@@ -831,11 +831,11 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
     }
   }, { passive: false });
 
-  // Anhören: der gedrückte Knopf wird zum Stopp-Knopf, solange das Vorhören klingt.
-  // `seen`: die Engine hat es schon gemeldet; `started`: Antwort ist da (Rendern fertig).
+  // Listen: the pressed button becomes the stop button while the preview is sounding.
+  // `seen`: the engine has already reported it; `started`: answer is here (rendering done).
   const libPlay = { which: null as "sel" | null, seen: false, started: 0, info: null as PlayInfo | null, t0: 0, gen: 0 };
   let updatePlay = () => {};
-  /** Aktuelle Abspielposition (Viertel) aus Startzeit und Tempo; null = (noch) nichts. */
+  /** Current playhead position (quarters) from start time and tempo; null = (not yet) anything. */
   const playPos = (): number | null => {
     const i = libPlay.info;
     if (!libPlay.which || !i || !libPlay.t0) return null;
@@ -851,13 +851,13 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
     headEl.hidden = q == null;
     if (q != null) {
       placeAt(headEl, q);
-      // mitrollen, wenn die Linie aus dem Bild läuft
+      // scroll along when the line leaves the view
       const x = headEl.offsetLeft;
       if (x < scroller.scrollLeft || x > scroller.scrollLeft + scroller.clientWidth - 24) scroller.scrollLeft = Math.max(0, x - 40);
     }
     if (libPlay.which) requestAnimationFrame(animate);
   };
-  /** Vorspielen der offenen Partitur ab `from` (Viertel) starten bzw. neu starten. */
+  /** Start or restart previewing the open score from `from` (quarters). */
   let startPlay = (_from: number) => {};
   const stopPlay = () => {
     libPlay.which = null;
@@ -873,7 +873,7 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
       libPlay.seen = true;
       return;
     }
-    // vorbei – oder nie angekommen (z. B. gleich wieder ersetzt)
+    // over – or never arrived (e.g. replaced again right away)
     if (libPlay.seen || (libPlay.started && performance.now() - libPlay.started > 800)) {
       libPlay.which = null;
       libPlay.seen = false;
@@ -884,8 +884,8 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
     }
   });
 
-  // Zeitfenster markieren: in der Notenrolle ziehen (Schlagraster, mit Umschalt ganze Takte),
-  // Kanten lassen sich nachziehen, Klick außerhalb hebt die Markierung auf.
+  // Mark a time window: drag in the note roll (beat grid, with Shift whole bars),
+  // edges can be dragged afterwards, a click outside clears the marking.
   let updateSel = () => {};
   const setWindow = (win: [number, number] | null) => {
     state.window.value = win;
@@ -903,8 +903,8 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
     const edge = win ? (Math.abs(px - win[0] * qw) < 7 ? 0 : Math.abs(px - win[1] * qw) < 7 ? 1 : -1) : -1;
     return { q, raw: px / qw, win, edge };
   };
-  // Zeitleiste: Ziehen wandert in der Zeit, Klick setzt den Cursor,
-  // Umschalt/Strg+Ziehen markiert ein Zeitfenster (wie in den Spuren)
+  // Timeline: dragging moves through time, click sets the cursor,
+  // Shift/Ctrl+drag marks a time window (as in the tracks)
   let pan: { x0: number; left0: number; moved: boolean } | null = null;
   const setCursor = (e: PointerEvent) => {
     const s = state.score.peek()!;
@@ -952,7 +952,7 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
   let drag: { anchor: number; moved: boolean } | null = null;
   canvas.addEventListener("pointerdown", (e) => {
     if (!state.score.peek()) return;
-    // mittlere Maustaste: auch in der Rolle in der Zeit wandern
+    // middle mouse button: also move through time in the roll
     if (e.button === 1) {
       e.preventDefault();
       canvas.setPointerCapture(e.pointerId);
@@ -961,7 +961,7 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
     }
     if (e.button !== 0) return;
     const g = geometry(e);
-    // an einer Kante gepackt: die andere bleibt stehen
+    // grabbed at an edge: the other one stays put
     const anchor = g.win && g.edge >= 0 ? g.win[1 - g.edge]! : g.q;
     drag = { anchor, moved: g.edge >= 0 };
     canvas.setPointerCapture(e.pointerId);
@@ -988,13 +988,13 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
     if (drag && !drag.moved && state.score.peek()) {
       const g = geometry(e);
       if (!g.win || g.raw < g.win[0] || g.raw > g.win[1]) setWindow(null);
-      // Cursor setzen (Schlagraster, mit Umschalt Taktanfang); läuft es gerade, von dort weiter
+      // Set the cursor (beat grid, with Shift bar start); if playing, continue from there
       setCursor(e);
     }
     drag = null;
   });
   effect(() => {
-    highOnTop.value; // neu zeichnen, wenn die Richtung der Tonachse wechselt
+    highOnTop.value; // redraw when the direction of the pitch axis changes
     if (state.score.peek()) redraw();
   });
 
@@ -1006,7 +1006,7 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
     }
   };
 
-  // Herunterladen: Katalog auf- und zuklappen; ohne Bibliothek von selbst offen.
+  // Download: expand and collapse the catalog; open by itself when there is no library.
   let catalogOpen = false;
   let catalogTouched = false;
   const catalog = catalogView(() => {
@@ -1037,7 +1037,7 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
   // the browser has no downloads (the score library is read from the server)
   downloadBtn.hidden = WEB;
 
-  // Warteschlange: beauftragte Pakete, die nach dem laufenden Auftrag drankommen.
+  // Queue: ordered packages that come up after the running job.
   const queueRow = h("div", { class: "lib-queue", hidden: true, "data-help": "lib-warteschlange" });
   const dequeue = (id: string | null, library: string | null) =>
     backend.libraryDequeue(id, library).then((i) => (state.info.value = i)).catch((e) => notify(errorText(e), "error"));
@@ -1074,14 +1074,14 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
     );
   };
 
-  // Stöbern: Baum nach Genre, Komponist, Stimmung … (Blatt öffnet die Partitur)
+  // Browse: tree by genre, composer, mood … (a leaf opens the score)
   const tree = treeView((doc) => {
     backend
       .libraryOpen(doc, null, null)
       .then(showScore)
       .catch((e) => notify(errorText(e), "error"));
   });
-  // Vorsingen: Mikrofon aufnehmen (nicht ins Projekt), Melodie erkennen, suchen
+  // Sing it: record the microphone (not into the project), recognize the melody, search
   const micLabel = h("span", {}, t("Sing it"));
   const micLevel = h("i", { class: "mic-level" });
   const mic = h("button", {
@@ -1104,7 +1104,7 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
       if (!mic.isConnected || !listen.active) return clearInterval(tick);
       const secs = (performance.now() - listen.since) / 1000;
       micLabel.textContent = t("Stop · {secs} s", { secs: Math.floor(secs) });
-      // Pegel des Mikrofons (Spitzenwert seit dem letzten Statusbericht)
+      // Microphone level (peak value since the last status report)
       micLevel.style.width = `${Math.round(Math.min(1, Math.sqrt(engineStatus.peek().peakIn) * 1.4) * 100)}%`;
       if (secs >= LISTEN_MAX_SECS) void stopListen(false);
     }, 120);
@@ -1163,7 +1163,7 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
     try {
       localStorage.setItem(MODE_KEY, m);
     } catch {
-      /* ohne Speicher */
+      /* not without storage */
     }
     for (const b of modeSeg.children) b.classList.toggle("on", (b as HTMLElement).dataset.m === m);
     searchGroup.hidden = m !== "suchen";
@@ -1211,7 +1211,7 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
         frac = dl.bytes / dl.totalBytes;
         status.textContent = info?.message ?? t("{name}: genre & composer… {done} of {total}", { name: dl.name, done: mb(dl.bytes), total: mb(dl.totalBytes) });
       } else if (dl) {
-        // Pakete: Fortschritt nach Partituren; ohne Grenze nach geladenen Bytes.
+        // Packages: progress by scores; without a limit by loaded bytes.
         frac = dl.target ? dl.files / dl.target : dl.bytes / dl.totalBytes;
         status.textContent = info?.message
           ?? (dl.target
@@ -1256,7 +1256,7 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
       progress.style.display = frac != null ? "" : "none";
       cancel.hidden = frac == null || !!info?.loading;
       if (frac != null) (progress.firstElementChild as HTMLElement).style.width = `${Math.max(2, Math.min(100, Math.round(frac * 100)))}%`;
-      // Gewechselt oder gewachsen: Treffer/Partitur gehören ggf. zur alten Bibliothek, Katalog und Liste neu
+      // Changed or grown: match/score may belong to the old library, catalog and list anew
       const sig = `${info?.id ?? ""}|${info?.scores ?? 0}`;
       if (info && sig !== lastSig) {
         const switched = lastSig !== null && lastSig.split("|")[0] !== (info.id ?? "");
@@ -1268,7 +1268,7 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
         if (catalogOpen) catalog.refresh();
         if (!manage.el.hidden) manage.refresh();
       }
-      // Leere Bibliothek: den Katalog von selbst zeigen (bis man ihn schließt).
+      // Empty library: show the catalog by itself (until it is closed).
       if (!WEB && info?.id && !info.loading && !info.scores && !dl && !info.building && merging == null && !info.adding && !catalogOpen && !catalogTouched && manage.el.hidden) setCatalog(true);
 
       const hits = state.hits.value;
@@ -1296,7 +1296,7 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
       if (s !== renderedScore || sel !== renderedVoices) {
         const newScore = s !== renderedScore;
         if (s?.doc !== windowDoc) {
-          // andere Partitur: Markierung gilt nicht mehr
+          // different score: the marking no longer applies
           windowDoc = s?.doc ?? null;
           state.window.value = null;
         }
@@ -1331,9 +1331,9 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
               void act(backend.libraryToTrack(s.doc, voicePairs(s, sel), win, bpm)).then((ok) => ok && notify(msg));
             },
           }, icon("plus"), takeLabel);
-          // Tempo: gewählt oder das der Partitur – gilt fürs Anhören und fürs Übernehmen
+          // Tempo: selected or that of the score – applies to listening and importing
           const tempoNow = () => state.tempo.peek() ?? scoreTempo(s);
-          // Anhören ab dem Cursor bis zum Ende – mit Markierung diese immer wieder –, bis „Stopp“
+          // Listen from the cursor to the end – with a marking, that one over and over –, until "Stop"
           startPlay = (from: number) => {
             const gen = ++libPlay.gen;
             const first = !libPlay.which;
@@ -1355,9 +1355,9 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
                 updatePlay();
               });
           };
-          // Klick spielt die gewählten Stimmen, nochmal Klick (dann „Stopp“) beendet
+          // A click plays the selected parts, another click (then "Stop") ends it
           const toggle = () => (libPlay.which ? stopPlay() : startPlay(state.cursor.peek()));
-          // Tempo ändern: läuft es, an der aktuellen Stelle im neuen Tempo weiter
+          // Change tempo: if playing, continue at the current position in the new tempo
           const setTempo = (bpm: number | null) => {
             state.tempo.value = bpm == null ? null : Math.max(TEMPO_MIN, Math.min(TEMPO_MAX, Math.round(bpm)));
             updateTempo();
@@ -1441,7 +1441,7 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
               : many ? t("one track per voice: {voices}", pickVars) : t("Add \"{voice}\" as a track", pickVars);
           };
           updateSel();
-          // Klick: nur diese Stimme · Strg/Umschalt+Klick: hinzunehmen bzw. abwählen (mindestens eine bleibt)
+          // Click: only this part · Ctrl/Shift+click: add or deselect (at least one remains)
           const pick = (i: number, e: MouseEvent) => {
             const cur = state.voices.peek();
             if (e.ctrlKey || e.metaKey || e.shiftKey) {
@@ -1458,7 +1458,7 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
                 .filter(Boolean).join(" · ")),
             ...(sourceText(s) ? [h("div", { class: "lib-source", title: s.source }, sourceText(s))] : []),
             h("div", { class: "lib-voices", title: t("Click: one voice · Ctrl+click: select several voices") },
-              // Alle Stimmen auf einmal wählen – Anhören und Übernehmen gelten dann für den ganzen Satz
+              // Select all parts at once – listening and importing then apply to the whole setting
               n > 1
                 ? h("button", {
                     class: `btn small lib-allvoices${all ? " on" : ""}`,
@@ -1480,8 +1480,8 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
               take),
             h("div", { class: "lib-selbar" }, play, tempoBox, selInfo, clear),
           );
-          // Läuft gerade die Wiedergabe: andere Stimmen an derselben Stelle weiterspielen,
-          // eine andere Partitur beendet sie
+          // If playback is running: keep playing other parts at the same position,
+          // a different score ends it
           if (libPlay.which) {
             if (newScore) stopPlay();
             else startPlay(playPos() ?? state.cursor.peek());
@@ -1489,7 +1489,7 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
           if (newScore) zoom = 14;
           requestAnimationFrame(() => {
             redraw();
-            // nur bei einer neuen Partitur zur Fundstelle springen, nicht beim Umwählen der Stimmen
+            // jump to the match location only for a new score, not when changing the part selection
             const hl = s.range ?? s.voices.find((v) => v.highlight)?.highlight;
             if (newScore) scroller.scrollLeft = hl ? Math.max(0, hl[0] * qwOf(s) - 40) : 0;
             redraw();
@@ -1500,7 +1500,7 @@ export function libraryPanel(): { el: HTMLElement; update(): void } {
   };
 }
 
-/** Partitur im Bibliotheksfenster öffnen und eine Stelle hervorheben (z. B. ein Beispiel aus dem Quintenzirkel). */
+/** Open a score in the library window and highlight a location (e.g. an example from the circle of fifths). */
 export async function openInLibrary(doc: number, range: [number, number] | null): Promise<void> {
   try {
     showScore(await backend.libraryOpen(doc, null, null, range));
@@ -1510,7 +1510,7 @@ export async function openInLibrary(doc: number, range: [number, number] | null)
   }
 }
 
-/** Melodiesuche von außen (z. B. Fugenthema) – Treffer erscheinen im Fenster „Bibliothek“. */
+/** Melody search from outside (e.g. fugue subject) – matches appear in the "Library" window. */
 export async function searchLibraryFor(q: { trackId: number; clipId: number; text?: string }): Promise<void> {
   try {
     state.hits.value = await backend.librarySearch({ trackId: q.trackId, clipId: q.clipId, text: q.text ?? "" });
@@ -1523,7 +1523,7 @@ export async function searchLibraryFor(q: { trackId: number; clipId: number; tex
   }
 }
 
-/** Signale, auf die der Inspektor reagieren muss. */
+/** Signals the inspector has to react to. */
 export function librarySignals(): void {
   state.info.value;
   state.hits.value;

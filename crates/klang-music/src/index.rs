@@ -1,11 +1,11 @@
-//! Melodie-Index: n-Gramme über Intervall- und Rhythmusmerkmale.
+//! Melody index: n-grams over interval and rhythm features.
 //!
-//! Suche in zwei Stufen:
-//! 1. **Abstimmung**: Jedes n-Gramm der Anfrage stimmt für (Stück, Versatz).
-//!    Drei Genauigkeitsstufen (exakt, nur Intervalle, nur Kontur) machen die
-//!    Suche robust gegen unsauberes Summen.
-//! 2. **Feinbewertung**: Die besten Kandidaten werden per Alignment
-//!    (semi-global, mit Lücken) gegen die Anfrage bewertet.
+//! Search in two stages:
+//! 1. **Voting**: each n-gram of the query votes for (piece, offset).
+//!    Three levels of precision (exact, intervals only, contour only) make the
+//!    search robust against sloppy humming.
+//! 2. **Fine scoring**: the best candidates are scored against the query
+//!    by alignment (semi-global, with gaps).
 
 use crate::facets::ScoreFacets;
 use crate::melody::{features, skyline, Feature, MelodyNote};
@@ -50,12 +50,12 @@ pub(crate) struct Level {
 }
 
 pub(crate) const LEVELS: [Level; 3] = [
-    Level { id: 1, n: 4, weight: 3.0 }, // Intervall + Rhythmus
-    Level { id: 2, n: 4, weight: 2.0 }, // nur Intervall
-    Level { id: 3, n: 6, weight: 1.0 }, // nur Kontur
+    Level { id: 1, n: 4, weight: 3.0 }, // interval + rhythm
+    Level { id: 2, n: 4, weight: 2.0 }, // interval only
+    Level { id: 3, n: 6, weight: 1.0 }, // contour only
 ];
 
-/// n-Gramme, die in sehr vielen Stücken vorkommen (Tonleitern …), tragen kaum Information.
+/// n-grams that occur in very many pieces (scales …) carry hardly any information.
 pub(crate) const MAX_POSTINGS_PER_GRAM: usize = 20_000;
 const MAX_CANDIDATES: usize = 300;
 pub const MIN_QUERY_NOTES: usize = 5;
@@ -65,9 +65,9 @@ pub const MIN_QUERY_NOTES: usize = 5;
 pub struct SearchHit {
     pub doc: u32,
     pub info: DocInfo,
-    /// 0…1, 1 = perfekte Übereinstimmung von Intervallen und Rhythmus.
+    /// 0…1, 1 = perfect match of intervals and rhythm.
     pub score: f32,
-    /// Notenindex in der gefundenen Stimme, an dem der Treffer beginnt.
+    /// Note index in the found voice at which the hit begins.
     pub note_index: usize,
 }
 
@@ -76,16 +76,16 @@ pub struct MelodyIndex {
     docs: Vec<DocInfo>,
     seqs: Vec<Vec<Feature>>,
     postings: HashMap<u64, Vec<Posting>>,
-    /// n-Gramme mit mehr als `MAX_POSTINGS_PER_GRAM` Fundstellen: die Suche
-    /// übergeht sie ohnehin, also werden sie gar nicht erst gespeichert
-    /// (spart bei großen Bibliotheken viel Speicher). Nur beim Aufbau nötig.
+    /// n-grams with more than `MAX_POSTINGS_PER_GRAM` occurrences: the search
+    /// skips them anyway, so they are not stored at all
+    /// (saves a lot of memory for large libraries). Only needed while building.
     stop: std::collections::HashSet<u64>,
-    /// Merkmale je Partitur zum Stöbern (leer bei Indexdateien vor Format 2).
+    /// Features per score for browsing (empty for index files before format 2).
     facets: Vec<ScoreFacets>,
 }
 
 pub(crate) fn gram_key(level: u8, grams: &[Feature]) -> u64 {
-    // FNV-1a, deterministisch über Programmläufe hinweg.
+    // FNV-1a, deterministic across program runs.
     let mut h: u64 = 0xcbf29ce484222325;
     let mut eat = |b: u8| {
         h ^= b as u64;
@@ -124,8 +124,8 @@ fn similarity(a: Feature, b: Feature) -> f32 {
 const MAX_SIM: f32 = 3.0;
 const GAP: f32 = 1.5;
 
-/// Semi-globales Alignment: Anfrage vollständig, Ziel ausschnittsweise.
-/// Liefert (Punkte, Startposition im Ziel).
+/// Semi-global alignment: query in full, target in part.
+/// Returns (score, start position in the target).
 fn align(q: &[Feature], t: &[Feature]) -> (f32, usize) {
     let (m, n) = (q.len(), t.len());
     let mut prev: Vec<(f32, usize)> = (0..=n).map(|j| (0.0, j)).collect();
@@ -143,9 +143,9 @@ fn align(q: &[Feature], t: &[Feature]) -> (f32, usize) {
     prev.into_iter().fold((f32::MIN, 0), |a, b| if b.0 > a.0 { b } else { a })
 }
 
-/// Datenquelle der Melodiesuche – Index im Speicher oder auf der Platte.
+/// Data source of the melody search – index in memory or on disk.
 pub(crate) trait SearchData {
-    /// Fundstellen eines n-Gramms (`None`, wenn unbekannt).
+    /// Occurrences of an n-gram (`None` if unknown).
     fn postings(&self, key: u64) -> Option<Vec<Posting>>;
     fn seq(&self, doc: u32) -> Vec<Feature>;
     fn info(&self, doc: u32) -> DocInfo;
@@ -157,7 +157,7 @@ pub(crate) trait SearchData {
     }
 }
 
-/// Melodiesuche: Abstimmung über n-Gramme, dann Alignment der besten Kandidaten.
+/// Melody search: voting over n-grams, then alignment of the best candidates.
 pub(crate) fn search_in(data: &impl SearchData, query: &[MelodyNote], limit: usize) -> Vec<SearchHit> {
     let q = features(query);
     if q.len() + 1 < MIN_QUERY_NOTES {
@@ -249,7 +249,7 @@ impl MelodyIndex {
         self.docs.get(id as usize)
     }
 
-    /// Anzahl verschiedener Partituren (Quelldateien).
+    /// Number of distinct scores (source files).
     pub fn score_count(&self) -> usize {
         let mut s: Vec<&str> = self.docs.iter().map(|d| d.source.as_str()).collect();
         s.sort_unstable();
@@ -257,7 +257,7 @@ impl MelodyIndex {
         s.len()
     }
 
-    /// Textsuche in Titel, Komponist und Stimme (alle Wörter müssen vorkommen, ohne Groß-/Kleinschreibung).
+    /// Text search in title, composer and voice (all words must occur, case-insensitive).
     pub fn search_text(&self, query: &str, limit: usize) -> Vec<(u32, DocInfo)> {
         let words: Vec<String> = query.split_whitespace().map(|w| w.to_lowercase()).collect();
         self.docs
@@ -272,7 +272,7 @@ impl MelodyIndex {
             .collect()
     }
 
-    /// Nimmt eine Melodielinie auf. Zu kurze Linien werden ignoriert.
+    /// Adds a melody line. Lines that are too short are ignored.
     pub fn add_melody(&mut self, mut info: DocInfo, notes: &[MelodyNote]) -> Option<u32> {
         if notes.len() < 8 {
             return None;
@@ -302,7 +302,7 @@ impl MelodyIndex {
         Some(doc)
     }
 
-    /// Merkmale einer Partitur aufnehmen (`facets.doc` = ihre erste Stimme).
+    /// Adds the features of a score (`facets.doc` = its first voice).
     pub fn add_facets(&mut self, facets: ScoreFacets) {
         self.facets.push(facets);
     }
@@ -319,17 +319,17 @@ impl MelodyIndex {
         self.facets = facets;
     }
 
-    /// Stimmangaben, Merkmalsfolgen und Fundstellen (zum Verschmelzen).
+    /// Voice entries, feature sequences and occurrences (for merging).
     pub(crate) fn parts(&self) -> (&[DocInfo], &[Vec<Feature>], &HashMap<u64, Vec<Posting>>) {
         (&self.docs, &self.seqs, &self.postings)
     }
 
-    /// Ist diese Quelldatei schon im Index?
+    /// Is this source file already in the index?
     pub fn has_source(&self, source: &str) -> bool {
         self.docs.iter().any(|d| d.source == source)
     }
 
-    /// Nach dem Aufbau: Reserveplatz der Listen freigeben (spart rund ein Viertel).
+    /// After building: release the spare capacity of the lists (saves about a quarter).
     pub fn compact(&mut self) {
         for list in self.postings.values_mut() {
             list.shrink_to_fit();
@@ -340,12 +340,12 @@ impl MelodyIndex {
         self.stop = Default::default();
     }
 
-    /// Anzahl gespeicherter Fundstellen (für Statistik und Tests).
+    /// Number of stored occurrences (for statistics and tests).
     pub fn posting_count(&self) -> usize {
         self.postings.values().map(Vec::len).sum()
     }
 
-    /// Nimmt alle Stimmen einer Partitur auf (jeweils deren Oberstimme).
+    /// Adds all voices of a score (in each case its top voice).
     pub fn add_score(&mut self, score: &Score, source: &str) -> usize {
         let mut added = 0;
         for part in &score.parts {
@@ -370,14 +370,14 @@ impl MelodyIndex {
         search_in(self, query, limit)
     }
 
-    // ---------- Speichern / Laden (kompaktes Binärformat) ----------
+    // ---------- Saving / loading (compact binary format) ----------
 
     const MAGIC_V1: &'static [u8; 6] = b"KWIX01";
-    /// Format 2: wie 1, danach die Merkmale je Partitur (JSON).
+    /// Format 2: like 1, followed by the features per score (JSON).
     const MAGIC: &'static [u8; 6] = b"KWIX02";
 
     pub fn save(&self, path: &Path) -> io::Result<()> {
-        // Erst in eine Nebendatei schreiben, dann ersetzen: kein halber Index bei Abbruch.
+        // Write to a side file first, then replace: no half-written index on abort.
         let tmp = path.with_extension("kwix.teil");
         self.write_to(&tmp)?;
         std::fs::rename(&tmp, path)
@@ -499,7 +499,7 @@ mod tests {
     use crate::score::parse_musicxml;
     use crate::score::tests::make_xml;
 
-    /// Kleine Bibliothek aus frei erfundenen Melodien (Achtel = 1).
+    /// Small library of made-up melodies (eighth = 1).
     fn library() -> MelodyIndex {
         let tunes: [(&str, &[(u8, u32)]); 4] = [
             ("Aufstieg", &[(60, 2), (62, 2), (64, 2), (65, 2), (67, 4), (67, 4), (69, 2), (69, 2), (69, 2), (69, 2), (67, 8), (65, 2), (65, 2), (65, 2), (65, 2), (64, 4), (64, 4)]),
@@ -530,7 +530,7 @@ mod tests {
     #[test]
     fn finds_transposed_and_faster_excerpt() {
         let idx = library();
-        // Ausschnitt aus „Bogen“, eine Quarte höher und 1,7× so schnell gesummt.
+        // Excerpt from "Bogen", a fourth higher and hummed 1.7× as fast.
         let q = hum(&[(1.0, 69), (1.0, 67), (2.0, 64), (1.0, 65), (1.0, 67), (2.0, 69), (1.0, 67)], 0.3, 5);
         let hits = idx.search(&q, 3);
         assert_eq!(hits[0].info.title, "Bogen", "{hits:?}");
@@ -540,7 +540,7 @@ mod tests {
     #[test]
     fn tolerates_a_wrong_note() {
         let idx = library();
-        // „Wiegen“ mit einem falschen Ton (63 statt 62) und ungenauem Rhythmus.
+        // "Wiegen" with a wrong note (63 instead of 62) and imprecise rhythm.
         let q = hum(
             &[
                 (1.5, 64), (0.5, 65), (1.0, 64), (1.0, 63), (1.6, 60), (0.4, 62),
@@ -558,12 +558,12 @@ mod tests {
     #[test]
     fn overly_common_grams_are_not_stored_and_search_still_works() {
         let mut idx = library();
-        // Eine Stimme aus lauter gleichen Vierteln: ihre n-Gramme kämen über 20 000-mal vor.
+        // A voice made of nothing but identical quarters: its n-grams would occur over 20,000 times.
         let drone: Vec<MelodyNote> = (0..20_010).map(|i| MelodyNote { onset: i as f64, duration: 1.0, midi: 60 }).collect();
         let before = idx.posting_count();
         idx.add_melody(DocInfo { title: "Bordun".into(), ..Default::default() }, &drone);
         idx.compact();
-        // Alle drei Ebenen dieser Stimme kippen in die Stoppliste – fast nichts kommt hinzu.
+        // All three levels of this voice tip into the stop list – hardly anything is added.
         assert!(idx.posting_count() < before + 3 * MAX_POSTINGS_PER_GRAM, "{} → {}", before, idx.posting_count());
         let q = hum(&[(1.0, 69), (1.0, 67), (2.0, 64), (1.0, 65), (1.0, 67), (2.0, 69), (1.0, 67)], 0.5, 0);
         assert_eq!(idx.search(&q, 1)[0].info.title, "Bogen");

@@ -1,14 +1,14 @@
-//! Harmonik für Quintenzirkel und Agent: Akkorde benennen (deutsche Tonnamen,
-//! Stufen, Funktionstheorie), Fortsetzungen vorschlagen, Kadenzvorlagen,
-//! Akkorde in Noten erkennen und vierstimmig setzen (Stimmführung wie im
-//! Choralsatz: kurze Wege, keine Quint- und Oktavparallelen, Leitton und
-//! Septime lösen sich auf).
+//! Harmony for the circle of fifths and agent: naming chords (German note names,
+//! scale degrees, functional theory), suggesting continuations, cadence templates,
+//! detecting chords in notes and setting them in four parts (voice leading as in
+//! the chorale setting: short paths, no parallel fifths or octaves, leading tone and
+//! seventh resolve).
 
 use crate::theory::Key;
 use klang_i18n::{tk, tr};
 use serde::{Deserialize, Serialize};
 
-// ------------------------------------------------------------------ Akkorde
+// ------------------------------------------------------------------ Chords
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,7 +30,7 @@ use Quality::*;
 impl Quality {
     pub const ALL: [Quality; 10] = [Major, Minor, Dim, Aug, Dom7, Maj7, Min7, HalfDim7, Dim7, Sus4];
 
-    /// Intervalle über dem Grundton in Halbtönen (Grundton, Terz, Quinte, Septime).
+    /// Intervals above the root in semitones (root, third, fifth, seventh).
     pub fn intervals(self) -> &'static [u8] {
         match self {
             Major => &[0, 4, 7],
@@ -50,12 +50,12 @@ impl Quality {
         matches!(self, Dom7 | Maj7 | Min7 | HalfDim7 | Dim7)
     }
 
-    /// Kleine Terz über dem Grundton – Name klein geschrieben, Stufe klein.
+    /// Minor third above the root – name in lowercase, degree in lowercase.
     pub fn minor_third(self) -> bool {
         matches!(self, Minor | Dim | Min7 | HalfDim7 | Dim7)
     }
 
-    /// Der Dreiklang ohne Septime.
+    /// The triad without the seventh.
     pub fn triad(self) -> Quality {
         match self {
             Dom7 | Maj7 => Major,
@@ -82,10 +82,10 @@ impl Quality {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Chord {
-    /// Grundton als Tonhöhenklasse (0 = C).
+    /// Root as a pitch class (0 = C).
     pub root: u8,
     pub quality: Quality,
-    /// Basston (Tonhöhenklasse), wenn nicht der Grundton – also eine Umkehrung.
+    /// Bass note (pitch class) if not the root – i.e. an inversion.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bass: Option<u8>,
 }
@@ -95,7 +95,7 @@ impl Chord {
         Self { root: root % 12, quality, bass: None }
     }
 
-    /// Tonhöhenklassen der Akkordtöne (Grundton zuerst).
+    /// Pitch classes of the chord tones (root first).
     pub fn pcs(&self) -> Vec<u8> {
         self.quality.intervals().iter().map(|i| (self.root + i) % 12).collect()
     }
@@ -104,20 +104,20 @@ impl Chord {
         self.bass.unwrap_or(self.root)
     }
 
-    /// 0 = Grundstellung, 1 = Terz im Bass, 2 = Quinte, 3 = Septime.
+    /// 0 = root position, 1 = third in the bass, 2 = fifth, 3 = seventh.
     pub fn inversion(&self) -> usize {
         let b = (self.bass_pc() + 12 - self.root) % 12;
         self.quality.intervals().iter().position(|&i| i == b).unwrap_or(0)
     }
 
-    /// Derselbe Akkord mit dem n-ten Akkordton im Bass (0 = Grundton).
+    /// The same chord with the n-th chord tone in the bass (0 = root).
     pub fn inverted(mut self, n: usize) -> Self {
         let iv = self.quality.intervals();
         self.bass = if n == 0 || n >= iv.len() { None } else { Some((self.root + iv[n]) % 12) };
         self
     }
 
-    /// Bass auf einen Akkordton setzen; ein fremder Ton bleibt unbeachtet.
+    /// Sets the bass to a chord tone; a foreign note is ignored.
     fn normalized(mut self) -> Self {
         self.root %= 12;
         if let Some(b) = self.bass {
@@ -130,23 +130,23 @@ impl Chord {
         self
     }
 
-    /// Gleicher Platz im Quintenzirkel (Grundton und Dreiklang gleich).
+    /// Same place in the circle of fifths (same root and triad).
     pub fn same_harmony(&self, o: &Chord) -> bool {
         self.root == o.root && self.quality.triad() == o.quality.triad()
     }
 }
 
-// ------------------------------------------------------------------ Schreibweise
+// ------------------------------------------------------------------ Spelling
 
 const LETTERS: [&str; 7] = ["C", "D", "E", "F", "G", "A", "H"];
 const NATURAL: [u8; 7] = [0, 2, 4, 5, 7, 9, 11];
 const SHARP_NAMES: [&str; 12] = ["C", "Cis", "D", "Dis", "E", "F", "Fis", "G", "Gis", "A", "B", "H"];
 const MAJOR_STEPS: [u8; 7] = [0, 2, 4, 5, 7, 9, 11];
 const MINOR_STEPS: [u8; 7] = [0, 2, 3, 5, 7, 8, 10];
-/// Harmonisches und natürliches Moll zusammen (wie in `theory`).
+/// Harmonic and natural minor together (as in `theory`).
 const MINOR_SET: [u8; 8] = [0, 2, 3, 5, 7, 8, 10, 11];
 
-/// Deutscher Tonname einer Tonhöhenklasse auf einer Stammtonstufe (0 = C … 6 = H).
+/// German note name of a pitch class on a natural-note degree (0 = C … 6 = H).
 fn spell(pc: u8, letter: usize) -> String {
     let letter = letter % 7;
     let alt = (pc as i32 - NATURAL[letter] as i32 + 18).rem_euclid(12) - 6;
@@ -171,14 +171,14 @@ fn spell(pc: u8, letter: usize) -> String {
     }
 }
 
-/// Stammtonstufe des Grundtons einer Tonart (wie in `Key::name_de`).
+/// Natural-note degree of the root of a key (as in `Key::name_de`).
 fn tonic_letter(key: &Key) -> usize {
     const MAJ: [usize; 12] = [0, 1, 1, 2, 2, 3, 3, 4, 5, 5, 6, 6];
     const MIN: [usize; 12] = [0, 0, 1, 2, 2, 3, 3, 4, 4, 5, 6, 6];
     if key.minor { MIN[key.tonic as usize % 12] } else { MAJ[key.tonic as usize % 12] }
 }
 
-/// Halbtöne über dem Grundton → (Stufe 0…6, Alteration gegenüber der Tonleiter).
+/// Semitones above the root → (degree 0…6, alteration relative to the scale).
 fn degree_of(offset: u8, minor: bool) -> (usize, i8) {
     const MAJ: [(usize, i8); 12] = [(0, 0), (1, -1), (1, 0), (2, -1), (2, 0), (3, 0), (3, 1), (4, 0), (5, -1), (5, 0), (6, -1), (6, 0)];
     const MIN: [(usize, i8); 12] = [(0, 0), (1, -1), (1, 0), (2, 0), (2, 1), (3, 0), (3, 1), (4, 0), (5, 0), (5, 1), (6, 0), (6, 1)];
@@ -193,8 +193,8 @@ fn key_with(tonic: u8, minor: bool) -> Key {
     Key { tonic: tonic % 12, minor, confidence: 1.0 }
 }
 
-/// Akkordsymbol mit deutschen Tonnamen: Dur groß („G7“, „Es“), Moll und
-/// vermindert klein („a“, „fis7“, „h°“), Umkehrung mit Basston („C/E“).
+/// Chord symbol with German note names: major uppercase ("G7", "Es"), minor and
+/// diminished lowercase ("a", "fis7", "h°"), inversion with bass note ("C/E").
 pub fn chord_name(ch: &Chord, key: &Key) -> String {
     let (deg, _) = degree_of(offset(ch.root, key), key.minor);
     let letter = tonic_letter(key) + deg;
@@ -221,7 +221,7 @@ pub fn is_diatonic(ch: &Chord, key: &Key) -> bool {
     ch.pcs().iter().all(|&p| in_key(p, key))
 }
 
-/// Leitereigener Dreiklang auf diesem Grundton (Moll: V und vii° mit Leitton).
+/// Diatonic triad on this root (minor: V and vii° with leading tone).
 fn diatonic_triad(off: u8, key: &Key) -> Option<Quality> {
     if key.minor {
         match off {
@@ -245,8 +245,8 @@ fn diatonic_triad(off: u8, key: &Key) -> Option<Quality> {
     }
 }
 
-/// Zwischendominante: Dur- oder Dominantseptakkord, der eine Quinte über
-/// einem leitereigenen (nicht verminderten) Akkord steht. Liefert dessen Abstand zur Tonika.
+/// Secondary dominant: major or dominant seventh chord that stands a fifth above
+/// a diatonic (non-diminished) chord. Returns its distance from the tonic.
 fn secondary_target(ch: &Chord, key: &Key) -> Option<u8> {
     if !matches!(ch.quality, Major | Dom7) {
         return None;
@@ -256,7 +256,7 @@ fn secondary_target(ch: &Chord, key: &Key) -> Option<u8> {
         return None;
     }
     if key.minor && off == 0 && ch.quality == Major {
-        return None; // Picardische Terz
+        return None; // Picardy third
     }
     let diatonic = is_diatonic(ch, key);
     if diatonic && !(key.minor && off == 10 && ch.quality == Dom7) {
@@ -279,7 +279,7 @@ fn sub(s: &str) -> String {
     s.chars().map(|c| SUB.iter().find(|p| p.0 == c).map(|p| p.1).unwrap_or(c)).collect()
 }
 
-/// Generalbass-Bezifferung der Umkehrung („⁶“, „⁶₄“, „⁶₅“ …).
+/// Figured-bass notation of the inversion ("⁶", "⁶₄", "⁶₅" …).
 fn figures(ch: &Chord) -> String {
     let inv = ch.inversion();
     if ch.quality.is_seventh() {
@@ -300,7 +300,7 @@ fn figures(ch: &Chord) -> String {
 
 const NUMERALS: [&str; 7] = ["I", "II", "III", "IV", "V", "VI", "VII"];
 
-/// Stufe als römische Zahl relativ zur Tonart (ohne Zwischendominanten).
+/// Scale degree as a Roman numeral relative to the key (without secondary dominants).
 fn plain_roman(ch: &Chord, key: &Key) -> String {
     let off = offset(ch.root, key);
     let (deg, alt) = degree_of(off, key.minor);
@@ -373,18 +373,18 @@ fn function_of(off: u8, triad: Quality, key: &Key) -> Option<(&'static str, &'st
 #[serde(rename_all = "camelCase")]
 pub struct ChordInfo {
     pub chord: Chord,
-    /// Akkordsymbol, z. B. „G7“, „fis°“, „C/E“.
+    /// Chord symbol, e.g. "G7", "fis°", "C/E".
     pub name: String,
-    /// Stufe, z. B. „V⁷“, „ii⁶“, „V⁷/vi“, „N⁶“.
+    /// Scale degree, e.g. "V⁷", "ii⁶", "V⁷/vi", "N⁶".
     pub roman: String,
-    /// Funktion nach Riemann, z. B. „D⁷“, „Sp“, „(D⁷) Tp“, „DD“.
+    /// Function according to Riemann, e.g. "D⁷", "Sp", "(D⁷) Tp", "DD".
     pub function: String,
     /// Role in words, e.g. "Dominant", "Secondary dominant of a" (translated).
     pub role: String,
     pub diatonic: bool,
 }
 
-/// Akkord in einer Tonart beschreiben: Name, Stufe, Funktion, Rolle.
+/// Describes a chord in a key: name, scale degree, function, role.
 pub fn describe(ch: &Chord, key: &Key) -> ChordInfo {
     let ch = ch.normalized();
     let off = offset(ch.root, key);
@@ -431,7 +431,7 @@ pub fn describe(ch: &Chord, key: &Key) -> ChordInfo {
     ChordInfo { chord: ch, name, roman, function, role, diatonic }
 }
 
-// ------------------------------------------------------------------ Einlesen
+// ------------------------------------------------------------------ Parsing
 
 fn normalize_digits(s: &str) -> String {
     s.chars()
@@ -441,15 +441,15 @@ fn normalize_digits(s: &str) -> String {
         .collect()
 }
 
-/// Stufe einlesen: „I“, „ii6“, „V7“, „vii°7“, „iiø65“, „♭VI“, „V7/V“, „N6“, „I64“.
+/// Parses a scale degree: "I", "ii6", "V7", "vii°7", "iiø65", "♭VI", "V7/V", "N6", "I64".
 pub fn parse_roman(input: &str, key: &Key) -> Option<Chord> {
     let s = normalize_digits(input.trim());
     if let Some((head, target)) = s.split_once('/') {
         let t = parse_roman(target, key)?;
-        // Ziel als eigene Tonart (Dur oder Moll nach dem Zielakkord).
+        // Target as its own key (major or minor depending on the target chord).
         let tkey = key_with(t.root, t.quality.minor_third());
         let mut ch = parse_roman(head, &tkey)?;
-        // „V/…“ im Moll-Ziel bleibt Dur (Dominante mit Leitton).
+        // "V/…" in a minor target stays major (dominant with leading tone).
         if tkey.minor && head.trim_start().starts_with('V') && ch.quality == Minor {
             ch.quality = Major;
         }
@@ -526,7 +526,7 @@ pub fn parse_roman(input: &str, key: &Key) -> Option<Chord> {
     }
     let steps = if key.minor { MINOR_STEPS } else { MAJOR_STEPS };
     let mut off = steps[deg] as i32;
-    // In Moll: „V“ hat dieselbe Stufe; „vii°“ steht auf dem Leitton.
+    // In minor: "V" has the same degree; "vii°" sits on the leading tone.
     if key.minor && deg == 6 && quality.minor_third() {
         off = 11;
     }
@@ -536,8 +536,8 @@ pub fn parse_roman(input: &str, key: &Key) -> Option<Chord> {
     Some(ch.inverted(inv))
 }
 
-/// Tonname am Anfang einlesen (deutsch: H = h, B = b, Es, Fis …; auch C#, Bb).
-/// Liefert (Tonhöhenklasse, Kleinbuchstabe?, verbrauchte Zeichen).
+/// Parses a note name at the start (German: H = h, B = b, Es, Fis …; also C#, Bb).
+/// Returns (pitch class, lowercase?, characters consumed).
 fn parse_note_name(s: &str) -> Option<(u8, bool, usize)> {
     let mut chars = s.char_indices();
     let (_, c) = chars.next()?;
@@ -557,7 +557,7 @@ fn parse_note_name(s: &str) -> Option<(u8, bool, usize)> {
     let mut pc = base;
     let mut i = c.len_utf8();
     let rest = &s[i..];
-    // deutsche Endungen
+    // German suffixes
     let mut r = rest;
     loop {
         if let Some(x) = r.strip_prefix("is") {
@@ -578,7 +578,7 @@ fn parse_note_name(s: &str) -> Option<(u8, bool, usize)> {
             }
             r = x;
         } else if r.starts_with('b') && !r.starts_with("b5") {
-            // „Bb“ = B (deutsch), „Eb“ = Es
+            // "Bb" = B (German), "Eb" = Es
             if letter != 'B' {
                 pc -= 1;
             }
@@ -591,8 +591,8 @@ fn parse_note_name(s: &str) -> Option<(u8, bool, usize)> {
     Some((pc.rem_euclid(12) as u8, lower, i))
 }
 
-/// Akkordsymbol einlesen: „C“, „a“ (a-Moll), „Am“, „G7“, „fis°“, „Hø7“,
-/// „Cmaj7“, „Dsus4“, „C/E“, „Es-Dur“, „cis-Moll“.
+/// Parses a chord symbol: "C", "a" (A minor), "Am", "G7", "fis°", "Hø7",
+/// "Cmaj7", "Dsus4", "C/E", "Es-Dur", "cis-Moll".
 pub fn parse_symbol(input: &str) -> Option<Chord> {
     let s = input.trim();
     let (main, bass) = match s.split_once('/') {
@@ -639,7 +639,7 @@ pub fn parse_symbol(input: &str) -> Option<Chord> {
     Some(ch)
 }
 
-/// Akkord als Stufe („V7“, „ii6“, „V/V“) oder als Symbol („G7“, „a“) einlesen.
+/// Parses a chord as a scale degree ("V7", "ii6", "V/V") or as a symbol ("G7", "a").
 pub fn parse_chord(input: &str, key: &Key) -> Option<Chord> {
     let s = input.trim();
     let after_acc = s.trim_start_matches(['♭', '♯', '#']).trim_start_matches('b');
@@ -652,7 +652,7 @@ pub fn parse_chord(input: &str, key: &Key) -> Option<Chord> {
     parse_symbol(s)
 }
 
-/// Tonart einlesen: „C-Dur“, „a-Moll“, „Es“, „fis“, „Am“, „F#m“.
+/// Parses a key: "C-Dur", "a-Moll", "Es", "fis", "Am", "F#m".
 pub fn parse_key(input: &str) -> Option<Key> {
     let s = input.trim();
     let lower = s.to_lowercase();
@@ -671,20 +671,20 @@ pub fn parse_key(input: &str) -> Option<Key> {
     Some(key_with(ch.root, minor))
 }
 
-// ------------------------------------------------------------------ Quintenzirkel
+// ------------------------------------------------------------------ Circle of fifths
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CircleCell {
-    /// 0 = Dur (außen), 1 = Moll (Mitte), 2 = vermindert (innen).
+    /// 0 = major (outer), 1 = minor (middle), 2 = diminished (inner).
     pub ring: u8,
-    /// Platz im Uhrzeigersinn ab oben (0 = C/a/h°, 1 = G/e/fis° …).
+    /// Position clockwise from the top (0 = C/a/h°, 1 = G/e/fis° …).
     pub pos: u8,
     #[serde(flatten)]
     pub info: ChordInfo,
 }
 
-/// Die 36 Felder des Quintenzirkels, benannt und gedeutet in der Tonart.
+/// The 36 fields of the circle of fifths, named and interpreted in the key.
 pub fn circle(key: &Key) -> Vec<CircleCell> {
     let mut out = Vec::with_capacity(36);
     for ring in 0..3u8 {
@@ -701,7 +701,7 @@ pub fn circle(key: &Key) -> Vec<CircleCell> {
     out
 }
 
-/// Platz eines Akkords im Zirkel (Ring, Position) – Septakkorde beim Dreiklang.
+/// Position of a chord in the circle (ring, position) – seventh chords at the triad.
 pub fn circle_pos(ch: &Chord) -> Option<(u8, u8)> {
     let pos_of = |major: u8| ((major as u32 * 7) % 12) as u8;
     match ch.quality.triad() {
@@ -712,22 +712,22 @@ pub fn circle_pos(ch: &Chord) -> Option<(u8, u8)> {
     }
 }
 
-// ------------------------------------------------------------------ Fortsetzungen
+// ------------------------------------------------------------------ Continuations
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Category {
-    /// Schließt ab (Ganzschluss, Plagalschluss, Trugschluss).
+    /// Closes (authentic cadence, plagal cadence, deceptive cadence).
     Schluss,
-    /// Baut Spannung zur Dominante auf.
+    /// Builds tension towards the dominant.
     Spannung,
-    /// Führt weiter, ohne zu schließen.
+    /// Leads on without closing.
     Weiter,
-    /// Chromatische Farbe: entlehnte Akkorde, Zwischendominanten, Neapolitaner.
+    /// Chromatic color: borrowed chords, secondary dominants, Neapolitan.
     Farbe,
-    /// Öffnet eine Nachbartonart.
+    /// Opens a neighboring key.
     Ausweichen,
-    /// Keine Regel, aber in der Bibliothek häufig.
+    /// No rule, but common in the library.
     Haeufig,
 }
 
@@ -745,25 +745,25 @@ pub struct Suggestion {
     /// For secondary dominants: the key one can move to this way (translated).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub to_key: Option<String>,
-    /// Stimmung des Übergangs vom letzten Akkord hierher.
+    /// Mood of the transition from the last chord to here.
     pub mood: Mood,
 }
 
-// ------------------------------------------------------------------ Stimmung
+// ------------------------------------------------------------------ Mood
 
-/// Stimmung eines Übergangs – für die Farben im Quintenzirkel.
+/// Mood of a transition – for the colors in the circle of fifths.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Mood {
-    /// Spannung löst sich: Dominante → Ziel, Plagalschluss.
+    /// Tension resolves: dominant → target, plagal cadence.
     Loesend,
-    /// Spannung baut sich auf: zur Dominante, Doppel-/Zwischendominante, Quartsextvorhalt.
+    /// Tension builds: towards the dominant, double/secondary dominant, cadential six-four.
     Spannend,
-    /// Unerwartet: Trugschluss, chromatische Terzverwandtschaft.
+    /// Unexpected: deceptive cadence, chromatic third relation.
     Ueberraschend,
-    /// Hell: zu einem Durakkord der Tonart.
+    /// Bright: to a major chord of the key.
     Hell,
-    /// Dunkel: zu Moll/vermindert oder aus Moll entlehnt.
+    /// Dark: to minor/diminished or borrowed from minor.
     Dunkel,
 }
 
@@ -785,7 +785,7 @@ fn dominant_function(info: &ChordInfo) -> bool {
     f.starts_with('D') || f.starts_with('Đ') || f.starts_with("(D") || f.starts_with("DD")
 }
 
-/// Stimmung des Übergangs `prev` → `next` (ohne `prev`: nach dem Klang von `next`).
+/// Mood of the transition `prev` → `next` (without `prev`: by the sound of `next`).
 pub fn transition_mood(prev: Option<&Chord>, next: &Chord, key: &Key) -> Mood {
     let ni = describe(next, key);
     let next_dark = next.quality.minor_third() || !ni.diatonic && secondary_target(next, key).is_none();
@@ -796,21 +796,21 @@ pub fn transition_mood(prev: Option<&Chord>, next: &Chord, key: &Key) -> Mood {
     let (pr, nr) = (prev.root, next.root);
     let prev_dom = dominant_function(&pi) || matches!(prev.quality, Dom7 | Dim7);
     let prev_dom_major = prev_dom && matches!(prev.quality, Major | Dom7);
-    // Quartsextvorhalt ist Spannung, auch wenn der Bass schon zur Tonika greift
+    // Cadential six-four is tension, even if the bass already moves to the tonic
     let cadential64 = ni.function.starts_with("D⁶");
     if cadential64 {
         return Mood::Spannend;
     }
-    // Trugschluss: Dominante → eine Stufe darüber (vi bzw. ♭VI)
+    // Deceptive cadence: dominant → one degree above (vi or ♭VI)
     if prev_dom_major && ((pr + 2) % 12 == nr || (pr + 1) % 12 == nr) {
         return Mood::Ueberraschend;
     }
-    // chromatische Terzverwandtschaft (z. B. C → As, C → E)
+    // chromatic third relation (e.g. C → Ab, C → E)
     let diff = (nr + 12 - pr) % 12;
     if matches!(diff, 3 | 4 | 8 | 9) && prev.quality.triad() == next.quality.triad() && !ni.diatonic && secondary_target(next, key).is_none() && !ni.function.starts_with("sN") {
         return Mood::Ueberraschend;
     }
-    // Auflösung: Quintfall aus der Dominante, Leitton aufwärts, Plagalschluss
+    // Resolution: falling fifth from the dominant, leading tone upwards, plagal cadence
     let falls_fifth = (pr + 12 - nr) % 12 == 7;
     let leading = matches!(prev.quality, Dim | Dim7 | HalfDim7) && (pr + 1) % 12 == nr;
     let plagal = matches!(pi.function.as_str(), "S" | "s" | "S⁷" | "s⁷") && nr == key.tonic % 12 && matches!(next.quality, Major | Minor);
@@ -827,7 +827,7 @@ pub fn transition_mood(prev: Option<&Chord>, next: &Chord, key: &Key) -> Mood {
     }
 }
 
-// ------------------------------------------------------------------ Brüche
+// ------------------------------------------------------------------ Breaks
 
 /// Harmonic break at the step `prev` → `next`: a chord that the key doesn't
 /// explain (neither diatonic nor a secondary dominant, nor borrowed from
@@ -837,7 +837,7 @@ pub fn transition_mood(prev: Option<&Chord>, next: &Chord, key: &Key) -> Mood {
 pub fn harmonic_break(prev: Option<&Chord>, next: &Chord, key: &Key) -> Option<&'static str> {
     let ni = describe(next, key);
     let parallel = Key { tonic: key.tonic, minor: !key.minor, confidence: key.confidence };
-    // eine Zwischendominante erklärt nur, wenn ihr Ziel ansteuerbar ist (kein verminderter Akkord)
+    // a secondary dominant only explains if its target can be approached (no diminished chord)
     let tonicizes = secondary_target(next, key).is_some_and(|t| diatonic_triad(t, key) != Some(Dim));
     let explained = ni.diatonic || tonicizes || ni.function.starts_with("sN") || is_diatonic(next, &parallel);
     if !explained {
@@ -846,7 +846,7 @@ pub fn harmonic_break(prev: Option<&Chord>, next: &Chord, key: &Key) -> Option<&
     let prev = prev?;
     let pi = describe(prev, key);
     let tritone = (next.root + 12 - prev.root) % 12 == 6;
-    // erklärt: Neapolitaner → Dominante, Leittonakkord, Dominanten untereinander
+    // explained: Neapolitan → dominant, leading-tone chord, dominants among each other
     let dominantish = |i: &ChordInfo, c: &Chord| dominant_function(i) || matches!(c.quality, Dom7 | Dim | Dim7 | HalfDim7);
     if tritone && !pi.function.starts_with("sN") && !dominantish(&pi, prev) && !dominantish(&ni, next) {
         return Some(tk!("Tritone leap"));
@@ -854,9 +854,9 @@ pub fn harmonic_break(prev: Option<&Chord>, next: &Chord, key: &Key) -> Option<&
     None
 }
 
-// ------------------------------------------------------------------ Wege zum Schluss
+// ------------------------------------------------------------------ Paths to the closing
 
-/// Ein mehrschrittiger Weg vom aktuellen Akkord zu einem Schluss.
+/// A multi-step path from the current chord to a closing.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CadencePath {
@@ -865,14 +865,14 @@ pub struct CadencePath {
     /// Name of the kind of cadence (translated).
     pub label: String,
     pub steps: Vec<ChordInfo>,
-    /// Stimmung je Übergang (in steps[i] hinein, der erste vom aktuellen Akkord).
+    /// Mood per transition (into steps[i], the first from the current chord).
     pub moods: Vec<Mood>,
     pub score: f32,
-    /// true: längere Variante desselben Schlusses (steht direkt nach dem kürzeren besten Weg).
+    /// true: longer variant of the same closing (comes right after the shorter best path).
     pub longer: bool,
 }
 
-/// Abschlag je zusätzlichem Akkord: kurze Wege gewinnen, wenn sie gleich gut klingen.
+/// Penalty per additional chord: short paths win if they sound equally good.
 const STEP_FACTOR: f32 = 0.93;
 
 const GOALS: [(&str, &str); 5] = [
@@ -883,7 +883,7 @@ const GOALS: [(&str, &str); 5] = [
     ("phrygisch", tk!("Phrygian half cadence")),
 ];
 
-/// Welcher Schluss endet mit `prev` → `next`?
+/// Which closing ends with `prev` → `next`?
 fn goal_of(prev: &Chord, next: &Chord, key: &Key) -> Option<usize> {
     let off = |c: &Chord| (c.root + 12 - key.tonic % 12) % 12;
     let (po, no) = (off(prev), off(next));
@@ -910,18 +910,18 @@ fn goal_of(prev: &Chord, next: &Chord, key: &Key) -> Option<usize> {
     None
 }
 
-/// Mehrschrittige Wege zu einem Schluss, bis `max_steps` Akkorde: je
-/// Schlussart der beste und – wenn es einen gibt – der beste längere Weg.
-/// Die Schritte folgen den Fortsetzungsregeln; `weight` gewichtet einen
-/// Schritt (z. B. mit der Häufigkeit in der Bibliothek).
+/// Multi-step paths to a closing, up to `max_steps` chords: for each
+/// kind of closing the best and – if there is one – the best longer path.
+/// The steps follow the continuation rules; `weight` weights a
+/// step (e.g. by the frequency in the library).
 pub fn cadence_paths(key: &Key, history: &[Chord], max_steps: usize, weight: &dyn Fn(&Chord, &Chord, f32) -> f32) -> Vec<CadencePath> {
     let tonic = Chord::new(key.tonic, if key.minor { Minor } else { Major });
     let start: Vec<Chord> = if history.is_empty() { vec![tonic] } else { history.to_vec() };
-    // beste Wege je Schlussart und Länge: (Punkte, Akkorde)
+    // best paths per kind of closing and length: (points, chords)
     let mut best: Vec<Vec<Option<(f32, Vec<Chord>)>>> = vec![vec![None; max_steps]; GOALS.len()];
     let origin = *start.last().unwrap();
     let mut stack: Vec<(Vec<Chord>, f32)> = vec![(Vec::new(), 0.0)];
-    // Fortsetzungen hängen nur von den letzten zwei Akkorden ab: zwischenspeichern
+    // Continuations depend only on the last two chords: cache them
     let mut cache: std::collections::HashMap<(Chord, Option<Chord>), Vec<Suggestion>> = std::collections::HashMap::new();
     while let Some((path, log_sum)) = stack.pop() {
         if path.len() >= max_steps {
@@ -941,8 +941,8 @@ pub fn cadence_paths(key: &Key, history: &[Chord], max_steps: usize, weight: &dy
         for s in cands.iter().filter(|s| s.category != Category::Ausweichen && s.score >= 0.3).take(8) {
             let next = s.info.chord;
             let at_tonic = next.root == key.tonic % 12 && matches!(next.quality, Major | Minor) && next.inversion() == 0;
-            // keine Kreise: kein Akkord doppelt im Weg; zurück zum Ausgangsakkord
-            // nur als Ziel eines Schlusses (vi–IV–V–vi), nicht unterwegs
+            // no cycles: no chord twice in the path; return to the starting chord
+            // only as the target of a closing (vi–IV–V–vi), not along the way
             let back_home = next == origin && !at_tonic;
             if path.contains(&next) || (back_home && path.is_empty()) {
                 continue;
@@ -959,7 +959,7 @@ pub fn cadence_paths(key: &Key, history: &[Chord], max_steps: usize, weight: &dy
                     *slot = Some((score, np.clone()));
                 }
             }
-            // an der Tonika (oder wieder am Ausgangsakkord) angekommen: dieser Weg ist zu Ende
+            // arrived at the tonic (or back at the starting chord): this path is finished
             if !at_tonic && !back_home {
                 stack.push((np, ls));
             }
@@ -985,7 +985,7 @@ pub fn cadence_paths(key: &Key, history: &[Chord], max_steps: usize, weight: &dy
             longer,
         }
     };
-    // je Schlussart: der beste Weg, dahinter der beste längere (wenn er nicht viel schlechter ist)
+    // per kind of closing: the best path, behind it the best longer one (if it is not much worse)
     let mut groups: Vec<(f32, Vec<CadencePath>)> = Vec::new();
     for (g, by_len) in best.iter().enumerate() {
         let pick = |from: usize| by_len.iter().enumerate().skip(from).filter_map(|(i, b)| b.as_ref().map(|b| (i, b))).max_by(|a, b| a.1 .0.total_cmp(&b.1 .0));
@@ -1004,7 +1004,7 @@ pub fn cadence_paths(key: &Key, history: &[Chord], max_steps: usize, weight: &dy
 
 type Rule = (&'static str, f32, Category, &'static str);
 
-/// Übliche Fortsetzungen in Dur: Stufe → (Ziel, Gewicht, Art, Begründung).
+/// Common continuations in major: degree → (target, weight, kind, reason).
 /// The reasons are keys; they are translated in [`suggest`].
 const MAJOR_RULES: &[(&str, &[Rule])] = &[
     ("I", &[
@@ -1122,7 +1122,7 @@ const MAJOR_RULES: &[(&str, &[Rule])] = &[
     ]),
 ];
 
-/// Übliche Fortsetzungen in Moll.
+/// Common continuations in minor.
 const MINOR_RULES: &[(&str, &[Rule])] = &[
     ("i", &[
         ("iv", 0.85, Weiter, tk!("t → s: opens the cadence")),
@@ -1230,13 +1230,13 @@ const MINOR_RULES: &[(&str, &[Rule])] = &[
     ("I", &[("iv", 0.50, Weiter, tk!("Major tonic becomes the secondary dominant of s"))]),
 ];
 
-/// Wie gut passt `prev` auf die Stufe der Regel? 0 = gar nicht.
+/// How well does `prev` fit the degree of the rule? 0 = not at all.
 fn match_rank(rule: &Chord, prev: &Chord) -> u8 {
     if rule.root != prev.root || rule.quality.triad() != prev.quality.triad() {
         return 0;
     }
     let same_bass = rule.bass_pc() == prev.bass_pc();
-    // Quartsextakkord nur bei Quinte im Bass
+    // Six-four chord only with the fifth in the bass
     if rule.inversion() == 2 && !rule.quality.is_seventh() && !same_bass {
         return 0;
     }
@@ -1259,9 +1259,9 @@ fn to_key_of(ch: &Chord, key: &Key) -> Option<String> {
     Some(key_with((key.tonic + target) % 12, tq.minor_third()).name())
 }
 
-/// Fortsetzungen nach dem letzten Akkord von `history` (leer = Anfang),
-/// beste zuerst. Regeln der Funktionsharmonik; für fremde Akkorde
-/// Grundtonschritte (Quintfall zuerst) und gemeinsame Töne.
+/// Continuations after the last chord of `history` (empty = beginning),
+/// best first. Rules of functional harmony; for foreign chords,
+/// root movements (falling fifth first) and common tones.
 pub fn suggest(key: &Key, history: &[Chord], limit: usize) -> Vec<Suggestion> {
     let rules = if key.minor { MINOR_RULES } else { MAJOR_RULES };
     let tonic = if key.minor { "i" } else { "I" };
@@ -1296,7 +1296,7 @@ pub fn suggest(key: &Key, history: &[Chord], limit: usize) -> Vec<Suggestion> {
             }
         }
     } else {
-        // Fremder Akkord: Grundtonschritte und Rückkehr in die Tonart.
+        // Foreign chord: root movements and return into the key.
         let catalog: &[&str] = if key.minor {
             &["i", "ii°", "III", "iv", "V", "V7", "VI", "VII", "vii°7"]
         } else {
@@ -1333,12 +1333,12 @@ pub fn suggest(key: &Key, history: &[Chord], limit: usize) -> Vec<Suggestion> {
         let ch = s.info.chord;
         s.score += 0.02 * common_tones(prev, &ch) as f32;
         if before.is_some_and(|b| b.same_harmony(&ch) && b.bass_pc() == ch.bass_pc()) && s.category != Schluss {
-            s.score -= 0.10; // Hin und her vermeiden
+            s.score -= 0.10; // Avoid going back and forth
         }
         s.to_key = to_key_of(&ch, key);
     }
     out.retain(|s| s.info.chord != *prev);
-    // gleiche Akkorde nur einmal (beste Begründung behalten)
+    // identical chords only once (keep the best reason)
     out.sort_by(|a, b| b.score.total_cmp(&a.score));
     let mut seen: Vec<Chord> = Vec::new();
     out.retain(|s| {
@@ -1356,7 +1356,7 @@ pub fn suggest(key: &Key, history: &[Chord], limit: usize) -> Vec<Suggestion> {
     out
 }
 
-// ------------------------------------------------------------------ Kadenzen
+// ------------------------------------------------------------------ Cadences
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1366,7 +1366,7 @@ pub struct CadenceTemplate {
     pub name: String,
     pub description: String,
     pub steps: Vec<ChordInfo>,
-    /// Stimmung je Übergang (steps[i] → steps[i+1]).
+    /// Mood per transition (steps[i] → steps[i+1]).
     pub moods: Vec<Mood>,
 }
 
@@ -1415,7 +1415,7 @@ pub fn cadences(key: &Key) -> Vec<CadenceTemplate> {
         .collect()
 }
 
-// ------------------------------------------------------------------ Erkennen
+// ------------------------------------------------------------------ Detection
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TimedPitch {
@@ -1432,7 +1432,7 @@ pub struct DetectedChord {
     pub chord: Chord,
 }
 
-/// Akkord zu einer Tonverteilung (Gewicht je Tonhöhenklasse) und Basston.
+/// Chord for a note distribution (weight per pitch class) and bass note.
 pub fn identify(weights: &[f64; 12], bass: Option<u8>, key: Option<&Key>) -> Option<Chord> {
     let total: f64 = weights.iter().sum();
     let max = weights.iter().cloned().fold(0.0, f64::max);
@@ -1444,7 +1444,7 @@ pub fn identify(weights: &[f64; 12], bass: Option<u8>, key: Option<&Key>) -> Opt
         return None;
     }
     let mut best: Option<(f64, Chord)> = None;
-    // Nur klingende Töne kommen als Grundton in Frage (ohne Grundton verliert ein Akkord ohnehin).
+    // Only sounding notes come into question as a root (a chord loses without a root anyway).
     for root in (0..12u8).filter(|&r| weights[r as usize] >= 0.05 * max) {
         for q in Quality::ALL {
             let iv = q.intervals();
@@ -1454,7 +1454,7 @@ pub fn identify(weights: &[f64; 12], bass: Option<u8>, key: Option<&Key>) -> Opt
             for (n, &i) in iv.iter().enumerate() {
                 let pc = (root + i) % 12;
                 let w = weights[pc as usize];
-                // Die Septime erklärt nur halb: Durchgangstöne sollen keinen Septakkord machen.
+                // The seventh only half explains: passing tones should not make a seventh chord.
                 covered += if n == 3 { 0.5 * w } else { w };
                 if w < 0.05 * max && !(q.is_seventh() && i == 7) {
                     missing += 1;
@@ -1476,7 +1476,7 @@ pub fn identify(weights: &[f64; 12], bass: Option<u8>, key: Option<&Key>) -> Opt
                 score += 0.1;
             }
             if q.is_seventh() && bass == Some((root + iv[3]) % 12) && q != Dom7 {
-                score -= 0.06; // Septime im Bass ist außer beim D⁷ selten
+                score -= 0.06; // Seventh in the bass is rare except with D⁷
             }
             if key.is_some() && diatonic {
                 score += 0.03;
@@ -1498,8 +1498,8 @@ pub fn identify(weights: &[f64; 12], bass: Option<u8>, key: Option<&Key>) -> Opt
     Some(ch)
 }
 
-/// Akkordfolge in Noten erkennen: Fenster von `window` Schlägen, gleiche
-/// Nachbarn zusammengefasst. Einstimmige Stellen bleiben leer.
+/// Detects a chord progression in notes: windows of `window` beats, identical
+/// neighbors merged. Monophonic passages stay empty.
 pub fn detect_chords(notes: &[TimedPitch], window: f64, key: Option<&Key>) -> Vec<DetectedChord> {
     let window = window.max(0.25);
     let notes: Vec<&TimedPitch> = notes.iter().filter(|n| n.length > 1e-9 && n.start.is_finite() && n.length.is_finite()).collect();
@@ -1510,7 +1510,7 @@ pub fn detect_chords(notes: &[TimedPitch], window: f64, key: Option<&Key>) -> Ve
     if n_win == 0 || n_win > 400_000 {
         return Vec::new();
     }
-    // Jede Note verteilt ihre Dauer auf die Fenster, die sie berührt.
+    // Each note distributes its duration over the windows it touches.
     let mut weights = vec![[0.0f64; 12]; n_win];
     let mut bass: Vec<Option<u8>> = vec![None; n_win];
     for n in &notes {
@@ -1524,7 +1524,7 @@ pub fn detect_chords(notes: &[TimedPitch], window: f64, key: Option<&Key>) -> Ve
                 continue;
             }
             weights[i][(n.pitch % 12) as usize] += ov;
-            // Basston: tiefster Ton, der hier hörbar Gewicht hat (bei Arpeggien jeder ganze Ton)
+            // Bass note: lowest note that audibly has weight here (with arpeggios every whole note)
             let weighty = ov >= 0.25 * window || ov >= 0.9 * n.length;
             if weighty && bass[i].map(|p| n.pitch < p).unwrap_or(true) {
                 bass[i] = Some(n.pitch);
@@ -1544,7 +1544,7 @@ pub fn detect_chords(notes: &[TimedPitch], window: f64, key: Option<&Key>) -> Ve
     out
 }
 
-// ------------------------------------------------------------------ Stimmführung
+// ------------------------------------------------------------------ Voice leading
 
 const BASS: (u8, u8) = (38, 57);
 const TENOR: (u8, u8) = (48, 69);
@@ -1559,7 +1559,7 @@ fn voice_cost(v: &[u8; 4], ch: &Chord, prev: Option<(&[u8], &Chord)>, key: Optio
     let iv = ch.quality.intervals();
     let pcs = ch.pcs();
     let count = |pc: u8| v.iter().filter(|m| *m % 12 == pc).count();
-    // nötige Töne: Grundton, Terz, (Septime); Quinte darf fehlen außer bei °, ø, +, sus
+    // required tones: root, third, (seventh); fifth may be missing except with °, ø, +, sus
     let fifth_optional = matches!(ch.quality, Major | Minor | Dom7 | Maj7 | Min7);
     for (i, &step) in iv.iter().enumerate() {
         let pc = (ch.root + step) % 12;
@@ -1571,7 +1571,7 @@ fn voice_cost(v: &[u8; 4], ch: &Chord, prev: Option<(&[u8], &Chord)>, key: Optio
     if count((ch.root + iv[2]) % 12) == 0 {
         cost += if ch.quality.is_seventh() { 1.0 } else { 3.0 };
     }
-    // Verdopplungen
+    // Doublings
     if !ch.quality.is_seventh() && matches!(ch.quality, Major | Minor) {
         let third = (ch.root + iv[1]) % 12;
         if count(third) > 1 {
@@ -1593,7 +1593,7 @@ fn voice_cost(v: &[u8; 4], ch: &Chord, prev: Option<(&[u8], &Chord)>, key: Optio
     match prev {
         None => {
             cost += (v[3] as f32 - 72.0).abs() * 0.5 + (v[2] as f32 - 66.0).abs() * 0.3 + (v[1] as f32 - 60.0).abs() * 0.3 + (v[0] as f32 - 48.0).abs() * 0.2;
-            // enge Lage in den Oberstimmen bevorzugen
+            // prefer close position in the upper voices
             cost += (v[3] - v[1]) as f32 * 0.15;
         }
         Some((p, pch)) => {
@@ -1606,7 +1606,7 @@ fn voice_cost(v: &[u8; 4], ch: &Chord, prev: Option<(&[u8], &Chord)>, key: Optio
             }
             cost += (v[0] as i32 - p[0] as i32).unsigned_abs() as f32 * 0.3;
             cost += (v[3] as f32 - 72.0).abs() * 0.1;
-            // Quint- und Oktavparallelen
+            // Parallel fifths and octaves
             for i in 0..4 {
                 for j in i + 1..4 {
                     let pi = (p[j] as i32 - p[i] as i32).rem_euclid(12);
@@ -1618,14 +1618,14 @@ fn voice_cost(v: &[u8; 4], ch: &Chord, prev: Option<(&[u8], &Chord)>, key: Optio
                     }
                 }
             }
-            // Stimmen überholen einander nicht
+            // Voices do not overtake each other
             for i in 0..3 {
                 if v[i] > p[i + 1] || v[i + 1] < p[i] {
                     cost += 2.0;
                 }
             }
-            // Leittöne steigen einen Halbton: Terz einer (Zwischen-)Dominante
-            // vor ihrem Ziel, Leitton der Tonart nach D oder vii° (auch im Trugschluss).
+            // Leading tones rise a semitone: third of a (secondary) dominant
+            // before its target, leading tone of the key after D or vii° (also in a deceptive cadence).
             let mut tendency: Vec<u8> = Vec::new();
             if pch.quality.triad() == Major && (ch.root + 7) % 12 == pch.root {
                 tendency.push((pch.root + 4) % 12);
@@ -1648,7 +1648,7 @@ fn voice_cost(v: &[u8; 4], ch: &Chord, prev: Option<(&[u8], &Chord)>, key: Optio
             if (v[0] as i32 - p[0] as i32).abs() > 7 {
                 cost += 2.0;
             }
-            // Septime löst sich abwärts auf (oder bleibt liegen)
+            // Seventh resolves downwards (or stays put)
             if pch.quality.is_seventh() {
                 let sev = (pch.root + pch.quality.intervals()[3]) % 12;
                 for i in 0..4 {
@@ -1662,8 +1662,8 @@ fn voice_cost(v: &[u8; 4], ch: &Chord, prev: Option<(&[u8], &Chord)>, key: Optio
     Some(cost)
 }
 
-/// Einen Akkord vierstimmig setzen (Bass, Tenor, Alt, Sopran – aufsteigend),
-/// möglichst glatt an den vorigen anschließend.
+/// Sets a chord in four parts (bass, tenor, alto, soprano – ascending),
+/// connecting as smoothly as possible to the previous one.
 pub fn voice_chord(ch: &Chord, prev: Option<(&[u8], &Chord)>, key: Option<&Key>) -> Vec<u8> {
     let ch = ch.normalized();
     let pcs = ch.pcs();
@@ -1690,7 +1690,7 @@ pub fn voice_chord(ch: &Chord, prev: Option<(&[u8], &Chord)>, key: Option<&Key>)
     match best {
         Some((_, v)) => v.to_vec(),
         None => {
-            // Notlösung: Bass und enge Lage darüber
+            // Fallback: bass and close position above it
             let b = basses.first().copied().unwrap_or(48);
             let mut v = vec![b];
             let mut m = 60u8;
@@ -1706,7 +1706,7 @@ pub fn voice_chord(ch: &Chord, prev: Option<(&[u8], &Chord)>, key: Option<&Key>)
     }
 }
 
-/// Akkordfolge vierstimmig setzen; `start` = Stimmen des Akkords davor.
+/// Sets a chord progression in four parts; `start` = voices of the chord before.
 pub fn voice_progression(chords: &[Chord], key: Option<&Key>, start: Option<(&[u8], &Chord)>) -> Vec<Vec<u8>> {
     let mut out: Vec<Vec<u8>> = Vec::with_capacity(chords.len());
     let mut prev: Option<(Vec<u8>, Chord)> = start.filter(|(v, _)| v.len() == 4).map(|(v, c)| (v.to_vec(), *c));
@@ -1736,21 +1736,21 @@ mod tests {
         let k = c();
         let ch = |s: &str| parse_chord(s, &k).unwrap();
         let brk = |a: &str, b: &str| harmonic_break(Some(&ch(a)), &ch(b), &k);
-        // erklärt: leitereigen, Zwischendominante, entlehnt (As aus c-Moll), Neapolitaner, Dominante
+        // explained: diatonic, secondary dominant, borrowed (Ab from C minor), Neapolitan, dominant
         for (x, y) in [("C", "a"), ("C", "D7"), ("C", "As"), ("C", "f"), ("F", "Des"), ("Des", "G7"), ("C", "G7"), ("h°", "F")] {
             assert_eq!(brk(x, y), None, "{x} → {y}");
         }
-        // tonartfremd: Fis-Dur in C ist keine Zwischendominante und nicht entlehnt
+        // foreign to the key: F# major in C is not a secondary dominant and not borrowed
         assert_eq!(brk("C", "Fis"), Some("out of key"));
         assert_eq!(harmonic_break(None, &ch("Fis"), &k), Some("out of key"));
         assert_eq!(harmonic_break(None, &ch("Cis"), &k), None, "Cis = Des = Neapolitaner");
-        // Tritonus-Sprung ohne Dominante: F → h (beide leitereigen, h aber als Moll-Akkord fremd) …
+        // Tritone leap without a dominant: F → h (both diatonic, but h is foreign as a minor chord) …
         assert_eq!(brk("F", "H"), None, "H = V/iii ist erklärt");
         let ka = a();
         let cha = |s: &str| parse_chord(s, &ka).unwrap();
-        // a-Moll: d → As? As fremd; F → H-Dur: Zwischendominante zu e – erklärt
+        // A minor: d → As? As foreign; F → H major: secondary dominant to e – explained
         assert_eq!(harmonic_break(Some(&cha("F")), &cha("H"), &ka), None);
-        // C-Dur: a → Es (aus c-Moll entlehnt) ist ein Tritonus ohne Dominante → Bruch
+        // C major: a → Es (borrowed from C minor) is a tritone without a dominant → break
         assert_eq!(brk("a", "Es"), Some("Tritone leap"));
     }
 
@@ -1836,17 +1836,17 @@ mod tests {
         assert_eq!(s[0].info.name, "C");
         assert_eq!(s[0].category, Category::Schluss);
         assert!(s.iter().any(|x| x.info.name == "a" && x.reason.contains("Deceptive cadence")));
-        // Zwischendominante löst sich auf
+        // Secondary dominant resolves
         let e7 = parse_roman("V7/vi", &k).unwrap();
         let s = suggest(&k, &[Chord::new(0, Major), e7], 5);
         assert_eq!(s[0].info.name, "a");
-        // Zwischendominante nennt die Ausweichtonart
+        // Secondary dominant names the key it veers to
         let s = suggest(&k, &[Chord::new(0, Major)], 20);
         let d7 = s.iter().find(|x| x.info.name == "D7").unwrap();
         assert_eq!(d7.to_key.as_deref(), Some("G major"));
-        // Anfang
+        // Beginning
         assert_eq!(suggest(&a(), &[], 3)[0].info.name, "a");
-        // fremder Akkord: Quintfall bevorzugt
+        // foreign chord: falling fifth preferred
         let s = suggest(&k, &[Chord::new(6, Major)], 5);
         assert_eq!(s[0].info.name, "h°");
     }
@@ -1874,7 +1874,7 @@ mod tests {
     #[test]
     fn detects_chords_from_notes() {
         let n = |pitch, start, length| TimedPitch { pitch, start, length };
-        // C – a/C – F – G7 je zwei Schläge
+        // C – a/C – F – G7 two beats each
         let notes = vec![
             n(48, 0.0, 2.0), n(64, 0.0, 2.0), n(67, 0.0, 2.0), n(72, 0.0, 2.0),
             n(48, 2.0, 2.0), n(64, 2.0, 2.0), n(69, 2.0, 2.0), n(72, 2.0, 2.0),
@@ -1884,12 +1884,12 @@ mod tests {
         let k = c();
         let got: Vec<String> = detect_chords(&notes, 2.0, Some(&k)).iter().map(|d| chord_name(&d.chord, &k)).collect();
         assert_eq!(got, ["C", "a/C", "F", "G7"]);
-        // Arpeggio im Takt wird ein Akkord
+        // Arpeggio within the bar becomes one chord
         let arp: Vec<TimedPitch> = [45, 52, 57, 60, 64, 60].iter().enumerate().map(|(i, &p)| n(p, i as f64 * 0.5, 0.5)).collect();
         let got = detect_chords(&arp, 4.0, Some(&a()));
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].chord, Chord::new(9, Minor));
-        // einstimmig: kein Akkord
+        // monophonic: no chord
         assert!(detect_chords(&[n(60, 0.0, 1.0)], 2.0, None).is_empty());
     }
 
@@ -1920,7 +1920,7 @@ mod tests {
                 }
             }
         }
-        // Leitton steigt in V7 → I im Sopran, falls er oben liegt
+        // Leading tone rises in V7 → I in the soprano, if it is on top
         let v = voice_progression(&[Chord::new(7, Dom7), Chord::new(0, Major)], Some(&k), None);
         if v[0][3] % 12 == 11 {
             assert_eq!(v[1][3], v[0][3] + 1);
@@ -1967,7 +1967,7 @@ mod tests {
                 _ => {}
             }
         }
-        // längere Varianten stehen direkt hinter dem besten Weg derselben Schlussart
+        // longer variants come right after the best path of the same kind of closing
         for w in paths.windows(2) {
             if w[1].longer {
                 assert_eq!(w[0].goal, w[1].goal);
@@ -1979,21 +1979,21 @@ mod tests {
         assert!(!ganz.longer);
         assert!(ganz.steps.len() >= 2, "von der Tonika aus braucht der Ganzschluss Schritte: {:?}", ganz.steps.iter().map(|s| &s.name).collect::<Vec<_>>());
         assert_eq!(*ganz.moods.last().unwrap(), Mood::Loesend);
-        // von G7 aus genügt ein Schritt
+        // from G7 one step is enough
         let from_d = cadence_paths(&k, &[Chord::new(0, Major), Chord::new(7, Dom7)], 4, &|_, _, w| w);
         let g = from_d.iter().find(|p| p.goal == "ganzschluss").unwrap();
         assert_eq!(g.steps.len(), 1);
-        // Moll: phrygischer Halbschluss über iv⁶
+        // Minor: Phrygian half cadence over iv⁶
         let am = a();
         let p = cadence_paths(&am, &[Chord::new(9, Minor)], 4, &|_, _, w| w);
         let phr = p.iter().find(|x| x.goal == "phrygisch").expect("phrygisch");
         assert_eq!(phr.steps.last().unwrap().name, "E");
-        // Gewichtung wirkt: bevorzugt man ii, kommt sie im Ganzschluss vor
+        // Weighting works: if ii is preferred, it occurs in the authentic cadence
         let favor = cadence_paths(&k, &[Chord::new(0, Major)], 4, &|_, n, w| if n.root == 2 && n.quality.triad() == Minor { w * 5.0 } else { w });
         let gz = favor.iter().find(|x| x.goal == "ganzschluss").unwrap();
         assert!(gz.steps.iter().any(|s| s.chord.root == 2), "{:?}", gz.steps.iter().map(|s| &s.name).collect::<Vec<_>>());
-        // unterwegs nie zurück zum Ausgangsakkord (a → G → a → F → C), als Ziel
-        // aber erlaubt: Trugschluss vi – IV – V – vi
+        // never back to the starting chord along the way (a → G → a → F → C), but allowed
+        // as a target: deceptive cadence vi – IV – V – vi
         let from_a = cadence_paths(&k, &[Chord::new(0, Major), Chord::new(9, Minor)], 4, &|_, _, w| w);
         for p in &from_a {
             let inner = &p.steps[..p.steps.len() - 1];

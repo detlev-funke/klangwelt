@@ -1,4 +1,4 @@
-// Gemeinsame Geometrie und Zustand der Notenansicht (Spurköpfe + Zeitleiste).
+// Shared geometry and state of the note view (track headers + timeline).
 
 import { backend } from "./bridge.js";
 import { type ExprDef, clampExpr, exprShown } from "./expression.js";
@@ -7,27 +7,27 @@ import { ROW_H } from "./store.js";
 import type { Analysis, Note, Track } from "./types.js";
 
 export const NOTES_ROW_H = 236;
-/** Höhe der Ausdrucksspur unter der Rhythmus-Leiste (Instrumentspuren). */
+/** Height of the expression lane below the rhythm strip (instrument tracks). */
 export const EXPR_H = 48;
-/** Band oben in der Notenzeile für Clipnamen (dort lassen sich Clips verschieben). */
+/** Band at the top of the note row for clip names (clips can be moved there). */
 export const NOTES_TOP = 20;
-/** Höhe der Rhythmus-Leiste unten in der Notenzeile (tonlose Schläge wie Hi-Hats). */
+/** Height of the rhythm strip at the bottom of the note row (unpitched beats like hi-hats). */
 export const RHYTHM_H = 18;
-/** Sichtbare Halbtöne: Standard, Grenzen für den Zoom. */
+/** Visible semitones: default, limits for zoom. */
 export const DEFAULT_SPAN = 21;
 const MIN_SPAN = 12;
 const MAX_SPAN = 60;
 
-// ---------- Zeilenhöhen (einzeln ziehbar) ----------
+// ---------- Row heights (individually draggable) ----------
 
-/** Höhe während des Ziehens am Splitter (Vorschau, noch nicht gespeichert). */
+/** Height while dragging the splitter (preview, not yet saved). */
 export const heightDraft = signal<{ trackId: number; height: number } | null>(null);
 
 export function defaultHeight(t: Track): number {
   return t.view === "notes" ? NOTES_ROW_H + (exprShown(t) ? EXPR_H : 0) : ROW_H;
 }
 
-/** Erlaubte Höhen je Ansicht (Pixel). */
+/** Allowed heights per view (pixels). */
 export function heightLimits(t: Track): [number, number] {
   return t.view === "notes" ? [140, 1200] : [48, 600];
 }
@@ -59,27 +59,27 @@ export function maxScrollY(tracks: Track[]): number {
 
 export const isBlack = (pitch: number) => [1, 3, 6, 8, 10].includes(((pitch % 12) + 12) % 12);
 
-// ---------- sichtbarer Tonbereich pro Spur ----------
+// ---------- visible pitch range per track ----------
 
-/** Sichtbarer Tonbereich einer Notenzeile: tiefster Ton und Anzahl Halbtöne. */
+/** Visible pitch range of a note row: lowest note and number of semitones. */
 export interface PitchView {
   low: number;
   span: number;
 }
 
-/** Tonbereich je Spur (vertikale Lage und Zoom). */
+/** Pitch range per track (vertical position and zoom). */
 export const pitchViews = signal<Record<number, PitchView>>({});
 
-/** Geometrie einer Notenzeile: Tonbereich plus daraus folgende Bahn- und Leistenmaße. */
+/** Geometry of a note row: pitch range plus the resulting lane and strip dimensions. */
 export interface NoteGeo {
   view: PitchView;
-  /** Höhe des Bereichs mit den Tonbahnen. */
+  /** Height of the area with the pitch lanes. */
   lanesH: number;
-  /** Höhe einer Tonbahn (wächst mit der Zeilenhöhe). */
+  /** Height of a pitch lane (grows with the row height). */
   laneH: number;
-  /** Oberkante der Rhythmus-Leiste relativ zur Zeilenoberkante. */
+  /** Top edge of the rhythm strip relative to the top edge of the row. */
   rhythmTop: number;
-  /** Ausdrucksspur (Höhe 0 = ausgeblendet). */
+  /** Expression lane (height 0 = hidden). */
   exprTop: number;
   exprH: number;
 }
@@ -92,18 +92,18 @@ export function geoFor(t: Track): NoteGeo {
   return { view, lanesH, laneH: lanesH / view.span, rhythmTop, exprTop: rhythmTop + RHYTHM_H + 2, exprH };
 }
 
-/** Innerer Wertebereich der Ausdrucksspur (relativ zur Zeilenoberkante). */
+/** Inner value range of the expression lane (relative to the top edge of the row). */
 function exprBox(g: NoteGeo): { top: number; h: number } {
   return { top: g.exprTop + 7, h: Math.max(4, g.exprH - 13) };
 }
 
-/** y-Position (relativ zur Zeile) eines Ausdruckswerts in der Ausdrucksspur. */
+/** y position (relative to the row) of an expression value in the expression lane. */
 export function exprY(g: NoteGeo, d: ExprDef, v: number): number {
   const b = exprBox(g);
   return b.top + (1 - (v - d.min) / (d.max - d.min)) * b.h;
 }
 
-/** Ausdruckswert an einer y-Position (relativ zur Zeile). */
+/** Expression value at a y position (relative to the row). */
 export function exprAt(g: NoteGeo, d: ExprDef, yRel: number): number {
   const b = exprBox(g);
   const f = 1 - (yRel - b.top) / b.h;
@@ -115,7 +115,7 @@ function clampView(low: number, span: number): PitchView {
   return { low: Math.max(0, Math.min(128 - s, Math.round(low))), span: s };
 }
 
-/** Passt den Bereich an die Töne an; großer Umfang (z. B. Bassdrum bis Snare) wird herausgezoomt. */
+/** Fits the range to the notes; a large span (e.g. bass drum to snare) is zoomed out. */
 function fitView(pitches: number[]): PitchView {
   if (!pitches.length) return clampView(60 - DEFAULT_SPAN / 2, DEFAULT_SPAN);
   const lo = Math.min(...pitches);
@@ -124,11 +124,11 @@ function fitView(pitches: number[]): PitchView {
   return clampView((lo + hi) / 2 - span / 2 + 0.5, span);
 }
 
-/** Töne, an denen sich die Ansicht ausrichtet (Noten bzw. erkannte Noten). */
+/** Pitches the view aligns to (notes or detected notes). */
 function contentPitches(t: Track): number[] | null {
   if (t.kind === "instrument") {
     const pitches = t.clips.flatMap((c) => (c.source.type === "notes" ? c.source.notes.map((n) => n.pitch) : []));
-    if (t.instrument?.kind === "drums") return [...pitches, 35, 49]; // alle Trommeln sichtbar
+    if (t.instrument?.kind === "drums") return [...pitches, 35, 49]; // all drums visible
     if (!pitches.length && t.instrument?.kind === "bass") return [28, 48];
     return pitches;
   }
@@ -136,7 +136,7 @@ function contentPitches(t: Track): number[] | null {
   for (const c of t.clips) {
     if (c.source.type !== "audio") continue;
     const a = analyses.get(c.source.assetId);
-    if (a === undefined || a === "loading") return null; // noch nicht bereit
+    if (a === undefined || a === "loading") return null; // not ready yet
     if (a !== "none") {
       const shift = Math.round(t.pitchSemitones);
       out.push(...a.notes.map((n) => n.midi + shift));
@@ -147,9 +147,9 @@ function contentPitches(t: Track): number[] | null {
 }
 
 /**
- * Sichtbarer Tonbereich einer Notenzeile. Beim ersten Aufruf wird er eingepasst
- * und festgehalten, damit die Ansicht beim Bearbeiten nicht springt – egal ob die
- * erste Abfrage vom Zeichnen, von der Klaviatur oder von einem Mausklick kommt.
+ * Visible pitch range of a note row. On the first call it is fitted
+ * and pinned so that the view does not jump while editing – regardless of whether the
+ * first query comes from drawing, from the keyboard or from a mouse click.
  */
 export function viewFor(t: Track): PitchView {
   const stored = pitchViews.peek()[t.id];
@@ -162,12 +162,12 @@ export function viewFor(t: Track): PitchView {
   return view;
 }
 
-/** Tonbereich verschieben (Halbtöne, positiv = höher). */
+/** Shifts the pitch range (semitones, positive = higher). */
 export function scrollPitch(trackId: number, delta: number, current: PitchView): void {
   pitchViews.update((m) => ({ ...m, [trackId]: clampView(current.low + delta, current.span) }));
 }
 
-/** Zoomen um die Mitte (positiv = mehr Halbtöne sichtbar). */
+/** Zooms around the center (positive = more semitones visible). */
 export function zoomPitch(trackId: number, delta: number, current: PitchView): void {
   const center = current.low + current.span / 2;
   const span = current.span + delta;
@@ -184,10 +184,10 @@ export function refitPitch(trackId: number): void {
 
 export const inView = (v: PitchView, pitch: number) => pitch >= v.low && pitch < v.low + v.span;
 
-// ---------- Richtung der Tonachse (Einstellung) ----------
+// ---------- Direction of the pitch axis (setting) ----------
 //
-// „tief oben“: wie eine um 90° gedrehte Klaviatur, an der man links sitzt.
-// „hoch oben“: wie in Noten und den meisten Pianorollen.
+// "low on top": like a keyboard rotated by 90°, with you sitting at the left.
+// "high on top": like in sheet music and most piano rolls.
 
 const AXIS_KEY = "klangwelt.tonachse";
 
@@ -199,7 +199,7 @@ function loadHighOnTop(): boolean {
   }
 }
 
-/** true: hohe Töne oben, false: tiefe Töne oben (Standard). */
+/** true: high notes on top, false: low notes on top (default). */
 export const highOnTop = signal(loadHighOnTop());
 
 export function setHighOnTop(on: boolean): void {
@@ -207,54 +207,54 @@ export function setHighOnTop(on: boolean): void {
   try {
     localStorage.setItem(AXIS_KEY, on ? "hoch-oben" : "tief-oben");
   } catch {
-    /* ohne Speicher */
+    /* without storage */
   }
 }
 
-/** Ton der Bahn `k` (0 = oberste Bahn). */
+/** Pitch of lane `k` (0 = topmost lane). */
 export function pitchOfLane(v: PitchView, k: number): number {
   return highOnTop.peek() ? v.low + v.span - 1 - k : v.low + k;
 }
 
-/** Bahn-Position eines Tons (0 = oberste Bahn; Bruchteile für Tonhöhenkurven). */
+/** Lane position of a pitch (0 = topmost lane; fractions for pitch curves). */
 export function laneOf(v: PitchView, pitch: number): number {
   return highOnTop.peek() ? v.low + v.span - 1 - pitch : pitch - v.low;
 }
 
-/** Oberkante der Bahn eines Tons, relativ zur Zeilenoberkante. */
+/** Top edge of a pitch's lane, relative to the top edge of the row. */
 export function laneY(g: NoteGeo, pitch: number): number {
   return NOTES_TOP + laneOf(g.view, pitch) * g.laneH;
 }
 
-/** Ton an einer y-Position relativ zur Zeilenoberkante. */
+/** Pitch at a y position relative to the top edge of the row. */
 export function pitchAt(g: NoteGeo, yRel: number): number {
   return pitchOfLane(g.view, Math.floor((yRel - NOTES_TOP) / g.laneH));
 }
 
-/** Halbtöne, um die eine senkrechte Bewegung um `dy` Pixel die Tonhöhe ändert. */
+/** Semitones by which a vertical movement of `dy` pixels changes the pitch. */
 export function pitchDelta(g: { laneH: number }, dy: number): number {
   const lanes = Math.round(dy / g.laneH);
   return highOnTop.peek() ? -lanes : lanes;
 }
 
-/** Tonbereich-Verschiebung für eine Mausrad-Bewegung (nach oben = was oben liegt). */
+/** Pitch range shift for a mouse wheel movement (up = whatever lies on top). */
 export function wheelPitchStep(deltaY: number): number {
   const towardTop = deltaY < 0;
   return towardTop === highOnTop.peek() ? 2 : -2;
 }
 
-/** Liegt ein Ton unterhalb/oberhalb des sichtbaren Bereichs am oberen Rand? */
+/** Does a pitch lie below/above the visible range at the top edge? */
 export function offViewAtTop(v: PitchView, pitch: number): boolean {
   return (pitch < v.low) !== highOnTop.peek();
 }
 
-// ---------- Notenauswahl ----------
+// ---------- Note selection ----------
 
 export const noteKey = (n: Note) => `${n.pitch}@${n.startBeats}`;
 
 export const noteSel = signal<{ trackId: number; clipId: number; keys: string[] } | null>(null);
 
-/** Rasterweite für Noten abhängig vom Zoom; mit Shift frei. */
+/** Grid width for notes depending on zoom; free with Shift. */
 export function noteGrid(pxPerBeat: number, free: boolean): number {
   if (free) return 0;
   if (pxPerBeat >= 160) return 0.125;
@@ -263,7 +263,7 @@ export function noteGrid(pxPerBeat: number, free: boolean): number {
   return 1;
 }
 
-// ---------- Analysen für Audiospuren ----------
+// ---------- Analyses for audio tracks ----------
 
 export const analyses = new Map<string, Analysis | "loading" | "none">();
 

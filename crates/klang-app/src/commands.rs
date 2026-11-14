@@ -1,16 +1,15 @@
-//! Die Befehlstabelle der Oberfläche – eine für alle Plattformen.
+//! The UI's command table – one for all platforms.
 //!
-//! Ein Befehl ist ein Name plus Argumente als JSON-Objekt (Schlüssel in
-//! camelCase, wie die Oberfläche sie schickt); die Antwort ist JSON.
+//! A command is a name plus arguments as a JSON object (keys in camelCase, as
+//! the UI sends them); the reply is JSON.
 //!
-//! * Desktop: Tauri leitet jeden Aufruf, dessen Name hier steht, an [`call`]
-//!   weiter (`app/src/lib.rs`).
-//! * Browser: der Web-Kern ruft [`call`] direkt auf (`crates/klang-web`).
+//! * Desktop: Tauri forwards every call whose name is listed here to [`call`]
+//!   (`app/src/lib.rs`).
+//! * Browser: the web core calls [`call`] directly (`crates/klang-web`).
 //!
-//! Die Oberfläche (`ui/src/bridge.ts`) benutzt auf beiden Plattformen dieselbe
-//! Zuordnung. Befehle, die es nur auf einer Plattform gibt (Fenster schließen,
-//! „Im Ordner zeigen“, Bibliotheken herunterladen …), behandelt die jeweilige
-//! Hülle selbst.
+//! The UI (`ui/src/bridge.ts`) uses the same mapping on both platforms. Commands
+//! that exist on one platform only (close window, "Show in folder", download
+//! libraries …) are handled by the respective shell itself.
 
 use crate::state::{AppState, CmdResult};
 use crate::{export, fugue, harmony, library, project, rhythm, song, sound, sound_library};
@@ -23,7 +22,7 @@ use klang_music::theory::Key;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Alle Befehle des Kerns.
+/// All commands of the core.
 pub const COMMANDS: &[&str] = &[
     "set_language",
     "get_state",
@@ -103,13 +102,13 @@ pub const COMMANDS: &[&str] = &[
     "export_run",
 ];
 
-/// Gibt es den Befehl im Kern?
+/// Does the core have this command?
 pub fn has(cmd: &str) -> bool {
     COMMANDS.contains(&cmd)
 }
 
-/// Argumente als Tupel lesen: `let (a, b) = args!(v; a: u64, b: Option<f64>);`
-/// – fehlende `Option`-Felder sind `None`, überzählige werden ignoriert.
+/// Reads the arguments as a tuple: `let (a, b) = args!(v; a: u64, b: Option<f64>);`
+/// – missing `Option` fields are `None`, surplus ones are ignored.
 macro_rules! args {
     ($v:expr; $($name:ident : $ty:ty),* $(,)?) => {{
         #[derive(Deserialize)]
@@ -126,8 +125,8 @@ fn json<T: Serialize>(v: T) -> CmdResult<String> {
     serde_json::to_string(&v).map_err(|e| tr!("Couldn't serialize response: {error}", error = e))
 }
 
-/// Führt einen Befehl aus. `args` ist das JSON-Objekt der Oberfläche (oder
-/// `null`); die Antwort ist JSON, ein Fehler ein Text für die Oberfläche.
+/// Runs a command. `args` is the UI's JSON object (or `null`); the reply is
+/// JSON, an error is a text for the UI.
 pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
     let empty = Value::Object(Default::default());
     let a = if args.is_null() { &empty } else { args };
@@ -138,7 +137,7 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
             klang_i18n::set_language(&lang, dict.unwrap_or_default());
             json(())
         }
-        // ------------------------------------------------ Projekt, Undo, Transport
+        // ------------------------------------------------ Project, undo, transport
         "get_state" => json(st.snapshot()?),
         "execute" => {
             let (command, merge) = args!(a; command: Command, merge: Option<bool>);
@@ -158,25 +157,25 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
             let (enabled,) = args!(a; enabled: bool);
             json(st.set_metronome(enabled)?)
         }
-        // Wiederholen ein/aus (am Ende des Stücks bzw. des markierten Bereichs wieder von vorn)
+        // Repeat on/off (at the end of the piece or the selected range, start over)
         "set_loop" => {
             let (enabled,) = args!(a; enabled: bool);
             json(st.set_loop(Some(enabled), None)?)
         }
-        // Zeitbereich (Schläge) markieren bzw. mit `null` aufheben
+        // Select a time range (beats), or clear it with `null`
         "set_loop_range" => {
             let (range,) = args!(a; range: Option<(f64, f64)>);
             json(st.set_loop(None, Some(range))?)
         }
-        // Ausgabe- und Aufnahmegeräte samt Wahl (Browser: nur das Gerät des Systems)
+        // Output and recording devices with the current choice (browser: only the system's device)
         "audio_devices" => json(st.audio_devices()?),
-        // Audiogerät wählen (kind: output/input; name null = Systemstandard) – wirkt sofort und gilt beim nächsten Start
+        // Choose an audio device (kind: output/input; name null = system default) – takes effect immediately and applies at the next start
         "audio_set_device" => {
             let (kind, name) = args!(a; kind: String, name: Option<String>);
             json(st.set_audio_device(&kind, name)?)
         }
 
-        // ------------------------------------------------ Aufnahme, Analyse
+        // ------------------------------------------------ Recording, analysis
         "record_start" => json(st.record_start()?),
         "record_stop" => json(st.record_stop()?),
         "get_waveform" => {
@@ -187,13 +186,13 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
             let (asset_id,) = args!(a; asset_id: String);
             json(st.analysis_for(&asset_id)?)
         }
-        // Erkannte Melodie eines Audio-Clips als Instrumentspur (quantisiert auf Sechzehntel)
+        // Detected melody of an audio clip as an instrument track (quantized to sixteenth notes)
         "create_melody_track" => {
             let (track_id, clip_id) = args!(a; track_id: u64, clip_id: u64);
             json(st.melody_to_track(Id(track_id), Id(clip_id), &tr!("Import melody"))?.0)
         }
-        // Audiodateien (Drag & Drop) als Spuren einfügen – gelesen über das Dateisystem des
-        // Kerns (Desktop: die Platte; Browser: hereingezogene Dateien unter /Klangwelt/Import)
+        // Insert audio files (drag & drop) as tracks – read through the core's file system
+        // (desktop: the disk; browser: dropped files under /Klangwelt/Import)
         "audio_import" => {
             let (paths, track_id, start_beats) = args!(a; paths: Vec<String>, track_id: Option<u64>, start_beats: Option<f64>);
             let files = paths
@@ -205,7 +204,7 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
                 .collect();
             json(st.import_audio(files, track_id.map(Id), start_beats.unwrap_or(0.0))?)
         }
-        // Aufnahme in eine Melodie- oder Rhythmus-Spur umwandeln (ohne clipId: alle Audio-Clips der Spur)
+        // Convert a recording into a melody or rhythm track (without clipId: all audio clips of the track)
         "audio_to_notes" => {
             let (track_id, clip_id, target) = args!(a; track_id: u64, clip_id: Option<u64>, target: crate::convert::Target);
             let label = match target {
@@ -214,19 +213,19 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
             };
             json(st.audio_to_notes(Id(track_id), clip_id.map(Id), target, &label)?)
         }
-        // Zeitbereich aus allen Spuren löschen, alles danach rückt auf
+        // Delete a time range from all tracks, everything after it moves up
         "delete_range" => {
             let (start_beats, end_beats) = args!(a; start_beats: f64, end_beats: f64);
             json(st.delete_range(start_beats, end_beats)?)
         }
-        // Noten am Raster ausrichten (ohne indices: alle Noten des Clips)
+        // Align notes to the grid (without indices: all notes of the clip)
         "quantize_notes" => {
             let (track_id, clip_id, indices, grid, lengths) = args!(a; track_id: u64, clip_id: u64, indices: Option<Vec<usize>>, grid: f64, lengths: bool);
             json(st.quantize_notes(Id(track_id), Id(clip_id), indices, grid, lengths, None)?)
         }
         "create_demo" => json(st.create_demo()?),
 
-        // ------------------------------------------------ Klang, Vorhören
+        // ------------------------------------------------ Sound, preview
         "preview_track" => {
             let (track_id, pattern) = args!(a; track_id: u64, pattern: String);
             json(st.preview_track(Id(track_id), &pattern)?)
@@ -244,7 +243,7 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
             let (track_id,) = args!(a; track_id: u64);
             json(st.sound_wave(Id(track_id))?)
         }
-        // Punkt bzw. Startpunkt in einem Feld des Klang-Fensters setzen
+        // Set a point, or the starting point, in a field of the sound window
         "sound_field" => {
             let (track_id, field, x, y, preset, merge) =
                 args!(a; track_id: u64, field: String, x: Option<f32>, y: Option<f32>, preset: Option<String>, merge: Option<bool>);
@@ -285,17 +284,17 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
             json(st.insert_pattern(Id(track_id))?)
         }
 
-        // ------------------------------------------------ Chat mit dem Agenten
+        // ------------------------------------------------ Chat with the agent
         "chat_send" => {
             let (text,) = args!(a; text: String);
-            // Lage im Projekt mitgeben: welche Spuren klingen, welcher Zeitraum markiert ist
+            // Pass along the situation in the project: which tracks are sounding, which range is selected
             st.chat.send_user(&text, st.chat_context().ok())?;
             json(st.chat_view())
         }
         "chat_history" => json(st.chat_view()),
 
-        // ------------------------------------------------ Projektdateien
-        // Ohne `path` in die zuletzt benutzte Datei; ein bloßer Name landet im Projektordner.
+        // ------------------------------------------------ Project files
+        // Without `path` into the most recently used file; a bare name ends up in the project folder.
         "project_save" => {
             let (path,) = args!(a; path: Option<String>);
             let target = match path.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
@@ -315,13 +314,13 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
             st.new_project()?;
             json(changed(st)?)
         }
-        // [Projektordner, Projekte darin (neueste zuerst)]
+        // [project folder, projects in it (newest first)]
         "project_list" => {
             let dir = st.host().projects_dir();
             json((dir.display().to_string(), project::list(&dir)))
         }
 
-        // ------------------------------------------------ Bibliothek (Abfragen)
+        // ------------------------------------------------ Library (queries)
         "library_info" => json(library::info(st)?),
         "library_dimensions" => json(library::dimensions()?),
         "library_tree" => {
@@ -352,7 +351,7 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
             json(library::listen_stop(st, text, cancel)?)
         }
 
-        // ------------------------------------------------ Song, Rhythmus
+        // ------------------------------------------------ Song, rhythm
         "song_templates" => json(song::templates()),
         "song_write" => {
             let (plan, replace) = args!(a; plan: song::SongPlan, replace: Option<bool>);
@@ -381,7 +380,7 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
             json(st.rhythm_preview(track_id.map(Id), clip_id.map(Id), grid, swing, sound.as_deref())?)
         }
 
-        // ------------------------------------------------ Harmonie
+        // ------------------------------------------------ Harmony
         "harmony_view" => {
             let (key,) = args!(a; key: Option<Key>);
             let info = harmony::resolve_key(st, key)?;
@@ -409,7 +408,7 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
                 args!(a; key: Key, chords: Vec<Chord>, beats_per_chord: f64, track_id: Option<u64>, before: Option<Chord>);
             json(harmony::preview(st, track_id.map(Id), &chords, &key, beats_per_chord, before)?)
         }
-        // `mode` „einfuegen“ schafft Platz (alles danach rückt nach hinten), sonst wird überschrieben
+        // `mode` "einfuegen" makes room (everything after it moves back), otherwise it overwrites
         "harmony_write" => {
             let (key, chords, beats_per_chord, start_beats, track_id, before, mode) = args!(a;
                 key: Key, chords: Vec<Chord>, beats_per_chord: f64, start_beats: f64, track_id: Option<u64>, before: Option<Chord>, mode: Option<String>);
@@ -423,7 +422,7 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
             json(harmony::line(st, key)?)
         }
 
-        // ------------------------------------------------ Fuge, Kontrapunkt
+        // ------------------------------------------------ Fugue, counterpoint
         "fugue_subject" => {
             let (track_id, clip_id, key) = args!(a; track_id: u64, clip_id: u64, key: Option<Key>);
             json(fugue::subject_view(st, Id(track_id), Id(clip_id), key)?)
@@ -469,7 +468,7 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
     }
 }
 
-/// Projekt wurde ersetzt (Öffnen, Neu): Stand melden und zurückgeben.
+/// Project was replaced (open, new): report the state and return it.
 fn changed(st: &AppState) -> CmdResult<crate::Snapshot> {
     let snap = st.snapshot()?;
     st.host().emit("project-changed", &snap);
@@ -484,7 +483,7 @@ mod tests {
     fn every_listed_command_is_handled() {
         let st = AppState::without_audio();
         for cmd in COMMANDS {
-            // Mit kaputten Angaben antwortet jeder Befehl – aber nie „unbekannt“.
+            // Every command replies to malformed arguments – but never with "unknown".
             if let Err(e) = call(&st, cmd, &serde_json::json!({ "kaputt": true })) {
                 assert!(!e.starts_with("Unknown command"), "{cmd}: {e}");
             }
@@ -492,9 +491,9 @@ mod tests {
         assert!(call(&st, "gibt_es_nicht", &Value::Null).unwrap_err().starts_with("Unknown command"));
     }
 
-    /// Aufwand der Befehlstabelle gegenüber dem direkten Aufruf derselben
-    /// Funktionen (wie früher die generierten Tauri-Befehle: Argumente aus
-    /// JSON lesen, Antwort als JSON). Nur Messung, kein Grenzwert:
+    /// Overhead of the command table compared with calling the same functions
+    /// directly (like the generated Tauri commands used to: read arguments from
+    /// JSON, reply as JSON). Measurement only, no limit:
     /// `cargo test --release -p klang-app -- --ignored --nocapture aufwand`
     #[test]
     #[ignore = "Messung"]
@@ -558,7 +557,7 @@ mod tests {
         assert!(wave.is_object());
         let err = call(&st, "sound_wave", &serde_json::json!({ "track_id": track })).unwrap_err();
         assert!(err.contains("trackId"), "{err}");
-        // fehlende Option-Angaben sind erlaubt
+        // missing Option arguments are allowed
         assert!(call(&st, "harmony_timeline", &Value::Null).is_ok());
     }
 }

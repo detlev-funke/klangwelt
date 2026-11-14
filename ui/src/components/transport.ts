@@ -9,7 +9,7 @@ import { fileControls, projectLabel } from "./fileops.js";
 import { act, agentPulse, chat, errorText, notify, project, run, showPanel, snapshot, status } from "../store.js";
 import type { AudioDevices, AudioKind } from "../types.js";
 
-/** Text der Agent-Anzeige oben rechts. */
+/** Text of the agent indicator at the top right. */
 export function agentLabel(serverRunning: boolean, connected: boolean, listening: boolean): string {
   if (!serverRunning) return t("Agent off");
   if (listening) return t("Agent listening");
@@ -21,12 +21,12 @@ const KIND_WORD: Record<AudioKind, { title: string; short: string }> = {
   input: { title: t("Recording device"), short: t("Recording") },
 };
 
-/** Gerät wählen (null = Systemstandard) – wirkt sofort und wird gemerkt. */
+/** Choose device (null = system default) – takes effect immediately and is remembered. */
 async function chooseDevice(kind: AudioKind, name: string | null): Promise<void> {
   if (await act(backend.setAudioDevice(kind, name))) notify(`${KIND_WORD[kind].short}: ${name ?? t("System default")}`);
 }
 
-/** Inhalt des Geräte-Menüs: „Systemstandard“ oben, dann die Geräte des Systems. */
+/** Content of the device menu: "System default" at the top, then the system's devices. */
 function fillDeviceMenu(menu: HTMLElement, kind: AudioKind, d: AudioDevices, close: () => void): void {
   const list = kind === "output" ? d.outputs : d.inputs;
   const chosen = kind === "output" ? d.output : d.input;
@@ -47,7 +47,7 @@ function fillDeviceMenu(menu: HTMLElement, kind: AudioKind, d: AudioDevices, clo
       h("span", { class: "dev-check" }, chosen === name ? icon("check") : null),
       h("span", { class: "dev-text" }, h("b", {}, label), sub ? h("small", {}, sub) : null),
     );
-  // Browser: das Gerät wählt das System (Ausgabe) bzw. die Freigabe im Browser (Mikrofon)
+  // Browser: the system chooses the device (output) and the browser permission (microphone)
   if (backend.platform === "web") {
     menu.replaceChildren(
       h("div", { class: "menu-title" }, KIND_WORD[kind].title),
@@ -72,7 +72,7 @@ function fillDeviceMenu(menu: HTMLElement, kind: AudioKind, d: AudioDevices, clo
   );
 }
 
-/** Knopf mit Menü zur Wahl des Ausgabe- oder Aufnahmegeräts. */
+/** Button with a menu for choosing the output or recording device. */
 function deviceMenu(kind: AudioKind, btn: HTMLButtonElement): HTMLElement {
   const wrap = dropdown(btn, "dev-menu", (menu, close) => {
     menu.dataset.kind = kind;
@@ -88,10 +88,10 @@ function deviceMenu(kind: AudioKind, btn: HTMLButtonElement): HTMLElement {
   return wrap;
 }
 
-/** Öffnet das Fenster mit dem Agent-Chat. */
+/** Opens the window with the agent chat. */
 function openAgentChat(): void {
   const a = snapshot.peek()?.agent;
-  // Browser: kein MCP-Server, aber das Agent-Fenster mit dem Prompt für einen Agenten mit Browser-Werkzeug
+  // Browser: no MCP server, but the agent window with the prompt for an agent with a browser tool
   if (!a?.url && backend.platform !== "web") {
     notify(a?.error ?? t("Agent interface not available"), "error");
     return;
@@ -114,9 +114,9 @@ class KwTransport extends HTMLElement {
     const time = h("div", { class: "small" }, "0:00.00");
 
     const tempo = h("input", { class: "num", type: "number", min: 20, max: 400, step: 1, title: t("Project tempo in BPM") });
-    // Jeder Tempo-Schritt rendert das ganze Stück neu. Kommen Schritte schneller
-    // (Pfeiltaste gehalten), geht nur der jeweils neueste Wert hinterher, sobald
-    // der vorige angekommen ist – statt eines Staus aus Zwischenwerten.
+    // Every tempo step re-renders the whole piece. If steps come faster
+    // (arrow key held), only the latest value follows, as soon as
+    // the previous one has arrived – instead of a queue of intermediate values.
     let tempoBusy = false;
     let tempoNext: number | null = null;
     const sendTempo = (v: number): void => {
@@ -147,7 +147,7 @@ class KwTransport extends HTMLElement {
     const redoBtn = h("button", { class: "btn icon", "data-help": "wiederherstellen", onclick: () => redo() }, icon("redo"));
 
     const meter = h("canvas", { class: "meter", title: t("Levels: output on top, microphone below") });
-    // Lautsprecher: zeigt das Ausgabegerät, Klick öffnet die Gerätewahl; daneben das Mikrofon
+    // Speaker: shows the output device, click opens the device selection; the microphone next to it
     const outLabel = h("span", { class: "dev-label" });
     const chip = h("button", { class: "chip audio-out", "data-help": "ausgabegeraet" }, icon("speaker"), outLabel);
     const micBtn = h("button", { class: "btn icon audio-in", "data-help": "aufnahmegeraet" }, icon("mic"));
@@ -185,7 +185,7 @@ class KwTransport extends HTMLElement {
 
     effect(() => {
       const a = snapshot.value?.agent;
-      // Browser: kein Endpunkt, aber der MCP-Server in der Seite ist immer da
+      // Browser: no endpoint, but the MCP server in the page is always there
       const web = backend.platform === "web";
       const ok = !!a?.url || web;
       const { agentListening, agentConnected } = chat.value;
@@ -237,7 +237,7 @@ class KwTransport extends HTMLElement {
       metro.classList.toggle("on", snap.engine.metronome);
       loop.classList.toggle("on", !!snap.engine.loopOn);
       const r = snap.engine.loopRange;
-      // Takt.Schlag (Sechzehntel nur, wenn nötig): 4–8 Schläge in 4/4 = „Takt 2.1 bis 3.1“
+      // Bar.beat (sixteenth only if needed): 4–8 beats in 4/4 = "bar 2.1 to 3.1"
       const at = (b: number) => formatBarBeat(b, p.beatsPerBar).replace(/\.1$/, "");
       const loopState = r
         ? snap.engine.loopOn

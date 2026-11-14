@@ -13,7 +13,7 @@ import { act, instrumentSpecs, run, selection, snapshot, specFor, viewport } fro
 import { harmonyLaneOn, setHarmonyLane } from "../harmonyline.js";
 import type { InstrumentKind, Track } from "../types.js";
 
-/** Knopf „Harmonie“: Akkordfolge in der Zeitleiste ein-/ausblenden. */
+/** "Harmony" button: show/hide the chord progression in the timeline. */
 function harmonyToggle(): HTMLElement {
   const b = h("button", { class: "btn small harmony-toggle", title: t("Show harmony in the timeline: chords in the color of their mood, breaks in red (also appears while you work in the Harmony window)"), onclick: () => setHarmonyLane(!harmonyLaneOn.peek()) }, icon("fifths"), t("Harmony"));
   effect(() => b.classList.toggle("on", harmonyLaneOn.value));
@@ -21,10 +21,10 @@ function harmonyToggle(): HTMLElement {
 }
 
 /**
- * Klaviatur am rechten Rand des Spurkopfs (nur in der Notenansicht).
- * Wie bei einem echten Klavier, von links gespielt: weiße Tasten über die volle
- * Breite mit der Tastenfront links, schwarze Tasten kürzer und hinten (rechts,
- * an der Zeitleiste) liegend. Die Tastenhöhe folgt Zoom und Zeilenhöhe.
+ * Keyboard at the right edge of the track header (note view only).
+ * Like a real piano, played from the left: white keys across the full
+ * width with the key front on the left, black keys shorter and at the back
+ * (right, at the timeline). The key height follows zoom and row height.
  */
 function drawKeys(canvas: HTMLCanvasElement, g: NoteGeo, drumKeys?: Map<number, string>): void {
   const { ctx, w, h: hh } = fitCanvas(canvas);
@@ -37,28 +37,28 @@ function drawKeys(canvas: HTMLCanvasElement, g: NoteGeo, drumKeys?: Map<number, 
   const up = highOnTop.peek();
   const pitchOf = (k: number) => pitchOfLane(g.view, k);
 
-  // Weiße Tasten als durchgehende Fläche, zur Front (links) heller.
+  // White keys as a continuous surface, lighter toward the front (left).
   const white = ctx.createLinearGradient(0, 0, w, 0);
   white.addColorStop(0, "#e4e7ee");
   white.addColorStop(1, "#c3c8d2");
   ctx.fillStyle = white;
   ctx.fillRect(0, 0, w, total);
 
-  // Fugen zwischen weißen Tasten.
+  // Gaps between white keys.
   ctx.fillStyle = "#8a919e";
   for (let k = 0; k < LANE_SPAN; k++) {
     const pitch = pitchOf(k);
     const y = k * LANE_H;
     if (isBlack(pitch)) {
-      // zwei weiße Tasten stoßen vor der schwarzen Taste aneinander
+      // two white keys meet before the black key
       ctx.fillRect(0, Math.round(y + LANE_H / 2), blackX, 1);
     } else if (!isBlack(pitch + 1)) {
-      // E|F und H|C: weiße Tasten direkt nebeneinander – Fuge zur Seite des höheren Tons
+      // E|F and B|C: white keys directly next to each other – gap on the side of the higher note
       ctx.fillRect(0, up ? y : y + LANE_H - 1, w, 1);
     }
   }
 
-  // Schwarze Tasten: kürzer, hinten (rechts) angesetzt, Front links abgerundet.
+  // Black keys: shorter, attached at the back (right), front rounded on the left.
   for (let k = 0; k < LANE_SPAN; k++) {
     const pitch = pitchOf(k);
     if (!isBlack(pitch)) continue;
@@ -73,7 +73,7 @@ function drawKeys(canvas: HTMLCanvasElement, g: NoteGeo, drumKeys?: Map<number, 
     }
   }
 
-  // Beschriftung vorne (links) auf der weißen Taste: C-Töne bzw. beim Schlagzeug die Trommeln.
+  // Label at the front (left) on the white key: C notes, or for drums the drum sounds.
   ctx.font = `600 ${Math.max(5.5, Math.min(7.5, LANE_H - 0.5)).toFixed(1)}px system-ui`;
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
@@ -94,14 +94,14 @@ function drawKeys(canvas: HTMLCanvasElement, g: NoteGeo, drumKeys?: Map<number, 
   }
 }
 
-/** Kurznamen der Trommeln einer Schlagzeugspur (Taste → „BD“, „SD“ …). */
+/** Short names of the drums of a drum track (key → "BD", "SD" …). */
 export function drumKeyNames(t: Track): Map<number, string> | undefined {
   if (t.instrument?.kind !== "drums") return undefined;
   const keys = specFor(t.instrument)?.keys ?? [];
   return new Map(keys.map((k) => [k.midi, k.short]));
 }
 
-/** Regler, dessen Zwischenwerte beim Ziehen zu einem Undo-Schritt verschmelzen. */
+/** Control whose intermediate values merge into one undo step while dragging. */
 function gestureRange(min: number, max: number, step: number, onValue: (v: number, merge: boolean) => void, reset?: number) {
   const input = h("input", { type: "range", min, max, step });
   let merging = false;
@@ -203,7 +203,7 @@ class TrackRow {
       e.stopPropagation();
       const view = viewFor(this.#track);
       if (e.ctrlKey || e.metaKey) zoomPitch(this.id, e.deltaY > 0 ? 3 : -3, view);
-      else scrollPitch(this.id, wheelPitchStep(e.deltaY), view); // nach oben = was oben liegt
+      else scrollPitch(this.id, wheelPitchStep(e.deltaY), view); // up = what lies above
     }, { passive: false });
     this.#keys.addEventListener("dblclick", () => refitPitch(this.id));
 
@@ -213,7 +213,7 @@ class TrackRow {
     }, t("Rhythm"));
     this.#rhythm.style.height = `${RHYTHM_H}px`;
 
-    // Ausdrucksspur: welche Ausdrucksform gezeigt und bearbeitet wird.
+    // Expression track: which form of expression is shown and edited.
     this.#exprSelect = h("select", { class: "expr-select", title: t("Expression type shown in the expression lane") });
     this.#exprSelect.addEventListener("change", () => setLaneKey(this.id, this.#exprSelect.value as ExprKey));
     this.#exprSelect.addEventListener("pointerdown", (e) => e.stopPropagation());
@@ -229,19 +229,19 @@ class TrackRow {
         const t = this.#track;
         const shown = exprShown(t);
         toggleExprLane(this.id);
-        // Gespeicherte Zeilenhöhe mitwachsen/-schrumpfen lassen, damit die Tonbahnen gleich groß bleiben.
+        // Let the stored row height grow/shrink along, so that the note lanes stay the same size.
         if (t.notesHeight > 0) void set({ notesHeight: Math.max(140, t.notesHeight + (shown ? -EXPR_H : EXPR_H)) });
       },
     }, icon("expr"));
 
-    // Audiospur in der Tonhöhen-Ansicht: erkannte Töne aller Clips in eine Melodie-Spur umwandeln.
+    // Audio track in the pitch view: convert detected notes of all clips into a melody track.
     this.#convertBtn = h("button", {
       class: "toggle convert",
       title: t("Convert to notes: create the detected pitches of all clips as a melody track below (right-click a clip: also as a rhythm track)"),
       onclick: () => void convertAudio(this.id, null, "melodie"),
     }, icon("keys"), t("Notes"));
 
-    // Splitter an der Unterkante: Zeile einzeln größer/kleiner ziehen, Doppelklick = Standardhöhe.
+    // Splitter at the bottom edge: drag a row larger/smaller individually, double-click = default height.
     const splitter = h("div", { class: "splitter", title: t("Drag: change track height · Double-click: default height") });
     splitter.addEventListener("pointerdown", (e) => {
       e.stopPropagation();
@@ -293,8 +293,8 @@ class TrackRow {
     this.el.classList.toggle("selected", selected);
     const notes = track.view === "notes";
     this.el.classList.toggle("notes", notes);
-    // Symbol nur bei Änderung tauschen: ein Neuzeichnen beim Drücken (Spur wird
-    // ausgewählt) würde sonst das Element unter der Maus ersetzen – der Klick käme nie an.
+    // Swap the icon only on change: a redraw on press (track gets
+    // selected) would otherwise replace the element under the mouse – the click would never arrive.
     const viewIcon = notes ? "wave" : "keys";
     if (this.#viewBtn.dataset.icon !== viewIcon) {
       this.#viewBtn.dataset.icon = viewIcon;
@@ -390,17 +390,17 @@ class KwTracks extends HTMLElement {
     this.append(head, this.#menu, this.#body);
 
     effect(() => {
-      instrumentSpecs.value; // Trommelnamen auf der Klaviatur
-      pitchViews.value; // Klaviatur folgt Tonbereich und Zoom
-      heightDraft.value; // … und der Zeilenhöhe beim Ziehen
-      highOnTop.value; // … und der Richtung der Tonachse
-      exprLanes.value; // … und der Ausdrucksspur
+      instrumentSpecs.value; // drum names on the keyboard
+      pitchViews.value; // keyboard follows pitch range and zoom
+      heightDraft.value; // … and the row height while dragging
+      highOnTop.value; // … and the direction of the pitch axis
+      exprLanes.value; // … and the expression track
       this.#render(snapshot.value?.project.tracks ?? [], selection.value?.trackId);
     });
     effect(() => {
       this.#body.style.transform = `translateY(${-viewport.value.scrollY}px)`;
     });
-    // gezogene Audiodateien über einem Spurkopf: diese Spur hervorheben
+    // dragged audio files over a track header: highlight this track
     effect(() => {
       const d = audioDrag.value;
       const over = d ? document.elementFromPoint(d.x, d.y)?.closest(".track-row") : null;

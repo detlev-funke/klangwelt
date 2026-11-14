@@ -1,8 +1,8 @@
-//! Merkmale je Partitur zum Stöbern: Stimmung, Färbung, Energie, Tonart,
-//! Takt, Tempo, Besetzung, Instrumentengruppen, Satzweise, Harmonik, Länge,
-//! Komponist. Daraus baut [`tree_children`] einen Baum mit frei wählbarer
-//! Reihenfolge der Ebenen; mehrwertige Merkmale (Instrumentengruppen) legen
-//! eine Partitur in mehrere Zweige.
+//! Features per score for browsing: mood, coloring, energy, key,
+//! meter, tempo, instrumentation, instrument groups, texture, harmony, length,
+//! composer. [`tree_children`] builds a tree from them with freely selectable
+//! order of the levels; multi-valued features (instrument groups) put
+//! a score into several branches.
 
 use crate::analysis::{analyze_score_with, ScoreAnalysis, VoiceRole};
 use crate::pdmx::{composer_label, genre_label, PdmxMeta};
@@ -13,22 +13,22 @@ use std::collections::HashMap;
 
 /// Facets of a score (values as readable German words). The values
 /// are stored like this in the index and are the paths in the tree – for display
-/// [`value_label`] (bzw. `TreeNode::label`). Facet values are therefore
+/// [`value_label`] (or `TreeNode::label`). Facet values are therefore
 /// identifiers (`tid!`), only the dimension labels are plain keys (`tk!`).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScoreFacets {
-    /// Erste Stimme der Partitur im Melodie-Index (zum Öffnen).
+    /// First part of the score in the melody index (for opening).
     pub doc: u32,
     pub title: String,
     pub composer: String,
-    /// Genres (deutsch); leer = ohne Angabe.
+    /// Genres (German); empty = unspecified.
     #[serde(default)]
     pub genres: Vec<String>,
-    /// Schwierigkeit laut MuseScore (leicht … sehr schwer), leer = ohne Angabe.
+    /// Difficulty according to MuseScore (easy … very hard), empty = unspecified.
     #[serde(default)]
     pub difficulty: String,
-    /// Stimmnamen (für die Textsuche, z. B. „Cello“).
+    /// Part names (for text search, e.g. "Cello").
     #[serde(default)]
     pub parts: Vec<String>,
     pub mood: String,
@@ -47,7 +47,7 @@ pub struct ScoreFacets {
     pub bars: u32,
 }
 
-/// Eine Ebene des Baums.
+/// One level of the tree.
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Dimension {
@@ -55,9 +55,9 @@ pub struct Dimension {
     /// Label (a key); translated when serialized.
     #[serde(serialize_with = "translated")]
     pub label: &'static str,
-    /// Eine Partitur kann mehrere Werte haben.
+    /// A score can have several values.
     pub multi: bool,
-    /// Feste Reihenfolge der Werte (sonst nach Anzahl).
+    /// Fixed order of the values (otherwise by count).
     #[serde(skip)]
     order: &'static [&'static str],
 }
@@ -89,7 +89,7 @@ pub fn dimension(key: &str) -> Option<&'static Dimension> {
     DIMENSIONS.iter().find(|d| d.key == key)
 }
 
-/// Werte einer Partitur für eine Ebene.
+/// Values of a score for one level.
 pub fn values<'a>(f: &'a ScoreFacets, dim: &str) -> Vec<&'a str> {
     let one = |s: &'a str| vec![s];
     match dim {
@@ -114,9 +114,9 @@ pub fn values<'a>(f: &'a ScoreFacets, dim: &str) -> Vec<&'a str> {
     }
 }
 
-// ---------------------------------------------------------------- Merkmale bestimmen
+// ---------------------------------------------------------------- Determining features
 
-/// Instrumentengruppe aus dem Stimmnamen (deutsch, englisch, italienisch).
+/// Instrument group from the part name (German, English, Italian).
 pub fn family(part_name: &str, has_voices: bool) -> &'static str {
     let n = part_name.to_lowercase();
     let has = |words: &[&str]| words.iter().any(|w| n.contains(w));
@@ -210,8 +210,8 @@ fn texture(a: &ScoreAnalysis) -> &'static str {
     }
 }
 
-/// Bestimmt die Merkmale einer Partitur (`doc` = erste Stimme im Index);
-/// `meta` ergänzt Genre, Komponist und Schwierigkeit aus PDMX.
+/// Determines the features of a score (`doc` = first part in the index);
+/// `meta` adds genre, composer and difficulty from PDMX.
 pub fn score_facets(score: &Score, doc: u32, meta: Option<&PdmxMeta>) -> ScoreFacets {
     let a = analyze_score_with(score, false);
     facets_from(score, &a, doc, meta)
@@ -286,7 +286,7 @@ pub fn facets_from(score: &Score, a: &ScoreAnalysis, doc: u32, meta: Option<&Pdm
     }
 }
 
-// ---------------------------------------------------------------- Baum
+// ---------------------------------------------------------------- Tree
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -308,17 +308,17 @@ pub struct TreeScore {
     pub facts: String,
 }
 
-/// Inhalt eines Knotens: weitere Zweige oder (auf der untersten Ebene) Partituren.
+/// Content of a node: further branches or (on the lowest level) scores.
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TreeLevel {
-    /// Ebene der Zweige (None bei Partituren).
+    /// Level of the branches (None for scores).
     pub dimension: Option<&'static str>,
     pub nodes: Vec<TreeNode>,
     pub scores: Vec<TreeScore>,
-    /// Gesamtzahl der Zweige bzw. Partituren (für „weitere …“).
+    /// Total number of branches or scores (for "more …").
     pub total: usize,
-    /// Partituren unter diesem Knoten.
+    /// Scores under this node.
     pub matching: usize,
 }
 
@@ -431,8 +431,8 @@ impl<A: FacetRows + ?Sized, B: FacetRows + ?Sized> FacetRows for ChainRows<'_, A
     }
 }
 
-/// Kinder des Knotens `path` (Werte der ersten `path.len()` Ebenen).
-/// Ist `path` so lang wie `levels`, kommen die Partituren (alphabetisch).
+/// Children of the node `path` (values of the first `path.len()` levels).
+/// If `path` is as long as `levels`, the scores come (alphabetically).
 pub fn tree_children(all: &[ScoreFacets], levels: &[&str], path: &[String], offset: usize, limit: usize) -> TreeLevel {
     tree_children_rows(all, levels, path, offset, limit)
 }
@@ -450,7 +450,7 @@ pub fn tree_children_rows<R: FacetRows + ?Sized>(rows: &R, levels: &[&str], path
             }
         }
         let order = dimension(dim).map(|d| d.order).unwrap_or(&[]);
-        // Feste Reihenfolge, sonst nach Anzahl; Restgruppen („ohne Angabe“ …) immer ans Ende.
+        // Fixed order, otherwise by count; remainder groups ("ohne Angabe" …) always go to the end.
         let rest = |v: &str| matches!(v, "ohne Angabe" | "unbekannt" | "unbestimmt" | "Sonstige");
         let rank = |v: &str| order.iter().position(|o| *o == v).unwrap_or(order.len() + usize::from(rest(v)));
         let mut nodes: Vec<TreeNode> = counts.into_iter().map(|(v, c)| TreeNode { value: v.to_string(), label: value_label(dim, v), count: c }).collect();
@@ -527,7 +527,7 @@ mod tests {
             f(4, "melancholisch · ruhig", &["Gesang"], ""),
         ];
         let levels = ["stimmung", "instrumente"];
-        // Ebene 1: feste Reihenfolge der Stimmungen
+        // Level 1: fixed order of the moods
         let top = tree_children(&all, &levels, &[], 0, 50);
         assert_eq!(top.dimension, Some("stimmung"));
         assert_eq!(top.matching, 4);
@@ -535,20 +535,20 @@ mod tests {
             top.nodes.iter().map(|n| (n.value.as_str(), n.count)).collect::<Vec<_>>(),
             vec![("fröhlich · energisch", 2), ("heiter · ruhig", 1), ("melancholisch · ruhig", 1)]
         );
-        // Ebene 2: Partitur 2 steht unter Gesang und Tasten
+        // Level 2: score 2 is under vocals and keys
         let sub = tree_children(&all, &levels, &["fröhlich · energisch".into()], 0, 50);
         let names: Vec<&str> = sub.nodes.iter().map(|n| n.value.as_str()).collect();
         assert_eq!(names, vec!["Tasteninstrumente", "Gesang", "Streicher"]);
-        // Blätter: Partituren unter dem Pfad
+        // Leaves: scores under the path
         let leaves = tree_children(&all, &levels, &["fröhlich · energisch".into(), "Gesang".into()], 0, 50);
         assert_eq!(leaves.dimension, None);
         assert_eq!(leaves.scores.iter().map(|s| s.doc).collect::<Vec<_>>(), vec![2]);
-        // Komponist: leer → „unbekannt“; Seiten
+        // Composer: empty → "unbekannt"; pages
         let comp = tree_children(&all, &["komponist"], &[], 0, 1);
         assert_eq!((comp.total, comp.nodes[0].value.as_str(), comp.nodes[0].count), (3, "Bach", 2));
         let page2 = tree_children(&all, &["komponist"], &[], 1, 5);
         assert!(page2.nodes.iter().any(|n| n.value == "unbekannt"));
-        // Restgruppe zuletzt, auch wenn sie am größten ist
+        // Remainder group last, even if it is the largest
         let mut many = all.clone();
         for d in 10..20 {
             many.push(f(d, "heiter · ruhig", &["Tasteninstrumente"], ""));

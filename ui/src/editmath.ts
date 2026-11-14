@@ -1,11 +1,11 @@
-// Reine Rechenhilfen der Zeitleiste (ohne DOM) – auch direkt in Node testbar.
+// Pure calculation helpers of the timeline (without DOM) – also directly testable in Node.
 
 import { language, plural, t } from "./i18n.js";
 
-/** Auf ein Raster runden; Raster 0 = frei. */
+/** Rounds to a grid; grid 0 = free. */
 export const snapTo = (v: number, grid: number): number => (grid ? Math.round(v / grid) * grid : v);
 
-/** Abstand in Schlägen lesbar: „+1 Takt 2 Schläge“, „−0,5 Schläge“, „±0“. */
+/** Distance in beats, readable: "+1 bar 2 beats", "−0.5 beats", "±0". */
 export function fmtShift(beats: number, bpb: number): string {
   if (Math.abs(beats) < 1e-6) return "±0";
   const sign = beats > 0 ? "+" : "−";
@@ -18,16 +18,16 @@ export function fmtShift(beats: number, bpb: number): string {
   return `${sign}${parts.join(" ")}`;
 }
 
-/** Raster für Zeitbereiche im Lineal: Schläge, bei engem Zoom ganze Takte; frei = 0. */
+/** Grid for time ranges in the ruler: beats, whole bars when zoomed out; free = 0. */
 export function rangeGrid(pxPerBeat: number, beatsPerBar: number, free: boolean): number {
   if (free) return 0;
   return pxPerBeat >= 24 ? 1 : beatsPerBar;
 }
 
 /**
- * Bereich, den ein Noten-Clip für diese Noten braucht – relativ zu seinem
- * Anfang, in ganzen Takten: `lo` ≤ 0 (wie weit er nach links wachsen muss,
- * höchstens bis zum Projektanfang), `hi` ≥ bisherige Länge.
+ * Range a note clip needs for these notes – relative to its
+ * start, in whole bars: `lo` ≤ 0 (how far it must grow to the left,
+ * at most to the project start), `hi` ≥ the previous length.
  */
 export function clipSpan(
   notes: ReadonlyArray<{ startBeats: number; lengthBeats: number }>,
@@ -43,7 +43,7 @@ export function clipSpan(
   return { lo, hi: lo + Math.max(lengthBeats - lo, needed) };
 }
 
-/** Takt.Schlag einer Position (1-basiert), Bruchteile mit Komma: „3.1“, „2.2,5“. */
+/** Bar.beat of a position (1-based), fractions with a comma: "3.1", "2.2,5". */
 export function barBeat(beats: number, beatsPerBar: number): string {
   const bpb = Math.max(1, beatsPerBar);
   const bar = Math.floor(beats / bpb + 1e-9);
@@ -51,7 +51,7 @@ export function barBeat(beats: number, beatsPerBar: number): string {
   return `${bar + 1}.${beat.toLocaleString(language())}`;
 }
 
-/** Zeitbereich lesbar: ganze Takte als „Takt 2“ / „Takt 2–3“, sonst „Takt 1.3 – 2.2“. */
+/** Time range, readable: whole bars as "Bar 2" / "bars 2–3", otherwise "bars 1.3 – 2.2". */
 export function rangeLabel(start: number, end: number, beatsPerBar: number): string {
   const bpb = Math.max(1, beatsPerBar);
   const whole = (b: number) => Math.abs(b / bpb - Math.round(b / bpb)) < 1e-9;
@@ -63,14 +63,14 @@ export function rangeLabel(start: number, end: number, beatsPerBar: number): str
   return t("bars {from} – {to}", { from: barBeat(start, bpb), to: barBeat(end, bpb) });
 }
 
-/** Raster (in Schlägen) als Notenwert: „1/8“; Schlag-Einheit aus der Taktart (4 = Viertel). */
+/** Grid (in beats) as a note value: "1/8"; beat unit from the time signature (4 = quarter). */
 export function gridLabel(grid: number, beatUnit: number): string {
   const d = beatUnit / grid;
   if (d >= 1 && Math.abs(d - Math.round(d)) < 1e-6) return `1/${Math.round(d)}`;
   return plural(grid, "{n} beat", "{n} beats", { n: grid.toLocaleString(language()) });
 }
 
-/** Raster eines Notenwerts 1/`d` in Schlägen (4/4: 1/4 = 1, 1/8 = 0,5; 6/8: 1/8 = 1). */
+/** Grid of a note value 1/`d` in beats (4/4: 1/4 = 1, 1/8 = 0.5; 6/8: 1/8 = 1). */
 export function gridOf(d: number, beatUnit: number): number {
   return beatUnit / d;
 }

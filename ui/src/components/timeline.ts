@@ -1,12 +1,12 @@
-// Zeitleiste: Lineal oben, darunter die Spuren.
-// Lineal: Ziehen verschiebt die Ansicht, Klick setzt die Abspielposition,
-// Umschalt/Strg+Ziehen markiert einen Zeitbereich (Schleife), Kanten lassen
-// sich nachziehen. Spuren: Klick wählt Noten, Ziehen auf freier Fläche zieht
-// einen Auswahlrahmen auf, gewählte Noten lassen sich verschieben (mit
-// Takteinteilung); erst Alt+Klick setzt eine Note. Rechtsklick öffnet ein
-// Kontextmenü (Noten ausrichten/transponieren, Aufnahme umwandeln, Zeitbereich
-// löschen). Audio-Clips tragen den Knopf „♪ → Noten“; gezogene Audiodateien
-// zeigen, wo sie landen (filedrop.ts).
+// Timeline: ruler on top, the tracks below.
+// Ruler: dragging pans the view, click sets the playhead,
+// Shift/Ctrl+drag marks a time range (loop), edges can
+// be dragged. Tracks: click selects notes, dragging on empty space draws
+// a selection box, selected notes can be moved (with
+// bar subdivision); only Alt+click places a note. Right-click opens a
+// context menu (align/transpose notes, convert recording, delete
+// time range). Audio clips carry the button "♪ → Notes"; dragged audio files
+// show where they land (filedrop.ts).
 
 import { startTour } from "./tour.js";
 import { chordName } from "../spelling.js";
@@ -35,7 +35,7 @@ import { clipSpan, fmtShift, gridLabel, gridOf, rangeGrid, rangeLabel, snapTo } 
 
 const WAVE_BUCKETS = 2400;
 const waves = new Map<string, Float32Array | "loading">();
-/** Länge der zuletzt gesetzten Note (neue Noten übernehmen sie). */
+/** Length of the most recently placed note (new notes adopt it). */
 let lastNoteLength = 1;
 
 function rgba(hex: string, a: number): string {
@@ -45,14 +45,14 @@ function rgba(hex: string, a: number): string {
 
 type Drag =
   | {
-      /** Lineal ziehen: Ansicht verschieben (ohne Bewegung: Abspielposition setzen). */
+      /** Drag ruler: pan the view (without movement: set playhead). */
       kind: "pan";
       startX: number;
       scrollX0: number;
       moved: boolean;
     }
   | {
-      /** Zeitbereich markieren bzw. eine Kante nachziehen. */
+      /** Mark a time range or drag an edge. */
       kind: "range";
       anchor: number;
       cur: number;
@@ -60,16 +60,16 @@ type Drag =
       free: boolean;
     }
   | {
-      /** Auswahlrahmen über Noten einer Spur. */
+      /** Selection box over notes of a track. */
       kind: "marquee";
       trackId: number;
-      /** Clip unter dem Startpunkt (sonst der mit den meisten Treffern). */
+      /** Clip under the starting point (otherwise the one with the most hits). */
       clipId: number | null;
       x0: number;
       y0: number;
       x: number;
       y: number;
-      /** Umschalt/Strg: zur bisherigen Auswahl hinzunehmen. */
+      /** Shift/Ctrl: add to the existing selection. */
       base: { clipId: number; keys: string[] } | null;
       moved: boolean;
     }
@@ -81,24 +81,24 @@ type Drag =
       clipId: number;
       startX: number;
       startY: number;
-      /** Zeigerposition (für die Positionsanzeige beim Verschieben). */
+      /** Pointer position (for the position display while moving). */
       curX: number;
       curY: number;
-      /** Noten vor der Geste (bei neuer Note inklusive dieser). */
+      /** Notes before the gesture (for a new note including this one). */
       orig: Note[];
-      /** Indizes in `orig`, die bewegt bzw. in der Länge geändert werden. */
+      /** Indices in `orig` that are moved or changed in length. */
       active: number[];
-      /** Index der angefassten Note. */
+      /** Index of the grabbed note. */
       grabbed: number;
       draft: Note[];
       moved: boolean;
       created: boolean;
       lastPitch: number;
-      /** Bahnhöhe beim Start der Geste (für die Umrechnung y → Halbtöne). */
+      /** Lane height at the start of the gesture (for the y → semitones conversion). */
       laneH: number;
     }
   | {
-      /** Ausdrucksspur: Werte ziehen/malen, mit Shift eine Linie (Crescendo). */
+      /** Expression track: drag/paint values, with Shift a line (crescendo). */
       kind: "expr";
       trackId: number;
       key: ExprKey;
@@ -108,14 +108,14 @@ type Drag =
       lastX: number;
       curX: number;
       curY: number;
-      /** Notenlisten je Clip vor bzw. während der Geste. */
+      /** Note lists per clip before or during the gesture. */
       orig: Map<number, Note[]>;
       draft: Map<number, Note[]>;
-      /** Nur diese Noten (Auswahl) bearbeiten; fehlt ein Clip, sind alle frei. */
+      /** Edit only these notes (selection); if a clip is missing, all are free. */
       only: Map<number, Set<number>> | null;
     }
   | {
-      /** Alt+Ziehen auf einer Note: Anschlag (mit Shift: Vibrato) direkt ändern. */
+      /** Alt+drag on a note: change velocity (with Shift: vibrato) directly. */
       kind: "noteExpr";
       trackId: number;
       clipId: number;
@@ -135,13 +135,13 @@ interface Hit {
   index: number;
   rowY: number;
   clip: Clip | null;
-  /** Bereich innerhalb der Notenzeile. */
+  /** Area within the note row. */
   zone: "band" | "lanes" | "rhythm" | "expr" | "compact";
-  note: number; // Index der getroffenen Note oder -1
-  edge: boolean; // rechter Rand einer Note (Länge ändern)
+  note: number; // index of the hit note or -1
+  edge: boolean; // right edge of a note (change length)
   pitch: number;
   beatInClip: number;
-  /** Position im Projekt (Schläge). */
+  /** Position in the project (beats). */
   beat: number;
 }
 
@@ -151,7 +151,7 @@ class KwTimeline extends HTMLElement {
   #raf = 0;
   #drag: Drag | null = null;
   #width = 0;
-  /** Knöpfe „♪ → Noten“ der Audio-Clips (beim Zeichnen gesammelt, Zeitleisten-Koordinaten). */
+  /** "♪ → Notes" buttons of the audio clips (collected while drawing, timeline coordinates). */
   #noteButtons: Array<{ x: number; y: number; w: number; h: number; trackId: number; clipId: number }> = [];
 
   connectedCallback(): void {
@@ -212,7 +212,7 @@ class KwTimeline extends HTMLElement {
     this.addEventListener("wheel", (e) => this.#wheel(e), { passive: false });
   }
 
-  /** Ziel für gezogene Audiodateien an einer Stelle (Fensterkoordinaten); null außerhalb. */
+  /** Target for dragged audio files at a position (window coordinates); null outside. */
   dropTargetAt(cx: number, cy: number): DropTarget | null {
     const r = this.#canvas.getBoundingClientRect();
     if (cx < r.left || cx >= r.right || cy < r.top || cy >= r.bottom) return null;
@@ -223,7 +223,7 @@ class KwTimeline extends HTMLElement {
     return { trackId: hit?.track.id ?? null, startBeats };
   }
 
-  /** Lage des Knopfs „♪ → Noten“ eines Audio-Clips in Fensterkoordinaten (null: nicht sichtbar). */
+  /** Position of the "♪ → Notes" button of an audio clip in window coordinates (null: not visible). */
   noteButtonRect(clipId: number): { x: number; y: number; w: number; h: number } | null {
     const b = this.#noteButtons.find((n) => n.clipId === clipId);
     if (!b) return null;
@@ -239,7 +239,7 @@ class KwTimeline extends HTMLElement {
     return null;
   }
 
-  // ---------- Koordinaten ----------
+  // ---------- Coordinates ----------
   #ppb(): number {
     return viewport.peek().pxPerBeat;
   }
@@ -305,7 +305,7 @@ class KwTimeline extends HTMLElement {
     return hit;
   }
 
-  /** Spur, deren Unterkante (Splitter) an dieser y-Position liegt (±4 px). */
+  /** Track whose bottom edge (splitter) is at this y position (±4 px). */
   #splitterAt(y: number): Track | null {
     const p = snapshot.peek()?.project;
     if (!p || y < RULER_H) return null;
@@ -313,9 +313,9 @@ class KwTimeline extends HTMLElement {
     return row?.track ?? null;
   }
 
-  // ---------- Interaktion ----------
+  // ---------- Interaction ----------
   #down(e: PointerEvent): void {
-    if (e.button === 2) return; // Rechtsklick: Kontextaktion
+    if (e.button === 2) return; // right-click: context action
     const split = this.#splitterAt(e.offsetY);
     if (split) {
       startRowResize(split, e, this.#canvas);
@@ -330,7 +330,7 @@ class KwTimeline extends HTMLElement {
     try {
       this.#canvas.setPointerCapture(e.pointerId);
     } catch {
-      /* z. B. synthetische Ereignisse – Geste funktioniert trotzdem */
+      /* e.g. synthetic events – the gesture works anyway */
     }
     if (e.offsetY < RULER_H) {
       this.#rulerDown(e);
@@ -358,9 +358,9 @@ class KwTimeline extends HTMLElement {
       return;
     }
     if (hit.track.kind === "instrument" && hit.zone === "lanes") {
-      // Erst Alt+Klick setzt eine Note, sonst zieht man einen Auswahlrahmen auf.
-      // Neben einem Clip kommt die Note in den nächsten Clip der Spur, der sich
-      // beim Loslassen auf ganze Takte erweitert; nur ohne Clip entsteht ein neuer.
+      // Only Alt+click places a note, otherwise you draw a selection box.
+      // Next to a clip the note goes into the nearest clip of the track, which
+      // extends to whole bars on release; only without a clip is a new one created.
       if (e.altKey) {
         if (editable && hit.clip) this.#beginNoteCreate(e, hit, hit.clip);
         else if (!hit.clip) {
@@ -384,14 +384,14 @@ class KwTimeline extends HTMLElement {
     }
   }
 
-  // ---------- Lineal ----------
+  // ---------- Ruler ----------
   #rangeShown(): [number, number] | null {
     const d = this.#drag;
     if (d?.kind === "range") return d.moved && Math.abs(d.cur - d.anchor) > 1e-6 ? [Math.min(d.anchor, d.cur), Math.max(d.anchor, d.cur)] : null;
     return snapshot.peek()?.engine.loopRange ?? null;
   }
 
-  /** Kante des markierten Bereichs unter x (±5 px): 0 = Anfang, 1 = Ende. */
+  /** Edge of the marked range under x (±5 px): 0 = start, 1 = end. */
   #rangeEdgeAt(x: number): 0 | 1 | null {
     const r = snapshot.peek()?.engine.loopRange;
     if (!r) return null;
@@ -405,7 +405,7 @@ class KwTimeline extends HTMLElement {
     const mod = e.shiftKey || e.ctrlKey || e.metaKey;
     const edge = mod ? null : this.#rangeEdgeAt(e.offsetX);
     if (range && edge != null) {
-      // Kante packen: die andere bleibt stehen
+      // grab an edge: the other stays put
       this.#drag = { kind: "range", anchor: range[1 - edge]!, cur: range[edge]!, moved: true, free: e.altKey };
       return;
     }
@@ -418,8 +418,8 @@ class KwTimeline extends HTMLElement {
     this.#drag = { kind: "pan", startX: e.offsetX, scrollX0: viewport.peek().scrollX, moved: false };
   }
 
-  // ---------- Noten ----------
-  /** Auswahlrahmen: alle Noten im Rechteck (Zeit × Tonhöhe) eines Clips der Spur. */
+  // ---------- Notes ----------
+  /** Selection box: all notes in the rectangle (time × pitch) of a clip of the track. */
   #beginMarquee(e: PointerEvent, hit: Hit): void {
     const additive = e.shiftKey || e.ctrlKey || e.metaKey;
     const sel = noteSel.peek();
@@ -464,7 +464,7 @@ class KwTimeline extends HTMLElement {
     selection.value = { trackId: t.id, clipId: best.clipId };
   }
 
-  /** Nächster Noten-Clip der Spur zu einer Position (Abstand zur Clipkante; bei Gleichstand der linke). */
+  /** Nearest note clip of the track to a position (distance to the clip edge; on a tie the left one). */
   #nearestNotesClip(t: Track, beat: number): Clip | null {
     const p = snapshot.peek()?.project;
     if (!p) return null;
@@ -478,7 +478,7 @@ class KwTimeline extends HTMLElement {
     return best?.c ?? null;
   }
 
-  /** Spur ohne Noten-Clip: Alt+Klick legt einen Clip (1 Takt) mit dieser Note an. */
+  /** Track without a note clip: Alt+click creates a clip (1 bar) with this note. */
   #createClipWithNote(hit: Hit): void {
     const p = snapshot.peek()?.project;
     if (!p) return;
@@ -505,8 +505,8 @@ class KwTimeline extends HTMLElement {
       kind: "notes" as const, trackId: hit.track.id, clipId: clip.id, startX: e.offsetX, startY: e.offsetY, curX: e.offsetX, curY: e.offsetY,
       moved: false, laneH: geoFor(hit.track).laneH,
     };
-    // Klick wählt die Note, Umschalt/Strg+Klick nimmt sie dazu bzw. heraus;
-    // Ziehen verschiebt alle gewählten Noten, am rechten Rand ändert es die Länge.
+    // Click selects the note, Shift/Ctrl+click adds it to or removes it from the selection;
+    // dragging moves all selected notes, at the right edge it changes the length.
     const key = noteKey(notes[hit.note]!);
     if (e.shiftKey || e.ctrlKey || e.metaKey) {
       selKeys.has(key) ? selKeys.delete(key) : selKeys.add(key);
@@ -520,7 +520,7 @@ class KwTimeline extends HTMLElement {
     void backend.previewNote(hit.track.id, notes[hit.note]!.pitch).catch(() => {});
   }
 
-  /** Alt+Klick auf eine leere Bahn im Clip: neue Note, Ziehen nach rechts bestimmt die Länge. */
+  /** Alt+click on an empty lane in the clip: new note, dragging to the right sets the length. */
   #beginNoteCreate(e: PointerEvent, hit: Hit, clip: Clip): void {
     const notes = clip.source.type === "notes" ? clip.source.notes : [];
     const base = {
@@ -528,7 +528,7 @@ class KwTimeline extends HTMLElement {
       moved: false, laneH: geoFor(hit.track).laneH,
     };
     const grid = noteGrid(this.#ppb(), e.shiftKey);
-    // auch vor dem Clipanfang (negativ) – nur nicht vor den Projektanfang
+    // also before the clip start (negative) – just not before the project start
     const start = Math.max(-clip.startBeats, grid ? Math.floor(hit.beatInClip / grid) * grid : hit.beatInClip);
     const created: Note = { pitch: hit.pitch, startBeats: start, lengthBeats: Math.max(lastNoteLength, grid || 0.0625), velocity: 100 };
     const orig = [...notes, created];
@@ -539,7 +539,7 @@ class KwTimeline extends HTMLElement {
     this.#invalidate();
   }
 
-  /** Alt+Ziehen auf einer Note: Anschlag, mit Shift Vibrato – für die Note bzw. die ganze Auswahl. */
+  /** Alt+drag on a note: velocity, with Shift vibrato – for the note or the whole selection. */
   #beginNoteExpr(e: PointerEvent, hit: Hit, clip: Clip): void {
     const notes = clip.source.type === "notes" ? clip.source.notes : [];
     const sel = noteSel.peek();
@@ -559,13 +559,13 @@ class KwTimeline extends HTMLElement {
     this.#invalidate();
   }
 
-  /** Ausdrucksspur: Wert setzen/malen; Shift: gerade Linie über mehrere Noten (z. B. Crescendo). */
+  /** Expression track: set/paint value; Shift: straight line across several notes (e.g. crescendo). */
   #beginExprGesture(e: PointerEvent, hit: Hit): void {
     const t = hit.track;
     selection.value = { trackId: t.id, clipId: hit.clip?.id ?? null };
     const orig = new Map<number, Note[]>();
     for (const c of t.clips) if (c.source.type === "notes") orig.set(c.id, c.source.notes);
-    // Mit Notenauswahl in dieser Spur: nur die ausgewählten Noten ändern.
+    // With a note selection in this track: change only the selected notes.
     const sel = noteSel.peek();
     let only: Map<number, Set<number>> | null = null;
     if (sel && sel.trackId === t.id && sel.keys.length) {
@@ -581,7 +581,7 @@ class KwTimeline extends HTMLElement {
     this.#paintExpr(e.offsetX, e.offsetY);
   }
 
-  /** Noten der Spur, deren Anfang zwischen x0 und x1 liegt: [Clip, Index, x]. */
+  /** Notes of the track whose start lies between x0 and x1: [clip, index, x]. */
   #notesBetween(t: Track, x0: number, x1: number, only: Map<number, Set<number>> | null): Array<[Clip, number, number]> {
     const lo = Math.min(x0, x1);
     const hi = Math.max(x0, x1);
@@ -612,11 +612,11 @@ class KwTimeline extends HTMLElement {
     d.curX = x;
     d.curY = y;
     if (d.line) {
-      // Gerade vom Startpunkt zum Zeiger: dazwischen liegende Noten folgen der Linie.
+      // Straight line from the starting point to the pointer: notes in between follow the line.
       d.draft = new Map(d.orig);
       const v0 = valueAt(d.startY);
       const v1 = valueAt(y);
-      // 5 px Toleranz an den Enden, damit Noten genau am Linienanfang/-ende dazugehören.
+      // 5 px tolerance at the ends, so that notes exactly at the line start/end belong to it.
       const tol = x >= d.startX ? 5 : -5;
       for (const [c, i, nx] of this.#notesBetween(t, d.startX - tol, x + tol, d.only)) {
         const f = x === d.startX ? 0 : Math.max(0, Math.min(1, (nx - d.startX) / (x - d.startX)));
@@ -625,7 +625,7 @@ class KwTimeline extends HTMLElement {
         d.draft.set(c.id, notes);
       }
     } else {
-      // Malen: alle Noten, über deren Anfang der Zeiger seit dem letzten Schritt gestrichen ist.
+      // Painting: all notes whose start the pointer has swept over since the last step.
       const v = valueAt(y);
       const from = d.lastX === x ? x - 6 : d.lastX;
       const to = d.lastX === x ? x + 6 : x;
@@ -650,7 +650,7 @@ class KwTimeline extends HTMLElement {
       return;
     }
     if (d.kind === "pan") {
-      // Lineal greifen: die Zeit wandert mit der Maus
+      // grab the ruler: time moves with the mouse
       const dx = e.offsetX - d.startX;
       if (Math.abs(dx) > 3) d.moved = true;
       if (!d.moved) return;
@@ -684,13 +684,13 @@ class KwTimeline extends HTMLElement {
       return;
     }
     if (d.kind === "noteExpr") {
-      const dy = d.startY - e.offsetY; // nach oben = mehr
+      const dy = d.startY - e.offsetY; // up = more
       if (Math.abs(dy) > 2) d.moved = true;
       d.curX = e.offsetX;
       d.curY = e.offsetY;
       if (!d.moved) return;
       const def = EXPRS[d.key];
-      const perPx = (def.max - def.min) / 160; // 160 px = ganzer Bereich
+      const perPx = (def.max - def.min) / 160; // 160 px = whole range
       d.draft = d.orig.slice();
       for (const i of d.active) d.draft[i] = withExpr(d.orig[i]!, d.key, exprValue(d.orig[i]!, d.key) + dy * perPx);
       this.#canvas.style.cursor = "ns-resize";
@@ -709,16 +709,16 @@ class KwTimeline extends HTMLElement {
       return;
     }
 
-    // Noten
+    // Notes
     const dy = e.offsetY - d.startY;
     if (Math.abs(dx) > 2 || Math.abs(dy) > 2) d.moved = true;
     if (!d.moved) return;
     const grid = noteGrid(this.#ppb(), e.shiftKey);
     const dBeatsRaw = dx / this.#ppb();
     if (d.mode === "move") {
-      const dPitch = pitchDelta(d, dy); // Richtung folgt der Einstellung der Tonachse
+      const dPitch = pitchDelta(d, dy); // direction follows the pitch axis setting
       let dBeats = snapTo(dBeatsRaw, grid);
-      // auch vor den Clipanfang (der Clip wächst dann nach links), nicht vor den Projektanfang
+      // also before the clip start (the clip then grows to the left), not before the project start
       const minStart = Math.min(...d.active.map((i) => d.orig[i]!.startBeats));
       const clipStart = snapshot.peek()?.project.tracks.find((t) => t.id === d.trackId)?.clips.find((c) => c.id === d.clipId)?.startBeats ?? 0;
       dBeats = Math.max(dBeats, -(clipStart + minStart));
@@ -734,7 +734,7 @@ class KwTimeline extends HTMLElement {
       this.#canvas.style.cursor = "grabbing";
     } else {
       const n = d.orig[d.grabbed]!;
-      // neue Note: endet am Zeiger; vorhandene: Kante um die Zugstrecke verschieben
+      // new note: ends at the pointer; existing: move the edge by the drag distance
       const clipStart = snapshot.peek()?.project.tracks.find((t) => t.id === d.trackId)?.clips.find((c) => c.id === d.clipId)?.startBeats ?? 0;
       const end = d.created ? snapTo(this.#xToBeat(e.offsetX) - clipStart, grid) : snapTo(n.startBeats + n.lengthBeats + dBeatsRaw, grid);
       const len = Math.max(grid || 0.0625, end - n.startBeats);
@@ -750,14 +750,14 @@ class KwTimeline extends HTMLElement {
     try {
       if (this.#canvas.hasPointerCapture(e.pointerId)) this.#canvas.releasePointerCapture(e.pointerId);
     } catch {
-      /* ignorieren */
+      /* ignore */
     }
     if (d?.kind === "pan" && !d.moved) seekBeats(this.#xToBeat(e.offsetX));
     if (d?.kind === "range") {
-      // Ziehen setzt den Bereich, Umschalt/Strg-Klick ohne Ziehen hebt ihn auf
+      // Dragging sets the range, Shift/Ctrl+click without dragging clears it
       const r: [number, number] | null = d.moved && Math.abs(d.cur - d.anchor) > 1e-6 ? [Math.min(d.anchor, d.cur), Math.max(d.anchor, d.cur)] : null;
       void act(backend.setLoopRange(r));
-      // zuletzt markiert: der Zeitbereich – Entf löscht ihn (nicht die Noten- oder Clip-Auswahl)
+      // last marked: the time range – Delete removes it (not the note or clip selection)
       rangeFocus.value = !!r;
       if (r) noteSel.value = null;
     }
@@ -786,9 +786,9 @@ class KwTimeline extends HTMLElement {
   }
 
   /**
-   * Neue Notenliste übernehmen. Liegen Noten außerhalb des Clips, wächst er in
-   * ganzen Takten: nach rechts (Länge) bzw. nach links (Anfang früher, Noten
-   * rücken um denselben Betrag nach) – alles ein Undo-Schritt.
+   * Adopt a new note list. If notes lie outside the clip, it grows in
+   * whole bars: to the right (length) or to the left (start earlier, notes
+   * shift by the same amount) – all one undo step.
    */
   #commitNotes(trackId: number, clipId: number, notes: Note[], selected: Note[]): void {
     const p = snapshot.peek()?.project;
@@ -809,9 +809,9 @@ class KwTimeline extends HTMLElement {
   }
 
   /**
-   * Rechtsklick: Kontextmenü für das, was unter der Maus liegt – markierte
-   * Noten (eine nicht markierte Note wird vorher gewählt), einen Audio-Clip,
-   * den markierten Zeitbereich; sonst den Clip.
+   * Right-click: context menu for whatever is under the mouse – selected
+   * notes (an unselected note is selected first), an audio clip,
+   * the marked time range; otherwise the clip.
    */
   #context(e: MouseEvent): void {
     e.preventDefault();
@@ -848,7 +848,7 @@ class KwTimeline extends HTMLElement {
     if (entries.length) openContextMenu(e.clientX, e.clientY, entries);
   }
 
-  /** Menü für markierte Noten: am Takt ausrichten (Raster wählbar), transponieren, löschen. */
+  /** Menu for selected notes: align to bar (grid selectable), transpose, delete. */
   #notesMenu(count: number, p: Project): MenuEntry[] {
     const unit = p.beatUnit || 4;
     const view = noteGrid(this.#ppb(), false) || 0.25;
@@ -887,7 +887,7 @@ class KwTimeline extends HTMLElement {
     ];
   }
 
-  /** Menü für einen Audio-Clip: in eine Melodie- oder Rhythmus-Spur umwandeln, Analyse, Tempo, Löschen. */
+  /** Menu for an audio clip: convert to a melody or rhythm track, analysis, tempo, delete. */
   #audioMenu(track: Track, c: Clip): MenuEntry[] {
     return [
       { heading: c.name },
@@ -900,7 +900,7 @@ class KwTimeline extends HTMLElement {
     ];
   }
 
-  /** Menü für den markierten Zeitbereich. */
+  /** Menu for the marked time range. */
   #rangeMenu(range: [number, number], bpb: number): MenuEntry[] {
     return [
       { heading: t("Selected: {range}", { range: rangeLabel(range[0], range[1], bpb) }) },
@@ -918,7 +918,7 @@ class KwTimeline extends HTMLElement {
     const hit = this.#hit(e.offsetX, e.offsetY);
     if (!hit) return;
     if (hit.zone === "expr") {
-      // Doppelklick in der Ausdrucksspur: Wert der nächstgelegenen Note(n) zurücksetzen.
+      // Double-click in the expression track: reset the value of the nearest note(s).
       const key = laneKeyFor(hit.track);
       const near = this.#notesBetween(hit.track, e.offsetX - 8, e.offsetX + 8, null);
       const byClip = new Map<number, Note[]>();
@@ -934,7 +934,7 @@ class KwTimeline extends HTMLElement {
       void analyzeSelected();
       return;
     }
-    // Doppelklick auf freie Fläche einer Instrumentspur: neuen Clip (1 Takt) anlegen.
+    // Double-click on empty space of an instrument track: create a new clip (1 bar).
     const p = snapshot.peek()?.project;
     if (!hit.clip && hit.track.kind === "instrument" && p) {
       const bar = Math.floor(this.#xToBeat(e.offsetX) / p.beatsPerBar) * p.beatsPerBar;
@@ -958,7 +958,7 @@ class KwTimeline extends HTMLElement {
     if (hit.zone === "expr") return "crosshair";
     if (hit.zone === "lanes" && hit.track.kind === "instrument") {
       if (hit.note >= 0) return e.altKey ? "ns-resize" : hit.edge ? "ew-resize" : "move";
-      // leere Bahn: Alt = Note setzen, sonst Auswahlrahmen
+      // empty lane: Alt = place note, otherwise selection box
       return e.altKey ? "copy" : "crosshair";
     }
     return hit.clip ? "grab" : "default";
@@ -970,7 +970,7 @@ class KwTimeline extends HTMLElement {
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
     const p = snapshot.peek()?.project;
-    // Alt + Mausrad über einer Notenzeile: Tonbereich verschieben.
+    // Alt + mouse wheel over a note row: shift the pitch range.
     if (e.altKey && p) {
       const hit = this.#hit(mx, my);
       if (hit?.track.view === "notes") {
@@ -1025,7 +1025,7 @@ class KwTimeline extends HTMLElement {
     return null;
   }
 
-  /** Was gerade verschoben wird (Noten oder Clip): Bereich, neue Position, Abstand, Raster. */
+  /** What is currently being moved (notes or clip): range, new position, distance, grid. */
   #moving(p: Project): { start: number; end: number; at: number; shift: number; pitch: number; trackId: number; grid: number; x: number; y: number } | null {
     const d = this.#drag;
     if (d?.kind === "notes" && d.mode === "move" && d.moved) {
@@ -1052,7 +1052,7 @@ class KwTimeline extends HTMLElement {
     return null;
   }
 
-  /** Kästchen mit Text am Zeiger (Wert beim Ziehen). */
+  /** Small box with text at the pointer (value while dragging). */
   #tip(ctx: CanvasRenderingContext2D, x0: number, y0: number, text: string, border = "rgba(255, 180, 84, 0.7)"): void {
     ctx.font = "600 11.5px 'Segoe UI', system-ui, sans-serif";
     const tw = ctx.measureText(text).width;
@@ -1070,7 +1070,7 @@ class KwTimeline extends HTMLElement {
     ctx.fillText(text, x + 8, y + 11.5);
   }
 
-  // ---------- Zeichnen ----------
+  // ---------- Drawing ----------
   #draw(): void {
     const { ctx, w, h: hh } = fitCanvas(this.#canvas);
     this.#width = w;
@@ -1084,7 +1084,7 @@ class KwTimeline extends HTMLElement {
     const bpb = p.beatsPerBar;
     const rows = this.#rows(p);
 
-    // Spurzeilen (Notenzeilen mit Tonbahnen)
+    // Track rows (note rows with pitch lanes)
     rows.forEach(({ track: t, y, h: rh }, i) => {
       if (y > hh || y + rh < RULER_H) return;
       if (t.view === "notes") {
@@ -1097,14 +1097,14 @@ class KwTimeline extends HTMLElement {
       ctx.fillRect(0, y + rh - 1, w, 1);
     });
 
-    // Raster
+    // Grid
     const first = Math.max(0, Math.floor(this.#xToBeat(0)));
     const last = Math.ceil(this.#xToBeat(w));
     const barStep = ppb * bpb < 40 ? Math.ceil(40 / (ppb * bpb)) : 1;
     for (let b = first; b <= last; b++) {
       const isBar = b % bpb === 0;
       if (!isBar && ppb < 14) continue;
-      // ganz herausgezoomt: nur jede n-te Taktlinie, sonst wird das Raster zur Fläche
+      // fully zoomed out: only every n-th bar line, otherwise the grid turns into a solid area
       if (isBar && ppb * bpb < 12 && (b / bpb) % barStep) continue;
       const x = Math.round(this.#beatToX(b)) + 0.5;
       ctx.fillStyle = isBar ? "#262d3b" : "#171c26";
@@ -1115,8 +1115,8 @@ class KwTimeline extends HTMLElement {
       }
     }
 
-    // Beim Verschieben: Takteinteilung deutlich – Takte, Schläge und in der
-    // bewegten Spur das Einrastraster; der neue Bereich leicht hervorgehoben.
+    // While moving: bar subdivision clearly visible – bars, beats and, in the
+    // moved track, the snap grid; the new range slightly highlighted.
     const mv = this.#moving(p);
     if (mv) {
       const mvRow = rows.find((r) => r.track.id === mv.trackId);
@@ -1149,7 +1149,7 @@ class KwTimeline extends HTMLElement {
     this.#drawExprTip(ctx, p);
     this.#drawDrop(ctx, p, rows, w, hh);
 
-    // Markierter Zeitbereich (türkis: wird wiederholt, blau: nur markiert)
+    // Marked time range (teal: will be repeated, blue: only marked)
     const range = this.#rangeShown();
     const loopOn = !!snapshot.peek()?.engine.loopOn;
     const rangeX = range ? [this.#beatToX(range[0]), this.#beatToX(range[1])] as const : null;
@@ -1162,7 +1162,7 @@ class KwTimeline extends HTMLElement {
       ctx.fillRect(Math.round(x1), RULER_H, 1, hh);
     }
 
-    // Auswahlrahmen
+    // Selection box
     const dm = this.#drag;
     if (dm?.kind === "marquee" && dm.moved) {
       const row = rows.find((r) => r.track.id === dm.trackId);
@@ -1185,7 +1185,7 @@ class KwTimeline extends HTMLElement {
       }
     }
 
-    // Position beim Verschieben (auch als Attribut – für Tests und Bildschirmleser)
+    // Position while moving (also as an attribute – for tests and screen readers)
     if (mv) {
       const pitch = mv.pitch ? ` · ${t("{delta} st", { delta: `${mv.pitch > 0 ? "+" : "−"}${Math.abs(mv.pitch)}` })}` : "";
       const label = `${t("Bar {bar}", { bar: formatBarBeat(mv.at, bpb) })}   ${fmtShift(mv.shift, bpb)}${pitch}`;
@@ -1195,7 +1195,7 @@ class KwTimeline extends HTMLElement {
       delete this.dataset.dragInfo;
     }
 
-    // Stellen des Kontrapunkt-Prüfers: Tönung in den beteiligten Spuren
+    // Spots found by the counterpoint checker: tint in the tracks involved
     const marks = counterpointMarks.peek();
     const markColor = (s: string, a: number) => (s === "fehler" ? `rgba(255, 93, 108, ${a})` : s === "warnung" ? `rgba(255, 180, 84, ${a})` : `rgba(122, 167, 255, ${a})`);
     for (const m of marks) {
@@ -1209,7 +1209,7 @@ class KwTimeline extends HTMLElement {
       }
     }
 
-    // Lineal
+    // Ruler
     ctx.fillStyle = "#121620";
     ctx.fillRect(0, 0, w, RULER_H);
     ctx.fillStyle = "#262d3b";
@@ -1224,7 +1224,7 @@ class KwTimeline extends HTMLElement {
       ctx.fillRect(x1 - 1, 0, 2, RULER_H - 1);
     }
     if (mv) {
-      // neuer Bereich der verschobenen Noten bzw. des Clips im Lineal
+      // new range of the moved notes or clip in the ruler
       const xs = this.#beatToX(mv.start);
       ctx.fillStyle = "rgba(255, 180, 84, 0.22)";
       ctx.fillRect(xs, 0, this.#beatToX(mv.end) - xs, RULER_H - 1);
@@ -1233,7 +1233,7 @@ class KwTimeline extends HTMLElement {
     }
     ctx.font = "11px 'Segoe UI', system-ui, sans-serif";
     ctx.textBaseline = "middle";
-    // Harmonie-Band unten im Lineal: Taktzahlen rücken nach oben
+    // Harmony band at the bottom of the ruler: bar numbers move up
     const lane = this.#harmonyLane();
     for (let b = first - (first % bpb); b <= last; b += bpb) {
       const bar = b / bpb;
@@ -1253,7 +1253,7 @@ class KwTimeline extends HTMLElement {
 
     if (lane) this.#drawHarmony(ctx, w, hh);
 
-    // Prüfer-Markierungen im Lineal (rot Fehler, orange Warnung, blau Hinweis)
+    // Checker markers in the ruler (red error, orange warning, blue hint)
     for (const m of marks) {
       const x0 = this.#beatToX(m.start);
       const x1 = Math.max(x0 + 4, this.#beatToX(m.end));
@@ -1262,7 +1262,7 @@ class KwTimeline extends HTMLElement {
       ctx.fillRect(x0, RULER_H - 5, x1 - x0, 4);
     }
 
-    // Abspielposition
+    // Playhead
     const st = status.peek();
     const px = this.#beatToX((st.positionSecs * p.tempoBpm) / 60);
     if (px >= -2 && px <= w + 2) {
@@ -1278,7 +1278,7 @@ class KwTimeline extends HTMLElement {
     }
   }
 
-  /** Gezogene Audiodateien: wohin sie kommen (Zeile, Startlinie, Beschriftung). */
+  /** Dragged audio files: where they go (row, start line, label). */
   #drawDrop(ctx: CanvasRenderingContext2D, p: Project, rows: Array<{ track: Track; y: number; h: number }>, w: number, hh: number): void {
     const drag = audioDrag.peek();
     const target = drag ? this.dropTargetAt(drag.x, drag.y) : null;
@@ -1296,7 +1296,7 @@ class KwTimeline extends HTMLElement {
       ctx.fillRect(0, row.y, w, row.h);
       ctx.fillStyle = "rgba(110, 231, 216, 0.85)";
     } else {
-      // neue Spur: unter der Spur unter der Maus bzw. unter der letzten
+      // new track: below the track under the mouse or below the last one
       const last = row ?? rows[rows.length - 1];
       ctx.fillRect(0, Math.max(RULER_H, last ? last.y + last.h - 1 : RULER_H), w, 2);
     }
@@ -1314,7 +1314,7 @@ class KwTimeline extends HTMLElement {
     this.dataset.dropInfo = label;
   }
 
-  /** Knopf „♪ → Noten“ im Kopf eines Audio-Clips (entfällt, wenn der Clip zu schmal ist). */
+  /** "♪ → Notes" button in the header of an audio clip (omitted if the clip is too narrow). */
   #drawNoteButton(ctx: CanvasRenderingContext2D, track: Track, c: Clip, x0: number, x1: number, top: number, hgt: number, w: number): void {
     const text = `♪ → ${t("Notes")}`;
     ctx.save();
@@ -1343,15 +1343,15 @@ class KwTimeline extends HTMLElement {
     this.#noteButtons.push({ x: bx, y: by, w: bw, h: bh, trackId: track.id, clipId: c.id });
   }
 
-  /** Harmonie-Band sichtbar (eingeschaltet oder Arbeit im Harmonie-Fenster) und Akkorde da? */
+  /** Harmony band visible (switched on or working in the Harmony window) and chords present? */
   #harmonyLane(): boolean {
     return (harmonyLaneOn.peek() || harmonyFocus.peek()) && !!harmonyLine.peek()?.chords.length;
   }
 
   /**
-   * Akkordfolge unten im Lineal: je Akkord ein Feld in der Farbe seiner
-   * Stimmung (wie im Quintenzirkel), mit Namen; harmonische Brüche als rote
-   * Kante, die durch alle Spuren läuft. Der Akkord unter der Abspielposition leuchtet.
+   * Chord progression at the bottom of the ruler: for each chord a box in the color of its
+   * mood (as in the circle of fifths), with its name; harmonic breaks as a red
+   * edge running through all tracks. The chord under the playhead lights up.
    */
   #drawHarmony(ctx: CanvasRenderingContext2D, w: number, hh: number): void {
     const line = harmonyLine.peek();
@@ -1382,7 +1382,7 @@ class KwTimeline extends HTMLElement {
         ctx.restore();
       }
       if (c.bruch) {
-        // Bruch: rote Kante im Lineal und gestrichelt durch alle Spuren
+        // break: red edge in the ruler and dashed through all tracks
         ctx.fillStyle = "#ff4d5e";
         ctx.fillRect(Math.round(x0) - 1, top - 3, 3, bandH + 3);
         ctx.beginPath();
@@ -1404,7 +1404,7 @@ class KwTimeline extends HTMLElement {
     });
   }
 
-  /** Erklärung zum Akkord unter der Maus im Harmonie-Band. */
+  /** Explanation of the chord under the mouse in the harmony band. */
   #harmonyTip(e: PointerEvent): string {
     if (e.offsetY < 14 || e.offsetY > RULER_H || !this.#harmonyLane()) return "";
     const line = harmonyLine.peek()!;
@@ -1426,7 +1426,7 @@ class KwTimeline extends HTMLElement {
     const RHYTHM_TOP = g.rhythmTop;
     ctx.fillStyle = "#0f1219";
     ctx.fillRect(0, y, w, NOTES_TOP);
-    // Schlagzeug: belegte Tasten (Trommeln) hervorheben
+    // Drums: highlight occupied keys (drums)
     const drumKeys = t.instrument?.kind === "drums" ? new Set(specFor(t.instrument)?.keys.map((k) => k.midi)) : null;
     const up = highOnTop.peek();
     for (let k = 0; k < LANE_SPAN; k++) {
@@ -1435,12 +1435,12 @@ class KwTimeline extends HTMLElement {
       ctx.fillStyle = drumKeys?.has(pitch) ? "#181d28" : isBlack(pitch) ? "#0b0d12" : "#11141b";
       ctx.fillRect(0, ly, w, LANE_H);
       if (pitch % 12 === 0) {
-        // Oktavgrenze zwischen H und C (H liegt je nach Richtung darüber oder darunter)
+        // Octave boundary between B and C (B is above or below depending on direction)
         ctx.fillStyle = "#283041";
         ctx.fillRect(0, up ? ly + LANE_H - 1 : ly, w, 1);
       }
     }
-    // Rhythmus-Leiste unter den Tonbahnen.
+    // Rhythm strip below the pitch lanes.
     const lanesEnd = y + NOTES_TOP + LANES_H;
     ctx.fillStyle = "#0d1016";
     ctx.fillRect(0, lanesEnd, w, RHYTHM_TOP - NOTES_TOP - LANES_H);
@@ -1448,7 +1448,7 @@ class KwTimeline extends HTMLElement {
     ctx.fillRect(0, y + RHYTHM_TOP, w, RHYTHM_H);
     ctx.fillStyle = "#1d2330";
     ctx.fillRect(0, y + RHYTHM_TOP, w, 1);
-    // Ausdrucksspur: Hilfslinien bei 0/50/100 %, bei zweiseitigen Werten die Nulllinie betont.
+    // Expression track: guide lines at 0/50/100 %, for two-sided values the zero line emphasized.
     if (g.exprH) {
       const def = EXPRS[laneKeyFor(t)];
       ctx.fillStyle = "#0a0c11";
@@ -1463,7 +1463,7 @@ class KwTimeline extends HTMLElement {
     }
   }
 
-  /** Während Ausdrucks-Gesten: Linie (Shift) und Wert am Zeiger. */
+  /** During expression gestures: line (Shift) and value at the pointer. */
   #drawExprTip(ctx: CanvasRenderingContext2D, p: Project): void {
     const d = this.#drag;
     if (d?.kind !== "expr" && d?.kind !== "noteExpr") return;
@@ -1513,8 +1513,8 @@ class KwTimeline extends HTMLElement {
 
   #drawNotesClip(ctx: CanvasRenderingContext2D, p: Project, track: Track, c: Clip, rowY: number, w: number, selected: boolean): void {
     const start = this.#clipStart(c);
-    // x0: Clipanfang (Bezug der Noten); wx0/wx1: Rahmen des Clips – während
-    // eine Note außerhalb liegt, wächst er schon mit (ganze Takte)
+    // x0: clip start (reference of the notes); wx0/wx1: frame of the clip – while
+    // a note lies outside, it already grows along (whole bars)
     const x0 = this.#beatToX(start);
     const len = clipLengthBeats(c, p.tempoBpm);
     const dr = this.#drag;
@@ -1562,10 +1562,10 @@ class KwTimeline extends HTMLElement {
         const nx = x0 + n.startBeats * this.#ppb();
         const nw = Math.max(3, n.lengthBeats * this.#ppb() - 1);
         const isSel = activeDraft ? activeDraft.has(i) : selKeys.has(noteKey(n));
-        // Rhythmus-Leiste: Notenanfänge dezent
+        // Rhythm strip: note starts subtle
         ctx.fillStyle = rgba(track.color, 0.4);
         ctx.fillRect(Math.round(nx), rowY + RHYTHM_TOP + 4, 2, RHYTHM_H - 7);
-        // Ausdrucksspur: Lolli je Note (Stiel von der Grund- bzw. Nulllinie zum Wert)
+        // Expression track: lollipop per note (stem from the baseline or zero line to the value)
         if (exprDef) {
           const v = exprValue(n, exprDef.key);
           const base = rowY + exprY(g, exprDef, exprDef.bipolar ? 0 : exprDef.min);
@@ -1579,14 +1579,14 @@ class KwTimeline extends HTMLElement {
           ctx.fill();
         }
         if (!inView(g.view, n.pitch)) {
-          // außerhalb des sichtbaren Bereichs: Markierung am Rand
+          // outside the visible range: marker at the edge
           ctx.fillStyle = rgba(track.color, 0.7);
           ctx.fillRect(nx, offViewAtTop(g.view, n.pitch) ? lanesTop : lanesTop + lanesH - 2, nw, 2);
           return;
         }
         const ny = rowY + laneY(g, n.pitch);
         const nh = Math.max(2, LANE_H - 1);
-        // Anschleifen: Bogen vom versetzten Ton in den Notenanfang
+        // Slide: arc from the offset note to the note start
         if (n.bend) {
           const from = Math.max(g.view.low - 1, Math.min(g.view.low + g.view.span, n.pitch + n.bend));
           const fy = rowY + laneY(g, from) + LANE_H / 2;
@@ -1598,12 +1598,12 @@ class KwTimeline extends HTMLElement {
           ctx.quadraticCurveTo(nx + reach * 0.2, ny + LANE_H / 2, nx + reach, ny + LANE_H / 2);
           ctx.stroke();
         }
-        // Anschlag = Deckkraft
+        // velocity = opacity
         ctx.fillStyle = rgba(track.color, 0.28 + 0.72 * (n.velocity / 127));
         ctx.beginPath();
         ctx.roundRect(nx + 0.5, ny + 0.5, nw, nh, 2);
         ctx.fill();
-        // Helligkeit: heller Rand oben bzw. Abdunkeln
+        // Brightness: light edge on top or darkening
         const br = n.brightness ?? 0;
         if (br > 0.01) {
           ctx.fillStyle = `rgba(255,255,255,${(0.25 + 0.6 * br).toFixed(2)})`;
@@ -1612,7 +1612,7 @@ class KwTimeline extends HTMLElement {
           ctx.fillStyle = `rgba(5,7,10,${(0.5 * -br).toFixed(2)})`;
           ctx.fillRect(nx + 0.5, ny + 0.5, nw, nh);
         }
-        // Vibrato: Wellenlinie im hinteren Teil der Note (setzt verzögert ein)
+        // Vibrato: wavy line in the rear part of the note (sets in with a delay)
         const vib = n.vibrato ?? 0;
         if (vib > 0.005 && nw > 10 && LANE_H >= 4) {
           const amp = Math.min(nh / 2 - 0.5, 0.8 + vib * Math.max(3, LANE_H));
@@ -1648,7 +1648,7 @@ class KwTimeline extends HTMLElement {
     ctx.restore();
   }
 
-  /** Hinweisfeld innerhalb eines Clips. */
+  /** Hint box within a clip. */
   #clipNote(ctx: CanvasRenderingContext2D, x: number, y: number, title: string, sub: string): void {
     const titleFont = "600 12px 'Segoe UI', system-ui, sans-serif";
     const subFont = "11px 'Segoe UI', system-ui, sans-serif";
@@ -1672,9 +1672,9 @@ class KwTimeline extends HTMLElement {
   }
 
   /**
-   * Audioaufnahme in der Notenansicht (nur Anzeige): erkannte Melodienoten mit
-   * Tonhöhenkurve, Anschläge mit Grundton (Bassdrum, Snare, Bass …) und tonlose
-   * Schläge (Hi-Hat …) in der Rhythmus-Leiste.
+   * Audio recording in the note view (display only): detected melody notes with
+   * pitch curve, hits with a fundamental (bass drum, snare, bass …) and unpitched
+   * beats (hi-hat …) in the rhythm strip.
    */
   #drawAudioPitch(ctx: CanvasRenderingContext2D, p: Project, track: Track, c: Clip, x0: number, rowY: number, g: NoteGeo, w: number): void {
     if (c.source.type !== "audio") return;
@@ -1699,7 +1699,7 @@ class KwTimeline extends HTMLElement {
     const yAt = (midi: number) => rowY + laneY(g, midi) + LANE_H / 2;
     const diamond = Math.max(3, Math.min(5, LANE_H * 0.6));
 
-    // Rhythmus-Leiste: tonlose Schläge (Hi-Hat, Shaker …) – nur Zeitpunkt und Stärke.
+    // Rhythm strip: unpitched beats (hi-hat, shaker …) – only time and strength.
     const stripTop = rowY + RHYTHM_TOP;
     const unpitched = a.hits.filter((hp) => hp.midi == null);
     for (const hp of unpitched) {
@@ -1710,13 +1710,13 @@ class KwTimeline extends HTMLElement {
       ctx.fillRect(x - 1, stripTop + RHYTHM_H - 2 - bar, 3, bar);
     }
 
-    // Melodienoten und Anschläge zusammenführen: Eine kurze Note, die mit einem
-    // Anschlag gleicher Tonhöhe beginnt (z. B. ausklingende Bassdrum), zeigt nur
-    // die Raute; bei längeren Noten zeigt das Notenkästchen den Anschlag.
+    // Merge melody notes and hits: A short note that begins with a
+    // hit of the same pitch (e.g. a decaying bass drum) shows only
+    // the diamond; for longer notes the note box shows the hit.
     const hideHit = new Set<number>();
     const hideNote = new Set<number>();
     a.notes.forEach((n, ni) => {
-      // Die Note darf etwas später beginnen (fallende Kick-Tonhöhe beruhigt sich erst).
+      // The note may begin a little later (a falling kick pitch only settles down later).
       const hi = a.hits.findIndex(
         (h) => h.midi != null && n.startSecs >= h.time - 0.08 && n.startSecs <= h.end && Math.abs(Math.round(h.midi) - n.midi) <= 2,
       );
@@ -1725,7 +1725,7 @@ class KwTimeline extends HTMLElement {
       else hideHit.add(hi);
     });
 
-    // Anschläge mit Grundton (Bassdrum, Snare, Toms, Bass): Raute + kurzer Balken.
+    // Hits with a fundamental (bass drum, snare, toms, bass): diamond + short bar.
     for (const [hi, hp] of a.hits.entries()) {
       if (hp.midi == null || hideHit.has(hi)) continue;
       const m = Math.round(hp.midi + shift);
@@ -1768,8 +1768,8 @@ class KwTimeline extends HTMLElement {
       ctx.fill();
       ctx.stroke();
     }
-    // Tonhöhenkurve nur in gehaltenen Melodienoten (≥ 0,3 s): dort zeigt sie Intonation
-    // und Vibrato; bei Schlägen (fallende Kick-Tonhöhe) wäre sie nur Unruhe.
+    // Pitch curve only in held melody notes (≥ 0.3 s): there it shows intonation
+    // and vibrato; for beats (falling kick pitch) it would be just noise.
     const held = a.notes.filter((n, ni) => !hideNote.has(ni) && n.endSecs - n.startSecs >= 0.3);
     const inNote = (secs: number) => held.some((n) => secs >= n.startSecs - 0.04 && secs <= n.endSecs + 0.04);
     ctx.strokeStyle = "#6ee7d8";
@@ -1784,7 +1784,7 @@ class KwTimeline extends HTMLElement {
       }
       const x = xAt(secs);
       const y = yAt(m);
-      // Sprünge (Tonwechsel, Oktavfehler) nicht als senkrechte Linie verbinden.
+      // Do not connect jumps (pitch changes, octave errors) as a vertical line.
       if (prev != null && Math.abs(m - prev) <= 1.5) ctx.lineTo(x, y);
       else ctx.moveTo(x, y);
       prev = m;

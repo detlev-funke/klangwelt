@@ -1,14 +1,14 @@
-// Web-Hülle, Worker: hier läuft der Kern (`klang_web.wasm`) – wie auf dem
-// Desktop der Rust-Prozess hinter dem Tauri-IPC.
+// Web shell, worker: the core (`klang_web.wasm`) runs here – like the Rust
+// process behind the Tauri IPC on desktop.
 //
-// * Befehle der Seite → `kw_invoke` (dieselbe Befehlstabelle wie auf dem Desktop).
-// * Ereignisse des Kerns → Seite (wie Tauri-Events).
-// * Status alle 33 ms → Seite („engine-status“; Desktop: Status-Thread).
-// * Engine-Nachrichten und Klangpuffer → Worklet (MessageChannel);
-//   Status und Mikrofon-Samples kommen von dort zurück.
-// * Dateien: beim Start aus OPFS in den Dateibaum des Kerns, Änderungen nach
-//   jedem Befehl zurück nach OPFS. Exporte bleiben nur im Speicher (sie werden
-//   heruntergeladen).
+// * Commands from the page → `kw_invoke` (same command table as on desktop).
+// * Events from the core → page (like Tauri events).
+// * Status every 33 ms → page ("engine-status"; desktop: status thread).
+// * Engine messages and sound buffers → worklet (MessageChannel);
+//   status and microphone samples come back from there.
+// * Files: at startup from OPFS into the core's file tree, changes after
+//   each command back to OPFS. Exports stay in memory only (they are
+//   downloaded).
 // * Score library: the package on the server is read by range – a command
 //   that misses data answers with status 2 and the missing ranges; this
 //   worker fetches them (`remote.ts`, cache first), hands them to the core and
@@ -56,7 +56,7 @@ interface Request {
   data?: ArrayBuffer;
 }
 
-/** Nachrichten des Worklets. */
+/** Messages from the worklet. */
 type FromWorklet = { s: [number, number, number, number, number] } | { rec: Float32Array } | { flushed: number };
 
 const scope = self as unknown as {
@@ -64,10 +64,10 @@ const scope = self as unknown as {
   onmessage: ((e: MessageEvent) => void) | null;
 };
 
-/** Größe eines Pufferstücks ans Worklet (Samples) – kleine Stücke, damit das
- *  Worklet beim Kopieren nie lange am Stück beschäftigt ist. */
+/** Size of a buffer chunk sent to the worklet (samples) – small chunks so that the
+ *  worklet is never busy for long at a stretch while copying. */
 const CHUNK = 1 << 17;
-/** Nur im Speicher (werden heruntergeladen, nicht gesichert). */
+/** In memory only (downloaded, not saved). */
 const TRANSIENT = "/Klangwelt/Exporte/";
 const OPFS_ROOT = "Klangwelt";
 
@@ -78,13 +78,13 @@ let port: MessagePort | null = null;
 const flushes = new Map<number, () => void>();
 let flushId = 0;
 
-// ---------------------------------------------------------------- Speicher
+// ---------------------------------------------------------------- Memory
 
 function view(): Uint8Array {
   return new Uint8Array(wasm.memory.buffer);
 }
 
-/** Bytes in den linearen Speicher; `fn` bekommt Zeiger und Länge. */
+/** Bytes into linear memory; `fn` receives pointer and length. */
 function withBytes<T>(bytes: Uint8Array, fn: (ptr: number, len: number) => T): T {
   const ptr = wasm.kw_alloc(bytes.length);
   view().set(bytes, ptr);
@@ -112,7 +112,7 @@ function text(ptr: number, len: number): string {
   return dec.decode(view().subarray(ptr, ptr + len));
 }
 
-// ---------------------------------------------------------------- Kern laden
+// ---------------------------------------------------------------- Loading the core
 
 const imports = {
   klangwelt: {
@@ -141,8 +141,8 @@ const imports = {
 
 async function start(init: Init): Promise<void> {
   const url = new URL("../klang_web.wasm", import.meta.url);
-  // Ein Server, der .wasm nicht als application/wasm schickt, bricht das
-  // Laden im Strom ab – dann eben am Stück.
+  // A server that does not send .wasm as application/wasm breaks
+  // streaming load – then load it in one piece.
   const { instance } = await WebAssembly.instantiateStreaming(fetch(url), imports).catch(async () =>
     WebAssembly.instantiate(await (await fetch(url)).arrayBuffer(), imports),
   );
@@ -156,8 +156,8 @@ async function start(init: Init): Promise<void> {
   // the request limit of the server: tell the page when a request has to wait
   onWait((seconds) => scope.postMessage({ ev: "library-wait", payload: JSON.stringify({ seconds }) }));
   void attachLibrary();
-  // Status wie der Status-Thread des Desktops; Vorhören nachfüllen wie der Engine-Thread
-  // Nach einem internen Fehler des Kerns nicht alle paar Millisekunden dieselbe Meldung
+  // Status like the desktop's status thread; refill the preview like the engine thread
+  // After an internal core error, do not repeat the same message every few milliseconds
   const timers = [
     setInterval(() => guard(() => {
       wasm.kw_status();
@@ -191,8 +191,8 @@ function fromWorklet(m: FromWorklet): void {
   }
 }
 
-/** Letzte Mikrofon-Samples aus dem Worklet abholen (vor dem Ende einer
- *  Aufnahme – auf dem Desktop leert der Engine-Thread den Ringpuffer). */
+/** Fetch the latest microphone samples from the worklet (before the end of a
+ *  recording – on desktop the engine thread drains the ring buffer). */
 function flushRecording(): Promise<void> {
   if (!port) return Promise.resolve();
   const id = ++flushId;
@@ -206,7 +206,7 @@ function flushRecording(): Promise<void> {
   });
 }
 
-// ---------------------------------------------------------------- Dateien (OPFS)
+// ---------------------------------------------------------------- Files (OPFS)
 
 async function opfsRoot(): Promise<FileSystemDirectoryHandle | null> {
   try {
@@ -218,7 +218,7 @@ async function opfsRoot(): Promise<FileSystemDirectoryHandle | null> {
   }
 }
 
-/** Alle gesicherten Dateien in den Dateibaum des Kerns. */
+/** All saved files into the core's file tree. */
 async function restoreFiles(): Promise<void> {
   const root = await opfsRoot();
   if (!root) return;
@@ -238,7 +238,7 @@ async function restoreFiles(): Promise<void> {
 
 let persisting: Promise<void> = Promise.resolve();
 
-/** Änderungen des Kerns nach OPFS (der Reihe nach, im Hintergrund). */
+/** Changes of the core to OPFS (in order, in the background). */
 function persistChanges(): void {
   const n = wasm.kw_fs_changes();
   if (!n) return;
@@ -333,22 +333,22 @@ async function attachLibrary(): Promise<void> {
   }
 }
 
-// ---------------------------------------------------------------- Agent: wartender chat_poll
+// ---------------------------------------------------------------- Agent: waiting chat_poll
 //
-// Auf dem Desktop wartet `chat_poll` im Kern (ein Thread je Verbindung). Hier
-// hat der Kern nur einen Thread und darf nicht blockieren – also wartet der
-// Worker: Er hält die Antwort offen, bis die Oberfläche einen Auftrag schickt
-// (`chat_send`) oder die Wartezeit abläuft, und fragt dann den Kern erneut.
-// Alle anderen Befehle laufen in der Zeit normal weiter. (Ein Service Worker
-// ginge dafür nicht: Er sieht den Zustand des Kerns nicht, und der Browser
-// beendet ihn im Leerlauf.)
+// On desktop `chat_poll` waits in the core (one thread per connection). Here
+// the core has only one thread and must not block – so the worker waits:
+// it keeps the answer open until the UI sends a job (`chat_send`) or the
+// wait time runs out, and then asks the core again.
+// All other commands continue normally in the meantime. (A service worker
+// would not work for this: it cannot see the core's state, and the browser
+// terminates it when idle.)
 
 interface HeldPoll {
   retry(last: boolean): void;
 }
 const heldPolls = new Set<HeldPoll>();
-/** „Agent hört zu“ gilt im Kern 90 s nach dem letzten Poll – solange einer
- *  wartet, frischt der Worker das auf. */
+/** "Agent is listening" holds in the core for 90 s after the last poll – as long as one
+ *  is waiting, the worker refreshes it. */
 const POLL_REFRESH_MS = 30_000;
 
 function mcpCore(message: string): string {
@@ -363,7 +363,7 @@ async function mcpWithData(message: string): Promise<string> {
   return r.out || "null";
 }
 
-/** Zahl der Aufträge in einer Antwort auf chat_poll; −1 bei Fehlern (dann nicht warten). */
+/** Number of jobs in a response to chat_poll; −1 on errors (then do not wait). */
 function pollTasks(json: string): number {
   try {
     const r = JSON.parse(json) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } };
@@ -380,11 +380,11 @@ async function mcp(message: string): Promise<string> {
   try {
     req = JSON.parse(message);
   } catch {
-    // ungültiges JSON beantwortet der Kern (Parse-Fehler)
+    // the core answers invalid JSON (parse error)
   }
   const first = await mcpWithData(message);
   if (req?.method !== "tools/call" || req.params?.name !== "chat_poll" || pollTasks(first) !== 0) return Promise.resolve(first);
-  // wie im Kern: Standard 50 s, höchstens 590 s
+  // as in the core: default 50 s, at most 590 s
   const secs = Math.min(590, Math.max(1, Number(req.params.arguments?.timeoutSeconds) || 50));
   return new Promise((resolve) => {
     const held: HeldPoll = {
@@ -403,12 +403,12 @@ async function mcp(message: string): Promise<string> {
   });
 }
 
-/** Ein Auftrag kam herein: wartende Polls fragen den Kern erneut. */
+/** A job came in: waiting polls ask the core again. */
 function wakePolls(): void {
   for (const held of [...heldPolls]) held.retry(false);
 }
 
-// ---------------------------------------------------------------- Befehle
+// ---------------------------------------------------------------- Commands
 
 function reply(m: unknown, transfer: Transferable[] = []): void {
   scope.postMessage(m, transfer);
@@ -417,7 +417,7 @@ function reply(m: unknown, transfer: Transferable[] = []): void {
 async function handle(r: Request): Promise<void> {
   try {
     switch (r.cmd) {
-      // Hülle: Datei des Dateibaums lesen (Download) bzw. schreiben (Import)
+      // Shell: read (download) or write (import) a file of the file tree
       case "web_read_file": {
         const { path } = JSON.parse(r.args) as { path: string };
         const status = withText(path, (p, l) => wasm.kw_fs_read(p, l));
@@ -426,12 +426,12 @@ async function handle(r: Request): Promise<void> {
         reply({ id: r.id, ok: true, bytes: bytes.buffer }, [bytes.buffer]);
         return;
       }
-      // Agent: MCP-Nachricht (JSON-RPC) an die Werkzeuge des Kerns
+      // Agent: MCP message (JSON-RPC) to the core's tools
       case "web_mcp": {
         reply({ id: r.id, ok: true, json: await mcp(r.args) });
         break;
       }
-      // Hülle: warten, bis alle Änderungen in OPFS gesichert sind
+      // Shell: wait until all changes are saved to OPFS
       case "web_sync": {
         persistChanges();
         await persisting;
@@ -483,5 +483,5 @@ scope.onmessage = (e: MessageEvent) => {
   void handle(m as Request);
 };
 
-// Modul (eigener Gültigkeitsbereich), geladen als ES-Modul.
+// Module (own scope), loaded as an ES module.
 export {};

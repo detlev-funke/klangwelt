@@ -1,7 +1,7 @@
-// Bibliothek stöbern: Baum mit frei wählbaren Ebenen (Genre, Komponist,
-// Stimmung, Besetzung, Tonart …). Zweige werden erst beim Aufklappen geladen,
-// große Listen seitenweise. Mehrwertige Ebenen (Genre, Instrumentengruppe)
-// legen eine Partitur in mehrere Zweige.
+// Browse the library: tree with freely selectable levels (genre, composer,
+// mood, instrumentation, key …). Branches are only loaded when expanded,
+// large lists page by page. Multi-valued levels (genre, instrument group)
+// put a score into several branches.
 
 import { backend } from "../bridge.js";
 import { dropdown, h, icon } from "../dom.js";
@@ -27,7 +27,7 @@ function loadLevels(): string[] {
     const v = JSON.parse(localStorage.getItem(LEVELS_KEY) ?? "null");
     if (Array.isArray(v) && v.length && v.every((x) => typeof x === "string")) return v;
   } catch {
-    /* Standard */
+    /* Default */
   }
   return ["genre", "komponist"];
 }
@@ -45,9 +45,9 @@ interface Branch {
 const keyOf = (path: string[]) => path.join("\u0001");
 
 export interface TreeView {
-  /** Ebenen-Leiste (kommt in die Werkzeugzeile des Fensters). */
+  /** Level bar (goes into the window's toolbar row). */
   bar: HTMLElement;
-  /** Baum (linke Spalte). */
+  /** Tree (left column). */
   el: HTMLElement;
   setInfo(info: LibraryInfo | null): void;
 }
@@ -56,7 +56,7 @@ export function treeView(onOpen: (doc: number) => void): TreeView {
   let levels = loadLevels();
   let dims: Dimension[] = [];
   const branches = new Map<string, Branch>();
-  let generation = 0; // verwirft Antworten nach einem Neuaufbau
+  let generation = 0; // discards replies after a rebuild
   let info: LibraryInfo | null = null;
   let infoSig = "";
   let selectedDoc = -1;
@@ -66,11 +66,11 @@ export function treeView(onOpen: (doc: number) => void): TreeView {
     try {
       localStorage.setItem(LEVELS_KEY, JSON.stringify(levels));
     } catch {
-      /* ohne Speicher */
+      /* without storage */
     }
   };
 
-  // ---------- Ebenen-Leiste: Chips (ziehen zum Umsortieren, × entfernt), + Ebene, Vorlagen
+  // ---------- Level bar: chips (drag to reorder, × removes), + level, presets
   const chips = h("div", { class: "tree-chips" });
   const addBtn = h("button", { class: "btn small", title: t("Add level") }, icon("plus"), `${t("Grouping")} ▾`);
   const add = dropdown(addBtn, "tree-menu", (menu, close) => {
@@ -120,7 +120,7 @@ export function treeView(onOpen: (doc: number) => void): TreeView {
     );
   };
 
-  // ---------- Baum
+  // ---------- Tree
   const banner = h("div", { class: "tree-banner" });
   const list = h("div", { class: "tree-list" });
   const el = h("div", { class: "tree" }, banner, list);

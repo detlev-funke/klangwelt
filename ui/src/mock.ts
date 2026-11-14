@@ -1,11 +1,11 @@
-// Attrappe des Rust-Kerns für die Browser-Vorschau: gleiche Schnittstelle,
-// vereinfachte Logik, kein Audio.
+// Stand-in for the Rust core for the browser preview: same interface,
+// simplified logic, no audio.
 
 import type { Backend } from "./bridge.js";
 import { t } from "./i18n.js";
 import type { ChatMessage, Command, EngineStatus, Project, Snapshot, Track } from "./types.js";
 
-/** Sammlungen im Download-Katalog der Vorschau (Texte wie in der App gekürzt). */
+/** Collections in the preview's download catalog (texts shortened as in the app). */
 const MOCK_GROUPS = {
   pdmx: { group: "pdmx", groupName: "PDMX – gemeinfreie MuseScore-Partituren", groupDescription: "Riesige, bunt gemischte Sammlung – gut für die Melodiesuche, die Qualität schwankt." },
   openscore: { group: "openscore", groupName: "OpenScore – sorgfältig gesetzte Partituren", groupDescription: "Von Freiwilligen nach Erstausgaben gesetzt und geprüft, gemeinfrei (CC0)." },
@@ -51,7 +51,7 @@ export function createMock(): Backend {
   let playing = false;
   let pos = 0;
   let last = performance.now();
-  // Beispielgeräte, damit sich die Gerätewahl in der Vorschau bedienen lässt
+  // Sample devices so the device selection can be used in the preview
   const MOCK_OUTPUTS = ["Lautsprecher (Realtek(R) Audio)", "Kopfhörer (USB Audio)", "Focusrite USB (Scarlett 2i2)"];
   const MOCK_INPUTS = ["Mikrofon (Realtek(R) Audio)", "Headset-Mikrofon (USB Audio)", "Focusrite USB (Scarlett 2i2)"];
   let outputChoice: string | null = null;
@@ -137,7 +137,7 @@ export function createMock(): Backend {
     execute: (c, merge = false) => {
       const display = ["view", "compactHeight", "notesHeight"];
       if (c.type === "setTrack" && Object.keys(c.patch).length && Object.keys(c.patch).every((k) => display.includes(k))) {
-        apply(project, c); // Ansicht/Höhe: kein Undo-Schritt
+        apply(project, c); // View/height: no undo step
         return later(snap());
       }
       const key = c.type === "setTrack" || c.type === "setClip" || c.type === "setProject" ? JSON.stringify([c.type, Object.keys(c.patch), "trackId" in c ? c.trackId : 0]) : null;
@@ -229,7 +229,7 @@ export function createMock(): Backend {
     librarySwitch: noAudio,
     libraryRename: noAudio,
     libraryDelete: noAudio,
-    // Vorschau: Katalog zeigen, Download nur in der Desktop-App.
+    // Preview: show the catalog, download only in the desktop app.
     libraryCatalog: async () => [
       { id: "pdmx-kostprobe", name: "PDMX – Kostprobe", description: "3 000 gemischte Partituren zum Ausprobieren.", scores: 3000, downloadMb: 21, diskMb: 30, license: "gemeinfrei/CC0 · Datensatz CC-BY 4.0", sourceUrl: "https://zenodo.org/records/15571083", folder: "Musik/Klangwelt/Bibliothek/PDMX-Kostprobe", installed: false, inLibrary: null, ...MOCK_GROUPS.pdmx, format: "MusicXML" },
       { id: "pdmx-auswahl", name: "PDMX – Auswahl", description: "30 000 Partituren.", scores: 30000, downloadMb: 220, diskMb: 380, license: "gemeinfrei/CC0 · Datensatz CC-BY 4.0", sourceUrl: "https://zenodo.org/records/15571083", folder: "Musik/Klangwelt/Bibliothek/PDMX-Auswahl", installed: false, inLibrary: null, ...MOCK_GROUPS.pdmx, format: "MusicXML" },
@@ -258,7 +258,7 @@ export function createMock(): Backend {
     libraryReindex: noAudio,
     libraryListenStart: noAudio,
     libraryListenStop: noAudio,
-    // Harmonik rechnet im Rust-Kern – die Vorschau zeigt nur einen leeren Zirkel.
+    // Harmony is computed in the Rust core – the preview shows only an empty circle.
     harmonyView: () => later({ key: { tonic: 0, minor: false, name: "C-Dur", source: "standard" as const }, circle: [], cadences: [] }),
     harmonySuggest: () => later({ suggestions: [], library: null, hint: t("Harmony analysis is only available in the desktop app"), reindex: false, paths: [] }),
     harmonyDescribe: () => later([]),

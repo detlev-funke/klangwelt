@@ -1,7 +1,7 @@
-//! FLAC-Kodierer (verlustfrei, eigener Code): Blöcke zu 4096 Frames, feste
-//! Prädiktoren der Ordnung 0–4 mit Rice-Kodierung in Partitionen, Stereo
-//! wahlweise links/rechts, links/Seite, rechts/Seite oder Mitte/Seite – je
-//! Block das Kürzeste. Dazu STREAMINFO mit MD5 und Kommentare (Titel).
+//! FLAC encoder (lossless, own code): blocks of 4096 frames, fixed
+//! predictors of order 0–4 with Rice coding in partitions, stereo as
+//! left/right, left/side, right/side or mid/side as desired – the shortest
+//! per block. Plus STREAMINFO with MD5 and comments (title).
 
 const BLOCK: usize = 4096;
 const MAX_PARTITION_ORDER: u32 = 8;
@@ -19,7 +19,7 @@ impl Bits {
         Bits { buf: Vec::new(), acc: 0, n: 0 }
     }
 
-    /// Die unteren `bits` Bits von `v` (höchstens 32).
+    /// The lower `bits` bits of `v` (at most 32).
     fn put(&mut self, v: u64, bits: u32) {
         if bits == 0 {
             return;
@@ -81,7 +81,7 @@ const MD5_K: [u32; 64] = [
 ];
 const MD5_S: [u32; 16] = [7, 12, 17, 22, 5, 9, 14, 20, 4, 11, 16, 23, 6, 10, 15, 21];
 
-/// MD5 (RFC 1321) – FLAC legt damit eine Prüfsumme der Samples ab.
+/// MD5 (RFC 1321) – FLAC stores a checksum of the samples with it.
 pub struct Md5 {
     s: [u32; 4],
     pending: Vec<u8>,
@@ -153,7 +153,7 @@ impl Md5 {
 enum Sub {
     Constant,
     Verbatim,
-    /// Ordnung, Partitionsordnung, Rice-Parameter je Partition (15 = roh)
+    /// Order, partition order, Rice parameter per partition (15 = raw)
     Fixed { order: usize, part_order: u32, params: Vec<u32> },
 }
 
@@ -176,21 +176,21 @@ fn zigzag(v: i64) -> u64 {
     ((v << 1) ^ (v >> 63)) as u64
 }
 
-/// Partition `j` von `parts` im Residuum (die erste ist um die Ordnung kürzer).
+/// Partition `j` of `parts` in the residual (the first is shorter by the order).
 fn partition(res: &[i64], n: usize, order: usize, part_order: u32, j: usize) -> &[i64] {
     let size = n >> part_order;
     let (a, b) = if j == 0 { (0, size - order) } else { (j * size - order, (j + 1) * size - order) };
     &res[a..b]
 }
 
-/// Rice-Parameter für eine Partition mit Summe `sum` über `count` Werte, geschätzte Bits.
+/// Rice parameter for a partition with sum `sum` over `count` values, estimated bits.
 fn rice_estimate(sum: u64, count: u64) -> (u32, u64) {
     (0..=14u32).map(|k| (k, count * (k as u64 + 1) + (sum >> k))).min_by_key(|&(_, bits)| bits).unwrap_or((0, 0))
 }
 
-/// Beste Partitionsordnung und Parameter (geschätzt) für ein Residuum.
+/// Best partition order and parameters (estimated) for a residual.
 fn rice_plan(res: &[i64], n: usize, order: usize) -> (u64, u32, Vec<u32>) {
-    // Summen auf der feinsten erlaubten Teilung, dann paarweise zusammenfassen
+    // sums at the finest allowed division, then combine pairwise
     let mut top = 0;
     while top < MAX_PARTITION_ORDER && n % (1 << (top + 1)) == 0 && (n >> (top + 1)) > order {
         top += 1;
@@ -223,7 +223,7 @@ fn rice_plan(res: &[i64], n: usize, order: usize) -> (u64, u32, Vec<u32>) {
     best.unwrap_or((u64::MAX, 0, vec![0]))
 }
 
-/// Kürzeste Darstellung eines Kanals: (Art, geschätzte Bits).
+/// Shortest representation of a channel: (kind, estimated bits).
 fn analyze(x: &[i64], bps: u32) -> (Sub, u64) {
     let n = x.len();
     if x.iter().all(|&v| v == x[0]) {
@@ -259,7 +259,7 @@ fn write_sub(b: &mut Bits, x: &[i64], bps: u32, sub: &Sub) {
                 b.put(v as u64, bps);
             }
             let res = residual(x, *order);
-            b.put(0, 2); // Rice mit 4-Bit-Parametern
+            b.put(0, 2); // Rice with 4-bit parameters
             b.put(*part_order as u64, 4);
             for (j, &k) in params.iter().enumerate() {
                 let p = partition(&res, x.len(), *order, *part_order, j);
@@ -295,7 +295,7 @@ fn utf8_number(b: &mut Bits, v: u64) {
     while v >= 1u64 << (6 * extra + (6 - extra)) {
         extra += 1;
     }
-    let lead_bits = 6 - extra; // Datenbits im ersten Byte
+    let lead_bits = 6 - extra; // data bits in the first byte
     let prefix = (0xFF00u64 >> (extra + 1)) & 0xFF;
     b.put(prefix | (v >> (6 * extra)) & ((1 << lead_bits) - 1), 8);
     for i in (0..extra).rev() {
@@ -339,13 +339,13 @@ fn frame(out: &mut Vec<u8>, number: u64, l: &[i64], r: &[i64], bps: u32, sr: u32
     let (sr_, br) = analyze(r, bps);
     let (sm, bm) = analyze(&mid, bps);
     let (ss, bs) = analyze(&side, bps + 1);
-    // (Kanalzuordnung, erster, zweiter)
+    // (channel assignment, first, second)
     let options = [(0b0001u64, bl + br), (0b1000, bl + bs), (0b1001, bs + br), (0b1010, bm + bs)];
     let (mode, _) = options.iter().copied().min_by_key(|o| o.1).unwrap_or((1, 0));
 
     let mut b = Bits::new();
     b.put(0b11_1111_1111_1110, 14);
-    b.put(0, 2); // reserviert, feste Blockgröße
+    b.put(0, 2); // reserved, fixed block size
     b.put(if n == BLOCK { 12 } else { 7 }, 4);
     b.put(sample_rate_code(sr), 4);
     b.put(mode, 4);
@@ -381,7 +381,7 @@ fn frame(out: &mut Vec<u8>, number: u64, l: &[i64], r: &[i64], bps: u32, sr: u32
     out.extend_from_slice(&b.buf);
 }
 
-/// Verschachtelte Stereo-Samples (Ganzzahlen mit `bps` Bit) als FLAC-Datei.
+/// Interleaved stereo samples (integers of `bps` bits) as a FLAC file.
 pub fn encode(interleaved: &[i32], bps: u32, sample_rate: u32, title: &str) -> Vec<u8> {
     let total = interleaved.len() / 2;
     let bytes_per = bps.div_ceil(8) as usize;
@@ -412,11 +412,11 @@ pub fn encode(interleaved: &[i32], bps: u32, sample_rate: u32, title: &str) -> V
     info.put(if min_frame == u32::MAX { 0 } else { min_frame } as u64, 24);
     info.put(max_frame as u64, 24);
     info.put(sample_rate as u64, 20);
-    info.put(1, 3); // zwei Kanäle
+    info.put(1, 3); // two channels
     info.put(bps as u64 - 1, 5);
     info.put((total as u64) >> 32, 4);
     info.put(total as u64 & 0xFFFF_FFFF, 32);
-    out.push(0); // STREAMINFO, nicht der letzte Block
+    out.push(0); // STREAMINFO, not the last block
     out.extend_from_slice(&(34u32.to_be_bytes()[1..]));
     out.extend_from_slice(&info.buf);
     out.extend_from_slice(&md5.finish());
@@ -431,22 +431,22 @@ pub fn encode(interleaved: &[i32], bps: u32, sample_rate: u32, title: &str) -> V
         vc.extend_from_slice(&(c.len() as u32).to_le_bytes());
         vc.extend_from_slice(c.as_bytes());
     }
-    out.push(0x80 | 4); // VORBIS_COMMENT, letzter Block
+    out.push(0x80 | 4); // VORBIS_COMMENT, last block
     out.extend_from_slice(&((vc.len() as u32).to_be_bytes()[1..]));
     out.extend_from_slice(&vc);
     out.extend_from_slice(&frames);
     out
 }
 
-// ---------------------------------------------------------------- Prüf-Dekoder
+// ---------------------------------------------------------------- Verification decoder
 
-/// Kleiner Dekoder für genau das, was `encode` schreibt (für Tests):
-/// liefert (Abtastrate, Bit, verschachtelte Samples) und prüft alle Prüfsummen.
+/// Small decoder for exactly what `encode` writes (for tests):
+/// returns (sample rate, bits, interleaved samples) and checks all checksums.
 #[cfg(test)]
 pub fn decode(data: &[u8]) -> Result<(u32, u32, Vec<i32>), String> {
     struct R<'a> {
         d: &'a [u8],
-        pos: usize, // in Bits
+        pos: usize, // in bits
     }
     impl R<'_> {
         fn get(&mut self, bits: u32) -> Result<u64, String> {
@@ -632,7 +632,7 @@ mod tests {
         assert_eq!(md5(b""), "d41d8cd98f00b204e9800998ecf8427e");
         assert_eq!(md5(b"abc"), "900150983cd24fb0d6963f7d28e17f72");
         assert_eq!(md5(b"The quick brown fox jumps over the lazy dog"), "9e107d9d372bb6826bd81d3542a419d6");
-        // in Stücken gefüttert = am Stück
+        // fed in pieces = in one go
         let long: Vec<u8> = (0..1000u32).map(|i| (i * 7) as u8).collect();
         let mut m = Md5::new();
         for c in long.chunks(37) {
@@ -659,7 +659,7 @@ mod tests {
     #[test]
     fn roundtrip_is_bit_exact_and_smaller() {
         for bps in [16, 24] {
-            let n = 3 * BLOCK + 1234; // letzter Block kürzer
+            let n = 3 * BLOCK + 1234; // last block shorter
             let pcm = signal(n, bps);
             let file = encode(&pcm, bps, 48_000, "Test");
             let (sr, b, back) = decode(&file).unwrap();
@@ -672,7 +672,7 @@ mod tests {
 
     #[test]
     fn silence_extremes_and_tiny_files() {
-        // Stille (konstant), Vollaussteuerung mit Sprüngen, ein kurzer Rest
+        // silence (constant), full scale with jumps, a short remainder
         let mut pcm = vec![0i32; 2 * BLOCK];
         pcm.extend((0..BLOCK * 2).map(|i| if (i / 2) % 3 == 0 { 8_388_607 } else { -8_388_608 }));
         pcm.extend([5, -5, 7, -7]);

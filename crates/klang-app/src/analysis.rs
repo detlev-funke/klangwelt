@@ -1,4 +1,4 @@
-//! Aufnahme-Analyse: Tonhöhenkurve → Noten → Tonart → Bereinigung.
+//! Recording analysis: pitch curve → notes → key → cleanup.
 
 use klang_dsp::notes::{hz_to_midi, segment_notes, SegmentConfig};
 use klang_dsp::onset::{detect_onsets, estimate_tempo, OnsetConfig};
@@ -12,9 +12,9 @@ use serde::Serialize;
 pub struct AnalyzedNote {
     pub start_secs: f64,
     pub end_secs: f64,
-    /// Bereinigter Ton (auf die Tonart gezogen, falls unsauber gesungen).
+    /// Cleaned-up note (pulled into the key if sung out of tune).
     pub midi: u8,
-    /// Ursprünglich erkannter Ton.
+    /// Originally detected note.
     pub raw_midi: u8,
     pub cents: f32,
     pub velocity: f32,
@@ -35,11 +35,11 @@ pub struct Analysis {
     pub asset_id: String,
     pub duration_secs: f64,
     pub sample_rate: u32,
-    /// (Zeit, MIDI-Tonhöhe oder null)
+    /// (time, MIDI pitch or null)
     pub pitch: Vec<(f32, Option<f32>)>,
     pub notes: Vec<AnalyzedNote>,
     pub onsets: Vec<f32>,
-    /// Grundton je Anschlag (Schlagzeug, Bass, gezupfte Töne); `midi: null` = tonlos.
+    /// Fundamental per hit (drums, bass, plucked notes); `midi: null` = unpitched.
     pub hits: Vec<HitPitch>,
     pub tempo_estimate: Option<f32>,
     pub key: Option<KeyInfo>,
@@ -49,8 +49,8 @@ pub fn analyze(asset_id: &str, samples: &[f32], sample_rate: u32) -> Analysis {
     analyze_with(asset_id, samples, sample_rate, &YinConfig::default())
 }
 
-/// Vorgesungene oder gepfiffene Melodie für die Bibliothekssuche: Töne
-/// (Dauer in Sekunden, auf die Tonart bereinigt) und die geschätzte Tonart.
+/// Melody sung or whistled for the library search: notes
+/// (duration in seconds, cleaned up to the key) and the estimated key.
 pub fn query_melody(samples: &[f32], sample_rate: u32) -> (Vec<MelodyNote>, Option<String>) {
     let a = analyze_with("vorsingen", samples, sample_rate, &YinConfig::voice_and_whistle());
     let notes = a.notes.iter().map(|n| MelodyNote { onset: n.start_secs, duration: (n.end_secs - n.start_secs).max(0.05), midi: n.midi }).collect();
@@ -104,7 +104,7 @@ pub fn analyze_with(asset_id: &str, samples: &[f32], sample_rate: u32, yin: &Yin
 mod tests {
     use super::*;
 
-    /// „Gesungene“ Melodie: Grundton + Obertöne, Vibrato, Pausen, ein unsauberer Ton.
+    /// "Sung" melody: fundamental + overtones, vibrato, rests, one out-of-tune note.
     fn sing(notes: &[(f32, f32)], sr: f32) -> Vec<f32> {
         let mut out = Vec::new();
         let mut phase = 0.0f32;
@@ -126,7 +126,7 @@ mod tests {
     #[test]
     fn recording_pipeline_finds_melody_key_and_fixes_sloppy_note() {
         let sr = 44_100.0;
-        // C-Dur-Melodie; der 6. Ton ist ein zu tief gesungenes c'' (72), gemessen ≈ 72,62 → cis.
+        // C major melody; the 6th note is a c'' (72) sung too low, measured ≈ 72.62 → C♯.
         let melody = [
             (60.0, 0.35), (64.0, 0.35), (67.0, 0.35), (72.0, 0.5), (71.0, 0.35), (72.62, 0.35),
             (67.0, 0.35), (69.0, 0.35), (65.0, 0.35), (64.0, 0.35), (62.0, 0.35), (60.0, 0.7),

@@ -1,8 +1,8 @@
-// Service Worker der Browser-Version: hält App-Dateien und WebAssembly im
-// Cache, damit Klangwelt auch ohne Netz startet (und schneller lädt).
-// `npm run build:web` legt ihn als `sw.js` in den Ausgabeordner und setzt
-// Version und Dateiliste ein. Neue Version = neuer Cache; der alte wird beim
-// Aktivieren gelöscht.
+// Service worker of the browser version: keeps app files and WebAssembly in
+// the cache so that Klangwelt starts even without a network (and loads faster).
+// `npm run build:web` puts it into the output folder as `sw.js` and inserts
+// version and file list. New version = new cache; the old one is deleted on
+// activation.
 
 const VERSION = "__KLANGWELT_VERSION__";
 const FILES: string[] = JSON.parse('__KLANGWELT_FILES__') as string[];
@@ -42,8 +42,8 @@ sw.addEventListener("activate", (e) => {
   );
 });
 
-// Erst der Cache, sonst das Netz; Adressen mit Parametern (z. B. ?ohne-sw)
-// gelten als die Seite selbst.
+// Cache first, otherwise the network; addresses with parameters (e.g. ?ohne-sw)
+// count as the page itself.
 sw.addEventListener("fetch", (e) => {
   const req = e.request;
   if (req.method !== "GET" || new URL(req.url).origin !== location.origin) return;
@@ -57,5 +57,5 @@ sw.addEventListener("fetch", (e) => {
   );
 });
 
-// Modul (eigener Gültigkeitsbereich), geladen als ES-Modul.
+// Module (own scope), loaded as an ES module.
 export {};

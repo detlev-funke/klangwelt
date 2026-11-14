@@ -1,4 +1,4 @@
-// Benutzeraktionen, die von mehreren Stellen (Knöpfe, Tastatur) ausgelöst werden.
+// User actions triggered from several places (buttons, keyboard).
 
 import { backend } from "./bridge.js";
 import {
@@ -9,16 +9,16 @@ import { gridLabel, rangeLabel } from "./editmath.js";
 import { plural, t } from "./i18n.js";
 import type { ConvertTarget, Note, Track, TrackKind } from "./types.js";
 
-// ---------- Spurhöhe (Splitter) ----------
+// ---------- Track height (splitter) ----------
 
 function heightPatch(t: Track, height: number) {
   return t.view === "notes" ? { notesHeight: height } : { compactHeight: height };
 }
 
 /**
- * Beginnt das Ziehen am Splitter unter einer Spur. Während des Ziehens wird nur
- * die Vorschau-Höhe gesetzt; beim Loslassen geht ein Befehl an den Kern
- * (reine Ansichtsänderung, kein Undo-Schritt).
+ * Starts dragging the splitter below a track. While dragging, only the
+ * preview height is set; on release a command goes to the core
+ * (a pure view change, not an undo step).
  */
 export function startRowResize(t: Track, e: PointerEvent, el: Element): void {
   e.preventDefault();
@@ -28,7 +28,7 @@ export function startRowResize(t: Track, e: PointerEvent, el: Element): void {
   try {
     el.setPointerCapture(e.pointerId);
   } catch {
-    /* synthetische Ereignisse */
+    /* synthetic events */
   }
   const prevCursor = document.body.style.cursor;
   document.body.style.cursor = "row-resize";
@@ -52,13 +52,13 @@ export function startRowResize(t: Track, e: PointerEvent, el: Element): void {
   window.addEventListener("pointercancel", up);
 }
 
-/** Standardhöhe der aktuellen Ansicht wiederherstellen. */
+/** Restores the default height of the current view. */
 export async function resetRowHeight(t: Track): Promise<void> {
   heightDraft.value = null;
   await run({ type: "setTrack", trackId: t.id, patch: heightPatch(t, 0) });
 }
 
-/** Noten des Clips mit der aktuellen Notenauswahl. */
+/** Notes of the clip with the current note selection. */
 export function selectedNotesClip(): { trackId: number; clipId: number; notes: Note[]; keys: Set<string> } | null {
   const sel = noteSel.peek();
   if (!sel || !sel.keys.length) return null;
@@ -75,7 +75,7 @@ export function deleteSelectedNotes(): boolean {
   return true;
 }
 
-/** Markierte Noten um `delta` Halbtöne verschieben (↑/↓, mit Umschalt eine Oktave) – ein Rückgängig-Schritt je Druck. */
+/** Moves selected notes by `delta` semitones (↑/↓, with Shift an octave) – one undo step per press. */
 export function transposeSelectedNotes(delta: number): boolean {
   const s = selectedNotesClip();
   if (!s) return false;
@@ -95,7 +95,7 @@ export function transposeSelectedNotes(delta: number): boolean {
   return true;
 }
 
-/** Markierte Noten am Raster ausrichten (`grid` in Schlägen); mit `lengths` auch die Enden. */
+/** Aligns selected notes to the grid (`grid` in beats); with `lengths` the ends too. */
 export async function quantizeSelectedNotes(grid: number, lengths: boolean): Promise<boolean> {
   const s = selectedNotesClip();
   if (!s) return false;
@@ -118,7 +118,7 @@ export async function quantizeSelectedNotes(grid: number, lengths: boolean): Pro
   }
 }
 
-/** Markierten Zeitbereich aus allen Spuren löschen; alles danach rückt auf. */
+/** Deletes the selected time range from all tracks; everything after it moves up. */
 export async function deleteRange(): Promise<boolean> {
   const r = snapshot.peek()?.engine.loopRange;
   if (!r) return false;
@@ -126,13 +126,13 @@ export async function deleteRange(): Promise<boolean> {
   if (!(await act(backend.deleteRange(r[0], r[1])))) return false;
   rangeFocus.value = false;
   noteSel.value = null;
-  // gewählter Clip kann weggefallen sein
+  // the selected clip may have been removed
   if (!findClip(project(), selection.peek()) && selection.peek()?.clipId != null) selection.value = null;
   notify(t("Deleted {range} – everything after it moved up to close the gap (Ctrl+Z brings it back)", { range: rangeLabel(r[0], r[1], bpb) }));
   return true;
 }
 
-/** Aufnahme in eine Melodie- oder Rhythmus-Spur umwandeln (`clipId` null: alle Audio-Clips der Spur). */
+/** Converts a recording into a melody or rhythm track (`clipId` null: all audio clips of the track). */
 export async function convertAudio(trackId: number, clipId: number | null, target: ConvertTarget): Promise<boolean> {
   notify(target === "melodie" ? t("Detecting pitches…") : t("Detecting hits…"));
   try {
@@ -159,7 +159,7 @@ async function guarded(fn: () => Promise<unknown>): Promise<void> {
 
 export const togglePlay = () => guarded(() => backend.transport("toggle"));
 
-/** Stopp: anhalten und an den Anfang – Abspielposition und Ansicht. */
+/** Stop: halt and go to the start – playhead and view. */
 export const stopToStart = () =>
   guarded(async () => {
     if (status.peek().playing) await backend.transport("stop");
@@ -167,7 +167,7 @@ export const stopToStart = () =>
     viewport.update((v) => ({ ...v, scrollX: 0 }));
   });
 
-/** Wiederholen: am Ende des Stücks (bzw. des markierten Bereichs) wieder von vorn. */
+/** Loop: at the end of the piece (or the selected range) start again from the beginning. */
 export async function toggleLoop(): Promise<void> {
   const on = !snapshot.peek()?.engine.loopOn;
   if (await act(backend.setLoop(on))) {
@@ -212,9 +212,9 @@ export function addTrack(kind: TrackKind): void {
 }
 
 /**
- * Entf: markierte Noten, sonst – wenn zuletzt ein Zeitbereich markiert wurde
- * oder nichts anderes gewählt ist – den Zeitbereich aus allen Spuren, sonst
- * den gewählten Clip bzw. die gewählte Spur.
+ * Delete: selected notes, otherwise – if a time range was selected last
+ * or nothing else is selected – the time range from all tracks, otherwise
+ * the selected clip or the selected track.
  */
 export function deleteSelection(): void {
   if (deleteSelectedNotes()) return;
@@ -274,7 +274,7 @@ export async function melodyToTrack(): Promise<void> {
   const sel = selection.peek();
   let found = findClip(project(), sel);
   const a = analysis.peek();
-  // Falls nichts gewählt ist: den Clip zur aktuellen Analyse suchen.
+  // If nothing is selected: find the clip for the current analysis.
   if ((!found || found.clip.source.type !== "audio") && a) {
     for (const t of project()?.tracks ?? []) {
       const c = t.clips.find((c) => c.source.type === "audio" && c.source.assetId === a.assetId);

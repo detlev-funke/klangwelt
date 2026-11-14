@@ -1,8 +1,8 @@
-// Verbindung zum Rust-Kern (`klang-app`). Desktop: über Tauri-IPC. Browser:
-// derselbe Kern als WebAssembly in einem Web Worker (`web/host.ts`). Beide
-// benutzen dieselbe Zuordnung (`coreBackend`) – nur der Transport ist anders.
-// Die Attrappe (`mock.ts`, ohne Audio, vereinfacht) gibt es weiter für die
-// UI-Arbeit: `?attrappe` an der Adresse.
+// Connection to the Rust core (`klang-app`). Desktop: via Tauri IPC. Browser:
+// the same core as WebAssembly in a web worker (`web/host.ts`). Both
+// use the same mapping (`coreBackend`) – only the transport differs.
+// The mock (`mock.ts`, no audio, simplified) still exists for
+// UI work: `?attrappe` in the address.
 
 import type {
   AgentActivity, Analysis, CatalogEntry, CheckView, ExportInfo, ExportOptions, ExportResult, Chord, ChordInfo, ChatView, Command, Countersubject, Dimension, EngineStatus, FugueOptions,
@@ -24,20 +24,20 @@ declare global {
   }
 }
 
-/** Transport zum Kern: Befehl aufrufen (Name + Argumente, wie in der
- *  Befehlstabelle des Kerns) und Ereignisse empfangen. */
+/** Transport to the core: call a command (name + arguments, as in the
+ *  core's command table) and receive events. */
 export interface CoreLink {
   call<T>(cmd: string, args?: Record<string, unknown>): Promise<T>;
   listen<T>(event: string, cb: (payload: T) => void): void;
 }
 
-/** Wo die Oberfläche läuft: Desktop-App, Browser mit echtem Kern, Attrappe. */
+/** Where the UI runs: desktop app, browser with the real core, mock. */
 export type Platform = "desktop" | "web" | "mock";
 
 export type TransportAction = "play" | "stop" | "toggle" | "rewind";
 
 export interface Backend {
-  /** Echter Kern (Desktop oder Browser) – nicht die Attrappe. */
+  /** Real core (desktop or browser) – not the mock. */
   readonly native: boolean;
   readonly platform: Platform;
   /** Set the core's language: code and dictionary (flat, see `coreDictionary` in i18n.ts). */
@@ -49,66 +49,66 @@ export interface Backend {
   transport(action: TransportAction): Promise<void>;
   seek(seconds: number): Promise<void>;
   setMetronome(enabled: boolean): Promise<Snapshot>;
-  /** Wiederholen ein/aus. */
+  /** Repeat on/off. */
   setLoop(enabled: boolean): Promise<Snapshot>;
-  /** Zeitbereich in Schlägen markieren; null hebt ihn auf. */
+  /** Mark a time range in beats; null clears it. */
   setLoopRange(range: [number, number] | null): Promise<Snapshot>;
-  /** Ausgabe- und Aufnahmegeräte des Systems samt Wahl. */
+  /** Output and recording devices of the system including the choice. */
   audioDevices(): Promise<AudioDevices>;
-  /** Gerät wählen (null = Systemstandard) – wirkt sofort und gilt beim nächsten Start. */
+  /** Choose a device (null = system default) – takes effect immediately and applies at the next start. */
   setAudioDevice(kind: AudioKind, name: string | null): Promise<Snapshot>;
   recordStart(): Promise<void>;
   recordStop(): Promise<RecordResult>;
   getWaveform(assetId: string, buckets: number): Promise<number[]>;
   analyzeAsset(assetId: string): Promise<Analysis>;
   createMelodyTrack(trackId: number, clipId: number): Promise<Snapshot>;
-  /** Audiodateien einfügen: auf eine Audiospur die erste Datei hinein, sonst je Datei eine neue Spur (unter `trackId`), ab `startBeats`. */
+  /** Insert audio files: on an audio track the first file goes in, otherwise one new track per file (under `trackId`), from `startBeats`. */
   audioImport(paths: string[], trackId: number | null, startBeats: number): Promise<ImportResult>;
-  /** Aufnahme in eine Melodie- oder Rhythmus-Spur umwandeln (`clipId` null: alle Audio-Clips der Spur). */
+  /** Convert a recording into a melody or rhythm track (`clipId` null: all audio clips of the track). */
   audioToNotes(trackId: number, clipId: number | null, target: ConvertTarget): Promise<ConvertResult>;
-  /** Zeitbereich aus allen Spuren löschen, alles danach rückt auf (hebt die Markierung auf). */
+  /** Delete a time range from all tracks, everything after it moves up (clears the selection). */
   deleteRange(startBeats: number, endBeats: number): Promise<Snapshot>;
-  /** Noten am Raster ausrichten (`indices` null: alle Noten des Clips); `grid` in Schlägen. */
+  /** Align notes to the grid (`indices` null: all notes of the clip); `grid` in beats. */
   quantizeNotes(trackId: number, clipId: number, indices: number[] | null, grid: number, lengths: boolean): Promise<QuantizeResult>;
   createDemo(): Promise<Snapshot>;
   previewTrack(trackId: number, pattern: PreviewPattern): Promise<number>;
   previewNote(trackId: number, midi: number): Promise<void>;
   describeSound(trackId: number): Promise<SoundReport>;
-  /** Wellenform des Testklangs der Spur (Klang-Fenster). */
+  /** Waveform of the track's test sound (sound window). */
   soundWave(trackId: number): Promise<WaveView>;
-  /** Punkt (x, y je 0…1) oder Startpunkt in einem Feld setzen; `merge` = Teil einer Ziehbewegung. */
+  /** Set a point (x, y each 0…1) or start point in a field; `merge` = part of a drag. */
   soundField(trackId: number, field: string, x: number | null, y: number | null, preset: string | null, merge: boolean): Promise<Snapshot>;
-  /** Song-Vorlagen (ganze Stücke aus Abschnitten und Rollen). */
+  /** Song templates (whole pieces made of sections and roles). */
   songTemplates(): Promise<SongPlan[]>;
-  /** Song erzeugen; `replace` ersetzt die zuletzt erzeugten Song-Spuren. */
+  /** Create a song; `replace` replaces the song tracks created last. */
   songWrite(plan: SongPlan, replace: boolean): Promise<SongWritten>;
-  /** Rhythmus: Genre-Muster und Zeilen des Schritt-Rasters. */
+  /** Rhythm: genre patterns and rows of the step grid. */
   rhythmInfo(): Promise<RhythmInfo>;
-  /** Schlagzeug-Clip als Raster (bis 4 Takte). */
+  /** Drum clip as a grid (up to 4 bars). */
   rhythmRead(trackId: number, clipId: number): Promise<ClipGrid>;
-  /** Einen Schritt im Clip setzen oder löschen (ein Rückgängig-Schritt). */
+  /** Set or clear a step in the clip (one undo step). */
   rhythmToggle(trackId: number, clipId: number, row: string, step: number, on: boolean, swing: number): Promise<Snapshot>;
-  /** Swing des Clips ändern; `merge` = Teil einer Reglerbewegung. */
+  /** Change the clip's swing; `merge` = part of a slider drag. */
   rhythmSwing(trackId: number, clipId: number, swing: number, merge: boolean): Promise<Snapshot>;
-  /** Raster schreiben: in einen Clip (ersetzt), als neuen Clip in eine Spur oder in eine neue Schlagzeug-Spur. */
+  /** Write a grid: into a clip (replaces), as a new clip in a track or into a new drum track. */
   rhythmWrite(grid: RhythmGrid, swing: number, trackId: number | null, clipId: number | null, startBeats: number, name: string, sound: string | null, tempo: number | null): Promise<RhythmWritten>;
-  /** Raster oder Clip im Projekttempo vorspielen; liefert die Dauer in Sekunden. */
+  /** Preview a grid or clip at the project tempo; returns the duration in seconds. */
   rhythmPreview(trackId: number | null, clipId: number | null, grid: RhythmGrid | null, swing: number, sound: string | null): Promise<number>;
-  /** Klang-Bibliothek: eigene Klänge über alle Projekte. */
+  /** Sound library: own sounds across all projects. */
   soundsList(): Promise<SavedSound[]>;
-  /** Klang der Spur unter einem Namen sichern (gleicher Name beim selben Instrument: ersetzen). */
+  /** Save the track's sound under a name (same name for the same instrument: replace). */
   soundSave(trackId: number, name: string): Promise<SoundSaveResult>;
-  /** Gesicherten Klang in die Spur laden (ein Rückgängig-Schritt). */
+  /** Load a saved sound into the track (one undo step). */
   soundLoad(trackId: number, id: string): Promise<Snapshot>;
   soundRename(id: string, name: string): Promise<SavedSound[]>;
   soundDelete(id: string): Promise<SavedSound[]>;
-  /** Klang-Bibliothek geändert (auch durch den Agent). */
+  /** Sound library changed (also by the agent). */
   onSoundsChanged(cb: (s: SavedSound[]) => void): void;
   instrumentSpecs(): Promise<InstrumentSpec[]>;
   createInstrumentTrack(kind: InstrumentKind): Promise<Snapshot>;
   insertPattern(trackId: number): Promise<Snapshot>;
   libraryInfo(): Promise<LibraryInfo>;
-  /** Dateien oder Ordner in die aktive Bibliothek aufnehmen (im Hintergrund). Browser: into the own scores, answers with an `AddResult`. */
+  /** Add files or folders to the active library (in the background). Browser: into the own scores, answers with an `AddResult`. */
   libraryAdd(paths: string[]): Promise<LibraryInfo | AddResult>;
   /** Browser: the own scores, remove one. */
   libraryOwnList(): Promise<OwnScore[]>;
@@ -118,20 +118,20 @@ export interface Backend {
   libraryCacheClear(): Promise<void>;
   /** Browser: files of the computer into the core's file tree (paths there). */
   importFiles(files: File[]): Promise<string[]>;
-  /** Bibliotheken verwalten (je ein Index; gesucht wird nur in der aktiven). */
+  /** Manage libraries (one index each; only the active one is searched). */
   libraryList(): Promise<LibEntry[]>;
   libraryCreate(name: string): Promise<LibEntry[]>;
   librarySwitch(id: string): Promise<LibEntry[]>;
   libraryRename(id: string, name: string): Promise<LibEntry[]>;
   libraryDelete(id: string): Promise<LibEntry[]>;
-  /** Dateien, die auf das Fenster gezogen werden (Pfade und Stelle in CSS-Pixeln; nur Desktop-App). */
+  /** Files dragged onto the window (paths and position in CSS pixels; desktop app only). */
   onFileDrop(cb: (paths: string[], at: { x: number; y: number } | null) => void): void;
-  /** Dateien werden über das Fenster gezogen (null: weggezogen oder abgelegt). */
+  /** Files are being dragged over the window (null: dragged away or dropped). */
   onFileDrag(cb: (drag: { paths: string[]; x: number; y: number } | null) => void): void;
   libraryCatalog(): Promise<CatalogEntry[]>;
-  /** Lädt ein Paket – oder reiht es ein, wenn gerade ein Auftrag läuft. */
+  /** Loads a package – or queues it if a job is currently running. */
   libraryDownload(id: string, folder: string | null, withMeta: boolean): Promise<LibraryInfo>;
-  /** Nimmt ein wartendes Paket aus der Warteschlange (ohne `id`: alle). */
+  /** Removes a waiting package from the queue (without `id`: all). */
   libraryDequeue(id: string | null, library: string | null): Promise<LibraryInfo>;
   libraryCancel(): Promise<void>;
   libraryEnrich(): Promise<LibraryInfo>;
@@ -139,37 +139,37 @@ export interface Backend {
   libraryTree(levels: string[], path: string[], offset: number, limit: number): Promise<TreeLevel>;
   librarySearch(q: { text?: string; melody?: string; trackId?: number; clipId?: number; limit?: number }): Promise<LibHit[]>;
   libraryOpen(doc: number, noteIndex: number | null, queryLen: number | null, range?: [number, number] | null): Promise<ScoreView>;
-  /** Stimmen [Teil, Stimme] als Spuren (je Stimme eine); mit `range` (Viertel) nur diesen Ausschnitt.
-   *  `tempo` (Viertel je Minute): so gestreckt, dass es im Projekttempo so schnell klingt. */
+  /** Voices [part, voice] as tracks (one per voice); with `range` (quarters) only that excerpt.
+   *  `tempo` (quarters per minute): stretched so that it sounds that fast at the project tempo. */
   libraryToTrack(doc: number, voices: Array<[string, string]>, range?: [number, number] | null, tempo?: number | null): Promise<Snapshot>;
-  /** Vorspielen ab `start` (Viertel) bis zum Ende oder – mit `region` – diesen Bereich immer wieder,
-   *  bis `previewStop`; die gewählten Stimmen [Teil, Stimme], ohne: alle; `tempo` ohne: das der Partitur. */
+  /** Preview from `start` (quarters) to the end or – with `region` – that range repeatedly,
+   *  until `previewStop`; the chosen voices [part, voice], without: all; `tempo` without: that of the score. */
   libraryPlay(doc: number, start: number, region: [number, number] | null, voices?: Array<[string, string]> | null, tempo?: number | null): Promise<PlayInfo>;
-  /** Laufendes Vorhören beenden. */
+  /** End the running preview. */
   previewStop(): Promise<void>;
-  /** Aktive Bibliothek aus ihren Quellen (Pakete, Ordner) neu aufbauen. */
+  /** Rebuild the active library from its sources (packages, folders). */
   libraryReindex(): Promise<LibraryInfo>;
-  /** Mikrofon für die Melodiesuche aufnehmen (kommt nicht ins Projekt). */
+  /** Record the microphone for melody search (does not go into the project). */
   libraryListenStart(): Promise<void>;
-  /** Aufnahme beenden, Melodie erkennen und suchen (`cancel`: nur verwerfen). */
+  /** End the recording, recognize the melody and search (`cancel`: only discard). */
   libraryListenStop(text: string | null, cancel?: boolean): Promise<ListenResult>;
-  /** Tonart (null = aus den Noten geschätzt), Quintenzirkel und Kadenzvorlagen. */
+  /** Key (null = estimated from the notes), circle of fifths and cadence templates. */
   harmonyView(key: KeySpec | null): Promise<HarmonyView>;
   harmonySuggest(key: KeySpec, chords: Chord[], group?: number): Promise<SuggestResult>;
   fugueSubject(trackId: number, clipId: number, key: KeySpec | null): Promise<SubjectView>;
   fugueTransform(trackId: number, clipId: number, key: KeySpec, transform: TransformSpec): Promise<VNote[]>;
   fugueCountersubjects(trackId: number, clipId: number, key: KeySpec): Promise<Countersubject[]>;
   fuguePlan(trackId: number, clipId: number, key: KeySpec, options: FugueOptions): Promise<FuguePlan>;
-  /** Stimmen als neue Instrumentspuren ab startBeats (ein Undo-Schritt). */
+  /** Voices as new instrument tracks from startBeats (one undo step). */
   fugueAddVoices(voices: Array<{ name: string; notes: VNote[] }>, startBeats: number, kind: InstrumentKind, label: string): Promise<Snapshot>;
   fuguePreview(voices: VNote[][], kind: InstrumentKind): Promise<number>;
   counterpointCheck(trackIds: number[] | null): Promise<CheckView>;
   harmonyDescribe(key: KeySpec, chords: Chord[]): Promise<ChordInfo[]>;
   harmonyChords(key: KeySpec, trackId: number | null, clipId: number | null): Promise<PlacedChord[]>;
   harmonyPreview(key: KeySpec, chords: Chord[], beatsPerChord: number, trackId: number | null, before: Chord | null): Promise<number>;
-  /** Akkorde schreiben; `mode` „einfuegen“ schafft Platz (alles danach rückt in allen Spuren nach hinten), „ersetzen“ überschreibt. */
+  /** Write chords; `mode` "einfuegen" makes room (everything after it moves back in all tracks), "ersetzen" overwrites. */
   harmonyWrite(key: KeySpec, chords: Chord[], beatsPerChord: number, startBeats: number, trackId: number | null, before: Chord | null, mode?: "einfuegen" | "ersetzen"): Promise<Snapshot>;
-  /** Akkordfolge des ganzen Satzes mit Stimmung und Brüchen (Harmonie-Spur der Zeitleiste). */
+  /** Chord progression of the whole piece with mood and breaks (harmony track of the timeline). */
   harmonyTimeline(key: KeySpec | null): Promise<HarmonyLine>;
   harmonyPlayExample(doc: number, start: number, end: number): Promise<number>;
   onLibraryChanged(cb: (i: LibraryInfo) => void): void;
@@ -179,30 +179,30 @@ export interface Backend {
   chatHistory(): Promise<ChatView>;
   onChatChanged(cb: (c: ChatView) => void): void;
   onStatus(cb: (s: EngineStatus) => void): void;
-  /** Projekt wurde von außen (Agent) geändert. */
+  /** Project was changed from outside (agent). */
   onProjectChanged(cb: (s: Snapshot) => void): void;
-  /** Speichern: ohne Pfad in die aktuelle Datei; ein Name landet im Projektordner. */
+  /** Save: without a path into the current file; a name ends up in the project folder. */
   projectSave(path: string | null): Promise<Snapshot>;
   projectOpen(path: string): Promise<Snapshot>;
   projectNew(): Promise<Snapshot>;
-  /** [Projektordner, Projekte darin (neueste zuerst)] */
+  /** [project folder, projects in it (newest first)] */
   projectList(): Promise<[string, ProjectFile[]]>;
   exportInfo(): Promise<ExportInfo>;
   exportRun(options: ExportOptions): Promise<ExportResult>;
-  /** Datei oder Ordner im Explorer zeigen. */
+  /** Show a file or folder in Explorer. */
   exportReveal(path: string): Promise<void>;
-  /** App schließen, auch mit ungespeicherten Änderungen. */
+  /** Close the app, even with unsaved changes. */
   appClose(): Promise<void>;
-  /** Fenster soll schließen, es gibt aber ungespeicherte Änderungen. */
-  /** Schließen angehalten: ungespeicherte Änderungen und/oder laufende Bibliotheksarbeit. */
+  /** The window is about to close, but there are unsaved changes. */
+  /** Closing halted: unsaved changes and/or running library work. */
   onCloseRequested(cb: (info: { dirty: boolean; busy: string | null }) => void): void;
   onAgentActivity(cb: (a: AgentActivity) => void): void;
-  /** Eine Projektdatei soll geöffnet werden (Doppelklick, während Klangwelt läuft, oder Agent). */
+  /** A project file is to be opened (double-click while Klangwelt is running, or agent). */
   onOpenFile(cb: (path: string) => void): void;
 }
 
-/** Die Zuordnung Methode → Befehl des Kerns – eine für Desktop und Browser.
- *  Beide Kerne haben dieselbe Befehlstabelle (`crates/klang-app/src/commands.rs`). */
+/** The mapping method → core command – one for desktop and browser.
+ *  Both cores have the same command table (`crates/klang-app/src/commands.rs`). */
 function coreBackend(link: CoreLink, platform: "desktop" | "web"): Backend {
   const call = <T>(cmd: string, args?: Record<string, unknown>) => link.call<T>(cmd, args);
   const listen = <T>(event: string, cb: (payload: T) => void) => link.listen<T>(event, cb);
@@ -268,7 +268,7 @@ function coreBackend(link: CoreLink, platform: "desktop" | "web"): Backend {
     libraryRename: (id, name) => call("library_rename", { id, name }),
     libraryDelete: (id) => call("library_delete", { id }),
     onFileDrop: (cb) => {
-      // Gezogene Dateien samt Stelle (CSS-Pixel); Desktop: Tauri, Browser: web/host.ts
+      // Dragged files including position (CSS pixels); desktop: Tauri, browser: web/host.ts
       listen<{ paths: string[]; position?: { x: number; y: number } | null }>("file-drop", (p) => cb(p.paths ?? [], p.position ?? null));
     },
     onFileDrag: (cb) => {
@@ -342,7 +342,7 @@ function coreBackend(link: CoreLink, platform: "desktop" | "web"): Backend {
   };
 }
 
-/** Stelle aus einem Tauri-Zieh-Ereignis (physische Pixel) in CSS-Pixeln. */
+/** Position from a Tauri drag event (physical pixels) in CSS pixels. */
 function cssPoint(p?: { x: number; y: number } | null): { x: number; y: number } | null {
   if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
   const dpr = window.devicePixelRatio || 1;
@@ -351,18 +351,18 @@ function cssPoint(p?: { x: number; y: number } | null): { x: number; y: number }
 
 type DragPayload = { paths?: string[]; position?: { x: number; y: number } };
 
-/** Tauri-IPC: Befehle als `invoke`, Ereignisse als Tauri-Events. */
+/** Tauri IPC: commands as `invoke`, events as Tauri events. */
 function tauriLink(t: TauriGlobal): CoreLink {
   return {
     call: (cmd, args) => t.core.invoke(cmd, args),
     listen: (event, cb) => {
-      // Gezogene Dateien meldet Tauri unter eigenen Namen – übersetzen in
-      // „file-drop“ { paths, position } und „file-drag“ { paths, x, y } | null
+      // Tauri reports dragged files under its own names – translate into
+      // "file-drop" { paths, position } and "file-drag" { paths, x, y } | null
       const emit = cb as (p: unknown) => void;
       if (event === "file-drop") {
         void t.event.listen<DragPayload>("tauri://drag-drop", (e) => emit({ paths: e.payload.paths ?? [], position: cssPoint(e.payload.position) }));
       } else if (event === "file-drag") {
-        // Tauri meldet die Pfade nur beim Hereinziehen, danach nur noch die Stelle
+        // Tauri reports the paths only on drag-in, afterwards only the position
         let paths: string[] = [];
         const at = (p?: { x: number; y: number }) => cssPoint(p) ?? { x: -1, y: -1 };
         void t.event.listen<DragPayload>("tauri://drag-enter", (e) => {
@@ -379,7 +379,7 @@ function tauriLink(t: TauriGlobal): CoreLink {
   };
 }
 
-/** Attrappe ausdrücklich verlangt (`?attrappe`)? */
+/** Mock explicitly requested (`?attrappe`)? */
 function mockWanted(): boolean {
   try {
     return new URLSearchParams(location.search).has("attrappe");

@@ -1,12 +1,12 @@
-// Einstellungen (Zahnrad in der Transportleiste). Gespeichert im localStorage.
+// Settings (gear in the transport bar). Stored in localStorage.
 
 import { dropdown, h, icon } from "../dom.js";
 import { LANGUAGES, language, switchLanguage, t } from "../i18n.js";
 import { highOnTop, setHighOnTop } from "../pianoroll.js";
 
-/** Kleine Skizze einer Klaviatur mit der gewählten Richtung (h = hohe Töne oben). */
+/** Small sketch of a keyboard with the chosen direction (h = high notes on top). */
 function axisSketch(high: boolean): SVGSVGElement {
-  // 7 Tasten untereinander, schwarze Tasten rechts; Beschriftung tief/hoch.
+  // 7 keys stacked, black keys on the right; labels low/high.
   const keys = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
   const black = [1, 3, 6, 8, 10];
   const lane = 3;

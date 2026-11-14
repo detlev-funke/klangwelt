@@ -1,39 +1,39 @@
-//! Tasteninstrumente für Kontrapunkt und Fuge: Pfeifenorgel und Cembalo.
+//! Keyboard instruments for counterpoint and fugue: pipe organ and harpsichord.
 //!
-//! **Orgel** – additiv: Je Ton wird aus den gezogenen Registern (16′, 8′, 4′,
-//! 2⅔′, 2′, Mixtur) eine Wellentabelle mit den passenden Teiltönen gebaut
-//! (nur unterhalb der Nyquist-Grenze) und mit Pfeifenansprache, Anblasgeräusch
-//! und Tremulant abgespielt. Die Orgel klingt, solange die Taste liegt.
+//! **Organ** - additive: for each note a wavetable with the matching partials is built
+//! from the drawn stops (16′, 8′, 4′,
+//! 2⅔′, 2′, mixture) (only below the Nyquist limit) and played with pipe speech, blowing noise
+//! and tremulant. The organ sounds as long as the key is held.
 //!
-//! **Cembalo** – zwei Saitenchöre (8′ und 4′) über den Karplus-Strong-Zupfer:
-//! heller Kielanriss, wenig Korpus, Lautenzug (Filz) dämpft, beim Loslassen
-//! ein leises Dämpfergeräusch. Anschlagsstärke ändert kaum etwas – wie beim
-//! echten Cembalo.
+//! **Harpsichord** - two string choirs (8′ and 4′) via the Karplus-Strong pluck:
+//! bright quill attack, little body, lute stop (felt) dampens, a soft damper noise
+//! on release. Velocity changes hardly anything - as on a
+//! real harpsichord.
 
 use crate::notes::midi_to_hz;
 use crate::synth::{mix_into, pluck_note, Biquad, NoteSpec, PluckParams, Rng};
 use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
 
-/// Register der Orgel, alle 0…1.
+/// Organ stops, all 0…1.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrganParams {
-    /// Subbass 16′ (eine Oktave tiefer)
+    /// Subbass 16′ (one octave lower)
     pub subbass: f32,
-    /// Prinzipal 8′ (Grundton mit Obertönen)
+    /// Principal 8′ (fundamental with overtones)
     pub prinzipal: f32,
-    /// Flöte 4′ (Oktave, fast obertonfrei)
+    /// Flute 4′ (octave, almost free of overtones)
     pub floete: f32,
-    /// Quinte 2⅔′ (dritter Teilton)
+    /// Fifth 2⅔′ (third partial)
     pub quinte: f32,
-    /// Oktave 2′ (vierter Teilton)
+    /// Octave 2′ (fourth partial)
     pub oktave: f32,
-    /// Mixtur (hohe Teiltöne)
+    /// Mixture (high partials)
     pub mixtur: f32,
-    /// Anblasgeräusch
+    /// Blowing noise
     pub chiff: f32,
-    /// Tremulant (Windschwankung)
+    /// Tremulant (wind fluctuation)
     pub tremulant: f32,
 }
 
@@ -45,7 +45,7 @@ impl Default for OrganParams {
 
 const TABLE: usize = 2048;
 
-/// Teiltöne (Verhältnis zum Grundton, Stärke) der gezogenen Register.
+/// Partials (ratio to the fundamental, strength) of the drawn stops.
 fn organ_partials(p: &OrganParams) -> Vec<(f32, f32)> {
     let mut v = Vec::new();
     let mut add = |ratio: f32, amp: f32| {
@@ -69,17 +69,17 @@ fn organ_partials(p: &OrganParams) -> Vec<(f32, f32)> {
     v
 }
 
-/// Wellentabelle (unnormiert) aus den Teiltönen, für die `take` gilt.
+/// Wavetable (unnormalized) from the partials for which `take` holds.
 fn organ_table(partials: &[(f32, f32)], freq: f32, sr: f32, take: impl Fn(f32) -> bool) -> Vec<f32> {
     let mut t = vec![0f32; TABLE + 1];
     for (j, &(ratio, amp)) in partials.iter().enumerate() {
-        // Teiltöne über 0,45·sr fallen weg (keine Spiegelfrequenzen)
+        // partials above 0.45·sr are dropped (no aliasing)
         if freq * ratio > sr * 0.45 || !take(ratio) {
             continue;
         }
-        // feste, verschiedene Phasen: weniger spitze Wellenform, voller bei gleichem Spitzenpegel
+        // fixed, different phases: less peaky waveform, fuller at the same peak level
         let phase = j as f32 * 2.399_963;
-        // Halbe Teiltöne (16′) brauchen eine Tabelle über zwei Grundperioden: Grundton 16′ wird zur Periode
+        // Half partials (16′) need a table spanning two fundamental periods: the 16′ fundamental becomes the period
         let k = ratio * 2.0;
         for (i, x) in t.iter_mut().enumerate().take(TABLE) {
             *x += amp * (2.0 * PI * k * i as f32 / TABLE as f32 + phase).sin();
@@ -89,20 +89,20 @@ fn organ_table(partials: &[(f32, f32)], freq: f32, sr: f32, take: impl Fn(f32) -
     t
 }
 
-/// Ein Orgelton (klingt bis Tastenende, dann kurzer Abklang).
+/// An organ note (sounds until key end, then a short decay).
 ///
-/// Wie bei echten Pfeifen: jede Pfeife ist um ein, zwei Cent anders gestimmt
-/// (Akkorde schweben leicht), die Obertöne sprechen schneller an als der
-/// Grundton, und während des Tons rauscht ein wenig Wind mit.
+/// As with real pipes: each pipe is tuned a cent or two differently
+/// (chords shimmer slightly), the overtones speak faster than the
+/// fundamental, and a little wind noise runs along during the note.
 pub fn organ_note(n: &NoteSpec, sr: f32, p: &OrganParams, seed: u32) -> Vec<f32> {
     let partials = organ_partials(p);
     if partials.is_empty() {
         return vec![0.0; (0.1 * sr) as usize];
     }
-    // Stimmung der Pfeife: bis ±1,8 Cent, fest je Ton (nicht zufällig von Lauf zu Lauf)
+    // tuning of the pipe: up to ±1.8 cents, fixed per note (not random from run to run)
     let cents = ((n.midi * 7.31).sin() * 1.8) / 100.0;
     let freq = midi_to_hz(n.midi + n.pitch_offset(0.0) + cents).clamp(15.0, sr * 0.45);
-    // Grundton (bis 8′/4′) und Obertöne getrennt – eigene Ansprache
+    // fundamental (up to 8′/4′) and overtones separate - own speech
     let low = organ_table(&partials, freq, sr, |r| r <= 2.0);
     let high = organ_table(&partials, freq, sr, |r| r > 2.0);
     let peak = low.iter().zip(&high).fold(0f32, |m, (a, b)| m.max((a + b).abs())).max(1e-6);
@@ -110,7 +110,7 @@ pub fn organ_note(n: &NoteSpec, sr: f32, p: &OrganParams, seed: u32) -> Vec<f32>
     let release = 0.14;
     let total = ((n.dur_secs.max(0.02) + release) * sr) as usize;
     let mut out = vec![0f32; total];
-    // Tiefe Pfeifen sprechen langsamer an
+    // low pipes speak more slowly
     let attack = (0.035 + 0.03 * ((60.0 - n.midi) / 24.0)).clamp(0.015, 0.09);
     let note_end = (n.dur_secs * sr) as usize;
     let rel_n = (release * sr) as usize;
@@ -121,7 +121,7 @@ pub fn organ_note(n: &NoteSpec, sr: f32, p: &OrganParams, seed: u32) -> Vec<f32>
     let (att_low, att_high) = (((attack * 1.35) * sr) as usize, ((attack * 0.55) * sr) as usize);
     let modulated = n.modulated();
     let mut f = freq;
-    // Tabelle enthält zwei Grundperioden (wegen 16′): halbe Schrittweite
+    // table contains two fundamental periods (because of 16′): half step size
     let mut inc = f / sr * TABLE as f32 * 0.5;
     let level = 0.16 * (0.75 + 0.25 * n.velocity.clamp(0.0, 1.0));
     for (i, o) in out.iter_mut().enumerate() {
@@ -147,7 +147,7 @@ pub fn organ_note(n: &NoteSpec, sr: f32, p: &OrganParams, seed: u32) -> Vec<f32>
         };
         let fall = if i >= note_end { (1.0 - (i - note_end) as f32 / rel_n.max(1) as f32).max(0.0) } else { 1.0 };
         let s = lerp(&low) * rise(att_low) + lerp(&high) * rise(att_high);
-        // Anblasgeräusch: gefiltertes Rauschen in den ersten 60 ms, danach leiser Wind
+        // blowing noise: filtered noise in the first 60 ms, afterwards quiet wind
         let noise = rng.next();
         let chiff = if t < 0.06 { chiff_bp.process(noise) * p.chiff * 0.9 * (1.0 - t / 0.06) } else { 0.0 };
         let wind = wind_bp.process(noise) * (0.012 + 0.02 * p.chiff) * rise(att_low);
@@ -165,19 +165,19 @@ pub fn render_organ(notes: &[NoteSpec], total_secs: f32, sr: f32, p: &OrganParam
     out
 }
 
-/// Cembalo-Register, alle 0…1.
+/// Harpsichord stops, all 0…1.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HarpsichordParams {
-    /// 8′-Saitenchor
+    /// 8′ string choir
     pub achtfuss: f32,
-    /// 4′-Saitenchor (eine Oktave höher)
+    /// 4′ string choir (one octave higher)
     pub vierfuss: f32,
-    /// Lautenzug (Filz dämpft)
+    /// Lute stop (felt dampens)
     pub laute: f32,
-    /// Kiel: weich ↔ spitz
+    /// Quill: soft ↔ sharp
     pub kiel: f32,
-    /// Nachklang: kurz ↔ lang
+    /// Ring-out: short ↔ long
     pub nachklang: f32,
 }
 
@@ -194,7 +194,7 @@ pub fn harpsichord_note(n: &NoteSpec, sr: f32, p: &HarpsichordParams, seed: u32)
         body: 0.15,
         attack: (0.55 + 0.35 * p.kiel - 0.4 * p.laute).clamp(0.0, 1.0),
     };
-    // kaum Dynamik
+    // hardly any dynamics
     let vel = 0.82 + 0.1 * n.velocity.clamp(0.0, 1.0);
     let base = NoteSpec { velocity: vel, ..*n };
     let mut out = if p.achtfuss > 0.0 {
@@ -207,7 +207,7 @@ pub fn harpsichord_note(n: &NoteSpec, sr: f32, p: &HarpsichordParams, seed: u32)
         Vec::new()
     };
     if p.vierfuss > 0.0 {
-        // 4′: eine Oktave höher, minimal verstimmt (zwei Saiten schweben leicht)
+        // 4′: one octave higher, slightly detuned (two strings shimmer slightly)
         let four = NoteSpec { midi: n.midi + 12.03, ..base };
         let v = pluck_note(&four, sr, &PluckParams { brightness: (pp.brightness + 0.1).min(1.0), ..pp }, seed.wrapping_add(7919));
         if out.len() < v.len() {
@@ -215,7 +215,7 @@ pub fn harpsichord_note(n: &NoteSpec, sr: f32, p: &HarpsichordParams, seed: u32)
         }
         mix_into(&mut out, &v, 0, 0.8 * p.vierfuss);
     }
-    // Dämpfergeräusch beim Loslassen
+    // damper noise on release
     let end = (n.dur_secs * sr) as usize;
     let thump_len = (0.03 * sr) as usize;
     if end + thump_len < out.len() + thump_len {
@@ -257,17 +257,17 @@ mod tests {
         let n = NoteSpec::new(0.0, 1.0, 57.0, 0.8); // A3
         let x = organ_note(&n, sr, &OrganParams { prinzipal: 1.0, floete: 0.0, oktave: 0.0, ..Default::default() }, 1);
         assert!((pitch_of(&x, sr) - 220.0).abs() < 3.0, "{}", pitch_of(&x, sr));
-        // hält: Pegel bei 0,8 s ähnlich wie bei 0,3 s
+        // sustains: level at 0.8 s similar to that at 0.3 s
         let rms = |a: f32, b: f32| {
             let s = &x[(a * sr) as usize..(b * sr) as usize];
             (s.iter().map(|v| v * v).sum::<f32>() / s.len() as f32).sqrt()
         };
         assert!((rms(0.75, 0.85) / rms(0.25, 0.35) - 1.0).abs() < 0.15);
         assert!(rms(1.12, 1.14) < 0.2 * rms(0.5, 0.6), "klingt nach dem Loslassen kurz aus");
-        // 16′ allein: eine Oktave tiefer
+        // 16′ alone: one octave lower
         let sub = organ_note(&n, sr, &OrganParams { subbass: 1.0, prinzipal: 0.0, floete: 0.0, oktave: 0.0, chiff: 0.0, ..Default::default() }, 2);
         assert!((pitch_of(&sub, sr) - 110.0).abs() < 2.0, "{}", pitch_of(&sub, sr));
-        // keine Werte außerhalb ±1
+        // no values outside ±1
         assert!(x.iter().all(|v| v.abs() < 1.0));
     }
 
@@ -278,7 +278,7 @@ mod tests {
         let eight = harpsichord_note(&n, sr, &HarpsichordParams::default(), 3);
         assert!((pitch_of(&eight, sr) - 220.0).abs() < 4.0);
         let both = harpsichord_note(&n, sr, &HarpsichordParams { vierfuss: 1.0, ..Default::default() }, 3);
-        // Stärke eines Teiltons (DFT an einer Frequenz) zwischen 0,1 und 0,5 s
+        // strength of a partial (DFT at one frequency) between 0.1 and 0.5 s
         let amp = |x: &[f32], f: f32| {
             let (a, b) = ((0.1 * sr) as usize, (0.5 * sr) as usize);
             let (mut re, mut im) = (0.0f32, 0.0f32);
@@ -289,7 +289,7 @@ mod tests {
             }
             (re * re + im * im).sqrt()
         };
-        // 4′ allein klingt eine Oktave höher; zusammen mehr Energie (die Chöre schweben leicht)
+        // 4′ alone sounds one octave higher; together more energy (the choirs shimmer slightly)
         let four = harpsichord_note(&n, sr, &HarpsichordParams { achtfuss: 0.0, vierfuss: 1.0, ..Default::default() }, 3);
         assert!(amp(&four, 880.0) > amp(&four, 220.0) * 3.0, "4′ ohne 8′-Grundton");
         let energy = |x: &[f32]| x.iter().map(|v| v * v).sum::<f32>();

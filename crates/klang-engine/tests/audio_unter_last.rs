@@ -1,13 +1,13 @@
-//! Messung (nur Ausgabe, stumm): Hält der Audio-Callback mit, wenn alle Kerne
-//! rechnen (z. B. Vorab-Rendern nach einer Tempoänderung)? Fällt der Callback
-//! aus, spielt das Gerät eine Lücke und die Wiedergabeposition bleibt hinter
-//! der Uhr zurück – gemessen wird diese Drift (Rauschen etwa ±10 ms, je nach
-//! Puffergröße des Geräts).
+//! Measurement (output only, muted): does the audio callback keep up when all cores
+//! are busy (e.g. pre-rendering after a tempo change)? If the callback
+//! drops out, the device plays a gap and the playback position falls behind
+//! the clock – this drift is what is measured (noise about ±10 ms, depending on the
+//! device's buffer size).
 //! `cargo test --release -p klang-engine --test audio_unter_last -- --ignored --nocapture`
 //!
-//! Gemessen (8 Kerne, Windows): ohne die Prioritätskorrektur in `device.rs`
-//! fehlten bei 32 rechnenden Threads 24–172 ms je 3 s, bei 8 vereinzelt bis
-//! 41 ms; mit ihr bleibt alles im Rauschen.
+//! Measured (8 cores, Windows): without the priority correction in `device.rs`,
+//! 32 busy threads lost 24–172 ms per 3 s, with 8 occasionally up to
+//! 41 ms; with it everything stays within the noise.
 
 #![cfg(not(target_arch = "wasm32"))]
 
@@ -16,10 +16,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-/// Drift (ms) der Position gegenüber der Uhr über `secs` Sekunden, während
-/// `busy` Threads rechnen.
+/// Drift (ms) of the position relative to the clock over `secs` seconds while
+/// `busy` threads are computing.
 fn drift_ms(engine: &Engine, secs: f64, busy: usize) -> f64 {
-    // Ablesen jeweils im Leerlauf: unter Last würde auch der messende Thread verdrängt
+    // Read each time while idle: under load the measuring thread would be preempted too
     let sr = engine.info().sample_rate as f64;
     std::thread::sleep(Duration::from_millis(500));
     let (t0, p0) = (Instant::now(), engine.status().position_frames);

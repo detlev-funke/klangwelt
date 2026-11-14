@@ -1,6 +1,6 @@
-//! Quintenzirkel-Fenster und Agent: Tonart des Projekts, Akkordfolge einer
-//! Spur, Fortsetzungen, Kadenzen, Vorhören und Schreiben von Akkordfolgen
-//! (vierstimmig gesetzt, ein Undo-Schritt).
+//! Circle-of-fifths window and agent: key of the project, chord progression of a
+//! track, continuations, cadences, previewing and writing chord progressions
+//! (set in four parts, one undo step).
 
 use crate::sound;
 use crate::state::{lock, AppState, CmdResult, Snapshot};
@@ -38,7 +38,7 @@ fn shift_of(t: &Track) -> i32 {
     if sound::transposes(t.instrument.as_ref()) { t.pitch_semitones.round() as i32 } else { 0 }
 }
 
-/// Klingende Noten eines Clips in Projektzeit (Schläge), transponiert wie gespielt.
+/// Sounding notes of a clip in project time (beats), transposed as played.
 fn clip_pitches(t: &Track, c: &Clip) -> Vec<TimedPitch> {
     let shift = shift_of(t);
     let ClipSource::Notes { notes, length_beats } = &c.source else { return Vec::new() };
@@ -53,7 +53,7 @@ fn clip_pitches(t: &Track, c: &Clip) -> Vec<TimedPitch> {
         .collect()
 }
 
-/// Tonart aus allen Instrumentspuren mit Tonhöhe (dauergewichtet).
+/// Key from all instrument tracks with pitch (duration-weighted).
 pub fn project_key(p: &Project) -> Option<Key> {
     let mut hist = [0.0f64; 12];
     for t in p.tracks.iter().filter(|t| melodic(t) && !t.mute) {
@@ -73,17 +73,17 @@ pub struct KeyInfo {
     pub key: Key,
     /// Name for display, in the chosen language.
     pub name: String,
-    /// „gewaehlt“ (von Hand), „geschaetzt“ (aus den Noten) oder „standard“ (C-Dur, keine Noten).
+    /// "gewaehlt" (by hand), "geschaetzt" (from the notes) or "standard" (C major, no notes).
     pub source: &'static str,
 }
 
-/// KeyInfo zu einer Tonart mit Herkunft („gewaehlt“, „geschaetzt“, „standard“).
+/// KeyInfo for a key with origin ("gewaehlt", "geschaetzt", "standard").
 pub fn key_info(key: Key, source: &'static str) -> KeyInfo {
     let key = Key { tonic: key.tonic % 12, minor: key.minor, confidence: key.confidence };
     KeyInfo { key, name: key.name(), source }
 }
 
-/// Tonart: gewählt, sonst aus den Noten geschätzt, sonst C-Dur.
+/// Key: chosen, otherwise estimated from the notes, otherwise C major.
 pub fn resolve_key(st: &AppState, chosen: Option<Key>) -> CmdResult<KeyInfo> {
     let (key, source) = match chosen {
         Some(k) => (Key { tonic: k.tonic % 12, minor: k.minor, confidence: 1.0 }, "gewaehlt"),
@@ -104,8 +104,8 @@ pub struct Placed {
     pub info: ChordInfo,
 }
 
-/// Akkordfolge einer Spur (oder eines Clips); ohne Spur alle Instrumentspuren
-/// mit Tonhöhe zusammen – also die Harmonik des ganzen Satzes.
+/// Chord progression of a track (or a clip); without a track, all instrument tracks
+/// with pitch together – i.e. the harmony of the whole piece.
 pub fn chords_in(st: &AppState, track_id: Option<Id>, clip_id: Option<Id>, key: &Key) -> CmdResult<Vec<Placed>> {
     let s = lock(&st.session)?;
     let p = &s.project;
@@ -135,7 +135,7 @@ pub fn chords_in(st: &AppState, track_id: Option<Id>, clip_id: Option<Id>, key: 
         .collect())
 }
 
-/// Akkorde vierstimmig setzen; `before` = Akkord davor (für den Anschluss, wird nicht ausgegeben).
+/// Sets chords in four parts; `before` = the chord before (for the connection, not output).
 fn voiced(chords: &[Chord], key: &Key, before: Option<Chord>) -> Vec<Vec<u8>> {
     match before {
         Some(b) => {
@@ -160,7 +160,7 @@ fn check_len(chords: &[Chord], bpc: f64) -> CmdResult<f64> {
     Ok(bpc)
 }
 
-/// Akkordfolge vorspielen (Klang der Spur, sonst Zupfer). Liefert die Dauer in Sekunden.
+/// Plays a chord progression (sound of the track, otherwise plucked). Returns the duration in seconds.
 pub fn preview(st: &AppState, track_id: Option<Id>, chords: &[Chord], key: &Key, beats_per_chord: f64, before: Option<Chord>) -> CmdResult<f32> {
     let bpc = check_len(chords, beats_per_chord)?;
     let track = match track_id {
@@ -180,7 +180,7 @@ pub fn preview(st: &AppState, track_id: Option<Id>, chords: &[Chord], key: &Key,
     for (i, v) in voiced(chords, key, before).iter().enumerate() {
         for (j, &m) in v.iter().enumerate() {
             let vel = if j == 0 { 0.85 } else { 0.72 };
-            // Pianissimo-Anschlag versetzt: leicht gebrochen wie gezupft
+            // Pianissimo velocity staggered: slightly broken as if plucked
             let t0 = i as f32 * secs_per_chord + j as f32 * 0.012;
             notes.push(NoteSpec::new(t0, secs_per_chord * 0.96, m as f32 + shift, vel));
         }
@@ -199,11 +199,11 @@ pub struct Written {
     pub clip_id: Id,
     pub start_beats: f64,
     pub length_beats: f64,
-    /// Gesetzte Stimmen je Akkord (MIDI, Bass zuerst).
+    /// Voices set for each chord (MIDI, bass first).
     pub voicings: Vec<Vec<u8>>,
 }
 
-/// Noten ab `rel` (Schläge im Clip) um `by` nach hinten; Noten über die Stelle enden dort.
+/// Notes from `rel` (beats in the clip) shifted back by `by`; notes across that point end there.
 fn shifted_notes(notes: &[Note], rel: f64, by: f64) -> Vec<Note> {
     notes
         .iter()
@@ -219,15 +219,15 @@ fn shifted_notes(notes: &[Note], rel: f64, by: f64) -> Vec<Note> {
         .collect()
 }
 
-/// Akkordfolge als Noten schreiben – in die Spur `track_id` oder in die Spur
-/// „Akkorde“ (wird bei Bedarf angelegt). Liegt dort schon ein Noten-Clip an
-/// der Stelle, kommen die Akkorde in ihn (Noten im Bereich werden ersetzt),
-/// sonst entsteht ein neuer Clip.
+/// Writes a chord progression as notes – into the track `track_id` or into the track
+/// "Akkorde" (created if needed). If a note clip already lies there at
+/// that position, the chords go into it (notes in the range are replaced),
+/// otherwise a new clip is created.
 ///
-/// Mit `insert` wird an der Stelle Platz geschaffen: alles ab
-/// `start_beats` rückt in allen Spuren um die Länge der Akkorde nach hinten
-/// (Clips, die über die Stelle reichen, werden länger, ihre Noten danach rücken
-/// mit). Ohne `insert` werden die Noten im Bereich der Ziel-Spur ersetzt.
+/// With `insert`, room is made at that position: everything from
+/// `start_beats` moves back by the length of the chords in all tracks
+/// (clips that extend across the position get longer, their notes after it move
+/// along). Without `insert`, the notes in the range of the target track are replaced.
 #[allow(clippy::too_many_arguments)]
 pub fn write_mode(
     st: &AppState,
@@ -259,7 +259,7 @@ pub fn write_mode(
             None => p.tracks.iter().find(|t| is_chord_track(&t.name) && melodic(t)).map(|t| t.id),
         };
         let shift = target.and_then(|id| p.track(id)).map(shift_of).unwrap_or(0);
-        // Einfügen: Platz schaffen – alles ab der Stelle rückt in allen Spuren nach hinten
+        // Insert: make room – everything from the position moves back in all tracks
         let mut spanning: Option<(Id, Vec<Note>, f64)> = None;
         if insert {
             for t in &p.tracks {
@@ -299,7 +299,7 @@ pub fn write_mode(
                 .collect()
         };
         match target {
-            // Einfügen in einen Clip, der über die Stelle reicht: Akkorde in die Lücke
+            // Insert into a clip that extends across the position: chords into the gap
             Some(tid) if spanning.is_some() => {
                 let (cid, mut notes, new_len) = spanning.take().expect("geprüft");
                 let t = p.track(tid).expect("geprüft");
@@ -309,7 +309,7 @@ pub fn write_mode(
                 let w = Written { track_id: tid, clip_id: cid, start_beats: start, length_beats: len, voicings: voicings.clone() };
                 (Command::SetClipNotes { track_id: tid, clip_id: cid, notes, length_beats: Some(new_len) }, w)
             }
-            // Einfügen ohne Clip an der Stelle: eigener Clip in der Lücke
+            // Insert without a clip at the position: its own clip in the gap
             Some(tid) if insert => {
                 let clip = Clip { id: p.alloc_id(), name: chord_track_name(), start_beats: start, source: ClipSource::Notes { length_beats: len, notes: notes_at(0.0) } };
                 let w = Written { track_id: tid, clip_id: clip.id, start_beats: start, length_beats: len, voicings: voicings.clone() };
@@ -360,9 +360,9 @@ pub fn write_mode(
     Ok((snap, written))
 }
 
-// ------------------------------------------------------------------ Bibliothek
+// ------------------------------------------------------------------ Library
 
-/// Eine Beispielstelle mit Titel und Komponist.
+/// An example passage with title and composer.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExampleView {
@@ -374,14 +374,14 @@ pub struct ExampleView {
     pub end: f32,
 }
 
-/// Wie oft diese Fortsetzung in der Bibliothek vorkommt.
+/// How often this continuation occurs in the library.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LibFollow {
     pub share: f32,
     pub count: u32,
     pub total: u32,
-    /// true: genau diese Form; false: als Grundakkord gezählt (zu wenig Daten für die genaue Form)
+    /// true: exactly this form; false: counted as a root chord (too little data for the exact form)
     pub exact: bool,
     pub examples: Vec<ExampleView>,
 }
@@ -398,9 +398,9 @@ pub struct SuggestionView {
 #[serde(rename_all = "camelCase")]
 pub struct LibSummary {
     pub name: String,
-    /// Partituren mit Akkordfolge in dieser Tonart-Art (Dur bzw. Moll) in der gewählten Gruppe.
+    /// Scores with a chord progression in this mode (major or minor) in the chosen group.
     pub scores: u32,
-    /// Gewählte Gruppe (0 = alle, 1 = Barock, 2 = Bach).
+    /// Chosen group (0 = all, 1 = Baroque, 2 = Bach).
     pub group: usize,
     pub groups: Vec<GroupInfo>,
 }
@@ -419,13 +419,13 @@ pub struct GroupInfo {
 #[serde(rename_all = "camelCase")]
 pub struct SuggestResult {
     pub suggestions: Vec<SuggestionView>,
-    /// None: keine Bibliothek oder Index ohne Akkordstatistik.
+    /// None: no library, or index without chord statistics.
     pub library: Option<LibSummary>,
-    /// Hinweis, warum Häufigkeiten fehlen.
+    /// Note on why frequencies are missing.
     pub hint: Option<String>,
     /// The hint suggests re-indexing the library (index without chord statistics or without groups).
     pub reindex: bool,
-    /// Mehrschrittige Wege vom letzten Akkord zu den Schlüssen, bester zuerst.
+    /// Multi-step paths from the last chord to the closings, best first.
     pub paths: Vec<PathView>,
 }
 
@@ -434,15 +434,15 @@ pub struct SuggestResult {
 pub struct PathView {
     #[serde(flatten)]
     pub path: CadencePath,
-    /// Anteil jedes Schritts an den Fortsetzungen in der Bibliothek (None: keine Daten).
+    /// Share of each step among the continuations in the library (None: no data).
     pub shares: Option<Vec<Option<f32>>>,
 }
 
-/// Längste Wege, die zum Schluss gesucht werden.
+/// Longest paths searched for the closing.
 const PATH_STEPS: usize = 4;
 
-/// Wege zum Schluss; mit Akkordstatistik zählt die Häufigkeit in der Bibliothek
-/// zur Hälfte mit (ein Schritt, den die Hälfte der Stücke so geht, gilt als voll).
+/// Paths to the closing; with chord statistics, the frequency in the library counts
+/// half (a step that half of the pieces take counts as full).
 fn paths_for(key: &Key, chords: &[Chord], stats: Option<&ChordStats>) -> Vec<PathView> {
     let Some(stats) = stats else {
         return harmony::cadence_paths(key, chords, PATH_STEPS, &|_, _, s| s).into_iter().map(|path| PathView { path, shares: None }).collect();
@@ -473,8 +473,8 @@ fn tidy(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// Vorschläge nach Funktionsharmonik, ergänzt um die Häufigkeiten aus der
-/// geladenen Bibliothek und um häufige Fortsetzungen, die keine Regel nennt.
+/// Suggestions by functional harmony, supplemented by the frequencies from the
+/// loaded library and by common continuations that no rule names.
 pub fn suggest_with_library(st: &AppState, key: &Key, chords: &[Chord], group: usize) -> CmdResult<SuggestResult> {
     let base = harmony::suggest(key, chords, 12);
     let lib = lock(&st.library)?;
@@ -504,7 +504,7 @@ pub fn suggest_with_library(st: &AppState, key: &Key, chords: &[Chord], group: u
             lib.index.chords_group(id).map(|s| GroupInfo { id, key: k, label: klang_i18n::translate(label), scores: s.scores[mode] })
         })
         .collect();
-    // Gruppe mit zu wenig Stücken in diesem Tongeschlecht: auf alle ausweichen
+    // Group with too few pieces in this mode: fall back to all
     let mut hint = None;
     let mut reindex = false;
     let group = match groups.iter().find(|g| g.id == group) {
@@ -554,7 +554,7 @@ pub fn suggest_with_library(st: &AppState, key: &Key, chords: &[Chord], group: u
             SuggestionView { suggestion: s, library: f }
         })
         .collect();
-    // Häufige Fortsetzungen, die die Regeln nicht nennen
+    // Common continuations that the rules do not name
     let mut extra = 0;
     for (rel, f) in stats.top_after(key.minor, prev_rel, 10) {
         let ch = rel.chord(key);
@@ -579,12 +579,12 @@ pub fn suggest_with_library(st: &AppState, key: &Key, chords: &[Chord], group: u
     Ok(SuggestResult { suggestions: out, library: Some(summary), hint, reindex, paths })
 }
 
-/// Eine Beispielstelle der Bibliothek anspielen (alle Stimmen, Tempo der Partitur).
+/// Plays an example passage from the library (all voices, tempo of the score).
 pub fn play_example(st: &AppState, doc: u32, start: f64, end: f64) -> CmdResult<f32> {
     crate::library::play_range(st, doc, start, end.min(start + 32.0), None)
 }
 
-// ------------------------------------------------------------------ Tauri-Befehle
+// ------------------------------------------------------------------ Tauri commands
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -594,10 +594,10 @@ pub struct HarmonyView {
     pub cadences: Vec<CadenceTemplate>,
 }
 
-// ------------------------------------------------------------------ Zeitleiste
+// ------------------------------------------------------------------ Timeline
 
-/// Ein Akkord der Harmonie-Spur in der Zeitleiste: mit Stimmung des Übergangs
-/// vom Akkord davor (wie im Quintenzirkel) und – wenn er bricht – dem Grund.
+/// A chord of the harmony track in the timeline: with the mood of the transition
+/// from the chord before (as in the circle of fifths) and – if it breaks – the reason.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LineChord {
@@ -606,7 +606,7 @@ pub struct LineChord {
     #[serde(flatten)]
     pub info: ChordInfo,
     pub mood: harmony::Mood,
-    /// Harmonischer Bruch: „tonartfremd“ oder „Tritonus-Sprung“
+    /// Harmonic break: "tonartfremd" or "Tritonus-Sprung"
     pub bruch: Option<String>,
 }
 
@@ -617,7 +617,7 @@ pub struct HarmonyLine {
     pub chords: Vec<LineChord>,
 }
 
-/// Akkordfolge des ganzen Satzes (alle Instrumentspuren mit Tonhöhe) mit Stimmung und Brüchen.
+/// Chord progression of the whole piece (all instrument tracks with pitch) with mood and breaks.
 pub fn line(st: &AppState, chosen: Option<Key>) -> CmdResult<HarmonyLine> {
     let info = resolve_key(st, chosen)?;
     let placed = chords_in(st, None, None, &info.key)?;

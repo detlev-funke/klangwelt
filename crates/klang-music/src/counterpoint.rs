@@ -1,22 +1,22 @@
-//! Kontrapunkt: Stimmen auf Satzfehler prüfen und Gegenstimmen erzeugen.
+//! Counterpoint: check voices for part-writing errors and generate counter-voices.
 //!
-//! **Prüfen** ([`check`]): Quint- und Oktavparallelen, verdeckte Parallelen
-//! der Außenstimmen, Stimmkreuzung, Dissonanzbehandlung (auf schwerer Zeit
-//! nur vorbereitet und abwärts aufgelöst, auf leichter Zeit stufenweise),
-//! Stimmumfang, große und übermäßige Sprünge, weite Lage.
+//! **Checking** ([`check`]): parallel fifths and octaves, hidden parallels
+//! between the outer voices, voice crossing, dissonance treatment (on strong beats
+//! only prepared and resolved downward, on weak beats stepwise),
+//! voice range, large and augmented leaps, wide spacing.
 //!
-//! **Erzeugen** ([`generate_line`]): Eine neue Stimme gegen vorhandene –
-//! dynamische Programmierung über Tonhöhen mit Kosten wie im
-//! Kontrapunktunterricht (Konsonanz auf schwerer Zeit, Durchgänge auf
-//! leichter, Gegenbewegung, Schritte vor Sprüngen, keine Parallelen). Mit
-//! `invertible` werden Quinten gemieden, damit die Stimme im doppelten
-//! Kontrapunkt der Oktave (vertauscht) brauchbar bleibt.
+//! **Generating** ([`generate_line`]): a new voice against existing ones –
+//! dynamic programming over pitches with costs as in
+//! counterpoint teaching (consonance on strong beats, passing tones on
+//! weak ones, contrary motion, steps before leaps, no parallels). With
+//! `invertible` fifths are avoided so that the voice stays usable in
+//! double counterpoint at the octave (swapped).
 
 use crate::theory::Key;
 use klang_i18n::tr;
 use serde::{Deserialize, Serialize};
 
-/// Note einer Stimme; Zeiten in Schlägen.
+/// Note of a voice; times in beats.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VNote {
@@ -64,12 +64,12 @@ pub struct Issue {
     pub severity: Severity,
     pub start: f64,
     pub end: f64,
-    /// Beteiligte Stimmen (Indizes wie übergeben).
+    /// Voices involved (indices as passed).
     pub voices: Vec<usize>,
     pub message: String,
 }
 
-/// Üblicher Umfang (MIDI) einer Stimme – nach Namen, sonst nach Lage im Satz.
+/// Usual range (MIDI) of a voice – by name, otherwise by position in the texture.
 pub fn voice_range(name: &str, rank: usize, count: usize) -> (u8, u8) {
     let n = name.to_lowercase();
     if n.contains("sopran") || n.contains("ober") || n.contains("upper") {
@@ -98,7 +98,7 @@ pub fn voice_range(name: &str, rank: usize, count: usize) -> (u8, u8) {
     }
 }
 
-/// Rang nach Stimmnamen (0 = oben), None = unbekannt.
+/// Rank by voice name (0 = top), None = unknown.
 fn name_rank(name: &str) -> Option<u8> {
     let n = name.to_lowercase();
     if n.contains("sopran") || n.contains("ober") || n.contains("upper") {
@@ -120,7 +120,7 @@ fn pname(p: u8) -> String {
     crate::theory::display_name(&format!("{}{}", NAMES[p as usize % 12], p as i32 / 12 - 1))
 }
 
-/// Klingende Note einer (nach Einsatz sortierten) Stimme zur Zeit t.
+/// Sounding note of a voice (sorted by onset) at time t.
 fn sounding(v: &[VNote], t: f64) -> Option<VNote> {
     let i = v.partition_point(|n| n.start <= t + EPS);
     v[..i].iter().rev().take(4).find(|n| n.end() > t + EPS).copied()
@@ -146,7 +146,7 @@ fn ic(a: u8, b: u8) -> u8 {
     ((a as i32 - b as i32).unsigned_abs() % 12) as u8
 }
 
-/// Dissonant zwischen zwei Stimmen (Quarte nur gegen den Bass).
+/// Dissonant between two voices (fourth only against the bass).
 fn dissonant(interval_class: u8, against_bass: bool) -> bool {
     matches!(interval_class, 1 | 2 | 6 | 10 | 11) || (interval_class == 5 && against_bass)
 }
@@ -154,18 +154,18 @@ fn dissonant(interval_class: u8, against_bass: bool) -> bool {
 fn sorted(v: &[VNote]) -> Vec<VNote> {
     let mut s = v.to_vec();
     s.sort_by(|a, b| a.start.total_cmp(&b.start).then(b.pitch.cmp(&a.pitch)));
-    // je Einsatz nur der oberste Ton (eine Stimme = eine Linie)
+    // per onset only the topmost note (one voice = one line)
     s.dedup_by(|b, a| (a.start - b.start).abs() < EPS);
     s
 }
 
-/// Stimmen prüfen. `voices` in beliebiger Reihenfolge (die Lage wird aus der
-/// mittleren Tonhöhe bestimmt), `names` für Umfang und Meldungen.
+/// Check voices. `voices` in any order (the position is determined from the
+/// mean pitch), `names` for range and messages.
 pub fn check(voices: &[Vec<VNote>], names: &[String], key: Option<&Key>, beats_per_bar: u32) -> Vec<Issue> {
     let v: Vec<Vec<VNote>> = voices.iter().map(|x| sorted(x)).collect();
     let n = v.len();
     let mean = |x: &[VNote]| if x.is_empty() { 0.0 } else { x.iter().map(|n| n.pitch as f64).sum::<f64>() / x.len() as f64 };
-    // Reihenfolge von oben nach unten: nach Stimmnamen, wenn alle benannt sind, sonst nach Lage
+    // Order from top to bottom: by voice names if all are named, otherwise by position
     let mut order: Vec<usize> = (0..n).filter(|&i| !v[i].is_empty()).collect();
     let by_name: Vec<Option<u8>> = (0..n).map(|i| names.get(i).and_then(|s| name_rank(s))).collect();
     if order.iter().all(|&i| by_name[i].is_some()) {
@@ -177,7 +177,7 @@ pub fn check(voices: &[Vec<VNote>], names: &[String], key: Option<&Key>, beats_p
     let label = |i: usize| names.get(i).cloned().filter(|s| !s.is_empty()).unwrap_or_else(|| tr!("Voice {n}", n = i + 1));
     let mut out: Vec<Issue> = Vec::new();
     let push = |out: &mut Vec<Issue>, kind, severity, start: f64, end: f64, voices: Vec<usize>, message: String| {
-        // gleiche Meldung direkt anschließend zusammenfassen
+        // merge the same message directly following
         if let Some(last) = out.iter_mut().rev().take(12).find(|x| x.kind == kind && x.voices == voices && (x.end - start).abs() < 1.0 + EPS && x.message == message) {
             last.end = last.end.max(end);
             return;
@@ -191,18 +191,18 @@ pub fn check(voices: &[Vec<VNote>], names: &[String], key: Option<&Key>, beats_p
 
     for w in 0..events.len() {
         let t = events[w];
-        // Lage aller Stimmen zu diesem Zeitpunkt
+        // Position of all voices at this point in time
         let now: Vec<Option<VNote>> = (0..n).map(|i| sounding(&v[i], t)).collect();
         let lowest = order.iter().copied().filter(|&i| now[i].is_some()).last();
         for (ai, &a) in order.iter().enumerate() {
             for &b in &order[ai + 1..] {
                 let (Some(na), Some(nb)) = (now[a], now[b]) else { continue };
-                // Stimmkreuzung
+                // Voice crossing
                 if na.pitch < nb.pitch {
                     push(&mut out, IssueKind::Stimmkreuzung, Severity::Warnung, t, na.end().min(nb.end()), vec![a, b],
                         tr!("{a} is below {b} ({pa} < {pb})", a = label(a), b = label(b), pa = pname(na.pitch), pb = pname(nb.pitch)));
                 }
-                // Parallelen: Vergleich mit dem vorigen Ereignis
+                // Parallels: comparison with the previous event
                 if w > 0 {
                     let tp = events[w - 1];
                     if let (Some(pa), Some(pb)) = (sounding(&v[a], tp), sounding(&v[b], tp)) {
@@ -238,7 +238,7 @@ pub fn check(voices: &[Vec<VNote>], names: &[String], key: Option<&Key>, beats_p
                         }
                     }
                 }
-                // Dissonanzen: nur wo eine der beiden Noten hier einsetzt
+                // Dissonances: only where one of the two notes starts here
                 let starts_a = (na.start - t).abs() < EPS;
                 let starts_b = (nb.start - t).abs() < EPS;
                 if !(starts_a || starts_b) {
@@ -257,10 +257,10 @@ pub fn check(voices: &[Vec<VNote>], names: &[String], key: Option<&Key>, beats_p
                     _ => klang_i18n::tk!("major seventh"),
                 });
                 if is_strong(t, beats_per_bar) {
-                    // vorbereitet: eine Note lag schon (Vorhalt) und löst sich stufenweise abwärts auf
+                    // prepared: a note was already sounding (suspension) and resolves stepwise downward
                     let held = if !starts_a { Some((a, na)) } else if !starts_b { Some((b, nb)) } else { None };
                     let resolved = held.is_some_and(|(i, hn)| next_after(&v[i], &hn).is_some_and(|nx| (1..=2).contains(&(hn.pitch as i32 - nx.pitch as i32))));
-                    // auch: wiederangeschlagener Vorhalt (gleiche Tonhöhe wie davor)
+                    // also: re-struck suspension (same pitch as before)
                     let restruck = [(a, na, starts_a), (b, nb, starts_b)].iter().any(|&(i, x, s)| {
                         s && prev_before(&v[i], &x).is_some_and(|p| p.pitch == x.pitch) && next_after(&v[i], &x).is_some_and(|nx| (1..=2).contains(&(x.pitch as i32 - nx.pitch as i32)))
                     });
@@ -269,7 +269,7 @@ pub fn check(voices: &[Vec<VNote>], names: &[String], key: Option<&Key>, beats_p
                             tr!("Unprepared dissonance on a strong beat ({iname}) between {a} and {b}", iname = iname, a = label(a), b = label(b)));
                     }
                 } else {
-                    // leichte Zeit: Durchgang/Wechselnote – stufenweise erreicht oder verlassen
+                    // weak beat: passing tone/neighbor tone – approached or left stepwise
                     for (i, x, s) in [(a, na, starts_a), (b, nb, starts_b)] {
                         if !s {
                             continue;
@@ -283,7 +283,7 @@ pub fn check(voices: &[Vec<VNote>], names: &[String], key: Option<&Key>, beats_p
                 }
             }
         }
-        // weite Lage zwischen benachbarten Oberstimmen
+        // wide spacing between adjacent upper voices
         for pair in order.windows(2) {
             let (a, b) = (pair[0], pair[1]);
             if Some(b) == order.last().copied() {
@@ -298,7 +298,7 @@ pub fn check(voices: &[Vec<VNote>], names: &[String], key: Option<&Key>, beats_p
         }
     }
 
-    // je Stimme: Umfang und Sprünge
+    // per voice: range and leaps
     for i in 0..n {
         // range by the name passed in (not translated)
         let (lo, hi) = voice_range(names.get(i).map(String::as_str).unwrap_or(""), rank(i), order.len());
@@ -313,7 +313,7 @@ pub fn check(voices: &[Vec<VNote>], names: &[String], key: Option<&Key>, beats_p
             }
             let p = v[i][k - 1];
             if x.start - p.end() > 0.5 {
-                continue; // nach einer Pause zählt der Sprung nicht
+                continue; // after a rest the leap does not count
             }
             let d = (x.pitch as i32 - p.pitch as i32).abs();
             let aug2 = key.is_some_and(|kk| {
@@ -335,15 +335,15 @@ pub fn check(voices: &[Vec<VNote>], names: &[String], key: Option<&Key>, beats_p
     out
 }
 
-/// Zählt Fehler und Warnungen (für Bewertungen).
+/// Counts errors and warnings (for ratings).
 pub fn tally(issues: &[Issue]) -> (usize, usize) {
     (issues.iter().filter(|i| i.severity == Severity::Fehler).count(), issues.iter().filter(|i| i.severity == Severity::Warnung).count())
 }
 
-// ------------------------------------------------------------------ Rhythmus
+// ------------------------------------------------------------------ Rhythm
 
-/// Rhythmus einer Gegenstimme: bewegt sich, wo die Bezugsstimme hält, und
-/// hält, wo sie sich bewegt. Liefert (Einsatz, Dauer) im Bereich [from, to).
+/// Rhythm of a counter-voice: moves where the reference voice holds, and
+/// holds where it moves. Returns (onset, duration) in the range [from, to).
 pub fn complementary_rhythm(reference: &[VNote], from: f64, to: f64, beats_per_bar: u32) -> Vec<(f64, f64)> {
     let mut slots: Vec<(f64, f64)> = Vec::new();
     let mut t = from;
@@ -357,12 +357,12 @@ pub fn complementary_rhythm(reference: &[VNote], from: f64, to: f64, beats_per_b
         };
         let len = beat_end - t;
         if onsets >= 2 && busy_next && (t.rem_euclid(2.0) < EPS) && beat_end + 1.0 <= to + EPS && ((t + 2.0) % bpb > EPS || bpb <= 2.0) {
-            slots.push((t, 2.0)); // beide Schläge beschäftigt: Halbe
+            slots.push((t, 2.0)); // both beats busy: half note
             t += 2.0;
             continue;
         }
         if onsets == 0 && len >= 1.0 - EPS {
-            slots.push((t, 0.5)); // Bezugsstimme hält: Achtel
+            slots.push((t, 0.5)); // reference voice holds: eighth
             slots.push((t + 0.5, 0.5));
         } else {
             slots.push((t, len));
@@ -372,19 +372,19 @@ pub fn complementary_rhythm(reference: &[VNote], from: f64, to: f64, beats_per_b
     slots
 }
 
-// ------------------------------------------------------------------ Erzeugen
+// ------------------------------------------------------------------ Generating
 
 #[derive(Clone, Debug)]
 pub struct LineSpec {
     pub range: (u8, u8),
     pub slots: Vec<(f64, f64)>,
-    /// Oberhalb (true) oder unterhalb der Bezugsstimmen bleiben; None = egal.
+    /// Stay above (true) or below the reference voices; None = don't care.
     pub above: Option<bool>,
-    /// Quinten meiden (doppelter Kontrapunkt der Oktave).
+    /// Avoid fifths (double counterpoint at the octave).
     pub invertible: bool,
-    /// Variante (leichte, reproduzierbare Abweichungen für andere Vorschläge).
+    /// Variant (slight, reproducible deviations for other suggestions).
     pub variant: u32,
-    /// Nachbarstimme darüber (nicht überschreiten) und darunter (nicht unterschreiten).
+    /// Neighboring voice above (not to exceed) and below (not to go under).
     pub ceiling: Vec<VNote>,
     pub floor: Vec<VNote>,
 }
@@ -410,7 +410,7 @@ fn jitter(variant: u32, slot: usize, pitch: u8) -> f32 {
     (z % 1000) as f32 / 1000.0 * 2.2
 }
 
-/// Neue Stimme gegen `against` (andere Stimmen) in den Rhythmus-Slots von `spec`.
+/// New voice against `against` (other voices) in the rhythm slots of `spec`.
 pub fn generate_line(against: &[&[VNote]], key: &Key, spec: &LineSpec, beats_per_bar: u32) -> Vec<VNote> {
     let others: Vec<Vec<VNote>> = against.iter().map(|v| sorted(v)).collect();
     let (ceiling, floor) = (sorted(&spec.ceiling), sorted(&spec.floor));
@@ -424,12 +424,12 @@ pub fn generate_line(against: &[&[VNote]], key: &Key, spec: &LineSpec, beats_per
     let lowest_other = |t: f64| others.iter().filter_map(|v| sounding(v, t)).map(|n| n.pitch).min();
     let highest_other = |t: f64| others.iter().filter_map(|v| sounding(v, t)).map(|n| n.pitch).max();
 
-    // senkrechte Kosten je Slot und Kandidat (+ ob dissonant)
+    // vertical costs per slot and candidate (+ whether dissonant)
     let mut vert = vec![vec![0.0f32; c_n]; s_n];
     let mut diss = vec![vec![false; c_n]; s_n];
     for (s, &(t, len)) in spec.slots.iter().enumerate() {
         let strong = is_strong(t, beats_per_bar);
-        // Zeitpunkte im Slot, an denen andere Stimmen wechseln
+        // points in time within the slot at which other voices change
         let mut times = vec![t];
         for v in &others {
             for n in v.iter().filter(|n| n.start > t + EPS && n.start < t + len - EPS) {
@@ -447,7 +447,7 @@ pub fn generate_line(against: &[&[VNote]], key: &Key, spec: &LineSpec, beats_per
                     let against_bass = low.is_some_and(|l| l == o.pitch && o.pitch < p) || low.is_some_and(|l| p < l);
                     let i = ic(p, o.pitch);
                     if p == o.pitch {
-                        cost += 6.0 * w; // Einklang mit anderer Stimme
+                        cost += 6.0 * w; // unison with another voice
                     }
                     if dissonant(i, against_bass || others.len() == 1) {
                         if k == 0 {
@@ -464,7 +464,7 @@ pub fn generate_line(against: &[&[VNote]], key: &Key, spec: &LineSpec, beats_per
                     }
                 }
             }
-            // oberhalb/unterhalb bleiben
+            // stay above/below
             match spec.above {
                 Some(true) => {
                     if let Some(h) = highest_other(t) {
@@ -482,7 +482,7 @@ pub fn generate_line(against: &[&[VNote]], key: &Key, spec: &LineSpec, beats_per
                 }
                 None => {}
             }
-            // nicht über die Stimme darüber, nicht unter die darunter
+            // not above the voice above, not below the one below
             for tt in [t, t + len * 0.5] {
                 if sounding(&ceiling, tt).is_some_and(|o| p >= o.pitch) {
                     cost += 25.0;
@@ -491,7 +491,7 @@ pub fn generate_line(against: &[&[VNote]], key: &Key, spec: &LineSpec, beats_per
                     cost += 25.0;
                 }
             }
-            // Mitte des Umfangs bevorzugen
+            // prefer the middle of the range
             let mid = (spec.range.0 as f32 + spec.range.1 as f32) / 2.0;
             cost += (p as f32 - mid).abs() * 0.06 + jitter(spec.variant, s, p);
             vert[s][c] = cost;
@@ -515,17 +515,17 @@ pub fn generate_line(against: &[&[VNote]], key: &Key, spec: &LineSpec, beats_per
         if key.minor {
             let (o1, o2) = ((a + 12 - key.tonic % 12) % 12, (b + 12 - key.tonic % 12) % 12);
             if (o1 == 8 && o2 == 11) || (o1 == 11 && o2 == 8) || (o1 == 9 && o2 == 8) || (o1 == 10 && o2 == 11) {
-                c += 12.0; // übermäßige Sekunde, Querstand
+                c += 12.0; // augmented second, cross-relation
             }
         }
         c
     };
-    // Parallelen zwischen Slot s-1 und s gegen andere Stimmen
+    // Parallels between slot s-1 and s against other voices
     let parallel = |s: usize, a: u8, b: u8| -> f32 {
         let t1 = spec.slots[s].0;
         let mut c = 0.0;
         for v in &others {
-            // wie der Prüfer: Ton unmittelbar vor dem Wechsel gegen den danach
+            // like the checker: note immediately before the change against the one after
             let (Some(o0), Some(o1)) = (sounding(v, t1 - 0.01), sounding(v, t1)) else { continue };
             let (mo, ml) = (o1.pitch as i32 - o0.pitch as i32, b as i32 - a as i32);
             if mo == 0 || ml == 0 {
@@ -536,17 +536,17 @@ pub fn generate_line(against: &[&[VNote]], key: &Key, spec: &LineSpec, beats_per
                 if i0 == i1 && (i0 == 0 || i0 == 7) {
                     c += 60.0;
                 } else if i1 == 0 || i1 == 7 {
-                    c += 2.0; // verdeckt
+                    c += 2.0; // hidden
                 }
             } else {
-                c -= 0.4; // Gegenbewegung
+                c -= 0.4; // contrary motion
             }
         }
         c
     };
 
-    // DP über (vorige, aktuelle) Tonhöhe
-    let none = c_n; // „kein Vorgänger“
+    // DP over (previous, current) pitch
+    let none = c_n; // "no predecessor"
     let w = c_n + 1;
     let inf = f32::INFINITY;
     let mut cost = vec![inf; w * c_n];
@@ -565,8 +565,8 @@ pub fn generate_line(against: &[&[VNote]], key: &Key, spec: &LineSpec, beats_per
                 for q in 0..c_n {
                     let (a, b) = (cands[p], cands[q]);
                     let mut c = base + horiz(a, b) + vert[s][q] + parallel(s, a, b);
-                    // Dissonanz im vorigen Slot: auf leichter Zeit stufenweise hin und weg,
-                    // auf schwerer Zeit nur als Vorhalt (gleicher Ton davor, Schritt abwärts danach)
+                    // Dissonance in the previous slot: on a weak beat stepwise in and out,
+                    // on a strong beat only as a suspension (same note before, step down after)
                     if diss[s - 1][p] {
                         let step_in = pp != none && (1..=2).contains(&(a as i32 - cands[pp] as i32).abs());
                         let step_out = (1..=2).contains(&(b as i32 - a as i32).abs());
@@ -580,7 +580,7 @@ pub fn generate_line(against: &[&[VNote]], key: &Key, spec: &LineSpec, beats_per
                             c += 9.0;
                         }
                     }
-                    // nach einem Sprung Gegenschritt
+                    // after a leap, a step in the opposite direction
                     if pp != none {
                         let l1 = a as i32 - cands[pp] as i32;
                         let l2 = b as i32 - a as i32;
@@ -598,7 +598,7 @@ pub fn generate_line(against: &[&[VNote]], key: &Key, spec: &LineSpec, beats_per
         }
         cost = next;
     }
-    // Schluss: Dreiklangston der Tonika bevorzugen
+    // Ending: prefer a triad note of the tonic
     let tonic_triad = [key.tonic % 12, (key.tonic + if key.minor { 3 } else { 4 }) % 12, (key.tonic + 7) % 12];
     let (mut best, mut best_c) = (usize::MAX, inf);
     for (idx, &c) in cost.iter().enumerate() {
@@ -620,7 +620,7 @@ pub fn generate_line(against: &[&[VNote]], key: &Key, spec: &LineSpec, beats_per
             idx = back[s][idx] as usize;
         }
     }
-    // gleiche Tonhöhen in Folge zu längeren Noten binden (nur innerhalb eines Schlags)
+    // tie consecutive equal pitches into longer notes (only within a beat)
     let mut out: Vec<VNote> = Vec::with_capacity(s_n);
     for (s, &(t, len)) in spec.slots.iter().enumerate() {
         if let Some(last) = out.last_mut() {
@@ -656,22 +656,22 @@ mod tests {
 
     #[test]
     fn finds_parallels_crossing_and_dissonance() {
-        // Sopran c'' d'' e'' / Bass f g a: Quintparallelen (f-c, g-d), dann Terz
+        // Soprano c'' d'' e'' / bass f g a: parallel fifths (f-c, g-d), then a third
         let s = line(&[(72, 1.0), (74, 1.0), (76, 1.0), (77, 1.0)], 0.0);
         let b = line(&[(53, 1.0), (55, 1.0), (60, 1.0), (50, 1.0)], 0.0);
         let names = vec!["Sopran".to_string(), "Bass".to_string()];
         let issues = check(&[s.clone(), b], &names, Some(&c_dur()), 4);
         assert!(issues.iter().any(|i| i.kind == IssueKind::Quintparallele && i.start == 0.0), "{issues:#?}");
-        // Oktavparallele
+        // Parallel octave
         let b2 = line(&[(60, 1.0), (62, 1.0), (52, 1.0)], 0.0);
         let issues = check(&[s.clone(), b2], &names, Some(&c_dur()), 4);
         assert!(issues.iter().any(|i| i.kind == IssueKind::Oktavparallele));
-        // Gegenbewegung in die Oktave ist erlaubt
+        // Contrary motion into the octave is allowed
         let s3 = line(&[(67, 1.0), (72, 1.0)], 0.0);
         let b3 = line(&[(55, 1.0), (48, 1.0)], 0.0);
         let issues = check(&[s3, b3], &names, None, 4);
         assert!(!issues.iter().any(|i| i.severity == Severity::Fehler), "{issues:#?}");
-        // Stimmkreuzung
+        // Voice crossing
         let a = line(&[(60, 2.0)], 0.0);
         let t = line(&[(64, 2.0)], 0.0);
         let names3 = vec!["Alt".to_string(), "Tenor".to_string()];
@@ -684,7 +684,7 @@ mod tests {
     #[test]
     fn suspension_is_fine_but_free_dissonance_is_flagged() {
         let names = vec!["Oben".to_string(), "Unten".to_string()];
-        // Vorhalt 4-3: c'' liegt über, Bass wechselt auf g (Quarte), c'' → h' (Auflösung)
+        // Suspension 4-3: c'' sustains, bass changes to g (fourth), c'' → h' (resolution)
         let top = line(&[(72, 2.0), (72, 2.0), (71, 2.0)], 0.0);
         let mut top_tied = vec![VNote::new(72, 0.0, 4.0)];
         top_tied.push(VNote::new(71, 4.0, 2.0));
@@ -692,7 +692,7 @@ mod tests {
         let issues = check(&[top_tied, bass.clone()], &names, None, 4);
         assert!(!issues.iter().any(|i| i.kind == IssueKind::Dissonanz && i.severity == Severity::Warnung), "{issues:#?}");
         let _ = top;
-        // gleiche Dissonanz frei angeschlagen auf schwerer Zeit
+        // same dissonance freely struck on a strong beat
         let top2 = line(&[(67, 2.0), (72, 2.0), (71, 2.0)], 0.0);
         let issues = check(&[top2, bass], &names, None, 4);
         assert!(issues.iter().any(|i| i.kind == IssueKind::Dissonanz && i.severity == Severity::Warnung), "{issues:#?}");
@@ -700,7 +700,7 @@ mod tests {
 
     #[test]
     fn generated_line_is_clean_against_a_subject() {
-        // Thema (C-Dur), Gegenstimme oberhalb, umkehrbar
+        // Subject (C major), counter-voice above, invertible
         let subject = line(&[(60, 1.0), (64, 0.5), (62, 0.5), (65, 1.0), (64, 1.0), (67, 2.0), (65, 0.5), (64, 0.5), (62, 1.0), (60, 2.0)], 0.0);
         let key = c_dur();
         let slots = complementary_rhythm(&subject, 0.0, 10.0, 4);
@@ -713,7 +713,7 @@ mod tests {
             let (err, warn) = tally(&issues);
             assert_eq!(err, 0, "Variante {variant}: {issues:#?}\n{cs:?}");
             assert!(warn <= 1, "Variante {variant}: {issues:#?}");
-            // Rhythmus füllt den Bereich lückenlos
+            // rhythm fills the range without gaps
             let total: f64 = cs.iter().map(|n| n.len).sum();
             assert!((total - 10.0).abs() < 1e-6);
         }

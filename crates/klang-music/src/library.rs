@@ -1,5 +1,5 @@
-//! Bibliothek aufbauen: MusicXML/MXL-Dateien eines Ordners parallel lesen und
-//! ihre Stimmen in einen Index auf der Platte schreiben ([`IndexWriter`]).
+//! Building a library: reads the MusicXML/MXL files of a folder in parallel and
+//! writes their voices into an index on disk ([`IndexWriter`]).
 
 use crate::chordstats::{score_progression, Progression};
 use crate::diskindex::{source_key, IndexWriter};
@@ -19,14 +19,14 @@ pub struct BuildStats {
     pub scores: usize,
     pub voices: usize,
     pub failed: usize,
-    /// Die ersten Fehlermeldungen (Datei: Grund).
+    /// The first error messages (file: reason).
     pub errors: Vec<String>,
-    /// Verschiedene n-Gramme und Fundstellen im fertigen Index.
+    /// Distinct n-grams and occurrences in the finished index.
     pub grams: usize,
     pub postings: usize,
 }
 
-/// Alle Partituren unterhalb von `dir` (MusicXML, **kern, DCML-Notentabellen).
+/// All scores below `dir` (MusicXML, **kern, DCML note tables).
 pub fn collect_files(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
     let mut out = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
@@ -44,12 +44,12 @@ pub fn collect_files(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
     Ok(out)
 }
 
-/// Bezeichnung einer Stimme, wie sie im Index steht.
+/// Label of a voice as it appears in the index.
 pub fn voice_label(v: &Voice) -> String {
     format!("System {} · Stimme {}", v.staff, v.voice)
 }
 
-/// Stimmen einer Partitur als Index-Einträge (Oberstimme je Stimme).
+/// Voices of a score as index entries (top voice per voice).
 pub fn score_entries(score: &Score, source: &str) -> Vec<(DocInfo, Vec<MelodyNote>)> {
     score
         .parts
@@ -69,20 +69,20 @@ pub fn score_entries(score: &Score, source: &str) -> Vec<(DocInfo, Vec<MelodyNot
         .collect()
 }
 
-/// Baut den Index für `dir` und schreibt ihn nach `out` (Format 4, auf der
-/// Platte). Dateien werden parallel gelesen; `progress(fertig, gesamt)` kommt
-/// regelmäßig – bei `fertig == gesamt` wird der Index zusammengeführt.
-/// `cancel` bricht ab (Fehler `Interrupted`).
+/// Builds the index for `dir` and writes it to `out` (format 4, on
+/// disk). Files are read in parallel; `progress(fertig, gesamt)` is called
+/// regularly – at `fertig == gesamt` the index is merged.
+/// `cancel` aborts (error `Interrupted`).
 pub fn build_index_to(dir: &Path, out: &Path, progress: impl Fn(usize, usize), cancel: &AtomicBool) -> std::io::Result<BuildStats> {
     let files = collect_files(dir)?;
-    // PDMX-Metadaten (Genre, Komponist, Schwierigkeit), falls heruntergeladen.
+    // PDMX metadata (genre, composer, difficulty), if downloaded.
     let meta = load_meta(&dir.join(META_FILE)).unwrap_or_default();
     build_files_to(&files, &meta, out, progress, cancel)
 }
 
-/// Dateien und Ordner (rekursiv) zu einer Liste von Partituren, ohne Doppelte;
-/// dazu die Genre/Komponist-Angaben der beteiligten Ordner. Nicht Gefundenes
-/// steht in der dritten Liste.
+/// Files and folders (recursively) into a list of scores, without duplicates;
+/// plus the genre/composer information of the folders involved. Anything not
+/// found goes into the third list.
 pub fn gather(paths: &[PathBuf]) -> (Vec<PathBuf>, HashMap<String, PdmxMeta>, Vec<String>) {
     let (mut files, mut missing) = (Vec::new(), Vec::new());
     let mut meta_dirs: Vec<PathBuf> = Vec::new();
@@ -124,8 +124,8 @@ pub fn gather(paths: &[PathBuf]) -> (Vec<PathBuf>, HashMap<String, PdmxMeta>, Ve
     (files, meta, missing)
 }
 
-/// Wie [`build_index_to`], für eine Liste von Partituren; `meta` liefert
-/// Genre/Komponist je Dateiname (ohne Endung).
+/// Like [`build_index_to`], for a list of scores; `meta` supplies
+/// genre/composer per file name (without extension).
 pub fn build_files_to(files: &[PathBuf], meta: &HashMap<String, PdmxMeta>, out: &Path, progress: impl Fn(usize, usize), cancel: &AtomicBool) -> std::io::Result<BuildStats> {
     let total = files.len();
     let mut stats = BuildStats { files: total, ..Default::default() };
@@ -136,7 +136,7 @@ pub fn build_files_to(files: &[PathBuf], meta: &HashMap<String, PdmxMeta>, out: 
     let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).min(16);
     type Extracted = Result<(Vec<(DocInfo, Vec<MelodyNote>)>, ScoreFacets, Option<Progression>), String>;
     let (tx, rx) = mpsc::sync_channel::<Extracted>(threads * 4);
-    // Schreibfehler beenden auch die lesenden Threads.
+    // Write errors also end the reading threads.
     let abort = AtomicBool::new(false);
     let abort = &abort;
     let mut write_error: Option<std::io::Error> = None;
@@ -185,7 +185,7 @@ pub fn build_files_to(files: &[PathBuf], meta: &HashMap<String, PdmxMeta>, out: 
                             }
                         }
                     }
-                    // Nur Partituren mit durchsuchbarer Stimme kommen in den Baum (zum Öffnen nötig).
+                    // Only scores with a searchable voice go into the tree (needed for opening).
                     if let Some(doc) = first {
                         facets.doc = doc;
                         if let Some(p) = progression {
@@ -255,7 +255,7 @@ mod tests {
         assert_eq!(index.search_text("cello", 10).len(), 1);
         let q: Vec<MelodyNote> = [60u8, 62, 64, 65, 67, 65, 64].iter().enumerate().map(|(i, &m)| MelodyNote { onset: i as f64, duration: 1.0, midi: m }).collect();
         assert!(!index.search(&q, 5).is_empty());
-        // Merkmale je Partitur für den Baum, „doc“ zeigt auf eine Stimme der Partitur
+        // Features per score for the tree, "doc" points to a voice of the score
         assert_eq!(index.facets().len(), 2);
         let zweites = index.facets().iter().find(|f| f.title == "Zweites").unwrap();
         assert_eq!(zweites.ensemble, "Duo");
@@ -271,7 +271,7 @@ mod tests {
         use crate::theory::Key;
         let dir = std::env::temp_dir().join(format!("klang-lib-akk-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        // Choral C – F – G7 – C (und einmal mit Trugschluss G7 – a); Stimmen lang genug für den Index
+        // Chorale C – F – G7 – C (and once with a deceptive cadence G7 – a); voices long enough for the index
         let rep = |v: &[(u8, u32)]| -> Vec<(u8, u32)> { v.iter().cycle().take(v.len() * 3).copied().collect() };
         let s = rep(&[(72, 4), (72, 4), (74, 4), (72, 4)]);
         let a = rep(&[(67, 4), (69, 4), (71, 4), (67, 4)]);
@@ -318,7 +318,7 @@ mod tests {
         let lib = root.join("bibliothek.kwix");
         build_index_to(&dir, &lib, |_, _| {}, &AtomicBool::new(false)).unwrap();
 
-        // Ordner und darin liegende Datei doppelt angegeben, dazu Fehlendes
+        // Folder and a file inside it given twice, plus missing ones
         let (files, _meta, missing) = gather(&[own.clone(), own.join("souvenir.musicxml"), own.join("notiz.txt"), own.join("fehlt.mxl")]);
         assert_eq!(files.len(), 2, "{files:?}");
         assert_eq!(missing.len(), 2, "{missing:?}");
@@ -338,7 +338,7 @@ mod tests {
         let best = &index.search(&q, 5)[0];
         assert!(best.info.title == "Souvenir" || best.info.title == "Satz", "{best:?}");
 
-        // Nochmal dazu: alles schon enthalten
+        // Add again: everything already contained
         let again = AnyIndex::load(&new).unwrap();
         let twice = merge(&[&index, &again], &root.join("zweimal.kwix"), true, &|_| {}, &AtomicBool::new(false)).unwrap();
         assert_eq!((twice.scores, twice.skipped_scores), (3, 2));

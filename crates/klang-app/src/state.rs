@@ -1,5 +1,5 @@
-//! Anwendungszustand: Sitzung (Projekt + Undo), Audio-Assets, Engine,
-//! Melodie-Bibliothek und Agent-Schnittstelle.
+//! Application state: session (project + undo), audio assets, engine,
+//! melody library and agent interface.
 
 use crate::analysis::{self, Analysis};
 use crate::sound::{self, SoundReport};
@@ -23,13 +23,13 @@ pub fn lock<T>(m: &Mutex<T>) -> CmdResult<MutexGuard<'_, T>> {
 }
 
 pub struct Asset {
-    #[allow(dead_code)] // für den geplanten Asset-Browser
+    #[allow(dead_code)] // for the planned asset browser
     pub name: String,
     pub samples: Arc<[f32]>,
     pub sample_rate: u32,
 }
 
-/// Audiomaterial liegt hier – das Projekt verweist nur per ID darauf.
+/// Audio material lives here – the project only refers to it by ID.
 #[derive(Default)]
 pub struct AssetPool {
     assets: HashMap<String, Asset>,
@@ -39,8 +39,8 @@ pub struct AssetPool {
 }
 
 impl AssetPool {
-    /// Abzweigung für den Export: dieselben Klänge (geteilt), eigener
-    /// Zwischenspeicher – was der Export rendert, verdrängt nichts der Wiedergabe.
+    /// Branch for the export: the same sounds (shared), its own
+    /// cache – what the export renders displaces nothing of playback.
     fn fork(&self) -> AssetPool {
         AssetPool {
             assets: self.assets.iter().map(|(k, a)| (k.clone(), Asset { name: a.name.clone(), samples: a.samples.clone(), sample_rate: a.sample_rate })).collect(),
@@ -61,7 +61,7 @@ impl AssetPool {
         self.assets.get(id)
     }
 
-    /// Ersetzt alle Aufnahmen (beim Öffnen eines Projekts); IDs bleiben erhalten.
+    /// Replaces all recordings (when opening a project); IDs are kept.
     pub fn replace_all(&mut self, audio: Vec<crate::project::AudioData>) {
         self.assets.clear();
         self.renders.clear();
@@ -75,50 +75,50 @@ impl AssetPool {
     }
 }
 
-/// Die aktive Bibliothek (siehe `libraries`): genau eine Indexdatei.
+/// The active library (see `libraries`): exactly one index file.
 pub struct Library {
-    /// Kennung in der Bibliotheksliste (`bibliotheken.json`)
+    /// Identifier in the library list (`bibliotheken.json`)
     pub id: String,
     pub name: String,
-    /// Indexdatei
+    /// Index file
     pub path: String,
-    /// Index auf der Platte (Format 4) oder ältere Datei im Speicher.
+    /// Index on disk (format 4) or older file in memory.
     pub index: AnyIndex,
-    /// Enthaltene Pakete aus dem Katalog
+    /// Contained packages from the catalog
     pub packs: Vec<String>,
-    /// Genre/Komponist liegen für alle enthaltenen PDMX-Pakete vor
+    /// Genre/composer are available for all contained PDMX packages
     pub has_meta: bool,
 }
 
 #[derive(Default)]
 pub struct AgentLink {
-    /// Adresse des Agent-Servers (MCP), wenn er läuft.
+    /// Address of the agent server (MCP), if it is running.
     pub url: Option<String>,
     pub error: Option<String>,
-    /// Der laufende MCP-Server des Desktops (hält ihn am Leben; zählt
-    /// verbundene Clients). Im Browser gibt es keinen – dort `None`.
+    /// The running MCP server of the desktop (keeps it alive; counts
+    /// connected clients). In the browser there is none – `None` there.
     pub server: Option<klang_mcp::ServerHandle>,
 }
 
-/// Ein Agent gilt als verbunden, solange er eine Verbindung offen hält
-/// (Ereignisstrom, laufende Anfrage wie ein wartender `chat_poll`). Nur wer nie
-/// einen Strom öffnet (Skripte), zählt so lange nach seiner letzten Anfrage.
+/// An agent counts as connected as long as it keeps a connection open
+/// (event stream, running request such as a waiting `chat_poll`). Only one that
+/// never opens a stream (scripts) counts for that long after its last request.
 pub const AGENT_GRACE: std::time::Duration = std::time::Duration::from_secs(2 * 60);
 
-/// Schlüssel der gewählten Audiogeräte in den Einstellungen (fehlt/null = Systemstandard).
+/// Keys of the chosen audio devices in the settings (missing/null = system default).
 pub const SETTING_OUTPUT: &str = "ausgabegeraet";
 pub const SETTING_INPUT: &str = "eingabegeraet";
 
 /// Why a remembered device wasn't used at start.
 #[derive(Clone)]
 enum DeviceProblem {
-    /// Nicht angeschlossen (Name).
+    /// Not connected (name).
     Missing(String),
     /// Couldn't be opened or chosen (name, error).
     Failed(String, String),
 }
 
-/// Hinweis, wenn ein gemerktes Gerät beim Start fehlte (die Wahl bleibt gemerkt).
+/// Notice when a remembered device was missing at start (the choice stays remembered).
 /// The text is made only when asked for – at start the UI hasn't set its
 /// language yet.
 #[derive(Default, Clone)]
@@ -147,19 +147,19 @@ impl AudioNotice {
     }
 }
 
-/// Audiogeräte für die Auswahl (Oberfläche und Agent).
+/// Audio devices for the picker (UI and agent).
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioDevicesDto {
     pub outputs: Vec<String>,
     pub inputs: Vec<String>,
-    /// Aktuelle Standardgeräte des Systems
+    /// Current default devices of the system
     pub default_output: Option<String>,
     pub default_input: Option<String>,
-    /// Gewählte Geräte (null = Systemstandard)
+    /// Chosen devices (null = system default)
     pub output: Option<String>,
     pub input: Option<String>,
-    /// Ausgabegerät, das gerade spielt, und seine Abtastrate
+    /// Output device that is playing right now, and its sample rate
     pub output_device: String,
     pub sample_rate: u32,
 }
@@ -170,21 +170,21 @@ pub struct EngineInfoDto {
     available: bool,
     error: Option<String>,
     output_device: Option<String>,
-    /// Gewähltes Ausgabe-/Aufnahmegerät (null = Systemstandard).
+    /// Chosen output/recording device (null = system default).
     output_choice: Option<String>,
     input_choice: Option<String>,
-    /// Gemerktes Gerät fehlte beim Start – Klangwelt nutzt den Systemstandard.
+    /// Remembered device was missing at start – Klangwelt uses the system default.
     output_notice: Option<String>,
     input_notice: Option<String>,
     sample_rate: u32,
     metronome: bool,
-    /// Wiedergabe wiederholen (am Ende von vorn).
+    /// Repeat playback (start over at the end).
     loop_on: bool,
-    /// Markierter Zeitbereich in Schlägen; mit `loop_on` die Schleife, sonst das ganze Stück.
+    /// Selected time range in beats; with `loop_on` the loop, otherwise the whole piece.
     loop_range: Option<(f64, f64)>,
 }
 
-/// Wiederholen und markierter Zeitbereich (nicht Teil des Projekts).
+/// Repeat and selected time range (not part of the project).
 #[derive(Clone, Copy, Default)]
 pub struct LoopState {
     pub on: bool,
@@ -203,9 +203,9 @@ pub struct AgentInfoDto {
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
-    /// Projektdatei (None = noch nicht gespeichert).
+    /// Project file (None = not saved yet).
     file: Option<String>,
-    /// Ungespeicherte Änderungen seit dem letzten Speichern/Öffnen.
+    /// Unsaved changes since the last save/open.
     dirty: bool,
     project: Project,
     can_undo: bool,
@@ -220,7 +220,7 @@ pub struct Snapshot {
 #[serde(rename_all = "camelCase")]
 pub struct StatusDto {
     pub playing: bool,
-    /// Ein Vorhören klingt gerade (Bibliothek, Akkorde …).
+    /// A preview is sounding right now (library, chords …).
     pub previewing: bool,
     pub recording: bool,
     pub position_secs: f64,
@@ -229,15 +229,15 @@ pub struct StatusDto {
 }
 
 pub struct AppState {
-    /// Chat zwischen Oberfläche und Agent (Aufträge per `chat_poll`).
+    /// Chat between UI and agent (requests via `chat_poll`).
     pub chat: crate::chat::Chat,
     pub session: Mutex<Session>,
     pub pool: Mutex<AssetPool>,
     pub library: Mutex<Option<Library>>,
     pub library_status: Mutex<crate::library::LibStatus>,
-    /// Laufenden Download/Indexlauf der Bibliothek abbrechen.
+    /// Cancel the running download/index run of the library.
     pub library_cancel: AtomicBool,
-    /// Laufender Download-Prozess (curl), damit „Abbrechen“ ihn beenden kann.
+    /// Running download process (curl), so "Cancel" can end it.
     pub download_child: Mutex<Option<std::process::Child>>,
     pub agent: Mutex<AgentLink>,
     engine: Option<Engine>,
@@ -249,25 +249,25 @@ pub struct AppState {
     metronome_muted: AtomicBool,
     looping: Mutex<LoopState>,
     pub record_counter: AtomicU32,
-    /// Datei des offenen Projekts (None = noch nie gespeichert).
+    /// File of the open project (None = never saved).
     pub project_file: Mutex<Option<std::path::PathBuf>>,
-    /// Prüfsumme des Projekts beim letzten Speichern/Öffnen (für „ungespeichert“).
+    /// Checksum of the project at the last save/open (for "unsaved").
     saved_hash: Mutex<u64>,
-    /// Fenster trotz ungespeicherter Änderungen schließen (nach Rückfrage).
+    /// Close the window despite unsaved changes (after asking).
     pub force_close: AtomicBool,
-    /// Zuletzt vom Song-Aufbau erzeugte Spuren (neu erzeugen ersetzt sie); gilt nur fürs offene Projekt.
+    /// Tracks last created by the song builder (creating again replaces them); applies only to the open project.
     pub song_tracks: Mutex<Vec<Id>>,
-    /// Datei der Einstellungen (beim Start gesetzt; vorher wird nichts gemerkt).
+    /// Settings file (set at start; nothing is remembered before that).
     pub settings_file: Mutex<Option<std::path::PathBuf>>,
-    /// Gemerktes Audiogerät fehlte beim Start.
+    /// Remembered audio device was missing at start.
     audio_notice: Mutex<AudioNotice>,
-    /// Die Plattform (Ereignisse, Ablageorte); beim Start gesetzt.
+    /// The platform (events, storage locations); set at start.
     host: std::sync::OnceLock<Box<dyn crate::Host>>,
 }
 
-/// Prüfsumme für „ungespeichert“: der Inhalt ohne den internen Zähler für neue
-/// IDs – der wächst weiter, wenn ein Schritt zurückgenommen wird (z. B. die Demo
-/// nach der Intro-Tour), und das Projekt ist dann trotzdem unverändert.
+/// Checksum for "unsaved": the content without the internal counter for new
+/// IDs – it keeps growing when a step is undone (e.g. the demo after the
+/// intro tour), and the project is unchanged all the same.
 fn project_hash(p: &Project) -> u64 {
     let mut v = serde_json::to_value(p).unwrap_or_default();
     if let Some(o) = v.as_object_mut() {
@@ -329,7 +329,7 @@ impl AppState {
         Self::with_engine(engine, engine_error)
     }
 
-    /// Ohne Audiogerät (Tests): alles außer Wiedergabe und Aufnahme geht.
+    /// Without an audio device (tests): everything except playback and recording works.
     pub fn without_audio() -> Self {
         Self::with_engine(None, Some("Ohne Audio gestartet".into()))
     }
@@ -360,7 +360,7 @@ impl AppState {
         };
         if let Some(e) = &state.engine {
             e.set_metronome(false);
-            // KLANGWELT_STUMM=1: nichts zu hören (automatische Tests), alles andere läuft wie sonst
+            // KLANGWELT_STUMM=1: nothing audible (automated tests), everything else runs as usual
             if std::env::var_os("KLANGWELT_STUMM").is_some_and(|v| !v.is_empty() && v != "0") {
                 e.set_muted(true);
             }
@@ -368,12 +368,12 @@ impl AppState {
         state
     }
 
-    /// Plattform setzen (einmal, beim Start).
+    /// Set the platform (once, at start).
     pub fn set_host(&self, host: Box<dyn crate::Host>) {
         let _ = self.host.set(host);
     }
 
-    /// Die Plattform – vor dem Start ein Platzhalter, der nichts meldet.
+    /// The platform – before start a placeholder that reports nothing.
     pub fn host(&self) -> &dyn crate::Host {
         match self.host.get() {
             Some(h) => h.as_ref(),
@@ -434,17 +434,17 @@ impl AppState {
         })
     }
 
-    /// Ungespeicherte Änderungen?
+    /// Unsaved changes?
     pub fn is_dirty(&self) -> bool {
         let saved = self.saved_hash.lock().map(|h| *h).unwrap_or(0);
         self.session.lock().map(|s| project_hash(&s.project) != saved).unwrap_or(false)
     }
 
-    /// Speichert das Projekt samt benutzter Aufnahmen nach `path`.
+    /// Saves the project together with the recordings it uses to `path`.
     pub fn save_project(&self, path: &std::path::Path) -> CmdResult<()> {
         let project = {
             let mut s = lock(&self.session)?;
-            // Ein noch unbenanntes Projekt heißt danach wie seine Datei (ohne Undo-Schritt).
+            // A still unnamed project is afterwards named like its file (without an undo step).
             if s.project.name == Project::default().name {
                 if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
                     s.project.name = stem.to_string();
@@ -467,7 +467,7 @@ impl AppState {
         Ok(())
     }
 
-    /// Öffnet ein Projekt (ersetzt das offene, Undo-Verlauf beginnt neu).
+    /// Opens a project (replaces the open one, undo history starts anew).
     pub fn open_project(&self, path: &std::path::Path) -> CmdResult<()> {
         let (project, audio) = crate::project::load(path).map_err(|e| format!("{}: {e}", path.display()))?;
         lock(&self.pool)?.replace_all(audio);
@@ -478,7 +478,7 @@ impl AppState {
         self.sync_engine()
     }
 
-    /// Leeres Projekt.
+    /// Empty project.
     pub fn new_project(&self) -> CmdResult<()> {
         lock(&self.pool)?.replace_all(Vec::new());
         *lock(&self.session)? = Session::default();
@@ -506,8 +506,8 @@ impl AppState {
         self.snapshot()
     }
 
-    /// Lage im Projekt in Worten – geht mit jeder Chat-Nachricht an den Agenten:
-    /// hörbare, stumme und Solo-Spuren (mit Kennung) und der markierte Zeitraum.
+    /// Situation in the project in words – goes to the agent with every chat message:
+    /// audible, muted and solo tracks (with id) and the selected time range.
     pub fn chat_context(&self) -> CmdResult<String> {
         let looping = *lock(&self.looping)?;
         let s = lock(&self.session)?;
@@ -553,7 +553,7 @@ impl AppState {
         if let Some(e) = &self.engine {
             e.set_metronome(on);
         }
-        // für den nächsten Start merken (auch wenn der Agent umschaltet)
+        // remember for the next start (even if the agent toggles it)
         if let Some(f) = lock(&self.settings_file)?.as_ref() {
             if let Err(e) = crate::settings::set(f, "metronom", serde_json::Value::Bool(on)) {
                 eprintln!("Einstellungen: {e}");
@@ -562,15 +562,15 @@ impl AppState {
         self.snapshot()
     }
 
-    /// Chat für die Oberfläche, samt „Agent verbunden“.
+    /// Chat for the UI, including "agent connected".
     pub fn chat_view(&self) -> crate::chat::ChatView {
         let mut v = self.chat.view();
         v.agent_connected = v.agent_listening || self.agent_session_active();
         v
     }
 
-    /// Ist ein Agent verbunden: hört er zu, oder hält er eine Verbindung zum
-    /// MCP-Server offen (siehe [`AGENT_GRACE`] und `klang_mcp::Presence`)?
+    /// Is an agent connected: is it listening, or does it keep a connection to
+    /// the MCP server open (see [`AGENT_GRACE`] and `klang_mcp::Presence`)?
     pub fn agent_connected(&self) -> bool {
         self.chat.listening() || self.agent_session_active()
     }
@@ -579,7 +579,7 @@ impl AppState {
         lock(&self.agent).ok().and_then(|a| a.server.as_ref().map(|s| s.presence().connected(AGENT_GRACE) > 0)).unwrap_or(false)
     }
 
-    /// Ausgabe- und Aufnahmegeräte samt Wahl.
+    /// Output and recording devices with the current choice.
     pub fn audio_devices(&self) -> CmdResult<AudioDevicesDto> {
         let engine = self.engine()?;
         let d = engine.devices().map_err(|e| e.to_string())?;
@@ -596,9 +596,9 @@ impl AppState {
         })
     }
 
-    /// Audiogerät wählen – `kind` „output“/„ausgabe“ oder „input“/„eingabe“,
-    /// `name` None (oder leer/„Systemstandard“) = Systemstandard. Wirkt sofort
-    /// und gilt auch beim nächsten Start.
+    /// Choose an audio device – `kind` "output"/"ausgabe" or "input"/"eingabe",
+    /// `name` None (or empty/"Systemstandard") = system default. Takes effect
+    /// immediately and also applies at the next start.
     pub fn set_audio_device(&self, kind: &str, name: Option<String>) -> CmdResult<Snapshot> {
         // "system default" as the agent reads it: German, English or in the chosen language
         let default = tr!("System default");
@@ -613,7 +613,7 @@ impl AppState {
         };
         if output {
             engine.set_output_device(name.clone()).map_err(|e| e.to_string())?;
-            // andere Abtastrate: alles für das neue Gerät rendern
+            // different sample rate: render everything for the new device
             self.sync_engine()?;
             lock(&self.audio_notice)?.output = None;
         } else {
@@ -629,9 +629,9 @@ impl AppState {
         self.snapshot()
     }
 
-    /// Beim Start: gemerkte Audiogeräte nehmen. Fehlt eines, bleibt der
-    /// Systemstandard und ein Hinweis erscheint (die Wahl bleibt gemerkt –
-    /// steckt das Gerät beim nächsten Start wieder, gilt es wieder).
+    /// At start: take the remembered audio devices. If one is missing, the
+    /// system default stays and a notice appears (the choice stays remembered –
+    /// if the device is plugged in again at the next start, it applies again).
     pub fn apply_audio_settings(&self, settings: &serde_json::Map<String, serde_json::Value>) {
         let Some(engine) = &self.engine else { return };
         let want = |k: &str| settings.get(k).and_then(serde_json::Value::as_str).map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
@@ -667,7 +667,7 @@ impl AppState {
         }
     }
 
-    /// Wiederholen ein/aus und/oder Zeitbereich setzen (`range`: Some(None) hebt ihn auf).
+    /// Repeat on/off and/or set the time range (`range`: Some(None) clears it).
     pub fn set_loop(&self, on: Option<bool>, range: Option<Option<(f64, f64)>>) -> CmdResult<Snapshot> {
         {
             let mut l = lock(&self.looping)?;
@@ -682,7 +682,7 @@ impl AppState {
         self.snapshot()
     }
 
-    /// Ende des Stücks (letzter Clip) und Länge eines Takts, in Schlägen.
+    /// End of the piece (last clip) and length of a bar, in beats.
     fn song_end(&self) -> CmdResult<(f64, f64)> {
         let s = lock(&self.session)?;
         let p = &s.project;
@@ -690,10 +690,10 @@ impl AppState {
         Ok((end, p.beats_per_bar.max(1) as f64))
     }
 
-    /// Schleife und Haltepunkt an die Engine. Mit Wiederholen: der markierte
-    /// Bereich, sonst das ganze Stück (auf ganze Takte aufgerundet). Ohne:
-    /// Halt am Ende des markierten Bereichs (zurück an seinen Anfang), sonst
-    /// einen Takt nach dem Ende des Stücks.
+    /// Loop and stop point to the engine. With repeat: the selected range,
+    /// otherwise the whole piece (rounded up to whole bars). Without: stop
+    /// at the end of the selected range (back to its start), otherwise
+    /// one bar after the end of the piece.
     fn apply_loop(&self) -> CmdResult<()> {
         let Some(engine) = &self.engine else { return Ok(()) };
         let l = *lock(&self.looping)?;
@@ -711,9 +711,9 @@ impl AppState {
         Ok(())
     }
 
-    /// Vor dem Start: liegt der Abspielkopf außerhalb des markierten Bereichs,
-    /// beginnt es an dessen Anfang; steht er (ohne Bereich) hinter dem
-    /// Haltepunkt am Ende, wieder vorn.
+    /// Before the start: if the playhead is outside the selected range,
+    /// it begins at the range's start; if it is (without a range) past the
+    /// stop point at the end, back at the front.
     fn place_for_play(&self, engine: &Engine) -> CmdResult<()> {
         let l = *lock(&self.looping)?;
         let spb = engine.info().sample_rate as f64 * 60.0 / self.tempo();
@@ -760,7 +760,7 @@ impl AppState {
         Ok(())
     }
 
-    /// Was der Export braucht: Projekt, markierter Bereich, eigener Klangspeicher.
+    /// What the export needs: project, selected range, its own sound store.
     pub fn export_source(&self) -> CmdResult<ExportSource> {
         let project = lock(&self.session)?.project.clone();
         let range = lock(&self.looping)?.range;
@@ -772,7 +772,7 @@ impl AppState {
         lock(&self.session).map(|s| s.project.tempo_bpm).unwrap_or(120.0)
     }
 
-    /// Rendert das Projekt in ein Arrangement und übergibt es der Engine.
+    /// Renders the project into an arrangement and hands it to the engine.
     pub fn sync_engine(&self) -> CmdResult<()> {
         let Some(engine) = &self.engine else { return Ok(()) };
         let project = lock(&self.session)?.project.clone();
@@ -780,9 +780,9 @@ impl AppState {
             let mut pool = lock(&self.pool)?;
             build_arrangement(&project, &mut pool, engine.info().sample_rate)
         };
-        // eine Nachricht: Tempo und neu gerendertes Arrangement wechseln im selben Block
+        // one message: tempo and newly rendered arrangement switch in the same block
         engine.set_arrangement_with_tempo(arrangement, project.tempo_bpm, project.beats_per_bar);
-        // Ende des Stücks kann sich geändert haben
+        // end of the piece may have changed
         self.apply_loop()
     }
 
@@ -803,7 +803,7 @@ impl AppState {
         }
     }
 
-    /// Analyse eines Assets (zwischengespeichert).
+    /// Analysis of an asset (cached).
     pub fn analysis_for(&self, asset_id: &str) -> CmdResult<Analysis> {
         let (samples, sr) = {
             let pool = lock(&self.pool)?;
@@ -831,7 +831,7 @@ impl AppState {
             .ok_or_else(|| tr!("Clip {clip} not found on track {track}", clip = clip_id, track = track_id))
     }
 
-    /// Analyse eines Audio-Clips.
+    /// Analysis of an audio clip.
     pub fn clip_analysis(&self, track_id: Id, clip_id: Id) -> CmdResult<(Clip, Analysis)> {
         let clip = self.clip(track_id, clip_id)?;
         let ClipSource::Audio { asset_id, .. } = &clip.source else {
@@ -841,8 +841,8 @@ impl AppState {
         Ok((clip, a))
     }
 
-    /// Erkannte Melodie eines Audio-Clips als Instrumentspur anlegen (Sechzehntel-Raster,
-    /// direkt unter der Audiospur) – siehe `convert::audio_to_notes`.
+    /// Create the detected melody of an audio clip as an instrument track (sixteenth-note grid,
+    /// directly below the audio track) – see `convert::audio_to_notes`.
     pub fn melody_to_track(&self, track_id: Id, clip_id: Id, label: &str) -> CmdResult<(Snapshot, Id)> {
         let r = self.audio_to_notes(track_id, Some(clip_id), crate::convert::Target::Melodie, label)?;
         Ok((r.snapshot, r.track_id))
@@ -857,7 +857,7 @@ impl AppState {
         Ok(t.clone())
     }
 
-    /// Spielt ein Vorhör-Muster mit dem Klang der Spur (Transport läuft unabhängig weiter).
+    /// Plays a preview pattern with the track's sound (transport keeps running independently).
     pub fn preview_track(&self, track_id: Id, pattern: &str) -> CmdResult<f32> {
         let track = self.instrument_track(track_id)?;
         let engine = self.engine()?;
@@ -871,7 +871,7 @@ impl AppState {
         Ok(secs)
     }
 
-    /// Einzelnen Ton anspielen (beim Setzen/Verschieben von Noten im Editor).
+    /// Play a single note (when placing/moving notes in the editor).
     pub fn preview_note(&self, track_id: Id, midi: u8) -> CmdResult<()> {
         let track = self.instrument_track(track_id)?;
         let engine = self.engine()?;
@@ -884,16 +884,16 @@ impl AppState {
         Ok(())
     }
 
-    /// Wellenform des Testklangs der Spur (für das Klang-Fenster).
+    /// Waveform of the track's test sound (for the sound window).
     pub fn sound_wave(&self, track_id: Id) -> CmdResult<sound::WaveView> {
         let track = self.instrument_track(track_id)?;
         let inst = track.instrument.unwrap_or_else(|| sound::default_instrument(InstrumentKind::Pluck));
         Ok(sound::wave_view(&inst, (60.0 / self.tempo()) as f32, 480))
     }
 
-    /// Setzt einen Punkt in einem Feld (Charakter, Klangfarbe, Raum) – oder,
-    /// mit `preset`, dessen Startpunkt. Nur die Regler dieses Felds ändern sich.
-    /// `merge`: Teil einer Ziehbewegung (ein Rückgängig-Schritt).
+    /// Sets a point in a field (character, timbre, room) – or, with `preset`,
+    /// its starting point. Only the controls of this field change.
+    /// `merge`: part of a drag gesture (one undo step).
     pub fn sound_field(&self, track_id: Id, field: &str, xy: Option<(f32, f32)>, preset: Option<&str>, merge: bool) -> CmdResult<Snapshot> {
         let track = self.instrument_track(track_id)?;
         let mut inst = track.instrument.clone().unwrap_or_else(|| sound::default_instrument(InstrumentKind::Pluck));
@@ -925,7 +925,7 @@ impl AppState {
         Ok(sound::report(&inst))
     }
 
-    /// Neue Instrumentspur mit Standardklang und einem 4-taktigen Muster, damit sofort etwas klingt.
+    /// New instrument track with the default sound and a 4-bar pattern so something sounds right away.
     pub fn create_instrument_track(&self, kind: InstrumentKind, label: &str) -> CmdResult<(Snapshot, Id)> {
         let (cmd, id) = {
             let mut s = lock(&self.session)?;
@@ -950,7 +950,7 @@ impl AppState {
         Ok((self.execute(cmd, false)?, id))
     }
 
-    /// Fügt einen Takt des Beispielmusters hinter dem letzten Clip der Spur ein.
+    /// Inserts one bar of the sample pattern after the track's last clip.
     pub fn insert_pattern(&self, track_id: Id) -> CmdResult<Snapshot> {
         let track = self.instrument_track(track_id)?;
         let kind = sound::kind_of(track.instrument.as_ref());
@@ -969,7 +969,7 @@ impl AppState {
         self.execute(Command::AddClip { track_id, clip }, false)
     }
 
-    /// Aufnahme starten (die Wiedergabe läuft mit).
+    /// Start recording (playback runs along).
     pub fn record_start(&self) -> CmdResult<()> {
         if crate::library::LISTENING.load(Ordering::SeqCst) {
             return Err(tr!("Sing-to-search for the library is currently running – stop it there first."));
@@ -998,7 +998,7 @@ impl AppState {
         }
     }
 
-    /// Aufnahme beenden: als Audiospur ins Projekt (ein Rückgängig-Schritt), mit Analyse.
+    /// End recording: as an audio track into the project (one undo step), with analysis.
     pub fn record_stop(&self) -> CmdResult<RecordResult> {
         if crate::library::LISTENING.load(Ordering::SeqCst) {
             return Err(tr!("This is the library's sing-to-search recording – stop it there with \"Stop\"."));
@@ -1017,7 +1017,7 @@ impl AppState {
         let name = tr!("Recording {n}", n = n);
         let duration_secs = rec.samples.len() as f64 / rec.sample_rate as f64;
         let mut samples = rec.samples;
-        // Leise Aufnahmen auf brauchbaren Pegel bringen (nur anheben, nie absenken).
+        // Bring quiet recordings to a usable level (only raise, never lower).
         let peak = util::peak(&samples);
         if peak > 1e-4 && peak < 0.5 {
             util::normalize(&mut samples, 0.5);
@@ -1046,14 +1046,14 @@ impl AppState {
         Ok(RecordResult { snapshot, analysis, track_id, clip_id })
     }
 
-    /// Übersicht einer Aufnahme für die Wellenform (`buckets` Werte).
+    /// Overview of a recording for the waveform (`buckets` values).
     pub fn waveform(&self, asset_id: &str, buckets: usize) -> CmdResult<Vec<f32>> {
         let pool = lock(&self.pool)?;
         let asset = pool.get(asset_id).ok_or_else(|| tr!("Audio file not found"))?;
         Ok(util::overview(&asset.samples, buckets.clamp(16, 20_000)))
     }
 
-    /// Demo-Projekt einfügen (ein Rückgängig-Schritt).
+    /// Insert the demo project (one undo step).
     pub fn create_demo(&self) -> CmdResult<Snapshot> {
         let cmd = {
             let mut s = lock(&self.session)?;
@@ -1063,14 +1063,14 @@ impl AppState {
         self.execute(cmd, false)
     }
 
-    /// Laufendes Vorhören (Vorschau, Bibliotheks-Ausschnitt …) beenden.
+    /// End the running preview (preview, library excerpt …).
     pub fn preview_stop(&self) -> CmdResult<()> {
         self.engine()?.preview(Vec::<f32>::new().into(), 0.0);
         Ok(())
     }
 }
 
-/// Ergebnis einer Aufnahme.
+/// Result of a recording.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecordResult {
@@ -1080,7 +1080,7 @@ pub struct RecordResult {
     pub clip_id: Id,
 }
 
-/// Schlüssel eines gerenderten Noten-Clips (Noten, Klang, Tempo, Tonhöhe, Länge).
+/// Key of a rendered note clip (notes, sound, tempo, pitch, length).
 fn notes_key(track: &Track, notes: &[Note], length_beats: f64, bpm: f64, out_sr: u32) -> String {
     let mut h = DefaultHasher::new();
     serde_json::to_string(notes).unwrap_or_default().hash(&mut h);
@@ -1097,25 +1097,25 @@ fn notes_specs(track: &Track, notes: &[Note], length_beats: f64, spb: f64) -> Ve
         .collect()
 }
 
-/// Schlüssel eines Audio-Clips auf Projekttempo, Tonhöhe und Ausgaberate.
+/// Key of an audio clip at project tempo, pitch and output rate.
 fn audio_key(asset_id: &str, time_ratio: f64, pitch_semitones: f64, out_sr: u32) -> String {
     format!("audio|{asset_id}|{time_ratio:.6}|{pitch_semitones:.3}|{out_sr}")
 }
 
-/// Audio-Clip dehnen (Tempo), Tonhöhe verschieben und auf die Ausgaberate bringen.
+/// Stretch an audio clip (tempo), shift its pitch and bring it to the output rate.
 fn render_audio(samples: &[f32], sample_rate: u32, time_ratio: f64, pitch_semitones: f64, out_sr: u32) -> Arc<[f32]> {
     let rate = out_sr as f64 / sample_rate as f64;
     stretch::render_warp(samples, sample_rate as f32, time_ratio, pitch_semitones, rate).into()
 }
 
-/// Im Browser gibt es keine Threads (wasm32-unknown-unknown): die Schleife in
-/// `arrange` rendert die Clips der Reihe nach.
+/// There are no threads in the browser (wasm32-unknown-unknown): the loop in
+/// `arrange` renders the clips one after another.
 #[cfg(target_arch = "wasm32")]
 fn prerender(_project: &Project, _pool: &mut AssetPool, _out_sr: u32) {}
 
-/// Was noch nicht gerendert ist (Noten-Clips, gedehnte Audio-Clips), auf
-/// mehreren Kernen rendern und in den Zwischenspeicher legen – z. B. nach
-/// einer Tempoänderung (alles neu) oder für einen ganzen erzeugten Song.
+/// Renders what is not yet rendered (note clips, stretched audio clips) on
+/// several cores and puts it into the cache – e.g. after a tempo change
+/// (everything anew) or for a whole generated song.
 #[cfg(not(target_arch = "wasm32"))]
 fn prerender(project: &Project, pool: &mut AssetPool, out_sr: u32) {
     enum Job<'a> {
@@ -1123,11 +1123,11 @@ fn prerender(project: &Project, pool: &mut AssetPool, out_sr: u32) {
         Audio { samples: Arc<[f32]>, sample_rate: u32, time_ratio: f64, pitch: f64 },
     }
     impl Job<'_> {
-        /// Grob geschätzter Aufwand, um lange Arbeiten zuerst zu verteilen.
+        /// Roughly estimated effort, to distribute long jobs first.
         fn cost(&self) -> f64 {
             match self {
                 Job::Notes { specs, secs, .. } => *secs as f64 * specs.len() as f64,
-                // Dehnen und Umrechnen kosten je Sekunde etwa so viel wie zwei Dutzend Noten
+                // Stretching and converting cost about as much per second as two dozen notes
                 Job::Audio { samples, sample_rate, .. } => samples.len() as f64 / *sample_rate as f64 * 24.0,
             }
         }
@@ -1159,9 +1159,9 @@ fn prerender(project: &Project, pool: &mut AssetPool, out_sr: u32) {
         }
     }
     if jobs.len() < 2 {
-        return; // einer allein: rendert die Schleife in `arrange`
+        return; // a single one: the loop in `arrange` renders it
     }
-    // lange Arbeiten zuerst, damit die Kerne gleichmäßig zu tun haben
+    // long jobs first, so the cores have an even load
     jobs.sort_by(|a, b| b.1.cost().total_cmp(&a.1.cost()));
     let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).clamp(1, 8).min(jobs.len());
     let next = std::sync::atomic::AtomicUsize::new(0);
@@ -1192,7 +1192,7 @@ fn prerender(project: &Project, pool: &mut AssetPool, out_sr: u32) {
     }
 }
 
-/// Für den Export (siehe `AppState::export_source`).
+/// For the export (see `AppState::export_source`).
 pub struct ExportSource {
     pub project: Project,
     pub range: Option<(f64, f64)>,
@@ -1200,7 +1200,7 @@ pub struct ExportSource {
 }
 
 impl ExportSource {
-    /// Arrangement eines (Teil-)Projekts; Gerendertes bleibt für weitere Aufrufe liegen.
+    /// Arrangement of a (partial) project; what was rendered stays around for further calls.
     pub fn arrangement(&mut self, project: &Project, out_sr: u32) -> Arrangement {
         arrange(project, &mut self.pool, out_sr).0
     }
@@ -1212,7 +1212,7 @@ fn build_arrangement(project: &Project, pool: &mut AssetPool, out_sr: u32) -> Ar
     arrangement
 }
 
-/// Arrangement plus die Schlüssel des benutzten Zwischenspeichers.
+/// Arrangement plus the keys of the cache used.
 fn arrange(project: &Project, pool: &mut AssetPool, out_sr: u32) -> (Arrangement, HashSet<String>) {
     prerender(project, pool, out_sr);
     let bpm = project.tempo_bpm;
@@ -1305,13 +1305,13 @@ mod tempo_tests {
         (s.project, pool)
     }
 
-    /// Wie der Mischer auf das neue Arrangement umschaltet.
+    /// How the mixer switches to the new arrangement.
     #[derive(Clone, Copy, PartialEq)]
     enum Switch {
-        /// wie vor der Überblendung: sofort (nachgestellt mit Stopp, Wechsel
-        /// und Start im selben Block – ohne Wiedergabe gibt es keinen Übergang)
+        /// as before the crossfade: immediately (emulated with stop, switch
+        /// and start in the same block – without playback there is no transition)
         Hard,
-        /// wie `sync_engine`: eine Nachricht während der Wiedergabe
+        /// like `sync_engine`: one message during playback
         Faded,
     }
 
@@ -1324,7 +1324,7 @@ mod tempo_tests {
         m
     }
 
-    /// Linker Kanal, bis mindestens `len` Frames; vor jedem Block darf `before` Nachrichten schicken.
+    /// Left channel, up to at least `len` frames; before every block `before` may send messages.
     fn run(m: &mut Mixer, len: usize, mut before: impl FnMut(&mut Mixer, usize)) -> Vec<f32> {
         let mut out = vec![0f32; BLOCK * 2];
         let mut left = Vec::with_capacity(len + BLOCK);
@@ -1336,9 +1336,9 @@ mod tempo_tests {
         left
     }
 
-    /// Spielt `a` bei `from` BPM, wechselt am ersten Blockanfang ab `at` auf
-    /// `b` bei `to` BPM und spielt weiter. Liefert das Signal ab Frame 0, die
-    /// Umschaltstelle und die neue Position (in Schlägen gleich).
+    /// Plays `a` at `from` BPM, switches at the first block start from `at` to
+    /// `b` at `to` BPM and keeps playing. Returns the signal from frame 0, the
+    /// switch point and the new position (equal in beats).
     fn play_with_switch(a: &Arc<Arrangement>, b: &Arc<Arrangement>, from: f64, to: f64, at: usize, len: usize, how: Switch) -> (Vec<f32>, usize, u64) {
         let mut switched = None;
         let sig = run(&mut mixer(a, from, 0), len, |m, done| {
@@ -1358,10 +1358,10 @@ mod tempo_tests {
         (sig, s, (s as f64 * from / to).round() as u64)
     }
 
-    /// Größter Überschuss eines Sample-Schritts im Ausgang (ab der
-    /// Umschaltstelle `s`, `span` Samples) über das, was altes (`old`, ab
-    /// Frame 0) und neues Signal (`new`, ab `s`) dort ohnehin tun. Ein Knack
-    /// zeigt sich als großer Überschuss.
+    /// Largest excess of a sample step in the output (from the switch point
+    /// `s`, `span` samples) over what the old signal (`old`, from frame 0) and
+    /// the new one (`new`, from `s`) do there anyway. A click shows up as a
+    /// large excess.
     fn excess(sig: &[f32], s: usize, old: &[f32], new: &[f32], span: usize) -> f32 {
         (0..span)
             .map(|j| {
@@ -1374,7 +1374,7 @@ mod tempo_tests {
             .fold(0.0, f32::max)
     }
 
-    /// Größter Überschuss über `points` Tempowechsel (hart, übergeblendet).
+    /// Largest excess over `points` tempo changes (hard, crossfaded).
     fn worst_excess(p: &mut Project, pool: &mut AssetPool, from: f64, to: f64, points: usize) -> (f32, f32) {
         p.tempo_bpm = from;
         let a = Arc::new(arrange(p, pool, SR).0);
@@ -1400,9 +1400,9 @@ mod tempo_tests {
         worst
     }
 
-    /// Tempowechsel während der Wiedergabe mit dem Demo-Projekt (Audio-Clips
-    /// werden neu gestreckt, Noten neu gerendert): übergeblendet bleibt jeder
-    /// Sample-Schritt so groß, wie ihn altes oder neues Signal ohnehin hätten.
+    /// Tempo change during playback with the demo project (audio clips
+    /// are stretched anew, notes rendered anew): crossfaded, every sample
+    /// step stays as large as the old or new signal would have it anyway.
     #[test]
     fn tempo_change_in_the_demo_does_not_click() {
         let (mut p, mut pool) = demo_project();
@@ -1411,8 +1411,8 @@ mod tempo_tests {
         assert!(faded < 0.01, "übergeblendet: Überschuss {faded} (hart {hard})");
     }
 
-    /// Messung (nur Ausgabe): Sprung im Signal beim Tempowechsel mit dem
-    /// Demo-Projekt, hart gegen übergeblendet, je 32 Umschaltstellen.
+    /// Measurement (output only): jump in the signal on a tempo change with the
+    /// demo project, hard versus crossfaded, 32 switch points each.
     /// `cargo test --release -p klang-app -- --ignored --nocapture tempo_sprung`
     #[test]
     #[ignore = "Messung"]
@@ -1428,10 +1428,10 @@ mod tempo_tests {
         }
     }
 
-    /// Messung (nur Ausgabe): Wie lange dauert ein Tempo-Schritt (wie in der
-    /// App: neu rendern, Zwischenspeicher auf das Benutzte kürzen), und wohin
-    /// geht die Zeit? Bei 44,1 kHz müssen die 48-kHz-Clips des Demos auch
-    /// umgerechnet werden.
+    /// Measurement (output only): how long does a tempo step take (as in the
+    /// app: render anew, trim the cache to what is used), and where does the
+    /// time go? At 44.1 kHz the demo's 48 kHz clips also have to be
+    /// converted.
     /// `cargo test --release -p klang-app -- --ignored --nocapture tempo_schritt`
     #[test]
     #[ignore = "Messung"]
@@ -1448,7 +1448,7 @@ mod tempo_tests {
                 steps.push(format!("{:.0}", ms(t)));
             }
             println!("{out_sr} Hz: Tempo-Schritt {} ms", steps.join(", "));
-            // Aufteilung je Audio-Clip: Dehnen und Umrechnen der Abtastrate
+            // breakdown per audio clip: stretching and sample-rate conversion
             for track in &p.tracks {
                 for clip in &track.clips {
                     let ClipSource::Audio { asset_id, source_bpm, .. } = &clip.source else { continue };

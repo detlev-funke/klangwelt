@@ -1,8 +1,8 @@
-// Ausdruck einzelner Noten: Anschlag, Vibrato, Helligkeit, Biegung (Anschleifen)
-// und Vortragszeichen (Dynamik, Gabeln, Akzent, Staccato, Legato …).
-// Die Werte liegen in der Note selbst (siehe klang_core::Note); hier stehen
-// Bereiche, Beschriftungen und die Bearbeitungsfunktionen für Oberfläche und
-// Ausdrucksspur.
+// Expression of individual notes: velocity, vibrato, brightness, bend (glide)
+// and performance marks (dynamics, hairpins, accent, staccato, legato …).
+// The values live in the note itself (see klang_core::Note); here are
+// ranges, labels and the editing functions for the UI and the
+// expression track.
 
 import { t } from "./i18n.js";
 import { signal } from "./signals.js";
@@ -13,20 +13,20 @@ export type ExprKey = "velocity" | "vibrato" | "brightness" | "bend";
 export interface ExprDef {
   key: ExprKey;
   label: string;
-  /** Kurzer Hinweis, was der Wert bewirkt. */
+  /** Short hint on what the value does. */
   hint: string;
   min: number;
   max: number;
-  /** Wert ohne besonderen Ausdruck. */
+  /** Value without special expression. */
   neutral: number;
-  /** Nullpunkt in der Mitte (Werte nach oben und unten)? */
+  /** Zero point in the middle (values upward and downward)? */
   bipolar: boolean;
-  /** Rasterung beim Ziehen. */
+  /** Quantization while dragging. */
   step: number;
   format(v: number): string;
 }
 
-/** Dynamikstufen und ihr Anschlag. */
+/** Dynamic levels and their velocity. */
 export const DYNAMICS: Array<[string, number]> = [["pp", 32], ["p", 48], ["mp", 64], ["mf", 80], ["f", 100], ["ff", 120]];
 
 export function dynamicName(v: number): string {
@@ -62,7 +62,7 @@ export const EXPRS: Record<ExprKey, ExprDef> = {
 
 export const EXPR_ORDER: ExprKey[] = ["velocity", "vibrato", "brightness", "bend"];
 
-/** Welche Ausdrucksformen das Instrument einer Spur umsetzt. */
+/** Which expression forms the instrument of a track supports. */
 export function exprKeysFor(t: Track | null | undefined): ExprKey[] {
   if (t?.instrument?.kind === "drums") return ["velocity", "brightness"];
   return EXPR_ORDER;
@@ -78,7 +78,7 @@ export function clampExpr(k: ExprKey, v: number): number {
   return k === "velocity" ? Math.round(x) : Math.round(x / d.step) * d.step;
 }
 
-/** Note mit geändertem Ausdruckswert (neutrale Werte entfallen). */
+/** Note with a changed expression value (neutral values are dropped). */
 export function withExpr(n: Note, k: ExprKey, v: number): Note {
   const x = clampExpr(k, v);
   if (k === "velocity") return { ...n, velocity: x };
@@ -88,7 +88,7 @@ export function withExpr(n: Note, k: ExprKey, v: number): Note {
   return out;
 }
 
-// ---------- Ausdrucksspur je Spur (nur Ansicht, im Browser gespeichert) ----------
+// ---------- Expression track per track (view only, stored in the browser) ----------
 
 const LANE_KEY = "klangwelt.ausdruck";
 
@@ -106,7 +106,7 @@ function loadLanes(): LaneState {
   }
 }
 
-/** Gewählte Ausdrucksform der Spur und ob die Ausdrucksspur ausgeblendet ist. */
+/** Chosen expression form of the track and whether the expression track is hidden. */
 export const exprLanes = signal<LaneState>(loadLanes());
 
 function saveLanes(s: LaneState): void {
@@ -114,7 +114,7 @@ function saveLanes(s: LaneState): void {
   try {
     localStorage.setItem(LANE_KEY, JSON.stringify(s));
   } catch {
-    /* ohne Speicher */
+    /* without storage */
   }
 }
 
@@ -140,7 +140,7 @@ export function toggleExprLane(trackId: number): void {
   saveLanes({ ...s, hidden });
 }
 
-// ---------- Vortragszeichen ----------
+// ---------- Performance marks ----------
 
 export type Mark =
   | { kind: "dyn"; velocity: number }
@@ -155,14 +155,14 @@ export type Mark =
   | { kind: "scoop" }
   | { kind: "reset" };
 
-/** Ziel-Indizes nach Startzeit sortiert. */
+/** Target indices sorted by start time. */
 function byStart(notes: Note[], idx: number[]): number[] {
   return [...idx].sort((a, b) => notes[a]!.startBeats - notes[b]!.startBeats || notes[a]!.pitch - notes[b]!.pitch);
 }
 
 /**
- * Wendet ein Vortragszeichen auf die Noten `idx` an und gibt die neue
- * Notenliste zurück (gleiche Reihenfolge, Indizes bleiben gültig).
+ * Applies a performance mark to the notes `idx` and returns the new
+ * note list (same order, indices stay valid).
  */
 export function applyMark(notes: Note[], idx: number[], mark: Mark): Note[] {
   const out = notes.slice();
@@ -174,8 +174,8 @@ export function applyMark(notes: Note[], idx: number[], mark: Mark): Note[] {
       break;
     case "cresc":
     case "decresc": {
-      // Von der Lautstärke der ersten Note linear um ±40 nach oben bzw. unten;
-      // gleichzeitige Töne (Akkorde) bekommen denselben Wert.
+      // From the volume of the first note linearly by ±40 upward or downward;
+      // simultaneous notes (chords) get the same value.
       if (targets.length < 2) break;
       const starts = [...new Set(targets.map((i) => notes[i]!.startBeats))].sort((a, b) => a - b);
       const first = notes[targets[0]!]!.velocity;
@@ -194,7 +194,7 @@ export function applyMark(notes: Note[], idx: number[], mark: Mark): Note[] {
       for (const i of targets) set(i, { ...out[i]!, lengthBeats: Math.max(0.0625, +(out[i]!.lengthBeats * 0.5).toFixed(4)) });
       break;
     case "legato": {
-      // Jede Note bis zum Beginn der nächsten (späteren) Note des Clips verlängern.
+      // Extend each note to the start of the next (later) note of the clip.
       const starts = [...new Set(notes.map((n) => n.startBeats))].sort((a, b) => a - b);
       for (const i of targets) {
         const n = out[i]!;
@@ -227,7 +227,7 @@ export function applyMark(notes: Note[], idx: number[], mark: Mark): Note[] {
   return out;
 }
 
-/** Setzt einen Ausdruckswert für alle Ziel-Noten. */
+/** Sets an expression value for all target notes. */
 export function setExprAll(notes: Note[], idx: number[], k: ExprKey, v: number): Note[] {
   const out = notes.slice();
   for (const i of idx) out[i] = withExpr(out[i]!, k, v);

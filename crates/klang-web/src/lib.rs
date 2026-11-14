@@ -1,20 +1,20 @@
-//! Web-Kern: Klangwelt im Browser – die Hülle um den gemeinsamen Kern
-//! (`klang-app`), Gegenstück zur Tauri-Hülle (`app/src/lib.rs`).
+//! Web core: Klangwelt in the browser – the shell around the shared core
+//! (`klang-app`), counterpart to the Tauri shell (`app/src/lib.rs`).
 //!
-//! | Desktop (Tauri)                    | Browser (dieser Kern)                         |
+//! | Desktop (Tauri)                    | Browser (this core)                           |
 //! |------------------------------------|-----------------------------------------------|
-//! | Tauri-IPC → `commands::call`       | `kw_invoke` → `commands::call`                |
-//! | `DesktopHost`: Tauri-Events, Ordner | [`WebHost`]: Ereignisse an das Skript, `/Klangwelt/…` |
-//! | Engine am Gerät (cpal-Thread)      | Engine → AudioWorklet (`klang_engine::web`)   |
-//! | Status-Thread alle 33 ms           | Worker-Skript ruft `kw_status` alle 33 ms     |
-//! | Dateisystem                        | Dateibaum im Speicher, gesichert in OPFS      |
+//! | Tauri IPC → `commands::call`       | `kw_invoke` → `commands::call`                |
+//! | `DesktopHost`: Tauri events, folders | [`WebHost`]: events to the script, `/Klangwelt/…` |
+//! | Engine on the device (cpal thread) | Engine → AudioWorklet (`klang_engine::web`)   |
+//! | Status thread every 33 ms          | Worker script calls `kw_status` every 33 ms   |
+//! | File system                        | File tree in memory, backed up in OPFS        |
 //!
-//! Das Worker-Skript (`ui/src/web/worker.ts`) lädt dieses Modul. Die
-//! Schnittstelle ist schlank und braucht kein Zusatzwerkzeug: Zahlen und
-//! Zeiger in den linearen Speicher; Texte als UTF-8 (JSON wie beim Tauri-IPC).
-//! Antworten liegen danach in einem Puffer (`kw_out_ptr`, `kw_out_len`).
+//! The worker script (`ui/src/web/worker.ts`) loads this module. The
+//! interface is slim and needs no extra tooling: numbers and
+//! pointers into linear memory; texts as UTF-8 (JSON as with Tauri IPC).
+//! Answers then lie in a buffer (`kw_out_ptr`, `kw_out_len`).
 //!
-//! Auf anderen Zielen als wasm32 ist die Crate leer.
+//! On targets other than wasm32 the crate is empty.
 
 #![cfg(target_arch = "wasm32")]
 
@@ -25,36 +25,36 @@ use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
-/// Was das Worker-Skript bereitstellt (Importmodul „klangwelt“).
+/// What the worker script provides (import module "klangwelt").
 mod js {
     #[link(wasm_import_module = "klangwelt")]
     extern "C" {
-        /// Ereignis an die Oberfläche (Name, JSON).
+        /// Event to the UI (name, JSON).
         pub fn emit(event: *const u8, event_len: usize, payload: *const u8, payload_len: usize);
-        /// Nachricht an das Worklet (Art, Zahlen).
+        /// Message to the worklet (kind, numbers).
         pub fn engine_post(kind: u32, data: *const f64, len: usize);
-        /// Klangpuffer an das Worklet.
+        /// Sound buffer to the worklet.
         pub fn engine_buffer(id: u32, data: *const f32, len: usize);
         /// Date.now()
         pub fn now_ms() -> f64;
         /// performance.now()
         pub fn mono_ms() -> f64;
-        /// Meldung auf der Konsole (z. B. bei einem Absturz).
+        /// Message on the console (e.g. on a crash).
         pub fn log(msg: *const u8, len: usize);
     }
 }
 
-/// Ablage im Dateibaum (gesichert im Speicher des Browsers).
+/// Storage in the file tree (backed up in the browser's storage).
 const PROJECTS: &str = "/Klangwelt/Projekte";
 const LIBRARY: &str = "/Klangwelt/Bibliothek";
 const SETTINGS: &str = "/Klangwelt/einstellungen.json";
 
-/// Die Plattform „Browser“ für den Kern.
+/// The "browser" platform for the core.
 struct WebHost;
 
 impl Host for WebHost {
     fn emit_json(&self, event: &str, p: String) {
-        // SAFETY: Zeiger und Längen gültiger Texte, das Skript liest sie sofort.
+        // SAFETY: pointers and lengths of valid texts, the script reads them immediately.
         unsafe { js::emit(event.as_ptr(), event.len(), p.as_ptr(), p.len()) }
     }
     fn projects_dir(&self) -> PathBuf {
@@ -66,14 +66,14 @@ impl Host for WebHost {
 }
 
 fn log(msg: &str) {
-    // SAFETY: gültiger Text.
+    // SAFETY: valid text.
     unsafe { js::log(msg.as_ptr(), msg.len()) }
 }
 
 static STATE: OnceLock<AppState> = OnceLock::new();
-/// Antwort des letzten Aufrufs.
+/// Answer of the last call.
 static OUT: Mutex<Vec<u8>> = Mutex::new(Vec::new());
-/// Geänderte Dateien, bis das Skript sie gesichert hat.
+/// Changed files, until the script has backed them up.
 type Change = (PathBuf, Option<Arc<Vec<u8>>>);
 static CHANGES: Mutex<Vec<Change>> = Mutex::new(Vec::new());
 
@@ -86,7 +86,7 @@ fn set_out(bytes: Vec<u8>) {
 }
 
 /// # Safety
-/// `ptr` zeigt auf `len` Bytes im linearen Speicher.
+/// `ptr` points to `len` bytes in linear memory.
 unsafe fn bytes<'a>(ptr: *const u8, len: usize) -> &'a [u8] {
     if len == 0 {
         &[]
@@ -96,14 +96,14 @@ unsafe fn bytes<'a>(ptr: *const u8, len: usize) -> &'a [u8] {
 }
 
 /// # Safety
-/// wie [`bytes`]
+/// like [`bytes`]
 unsafe fn text<'a>(ptr: *const u8, len: usize) -> &'a str {
     std::str::from_utf8(bytes(ptr, len)).unwrap_or("")
 }
 
-// ---------------------------------------------------------------- Speicher
+// ---------------------------------------------------------------- Memory
 
-/// Platz für `len` Bytes (Argumente des Skripts).
+/// Space for `len` bytes (arguments of the script).
 #[no_mangle]
 pub extern "C" fn kw_alloc(len: usize) -> *mut u8 {
     let mut v = Vec::<u8>::with_capacity(len.max(1));
@@ -113,7 +113,7 @@ pub extern "C" fn kw_alloc(len: usize) -> *mut u8 {
 }
 
 /// # Safety
-/// Nur mit Zeiger und Länge aus [`kw_alloc`].
+/// Only with pointer and length from [`kw_alloc`].
 #[no_mangle]
 pub unsafe extern "C" fn kw_free(ptr: *mut u8, len: usize) {
     drop(Vec::from_raw_parts(ptr, 0, len.max(1)));
@@ -132,22 +132,22 @@ pub extern "C" fn kw_out_len() -> usize {
 // ---------------------------------------------------------------- Start
 
 fn engine_post(kind: Kind, d: &[f64]) {
-    // SAFETY: gültige Zahlenfolge, das Skript kopiert sie sofort.
+    // SAFETY: valid sequence of numbers, the script copies it immediately.
     unsafe { js::engine_post(kind as u32, d.as_ptr(), d.len()) }
 }
 
 fn engine_buffer(id: u32, d: &[f32]) {
-    // SAFETY: gültiger Puffer, das Skript kopiert ihn sofort.
+    // SAFETY: valid buffer, the script copies it immediately.
     unsafe { js::engine_buffer(id, d.as_ptr(), d.len()) }
 }
 
 fn now_ms() -> f64 {
-    // SAFETY: einfacher Aufruf ohne Zeiger.
+    // SAFETY: simple call without pointers.
     unsafe { js::now_ms() }
 }
 
 fn mono_ms() -> f64 {
-    // SAFETY: einfacher Aufruf ohne Zeiger.
+    // SAFETY: simple call without pointers.
     unsafe { js::mono_ms() }
 }
 
@@ -155,9 +155,9 @@ fn mono_secs() -> f64 {
     mono_ms() / 1000.0
 }
 
-/// Kern starten – nachdem das Skript die gesicherten Dateien mit
-/// [`kw_fs_put`] zurückgelegt hat. `audio` = 1: das AudioWorklet läuft mit
-/// `sample_rate`; 0: ohne Ton (alles andere geht).
+/// Starts the core – after the script has put the backed-up files back with
+/// [`kw_fs_put`]. `audio` = 1: the AudioWorklet runs at
+/// `sample_rate`; 0: without sound (everything else works).
 #[no_mangle]
 pub extern "C" fn kw_init(sample_rate: u32, audio: u32) {
     std::panic::set_hook(Box::new(|info| log(&format!("Klangwelt (Web-Kern): {info}"))));
@@ -173,7 +173,7 @@ pub extern "C" fn kw_init(sample_rate: u32, audio: u32) {
     }
     let st = AppState::new();
     st.set_host(Box::new(WebHost));
-    // Gemerkte Einstellungen anwenden (Metronom an/aus vom letzten Mal)
+    // Apply remembered settings (metronome on/off from last time)
     let file = PathBuf::from(SETTINGS);
     if let Some(on) = settings::read(&file).get("metronom").and_then(Value::as_bool) {
         let _ = st.set_metronome(on);
@@ -185,11 +185,11 @@ pub extern "C" fn kw_init(sample_rate: u32, audio: u32) {
     let _ = STATE.set(st);
 }
 
-/// Warum es keinen Agent-Server gibt (erscheint in der Oberfläche wie auf dem
-/// Desktop ein belegter Port).
+/// Why there is no agent server (shown in the UI the way a busy port
+/// is on the desktop).
 ///
 /// # Safety
-/// Zeiger und Länge eines gültigen UTF-8-Texts.
+/// Pointer and length of a valid UTF-8 text.
 #[no_mangle]
 pub unsafe extern "C" fn kw_agent_hint(ptr: *const u8, len: usize) {
     if let Some(st) = STATE.get() {
@@ -199,20 +199,20 @@ pub unsafe extern "C" fn kw_agent_hint(ptr: *const u8, len: usize) {
     }
 }
 
-// ---------------------------------------------------------------- Befehle
+// ---------------------------------------------------------------- Commands
 
-/// Befehl der Oberfläche ausführen (Name, Argumente als JSON). 0 = Antwort
-/// (JSON) im Ausgabepuffer, 1 = Fehlertext im Ausgabepuffer, 2 = es fehlen
-/// Daten vom Server: im Ausgabepuffer `[{file, start, end}, …]` – das Skript
-/// holt sie, übergibt sie mit [`kw_lib_feed`] und ruft den Befehl erneut auf
-/// (siehe `klang_music::source::remote`).
+/// Runs a UI command (name, arguments as JSON). 0 = answer
+/// (JSON) in the output buffer, 1 = error text in the output buffer, 2 = data
+/// from the server is missing: the output buffer holds `[{file, start, end}, …]` – the script
+/// fetches it, passes it in with [`kw_lib_feed`] and calls the command again
+/// (see `klang_music::source::remote`).
 ///
 /// # Safety
-/// Zeiger und Längen gültiger UTF-8-Texte.
+/// Pointers and lengths of valid UTF-8 texts.
 #[no_mangle]
 pub unsafe extern "C" fn kw_invoke(cmd: *const u8, cmd_len: usize, args: *const u8, args_len: usize) -> u32 {
     let Some(st) = STATE.get() else {
-        set_out(b"Der Web-Kern ist noch nicht gestartet.".to_vec());
+        set_out(b"The web core has not started yet.".to_vec());
         return 1;
     };
     let args: Value = match bytes(args, args_len) {
@@ -277,14 +277,14 @@ fn web_command(st: &AppState, cmd: &str, args: &Value) -> Option<Result<String, 
 /// answer to status 2 of [`kw_invoke`]. 0 = taken, 1 = unknown file.
 ///
 /// # Safety
-/// Zeiger und Längen gültiger Bereiche.
+/// Pointers and lengths of valid ranges.
 #[no_mangle]
 pub unsafe extern "C" fn kw_lib_feed(file: *const u8, file_len: usize, start: f64, data: *const u8, data_len: usize) -> u32 {
     u32::from(!remote::feed(text(file, file_len), start.max(0.0) as u64, bytes(data, data_len).to_vec()))
 }
 
-/// Die Plattform „Browser“ für die Agent-Werkzeuge: alles außer Bibliotheken
-/// verwalten und herunterladen (das gibt es hier noch nicht).
+/// The "browser" platform for the agent tools: manage and download everything
+/// except libraries (those don't exist here yet).
 struct WebAgentShell;
 
 impl klang_app::agent::AgentShell for WebAgentShell {
@@ -293,23 +293,23 @@ impl klang_app::agent::AgentShell for WebAgentShell {
     }
 }
 
-/// Eine MCP-Nachricht (JSON-RPC) an die Agent-Werkzeuge – dieselben wie der
-/// MCP-Server des Desktops. Antwort als JSON im Ausgabepuffer (leer bei
-/// Benachrichtigungen). 0 = Antwort, 2 = es fehlen Daten vom Server (wie bei
+/// An MCP message (JSON-RPC) to the agent tools – the same as the desktop's
+/// MCP server. Answer as JSON in the output buffer (empty for
+/// notifications). 0 = answer, 2 = data from the server is missing (as with
 /// [`kw_invoke`]).
 ///
 /// # Safety
-/// Zeiger und Länge eines gültigen UTF-8-Texts.
+/// Pointer and length of a valid UTF-8 text.
 #[no_mangle]
 pub unsafe extern "C" fn kw_mcp(msg: *const u8, len: usize) -> u32 {
     if STATE.get().is_none() {
-        set_out(br#"{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"Der Web-Kern ist noch nicht gestartet."}}"#.to_vec());
+        set_out(br#"{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"The web core has not started yet."}}"#.to_vec());
         return 0;
     }
     remote::begin();
     let reply = match serde_json::from_slice::<Value>(bytes(msg, len)) {
         Ok(m) => klang_mcp::handle(&klang_app::agent::Agent::new(WebAgentShell), &m),
-        Err(e) => Some(serde_json::json!({ "jsonrpc": "2.0", "id": null, "error": { "code": -32700, "message": format!("Ungültiges JSON: {e}") } })),
+        Err(e) => Some(serde_json::json!({ "jsonrpc": "2.0", "id": null, "error": { "code": -32700, "message": format!("Invalid JSON: {e}") } })),
     };
     if let Some(need) = missing() {
         set_out(need);
@@ -319,8 +319,8 @@ pub unsafe extern "C" fn kw_mcp(msg: *const u8, len: usize) -> u32 {
     0
 }
 
-/// Status für die Oberfläche („engine-status“) als JSON im Ausgabepuffer –
-/// wie der Status-Thread des Desktops, aufgerufen vom Skript alle 33 ms.
+/// Status for the UI ("engine-status") as JSON in the output buffer –
+/// like the desktop's status thread, called by the script every 33 ms.
 #[no_mangle]
 pub extern "C" fn kw_status() {
     if let Some(st) = STATE.get() {
@@ -328,7 +328,7 @@ pub extern "C" fn kw_status() {
     }
 }
 
-/// Was der Engine-Thread des Desktops nebenbei tut (gestreamtes Vorhören nachfüllen).
+/// What the desktop's engine thread does on the side (refilling streamed preview).
 #[no_mangle]
 pub extern "C" fn kw_tick() {
     if let Some(e) = STATE.get().and_then(|st| st.engine().ok()) {
@@ -336,17 +336,17 @@ pub extern "C" fn kw_tick() {
     }
 }
 
-/// Status aus dem Worklet.
+/// Status from the worklet.
 #[no_mangle]
 pub extern "C" fn kw_engine_report(playing: u32, previewing: u32, position_frames: f64, peak_out: f32, peak_in: f32) {
     klang_engine::web::report(playing != 0, previewing != 0, position_frames.max(0.0) as u64, peak_out, peak_in);
 }
 
-/// Mikrofon-Samples der laufenden Aufnahme (mono, Ausgaberate) – `len` f32
-/// als Bytes (Little Endian) aus [`kw_alloc`], daher ohne Annahme über die Ausrichtung.
+/// Microphone samples of the running recording (mono, output rate) – `len` f32
+/// as bytes (little-endian) from [`kw_alloc`], hence with no assumption about alignment.
 ///
 /// # Safety
-/// `ptr` zeigt auf `4 · len` Bytes.
+/// `ptr` points to `4 · len` bytes.
 #[no_mangle]
 pub unsafe extern "C" fn kw_record_input(ptr: *const u8, len: usize) {
     if len > 0 {
@@ -355,21 +355,21 @@ pub unsafe extern "C" fn kw_record_input(ptr: *const u8, len: usize) {
     }
 }
 
-// ---------------------------------------------------------------- Dateien
+// ---------------------------------------------------------------- Files
 
-/// Gesicherte Datei beim Start zurücklegen (gilt nicht als geändert).
+/// Puts a backed-up file back at startup (doesn't count as changed).
 ///
 /// # Safety
-/// Zeiger und Längen gültiger Bereiche.
+/// Pointers and lengths of valid ranges.
 #[no_mangle]
 pub unsafe extern "C" fn kw_fs_put(path: *const u8, path_len: usize, data: *const u8, data_len: usize, modified_ms: f64) {
     vfs::put(&PathBuf::from(text(path, path_len)), bytes(data, data_len).to_vec(), modified_ms.max(0.0) as u64);
 }
 
-/// Datei schreiben (z. B. eine importierte Projektdatei); wird gesichert.
+/// Writes a file (e.g. an imported project file); it is backed up.
 ///
 /// # Safety
-/// Zeiger und Längen gültiger Bereiche.
+/// Pointers and lengths of valid ranges.
 #[no_mangle]
 pub unsafe extern "C" fn kw_fs_write(path: *const u8, path_len: usize, data: *const u8, data_len: usize) -> u32 {
     let path = PathBuf::from(text(path, path_len));
@@ -382,11 +382,11 @@ pub unsafe extern "C" fn kw_fs_write(path: *const u8, path_len: usize, data: *co
     }
 }
 
-/// Datei lesen (z. B. ein Export zum Herunterladen): 0 = Inhalt im
-/// Ausgabepuffer, 1 = Fehlertext.
+/// Reads a file (e.g. an export to download): 0 = contents in the
+/// output buffer, 1 = error text.
 ///
 /// # Safety
-/// Zeiger und Länge eines gültigen Texts.
+/// Pointer and length of a valid text.
 #[no_mangle]
 pub unsafe extern "C" fn kw_fs_read(path: *const u8, path_len: usize) -> u32 {
     match vfs::read(&PathBuf::from(text(path, path_len))) {
@@ -401,9 +401,9 @@ pub unsafe extern "C" fn kw_fs_read(path: *const u8, path_len: usize) -> u32 {
     }
 }
 
-/// Geänderte Dateien seit dem letzten Aufruf: Anzahl; im Ausgabepuffer als
-/// JSON `[[Pfad, Länge oder -1 (gelöscht)], …]`. Inhalte mit
-/// [`kw_fs_change_data`], danach [`kw_fs_changes_done`].
+/// Files changed since the last call: count; in the output buffer as
+/// JSON `[[path, length or -1 (deleted)], …]`. Contents via
+/// [`kw_fs_change_data`], then [`kw_fs_changes_done`].
 #[no_mangle]
 pub extern "C" fn kw_fs_changes() -> usize {
     let mut staged = CHANGES.lock().unwrap_or_else(|e| e.into_inner());
@@ -413,7 +413,7 @@ pub extern "C" fn kw_fs_changes() -> usize {
     staged.len()
 }
 
-/// Inhalt der `i`-ten geänderten Datei (Länge aus der Liste).
+/// Contents of the `i`-th changed file (length from the list).
 #[no_mangle]
 pub extern "C" fn kw_fs_change_data(i: usize) -> *const u8 {
     let staged = CHANGES.lock().unwrap_or_else(|e| e.into_inner());

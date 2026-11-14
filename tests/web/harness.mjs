@@ -1,14 +1,14 @@
-// Testgerüst für die Browser-Version – ohne Fremdpakete, wie tests/e2e/harness.mjs:
-// node:test als Läufer; ein statischer Server (ui/scripts/serve.mjs --web)
-// liefert ui/dist-web aus, ein Edge ohne Fenster (headless) lädt die Seite
-// und wird über das Chrome-DevTools-Protokoll (CDP) bedient.
+// Test harness for the browser version – without third-party packages, like tests/e2e/harness.mjs:
+// node:test as the runner; a static server (ui/scripts/serve.mjs --web)
+// serves ui/dist-web, a windowless (headless) Edge loads the page
+// and is driven over the Chrome DevTools Protocol (CDP).
 //
-// Jede Testdatei startet ihren eigenen Server und Browser: freie Ports, eigenes
-// Browser-Profil im Temp-Ordner (OPFS, Service Worker) und eigener Ordner für
-// Downloads. Vorher: `npm run build:web` in ui/.
+// Each test file starts its own server and browser: free ports, its own
+// browser profile in the temp folder (OPFS, service worker) and its own folder for
+// downloads. Beforehand: `npm run build:web` in ui/.
 //
-// Browser: KLANGWELT_EDGE oder der übliche Pfad von Edge unter Windows.
-// Stumm (--mute-audio); KLANGWELT_TESTS_LAUT=1 macht die Tests hörbar.
+// Browser: KLANGWELT_EDGE or the usual path of Edge on Windows.
+// Muted (--mute-audio); KLANGWELT_TESTS_LAUT=1 makes the tests audible.
 
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -36,7 +36,7 @@ function freePort() {
   });
 }
 
-/** Eine CDP-Verbindung (Seite oder Browser). */
+/** A CDP connection (page or browser). */
 class Cdp {
   constructor(ws) {
     this.ws = ws;
@@ -77,7 +77,7 @@ class Cdp {
     try {
       this.ws.close();
     } catch {
-      /* egal */
+      /* don't care */
     }
   }
 }
@@ -85,11 +85,11 @@ class Cdp {
 class WebApp {
   constructor({ server, edge, page, browser, tmp, url, downloads }) {
     Object.assign(this, { server, edge, page, browser, tmp, url, downloads });
-    /** Fehler in der Seite (Ausnahmen, console.error) – Tests prüfen, dass keine auftreten. */
+    /** Errors in the page (exceptions, console.error) – tests check that none occur. */
     this.errors = [];
-    /** Längste Wartezeit für eine Auswertung in der Seite (ms). */
+    /** Longest wait for an evaluation in the page (ms). */
     this.evalTimeout = 60000;
-    /** Rückfragen des Browsers (z. B. „Seite verlassen?“ bei ungespeicherten Änderungen) – werden angenommen. */
+    /** Prompts from the browser (e.g. "Leave site?" with unsaved changes) – are accepted. */
     this.dialogs = [];
     page.handlers.push((m) => {
       if (m.method === "Page.javascriptDialogOpening") {
@@ -109,8 +109,8 @@ class WebApp {
     return this.page.send(method, params, timeout);
   }
 
-  /** In der Seite auswerten (Funktion mit Argumenten oder Ausdruck als Text). Im
-   *  Fenster stehen bereit: `T.st` (store.js), `T.backend`, `T.web` (Web-Hülle),
+  /** Evaluate in the page (function with arguments or expression as text). Available
+   *  in the window: `T.st` (store.js), `T.backend`, `T.web` (web shell),
    *  `T.sleep`, `T.waitFor`, `T.$`, `T.$$`. */
   async eval(fn, ...args) {
     const expression = typeof fn === "function" ? `(${fn.toString()})(...${JSON.stringify(args)})` : fn;
@@ -140,7 +140,7 @@ class WebApp {
     await sleep(200);
   }
 
-  /** Element (CSS-Selektor, optional mit Text) mit echter Maus anklicken. */
+  /** Click an element (CSS selector, optionally with text) with the real mouse. */
   async clickOn(selector, { text } = {}) {
     const c = await this.eval((sel, t) => {
       const el = [...document.querySelectorAll(sel)].find((e) => t == null || e.textContent.includes(t));
@@ -168,7 +168,7 @@ class WebApp {
     return file;
   }
 
-  /** Seite neu laden und warten, bis die Oberfläche mit dem Kern steht. */
+  /** Reload the page and wait until the UI is up with the core. */
   async reload() {
     await this.send("Page.reload", { ignoreCache: false });
     await sleep(300);
@@ -181,7 +181,7 @@ class WebApp {
     await ready(this);
   }
 
-  /** Server beenden (z. B. um offline zu testen); `startServer` startet ihn neu. */
+  /** Stop the server (e.g. to test offline); `startServer` starts it again. */
   stopServer() {
     this.server.kill();
   }
@@ -195,7 +195,7 @@ class WebApp {
     try {
       await this.browser.send("Browser.close", {}, 5000);
     } catch {
-      /* schon zu */
+      /* already closed */
     }
     this.browser.close();
     if (this.edge.exitCode == null) this.edge.kill();
@@ -236,14 +236,14 @@ async function pageTarget(cdpPort, timeout = 20000) {
       const version = await (await fetch(`http://127.0.0.1:${cdpPort}/json/version`)).json();
       if (page) return { page: page.webSocketDebuggerUrl, browser: version.webSocketDebuggerUrl };
     } catch {
-      /* noch nicht bereit */
+      /* not ready yet */
     }
     await sleep(200);
   }
   throw new Error(`Edge nicht erreichbar (CDP-Port ${cdpPort})`);
 }
 
-/** Wartet auf Oberfläche und Kern; stellt `T` in der Seite bereit. */
+/** Waits for the UI and the core; makes `T` available in the page. */
 async function ready(app) {
   await app.waitFor(() => !!document.querySelector("kw-transport") && !!window.__klangweltWeb, { timeout: 30000, what: "Oberfläche" });
   await app.eval(async () => {
@@ -296,10 +296,10 @@ export async function startWeb({ languages = "de-DE,de", library = null } = {}) 
       "--no-default-browser-check",
       "--disable-extensions",
       "--disable-features=msEdgeSidebarV2,EdgeCollections,msImplicitSignin",
-      // Stumm wie die Desktop-Tests (KLANGWELT_STUMM): alles läuft und wird gemessen, zu hören ist nichts.
-      // KLANGWELT_TESTS_LAUT=1 macht es hörbar.
+      // Muted like the desktop tests (KLANGWELT_STUMM): everything runs and is measured, nothing is audible.
+      // KLANGWELT_TESTS_LAUT=1 makes it audible.
       ...(process.env.KLANGWELT_TESTS_LAUT ? [] : ["--mute-audio"]),
-      // Ton ohne Geste und ein Ersatz-Mikrofon (Piepton) ohne Rückfrage
+      // Sound without a gesture and a substitute microphone (beep) without a prompt
       "--autoplay-policy=no-user-gesture-required",
       "--use-fake-ui-for-media-stream",
       "--use-fake-device-for-media-stream",
@@ -334,7 +334,7 @@ export async function startWeb({ languages = "de-DE,de", library = null } = {}) 
   return app;
 }
 
-/** Test mit Bildschirmfoto bei Fehlschlag. */
+/** Test with a screenshot on failure. */
 export function makeTest(getApp) {
   return (name, fn, opts = {}) =>
     test(name, opts, async (t) => {
@@ -346,7 +346,7 @@ export function makeTest(getApp) {
           try {
             e.message += `\n  Bildschirmfoto: ${await app.shot(name)}`;
           } catch {
-            /* ohne Foto */
+            /* without a screenshot */
           }
         }
         throw e;

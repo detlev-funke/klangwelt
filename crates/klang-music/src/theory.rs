@@ -1,11 +1,11 @@
-//! Tonarten und Bereinigung aufgenommener Noten.
+//! Keys and cleanup of recorded notes.
 
 use serde::{Deserialize, Serialize};
 
 const MAJOR_PROFILE: [f64; 12] = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
 const MINOR_PROFILE: [f64; 12] = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
 const MAJOR_SCALE: [u8; 7] = [0, 2, 4, 5, 7, 9, 11];
-/// Natürliches Moll plus Leitton (harmonisches Moll).
+/// Natural minor plus leading tone (harmonic minor).
 const MINOR_SCALE: [u8; 8] = [0, 2, 3, 5, 7, 8, 10, 11];
 
 const NAMES_MAJOR: [&str; 12] = ["C", "Des", "D", "Es", "E", "F", "Fis", "G", "As", "A", "B", "H"];
@@ -88,16 +88,16 @@ fn display_part(part: &str, dutch: bool) -> String {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Key {
-    /// Grundton als Tonhöhenklasse (0 = C).
+    /// Root as pitch class (0 = C).
     pub tonic: u8,
     pub minor: bool,
-    /// Korrelation mit dem Tonartprofil (−1…1); bei Vorzeichen aus der Partitur 1.
+    /// Correlation with the key profile (−1…1); 1 for key signatures from the score.
     #[serde(default)]
     pub confidence: f32,
 }
 
 impl Key {
-    /// Aus MusicXML-Vorzeichen (`<fifths>`) und Modus.
+    /// From the MusicXML key signature (`<fifths>`) and mode.
     pub fn from_fifths(fifths: i8, minor: bool) -> Self {
         let major_tonic = (fifths as i32 * 7).rem_euclid(12) as u8;
         let tonic = if minor { (major_tonic + 9) % 12 } else { major_tonic };
@@ -138,7 +138,7 @@ impl Key {
         }
     }
 
-    /// Tonhöhenklasse der Dominante.
+    /// Pitch class of the dominant.
     pub fn dominant(&self) -> u8 {
         (self.tonic + 7) % 12
     }
@@ -160,10 +160,10 @@ fn pearson(a: &[f64; 12], b: &[f64; 12]) -> f64 {
     }
 }
 
-/// Krumhansl-Kessler: Histogramm der Tonhöhenklassen (z. B. dauer-gewichtet).
-/// Vorzeichen ohne Angabe des Tongeschlechts (MuseScore lässt `<mode>` oft
-/// weg): Dur oder parallele Molltonart nach Tonverteilung (Krumhansl) und
-/// Schlusston im Bass.
+/// Krumhansl-Kessler: histogram of pitch classes (e.g. duration-weighted).
+/// Key signature without a mode given (MuseScore often omits `<mode>`):
+/// major or relative minor key by note distribution (Krumhansl) and
+/// final note in the bass.
 pub fn key_from_fifths_guess(fifths: i8, hist: &[f64; 12], final_bass_pc: Option<u8>) -> Key {
     let major = Key::from_fifths(fifths, false);
     let minor = Key::from_fifths(fifths, true);
@@ -201,14 +201,14 @@ pub fn estimate_key_from_histogram(hist: &[f64; 12]) -> Option<Key> {
     best
 }
 
-/// Note aus einer Aufnahme (Zeiten in Sekunden).
+/// Note from a recording (times in seconds).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TimedNote {
     pub start: f64,
     pub end: f64,
     pub midi: u8,
-    /// Gemessene Abweichung vom MIDI-Ton in Cent.
+    /// Measured deviation from the MIDI note in cents.
     pub cents: f32,
     pub velocity: f32,
 }
@@ -224,9 +224,9 @@ pub fn estimate_key(notes: &[TimedNote]) -> Option<Key> {
     estimate_key_from_histogram(&hist)
 }
 
-/// Leiterfremde Töne, deren gemessene Tonhöhe in Richtung eines Leitertons
-/// abweicht (≥ 20 Cent), werden auf diesen gezogen – typisch für leicht
-/// unsauber gesungene Töne. Gewollte Chromatik (sauber intoniert) bleibt.
+/// Out-of-scale notes whose measured pitch deviates towards a scale tone
+/// (≥ 20 cents) are pulled to it – typical for slightly
+/// out-of-tune sung notes. Intentional chromaticism (cleanly intonated) stays.
 pub fn snap_to_key(notes: &[TimedNote], key: &Key) -> Vec<TimedNote> {
     notes
         .iter()
@@ -254,8 +254,8 @@ pub struct QuantizedNote {
     pub velocity: f32,
 }
 
-/// Rastet Anfänge und Längen auf ein Raster (in Schlägen) ein und
-/// entfernt Überlappungen.
+/// Snaps starts and lengths to a grid (in beats) and
+/// removes overlaps.
 pub fn quantize(notes: &[TimedNote], seconds_per_beat: f64, grid_beats: f64) -> Vec<QuantizedNote> {
     let snap = |b: f64| (b / grid_beats).round() * grid_beats;
     let mut out: Vec<QuantizedNote> = notes
@@ -267,7 +267,7 @@ pub fn quantize(notes: &[TimedNote], seconds_per_beat: f64, grid_beats: f64) -> 
         })
         .collect();
     out.sort_by(|a, b| a.start_beats.total_cmp(&b.start_beats));
-    // Gleiche Startposition: lauteste Note behalten.
+    // Same start position: keep the loudest note.
     out.dedup_by(|b, a| {
         if (a.start_beats - b.start_beats).abs() < 1e-9 {
             if b.velocity > a.velocity {
@@ -334,13 +334,13 @@ mod tests {
 
     #[test]
     fn guesses_major_or_relative_minor_without_mode() {
-        // a-Moll: viel A, C, E, dazu Gis als Leitton, Schluss auf A
+        // A minor: lots of A, C, E, plus G-sharp as the leading tone, ending on A
         let mut minor = [0.0f64; 12];
         for (pc, d) in [(9, 6.0), (0, 3.0), (4, 4.0), (8, 1.5), (11, 1.0), (2, 1.5), (5, 1.0)] {
             minor[pc] = d;
         }
         assert_eq!(key_from_fifths_guess(0, &minor, Some(9)).name_de(), "a-Moll");
-        // C-Dur: viel C, E, G, Schluss auf C
+        // C major: lots of C, E, G, ending on C
         let mut major = [0.0f64; 12];
         for (pc, d) in [(0, 6.0), (4, 4.0), (7, 5.0), (2, 2.0), (5, 1.5), (9, 1.5), (11, 1.5)] {
             major[pc] = d;

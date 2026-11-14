@@ -1,17 +1,17 @@
-// Fenster „Harmonie“: Quintenzirkel mit Fortsetzungen zum Ausprobieren.
-// Ein Klick auf einen Akkord (im Zirkel oder in der Liste) spielt den Übergang
-// vom letzten Akkord des Verlaufs vor, Doppelklick bzw. „+“ übernimmt ihn.
-// Vorschläge kommen aus der Funktionsharmonik (Rust-Kern) und tragen, wenn
-// eine Bibliothek mit Akkordstatistik geladen ist, ihre Häufigkeit dort samt
-// Beispielstellen zum Anhören und Öffnen.
-// Übergänge sind nach Stimmung gefärbt (lösend, spannend, überraschend, hell,
-// dunkel – Legende unter dem Zirkel). „Wege zum Schluss“ zeigt mehrschrittige
-// Kadenzen vom aktuellen Akkord aus; Maus darüber zeichnet den Weg nummeriert
-// in den Zirkel, ein Klick hält ihn fest.
-// Der Verlauf folgt der Abspielposition (beim Abspielen und Cursor-Setzen):
-// Er beginnt mit den Akkorden des Satzes bis zur Stelle, eigene neue Akkorde
-// bleiben dahinter. „In Spur schreiben“ setzt sie hinter den Akkord am Cursor –
-// einfügen (alles danach rückt nach hinten) oder das Nachfolgende ersetzen.
+// "Harmony" window: circle of fifths with continuations to try out.
+// A click on a chord (in the circle or in the list) previews the transition
+// from the last chord of the progression; double-click or "+" adopts it.
+// Suggestions come from functional harmony (Rust core) and, if
+// a library with chord statistics is loaded, carry their frequency there along with
+// example passages to listen to and open.
+// Transitions are colored by mood (resolving, tense, surprising, bright,
+// dark - legend below the circle). "Paths to a cadence" shows multi-step
+// cadences from the current chord; hovering over one draws the path numbered
+// into the circle, a click pins it.
+// The progression follows the playhead (during playback and when setting the cursor):
+// it starts with the chords of the piece up to that point, new chords of one's own
+// stay after it. "Write to track" places them after the chord at the cursor -
+// inserting (everything after it moves back) or replacing what follows.
 
 import { backend } from "../bridge.js";
 import { chordName, keyText } from "../spelling.js";
@@ -24,9 +24,9 @@ import { openInLibrary } from "./library.js";
 import type { CadencePath, Chord, ChordInfo, ChordSuggestion, HarmonyExample, HarmonyView, KeySpec, Mood, Snapshot, SuggestCategory, SuggestResult, Track } from "../types.js";
 
 interface SketchItem extends ChordInfo {
-  /** schon in der Spur (aus dem Clip gelesen oder geschrieben) */
+  /** already in the track (read from the clip or written) */
   fixed?: boolean;
-  /** nur der Anfang (Tonika), kein eigener Akkord – fällt weg, wenn der Verlauf der Abspielposition folgt */
+  /** only the beginning (tonic), not a chord of its own - drops out when the progression follows the playhead */
   seed?: boolean;
   startBeats?: number;
   lengthBeats?: number;
@@ -49,7 +49,7 @@ const CATEGORIES: Array<[SuggestCategory, string, string]> = [
   ["haeufig", t("Common in the library"), t("not a rule, but often written this way")],
 ];
 
-/** Stimmungen der Übergänge: Farbe (CSS-Klasse m-…), Name, Erklärung. */
+/** Moods of the transitions: color (CSS class m-…), name, explanation. */
 const MOODS: Array<[Mood, string, string]> = [
   ["loesend", t("resolving"), t("Tension resolves: dominant → tonic (or the target of the secondary dominant), leading tone upward, plagal cadence")],
   ["spannend", t("tense"), t("builds tension: to the dominant, double or secondary dominant, cadential 6-4")],
@@ -59,14 +59,14 @@ const MOODS: Array<[Mood, string, string]> = [
 ];
 const moodLabel = (m: Mood) => MOODS.find((x) => x[0] === m)?.[1] ?? m;
 
-/** Was zusätzlich im Zirkel gezeichnet wird: ein Weg zum Schluss oder eine Kadenzvorlage. */
+/** What is additionally drawn in the circle: a path to a cadence or a cadence template. */
 interface Overlay {
   kind: "path" | "cadence";
   id: string;
 }
 const pathId = (p: CadencePath) => `${p.goal}${p.longer ? "+" : ""}`;
 
-/** Zustand bleibt erhalten, wenn das Fenster neu aufgebaut wird. */
+/** State is preserved when the window is rebuilt. */
 const st = {
   keyChoice: null as KeySpec | null,
   view: null as HarmonyView | null,
@@ -76,16 +76,16 @@ const st = {
   barsPerChord: 1,
   target: "akkorde" as "akkorde" | number,
   expanded: null as string | null,
-  /** festgehaltener Weg bzw. festgehaltene Kadenz (Klick / Abspielen) */
+  /** pinned path or pinned cadence (click / play) */
   pinned: null as Overlay | null,
-  /** Statistik-Gruppe: 0 = alle Stücke, 1 = Barock, 2 = Bach */
+  /** Statistics group: 0 = all pieces, 1 = Baroque, 2 = Bach */
   group: 0,
-  /** Verlauf greift die Harmonie an der Abspielposition auf */
+  /** Progression picks up the harmony at the playhead */
   follow: true,
-  /** Schreiben: Platz schaffen (alles danach rückt nach hinten) oder Nachfolgendes ersetzen */
+  /** Writing: make room (everything after it moves back) or replace what follows */
   insertMode: "einfuegen" as "einfuegen" | "ersetzen",
 };
-/** gerade mit der Maus gezeigt (hat Vorrang vor dem festgehaltenen) */
+/** currently shown with the mouse (takes precedence over the pinned one) */
 let hover: Overlay | null = null;
 const sameOverlay = (a: Overlay | null, b: Overlay | null) => !!a && !!b && a.kind === b.kind && a.id === b.id;
 
@@ -102,7 +102,7 @@ function triadClass(c: Chord): 0 | 1 | 2 | null {
   }
 }
 
-/** Platz im Zirkel: [Ring, Position] – Septakkorde beim Dreiklang. */
+/** Place in the circle: [ring, position] - seventh chords with the triad. */
 function cellOf(c: Chord): [number, number] | null {
   const ring = triadClass(c);
   const posOf = (r: number) => (r * 7) % 12;
@@ -154,12 +154,12 @@ function sector(ring: number, pos: number): string {
 const centerOf = (ring: number, pos: number) => pt((RINGS[ring]![0] + RINGS[ring]![1]) / 2, pos * 30 - 90);
 const r2 = (x: number) => Math.round(x * 10) / 10;
 
-/** Bogen von Feld a nach Feld b (zur Mitte gekrümmt, Enden eingekürzt); gleiches Feld: Schleife. */
+/** Arc from field a to field b (curved toward the center, ends shortened); same field: loop. */
 function segPath(a: [number, number], b: [number, number]): string {
   const [x0, y0] = centerOf(a[0], a[1]);
   const [x1, y1] = centerOf(b[0], b[1]);
   if (a[0] === b[0] && a[1] === b[1]) {
-    // Schleife: im äußeren Ring nach innen, sonst nach außen
+    // loop: inward in the outer ring, otherwise outward
     const len = Math.hypot(x0, y0) || 1;
     const dir = a[0] === 0 ? -1 : 1;
     const ux = (x0 / len) * dir, uy = (y0 / len) * dir;
@@ -179,8 +179,8 @@ function segPath(a: [number, number], b: [number, number]): string {
 }
 
 /**
- * Weg im Zirkel: Bögen nach Stimmung gefärbt (moods[i] für chords[i] → chords[i+1])
- * und nummerierte Schritte. skipFirst: chords[0] ist der aktuelle Akkord (ohne Nummer).
+ * Path in the circle: arcs colored by mood (moods[i] for chords[i] → chords[i+1])
+ * and numbered steps. skipFirst: chords[0] is the current chord (without a number).
  */
 function route(chords: Chord[], moods: Mood[], skipFirst: boolean): SVGGElement {
   const g = svg("g", { class: "hc-route" });
@@ -200,7 +200,7 @@ function route(chords: Chord[], moods: Mood[], skipFirst: boolean): SVGGElement 
     used.set(k, n + 1);
     const [x, y] = centerOf(c[0], c[1]);
     const m = i > 0 ? moods[i - 1] : undefined;
-    // derselbe Akkord mehrmals im Weg: Nummern nebeneinander
+    // same chord several times in the path: numbers side by side
     const bx = x + n * 15, by = y - 17;
     g.append(svg("g", { class: `step${m ? ` m-${m}` : ""}`, ...(m ? { "data-mood": m } : {}) },
       svg("circle", { cx: r2(bx), cy: r2(by), r: 7.5 }), svg("text", { x: r2(bx), y: r2(by + 3.3) }, String(skipFirst ? i : i + 1))));
@@ -245,7 +245,7 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
   const pathBox = h("div", { class: "hc-paths" });
   const pathFrom = h("span", { class: "muted" });
 
-  /** Legende: Maus über eine Stimmung hebt ihre Übergänge hervor. */
+  /** Legend: hovering over a mood highlights its transitions. */
   const focusMood = (m: Mood | null) => {
     for (const e of el.querySelectorAll<HTMLElement | SVGElement>("[data-mood]")) e.classList.toggle("faded", m !== null && e.dataset.mood !== m);
   };
@@ -276,8 +276,8 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
     h("div", { class: "hc-head" }, field(t("Key"), keySel), field(t("Duration"), durSeg), field(t("Target"), targetSel)),
     bodyEl,
   );
-  // Breit (zwei Spalten): die Wege zum Schluss rechts unter den Verlauf – links
-  // bleiben Zirkel und Legende allein und beim Scrollen stehen. Schmal: unter dem Zirkel.
+  // Wide (two columns): the paths to a cadence on the right below the progression - on the left
+  // circle and legend stay alone and stay put while scrolling. Narrow: below the circle.
   const placePaths = () => {
     const wide = getComputedStyle(bodyEl).gridTemplateColumns.trim().split(/\s+/).length > 1;
     if (wide && pathSection.parentElement !== side) side.insertBefore(pathSection, sketchBox.nextSibling);
@@ -294,7 +294,7 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
     });
   }).observe(el);
 
-  // ------------------------------------------------------------ Daten
+  // ------------------------------------------------------------ Data
 
   let loadSeq = 0;
   async function loadView(): Promise<void> {
@@ -304,14 +304,14 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
       if (seq !== loadSeq) return;
       const keyChanged = !st.view || st.view.key.tonic !== v.key.tonic || st.view.key.minor !== v.key.minor;
       st.view = v;
-      // Nur die Anfangs-Tonika im Verlauf: mit der neuen Tonart neu beginnen
+      // Only the initial tonic in the progression: start over with the new key
       if (keyChanged && st.sketch.length === 1 && !st.sketch[0]!.fixed) st.sketch = [];
       if (keyChanged && st.sketch.length) {
         const infos = await backend.harmonyDescribe(currentKey(), st.sketch.map((s) => s.chord));
         st.sketch = st.sketch.map((s, i) => ({ ...s, ...infos[i]! }));
       }
       if (!st.sketch.length) {
-        // Anfang: Tonika
+        // beginning: tonic
         const tonic = v.circle.find((c) => c.chord.root === v.key.tonic && c.chord.quality === (v.key.minor ? "minor" : "major"));
         if (tonic) st.sketch = [{ chord: tonic.chord, name: tonic.name, roman: tonic.roman, function: tonic.function, role: tonic.role, diatonic: tonic.diatonic, seed: true }];
       }
@@ -333,12 +333,12 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
     renderAll();
   }
 
-  // ------------------------------------------------------------ Klang
+  // ------------------------------------------------------------ Sound
 
   const preview = (chords: Chord[], bars: number) =>
     backend.harmonyPreview(currentKey(), chords, Math.max(1, bars * beatsPerBar()), targetTrackId(), null).catch((e) => notify(errorText(e), "error"));
 
-  /** Kandidat wählen und den Übergang vom letzten Akkord vorspielen. */
+  /** Choose a candidate and preview the transition from the last chord. */
   function tryChord(info: ChordInfo): void {
     st.candidate = info;
     const last = st.sketch.at(-1);
@@ -349,8 +349,8 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
   }
 
   /**
-   * Sobald man am Verlauf arbeitet, bleibt die Tonart stehen – sonst würde die
-   * Schätzung nach jedem geschriebenen Akkord springen und alles umdeuten.
+   * As soon as one works on the progression, the key stays fixed - otherwise the
+   * estimate would jump after every chord written and reinterpret everything.
    */
   function pinKey(): void {
     if (st.keyChoice || !st.view) return;
@@ -427,14 +427,14 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
     notify(mode === "einfuegen"
       ? plural(fresh.length, "Inserted {n} chord into \"{track}\" from bar {bar} (everything after it shifts later)", "Inserted {n} chords into \"{track}\" from bar {bar} (everything after it shifts later)", vars)
       : plural(fresh.length, "Wrote {n} chord to \"{track}\" from bar {bar}", "Wrote {n} chords to \"{track}\" from bar {bar}", vars));
-    // Cursor auf den letzten neuen Akkord: der Verlauf geht von dort weiter
+    // cursor on the last new chord: the progression continues from there
     const lastStart = pos - bpc;
     followIx = -2;
     void backend.seek((lastStart * 60) / bpm).catch(() => {});
     renderSketch();
   }
 
-  // ------------------------------------------------------------ Darstellung
+  // ------------------------------------------------------------ Rendering
 
   function renderHead(): void {
     const v = st.view;
@@ -444,7 +444,7 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
     const opts = [h("option", { value: "auto" }, auto)];
     for (const minor of [false, true]) {
       for (let i = 0; i < 12; i++) {
-        const tonic = (i * 7 + (minor ? 9 : 0)) % 12; // im Quintenzirkel sortiert
+        const tonic = (i * 7 + (minor ? 9 : 0)) % 12; // sorted by circle of fifths
         opts.push(h("option", { value: `${tonic}:${minor ? "m" : "d"}` }, keyName({ tonic, minor })));
       }
     }
@@ -487,7 +487,7 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
     const path = shown?.kind === "path" ? (st.result?.paths ?? []).find((p) => pathId(p) === shown.id) ?? null : null;
 
     const root = svg("svg", { viewBox: "-212 -212 424 424", class: "hc-svg", role: "img", "aria-label": t("Circle of fifths in {key}", { key: v.key.name }) });
-    // Pfeilspitzen je Stimmung (Marker erben die Strichfarbe nicht zuverlässig)
+    // arrowheads per mood (markers do not reliably inherit the stroke color)
     const defs = svg("defs", {},
       ...MOODS.map(([m]) => svg("marker", { id: `hc-mk-${m}`, viewBox: "0 0 10 10", refX: "7", refY: "5", markerWidth: "4.2", markerHeight: "4.2", orient: "auto-start-reverse" },
         svg("path", { d: "M0 0L10 5L0 10z", class: `hc-mk m-${m}` }))));
@@ -518,8 +518,8 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
       root.append(g);
     }
 
-    // Pfeile vom aktuellen Akkord zu den besten Vorschlägen, gefärbt nach Stimmung
-    // (blass, solange ein Weg oder eine Kadenz gezeigt wird)
+    // arrows from the current chord to the best suggestions, colored by mood
+    // (faded while a path or a cadence is shown)
     if (lastCell) {
       const [x0, y0] = centerOf(lastCell[0], lastCell[1]);
       const arrows = svg("g", { class: `hc-arrows${cadence || path ? " dim" : ""}` });
@@ -534,17 +534,17 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
       }
       root.append(arrows);
     }
-    // Rang-Plaketten
+    // rank badges
     for (const [key, { rank }] of rankOf) {
       if (rank > 8) continue;
       const [ring, pos] = key.split(":").map(Number) as [number, number];
       const [bx, by] = pt(RINGS[ring]![1] - 9, pos * 30 - 90 + 10);
       root.append(svg("g", { class: `hc-badge${cadence || path ? " dim" : ""}` }, svg("circle", { cx: bx, cy: by, r: 7.5 }), svg("text", { x: bx, y: by + 3.2 }, String(rank))));
     }
-    // Weg zum Schluss (vom aktuellen Akkord aus) bzw. Kadenzvorlage, nummeriert
+    // path to a cadence (from the current chord) or cadence template, numbered
     if (path && last) root.append(route([last, ...path.steps.map((s) => s.chord)], path.moods, true));
     else if (cadence) root.append(route(cadence.steps.map((s) => s.chord), cadence.moods ?? [], false));
-    // Mitte: Tonart und aktueller Akkord
+    // center: key and current chord
     const cur = st.candidate ?? st.sketch.at(-1) ?? null;
     root.append(
       svg("circle", { r: 62, class: "hc-center" }),
@@ -556,7 +556,7 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
     circleBox.replaceChildren(root);
   }
 
-  /** Ab diesem Index leuchten die Akkorde im Verlauf kurz auf (gerade angehängt). */
+  /** From this index on, the chords in the progression briefly light up (just appended). */
   let flashFrom = -1;
   let flashTimer = 0;
 
@@ -630,20 +630,20 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
     return c;
   }
 
-  // ------------------------------------------------------------ Abspielposition
+  // ------------------------------------------------------------ Playhead
 
-  /** Index und Inhalt des zuletzt aufgegriffenen Akkords (-2 = neu aufgreifen). */
+  /** Index and content of the chord picked up last (-2 = pick up again). */
   let followIx = -2;
   let followSig = "";
   let followTimer = 0;
-  /** Nach „Leeren“: erst wieder folgen, wenn sich der Cursor bewegt (Position in Sekunden beim Leeren). */
+  /** After "Clear": follow again only once the cursor moves (position in seconds at clearing). */
   let followHold: number | null = null;
   function holdFollow(): void {
     followHold = status.peek().positionSecs;
   }
   /**
-   * Verlauf an die Abspielposition anpassen: die Akkorde des Satzes bis zur
-   * Stelle (der Akkord dort und bis zu drei davor) – eigene neue Akkorde bleiben dahinter.
+   * Adjust the progression to the playhead: the chords of the piece up to the
+   * point (the chord there and up to three before it) - new chords of one's own stay after it.
    */
   function followCursor(): void {
     if (!st.follow) return;
@@ -766,7 +766,7 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
     suggBox.replaceChildren(...groups);
   }
 
-  /** Akkordfolge mit Pfeilen in der Farbe der Stimmung (moods[i] führt in chords[i + 1]). */
+  /** Chord progression with arrows in the mood's color (moods[i] leads into chords[i + 1]). */
   function moodSeq(chords: ChordInfo[], moods: Mood[], opt: { from?: boolean; shares?: Array<number | null> | null } = {}): Node[] {
     const out: Node[] = [];
     chords.forEach((s, i) => {
@@ -774,7 +774,7 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
         const m = moods[i - 1] ?? "hell";
         const sh = opt.shares?.[i - 1];
         const prev = chordName(chords[i - 1]!.name);
-        // mit Bibliothek: die Übergangswahrscheinlichkeit gleich unter dem Pfeil
+        // with a library: the transition probability right below the arrow
         out.push(h("i", { class: `hc-pto m-${m}${sh != null ? " has-pct" : ""}`, "data-mood": m, title: `${prev} → ${chordName(s.name)}: ${moodLabel(m)}${sh != null ? `\n${t("Library: {pct}% of continuations after {chord}", { pct: pct(sh), chord: prev })}` : ""}` },
           ...(sh != null ? [h("span", {}, "→"), h("small", { class: "hc-pct" }, `${pct(sh)} %`)] : ["→"])));
       }
@@ -784,7 +784,7 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
     return out;
   }
 
-  /** Overlay festhalten bzw. lösen und alles, was es zeigt, neu zeichnen. */
+  /** Pin or release the overlay and redraw everything it shows. */
   function togglePin(o: Overlay, force?: boolean): void {
     st.pinned = force || !sameOverlay(st.pinned, o) ? o : null;
     renderPaths();
@@ -799,8 +799,8 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
   }
 
   /**
-   * Akkorde an den Verlauf hängen – sichtbar: der Verlauf rückt ins Bild, die
-   * neuen Akkorde leuchten kurz auf. `write`: gleich in die Ziel-Spur schreiben.
+   * Append chords to the progression - visibly: the progression scrolls into view, the
+   * new chords light up briefly. `write`: write straight into the target track.
    */
   function appendSteps(steps: ChordInfo[], what: string, toTrack = false): void {
     if (!steps.length) {
@@ -868,7 +868,7 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
     }));
   }
 
-  /** Kadenz ohne ihren ersten Akkord, wenn der Verlauf schon darauf endet. */
+  /** Cadence without its first chord, if the progression already ends on it. */
   function cadenceTail(steps: ChordInfo[]): ChordInfo[] {
     const last = st.sketch.at(-1);
     return last && steps[0] && same(last.chord, steps[0].chord) ? steps.slice(1) : steps;
@@ -911,14 +911,14 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
     renderPaths();
   }
 
-  // ------------------------------------------------------------ Lebenszyklus
+  // ------------------------------------------------------------ Lifecycle
 
   let lastSnap: Snapshot | null = null;
   let timer = 0;
   renderSketch();
   renderCircle();
   void loadView();
-  // Akkordfolge des Satzes laden; der Verlauf folgt der Abspielposition
+  // Load the chord progression of the piece; the progression follows the playhead
   watchHarmonyLine();
   harmonyKey.value = st.keyChoice;
   effect(() => {
@@ -926,7 +926,7 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
     harmonyLine.value;
     followCursor();
   });
-  // Arbeit im Fenster: Harmonie-Band in der Zeitleiste zeigen
+  // Working in the window: show the harmony band in the timeline
   let leaveTimer = 0;
   const focusOn = () => {
     clearTimeout(leaveTimer);
@@ -942,7 +942,7 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
   el.addEventListener("focusin", focusOn);
   el.addEventListener("pointerleave", focusOff);
   el.addEventListener("focusout", focusOff);
-  // Bibliothek geladen oder neu indiziert: Häufigkeiten nachholen
+  // Library loaded or re-indexed: catch up on frequencies
   onLibrary = () => {
     if (st.view) void loadSuggestions();
   };
@@ -968,7 +968,7 @@ export function harmonyPanel(): { el: HTMLElement; update(): void } {
       if (snap !== lastSnap) {
         const first = lastSnap === null;
         lastSnap = snap;
-        // Geschätzte Tonart folgt den Noten (gebremst, Bearbeiten erzeugt viele Schnappschüsse)
+        // Estimated key follows the notes (throttled, editing produces many snapshots)
         if (!first && !st.keyChoice) {
           clearTimeout(timer);
           timer = window.setTimeout(() => void loadView(), 600);

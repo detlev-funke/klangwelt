@@ -1,17 +1,17 @@
-//! Schlagzeug-Synthese mit sprechenden Parametern.
+//! Drum synthesis with expressive parameters.
 //!
-//! Jede Trommel ist ein kleines physikalisch inspiriertes Modell:
-//! * Bassdrum – Sinus mit fallender Tonhöhe bis zum **Grundton**, Klick, Sättigung
-//! * Snare   – Kesselton plus gefiltertes Rauschen (Teppich)
-//! * Clap    – mehrere kurze Rauschstöße plus Ausklang
-//! * Hi-Hat  – hochpassgefiltertes Rauschen mit metallischen Bandpässen
-//! * Toms    – gestimmte Sinus-Trommeln mit leichtem Tonhöhenabfall
-//! * Rim     – kurzer, holziger Doppelton (Side Stick), gestimmt mit dem Snare-Kessel
-//! * Cowbell – zwei Rechtecktöne (540/800 Hz) mit Bandpass, wie die klassische Drum-Machine
-//! * Ride/Crash – unharmonische Teiltöne plus Rauschen, Helligkeit und Länge wie die Hi-Hat
-//! * Shaker  – kurzer Rauschwisch mit weichem Einsatz
+//! Each drum is a small physically inspired model:
+//! * Bass drum – sine with falling pitch down to the **fundamental**, click, saturation
+//! * Snare   – shell tone plus filtered noise (snare wires)
+//! * Clap    – several short noise bursts plus decay
+//! * Hi-hat  – high-pass-filtered noise with metallic band-passes
+//! * Toms    – tuned sine drums with a slight pitch drop
+//! * Rim     – short, woody double tone (side stick), tuned with the snare shell
+//! * Cowbell – two square tones (540/800 Hz) with a band-pass, like the classic drum machine
+//! * Ride/Crash – inharmonic partials plus noise, brightness and length like the hi-hat
+//! * Shaker  – short noise swish with a soft attack
 //!
-//! Die Belegung der Tasten folgt der üblichen Schlagzeug-Belegung (General MIDI).
+//! The key mapping follows the usual drum mapping (General MIDI).
 
 use crate::notes::midi_to_hz;
 use crate::synth::{Biquad, NoteSpec, Rng};
@@ -32,7 +32,7 @@ pub const RIDE: u8 = 51;
 pub const COWBELL: u8 = 56;
 pub const SHAKER: u8 = 70;
 
-/// Name der Trommel auf einer Taste (Kurzform für die Klaviatur).
+/// Name of the drum on a key (short form for the keyboard).
 pub fn piece_name(midi: u8) -> Option<(&'static str, &'static str)> {
     Some(match midi {
         KICK => ("BD", klang_i18n::tk!("Kick drum")),
@@ -54,26 +54,26 @@ pub fn piece_name(midi: u8) -> Option<(&'static str, &'static str)> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct KickParams {
-    /// Grundton als MIDI-Ton (Ende des Tonhöhenabfalls), z. B. 33 = A1 = 55 Hz.
+    /// Fundamental as a MIDI note (end of the pitch drop), e.g. 33 = A1 = 55 Hz.
     pub grundton: f32,
-    /// weich ↔ punchig: Stärke und Tempo des Tonhöhenabfalls
+    /// soft ↔ punchy: strength and speed of the pitch drop
     pub punch: f32,
-    /// kurz ↔ lang
+    /// short ↔ long
     pub laenge: f32,
-    /// rund ↔ klickig: Anschlaggeräusch des Schlägels
+    /// round ↔ clicky: impact noise of the beater
     pub klick: f32,
-    /// sauber ↔ warm/angezerrt
+    /// clean ↔ warm/distorted
     pub waerme: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SnareParams {
-    /// Kesselton als MIDI-Ton
+    /// Shell tone as a MIDI note
     pub kessel: f32,
-    /// wenig ↔ viel Rasseln
+    /// little ↔ much rattle
     pub teppich: f32,
     pub laenge: f32,
-    /// dumpf ↔ scharf
+    /// dull ↔ sharp
     pub schaerfe: f32,
 }
 
@@ -86,15 +86,15 @@ pub struct ClapParams {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct HatParams {
     pub helligkeit: f32,
-    /// geschlossene Hi-Hat: kurz ↔ lang
+    /// closed hi-hat: short ↔ long
     pub laenge: f32,
-    /// offene Hi-Hat: kurz ↔ lang
+    /// open hi-hat: short ↔ long
     pub offen: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TomParams {
-    /// Grundton der tiefen Tom (mittlere +5, hohe +10 Halbtöne)
+    /// Fundamental of the low tom (mid +5, high +10 semitones)
     pub grundton: f32,
     pub laenge: f32,
 }
@@ -128,7 +128,7 @@ pub fn kick(sr: f32, p: &KickParams, velocity: f32, seed: u32) -> Vec<f32> {
     let f_end = midi_to_hz(p.grundton);
     let punch = p.punch.clamp(0.0, 1.0);
     let f_start = f_end * (1.5 + 4.0 * punch);
-    // Schneller Abfall, damit der Grundton hörbar (und messbar) den Ton bestimmt.
+    // Fast decay, so the fundamental audibly (and measurably) determines the pitch.
     let sweep = 30.0 + 50.0 * punch;
     let decay = 0.12 + 1.1 * p.laenge.clamp(0.0, 1.0);
     let n = ((decay + 0.02) * sr) as usize;
@@ -180,7 +180,7 @@ pub fn clap(sr: f32, p: &ClapParams, velocity: f32, seed: u32) -> Vec<f32> {
     (0..n)
         .map(|i| {
             let t = i as f32 / sr;
-            // drei kurze Stöße im Abstand von ~10 ms, dann Ausklang
+            // three short bursts ~10 ms apart, then decay
             let bursts: f32 = [0.0f32, 0.011, 0.022].iter().map(|&o| if t >= o { (-(t - o) * 180.0).exp() } else { 0.0 }).sum();
             let env = bursts * 0.7 + if t >= 0.022 { (-(t - 0.022) * tail).exp() * 0.6 } else { 0.0 };
             bp.process(rng.next()) * env * 2.2 * velocity
@@ -194,7 +194,7 @@ pub fn hat(sr: f32, p: &HatParams, open: bool, velocity: f32, seed: u32) -> Vec<
     let h = p.helligkeit.clamp(0.0, 1.0);
     let mut rng = Rng(seed | 1);
     let mut hp = Biquad::highpass(4500.0 + 5000.0 * h, 0.7, sr);
-    // metallische Färbung: zwei schmale Resonanzen
+    // metallic coloring: two narrow resonances
     let mut m1 = Biquad::bandpass(6200.0 + 2500.0 * h, 6.0, sr);
     let mut m2 = Biquad::bandpass(8300.0 + 2800.0 * h, 6.0, sr);
     (0..n)
@@ -226,7 +226,7 @@ pub fn tom(sr: f32, p: &TomParams, offset: f32, velocity: f32, seed: u32) -> Vec
         .collect()
 }
 
-/// Rim (Side Stick): zwei kurze, gestimmte Töne und ein Klick – mit dem Snare-Kessel gestimmt.
+/// Rim (side stick): two short, tuned tones and a click – tuned with the snare shell.
 pub fn rim(sr: f32, p: &SnareParams, velocity: f32, seed: u32) -> Vec<f32> {
     let k = midi_to_hz(p.kessel) / midi_to_hz(54.0);
     let (f1, f2) = (455.0 * k, 1670.0 * k * (0.9 + 0.2 * p.schaerfe.clamp(0.0, 1.0)));
@@ -243,12 +243,12 @@ pub fn rim(sr: f32, p: &SnareParams, velocity: f32, seed: u32) -> Vec<f32> {
         .collect()
 }
 
-/// Rechteck aus den ersten ungeraden Obertönen (ohne Aliasing).
+/// Square wave from the first odd harmonics (without aliasing).
 fn square(phase: f32) -> f32 {
     phase.sin() + (3.0 * phase).sin() / 3.0 + (5.0 * phase).sin() / 5.0 + (7.0 * phase).sin() / 7.0
 }
 
-/// Cowbell: zwei Rechtecktöne (540 und 800 Hz) durch einen Bandpass, schneller Abfall mit Ausklang.
+/// Cowbell: two square tones (540 and 800 Hz) through a band-pass, fast decay with a tail.
 pub fn cowbell(sr: f32, p: &HatParams, velocity: f32, _seed: u32) -> Vec<f32> {
     let n = (0.45 * sr) as usize;
     let mut bp = Biquad::bandpass(900.0 + 900.0 * p.helligkeit.clamp(0.0, 1.0), 1.4, sr);
@@ -262,8 +262,8 @@ pub fn cowbell(sr: f32, p: &HatParams, velocity: f32, _seed: u32) -> Vec<f32> {
         .collect()
 }
 
-/// Becken: sechs unharmonische Rechteck-Teiltöne (wie die klassische Drum-Machine) plus Rauschen.
-/// Ride: heller Glockenanteil, mittlerer Ausklang; Crash: mehr Rauschen, langer Ausklang.
+/// Cymbal: six inharmonic square partials (like the classic drum machine) plus noise.
+/// Ride: bright bell portion, medium decay; crash: more noise, long decay.
 pub fn cymbal(sr: f32, p: &HatParams, crash: bool, velocity: f32, seed: u32) -> Vec<f32> {
     let h = p.helligkeit.clamp(0.0, 1.0);
     let len = if crash { 1.2 + 1.6 * p.offen.clamp(0.0, 1.0) } else { 0.8 + 1.2 * p.offen.clamp(0.0, 1.0) };
@@ -286,7 +286,7 @@ pub fn cymbal(sr: f32, p: &HatParams, crash: bool, velocity: f32, seed: u32) -> 
         .collect()
 }
 
-/// Shaker: kurzes, hohes Rauschen mit weichem Einsatz.
+/// Shaker: short, high noise with a soft attack.
 pub fn shaker(sr: f32, p: &HatParams, velocity: f32, seed: u32) -> Vec<f32> {
     let len = 0.06 + 0.1 * p.laenge.clamp(0.0, 1.0);
     let n = ((len + 0.02) * sr) as usize;
@@ -301,7 +301,7 @@ pub fn shaker(sr: f32, p: &HatParams, velocity: f32, seed: u32) -> Vec<f32> {
         .collect()
 }
 
-/// Einzelner Schlag auf einer Taste; `None` für unbelegte Tasten.
+/// A single hit on a key; `None` for unmapped keys.
 pub fn render_hit(kit: &DrumKit, midi: u8, velocity: f32, sr: f32, seed: u32) -> Option<Vec<f32>> {
     Some(match midi {
         KICK => kick(sr, &kit.kick, velocity, seed),
@@ -321,8 +321,8 @@ pub fn render_hit(kit: &DrumKit, midi: u8, velocity: f32, sr: f32, seed: u32) ->
     })
 }
 
-/// Rendert Schlagzeug-Noten (Einzelschläge, Notenlänge spielt keine Rolle).
-/// Eine offene Hi-Hat wird von der nächsten Hi-Hat abgewürgt – wie beim echten Becken.
+/// Renders drum notes (single hits, note length does not matter).
+/// An open hi-hat is choked by the next hi-hat – like with a real cymbal.
 pub fn render_drums(notes: &[NoteSpec], total_secs: f32, sr: f32, kit: &DrumKit) -> Vec<f32> {
     let mut out = vec![0f32; ((total_secs.max(0.0) + 1.2) * sr) as usize];
     let hat_times: Vec<f32> = notes
@@ -332,7 +332,7 @@ pub fn render_drums(notes: &[NoteSpec], total_secs: f32, sr: f32, kit: &DrumKit)
         .collect();
     for (i, n) in notes.iter().enumerate() {
         let midi = n.midi.round().clamp(0.0, 127.0) as u8;
-        // Helligkeit der Note: mehr Klick, Schärfe und Glanz (bzw. weniger).
+        // Brightness of the note: more click, sharpness and gloss (or less).
         let bright;
         let kit = if n.brightness != 0.0 {
             let b = 0.35 * n.brightness.clamp(-1.0, 1.0);
@@ -413,7 +413,7 @@ mod tests {
         let x = render_drums(&[n(KICK, 0.0), n(SNARE, 0.5), n(HAT_CLOSED, 0.25), n(60, 0.75)], 1.0, SR, &kit);
         assert!(x.iter().all(|v| v.is_finite()));
         assert!(peak(&x[..(0.2 * SR) as usize]) > 0.3);
-        // Taste 60 ist unbelegt: nach dem Snare-Ausklang bleibt es still.
+        // Key 60 is unmapped: after the snare decay it stays silent.
         assert!(peak(&x[(0.78 * SR) as usize..(1.0 * SR) as usize]) < 0.05);
         for m in [CLAP, TOM_LOW, TOM_MID, TOM_HIGH, HAT_OPEN, RIM, COWBELL, RIDE, CRASH, SHAKER] {
             assert!(render_hit(&kit, m, 1.0, SR, 1).map(|h| peak(&h) > 0.05).unwrap_or(false), "Taste {m}");
@@ -424,14 +424,14 @@ mod tests {
     fn new_pieces_have_their_character() {
         let kit = DrumKit::default();
         let len = |m: u8| render_hit(&kit, m, 1.0, SR, 3).unwrap().len() as f32 / SR;
-        // Rim und Shaker kurz, Becken lang, Crash länger als Ride
+        // Rim and shaker short, cymbals long, crash longer than ride
         assert!(len(RIM) < 0.1 && len(SHAKER) < 0.2);
         assert!(len(RIDE) > 0.7 && len(CRASH) > len(RIDE));
         for m in [RIM, COWBELL, RIDE, CRASH, SHAKER] {
             let x = render_hit(&kit, m, 1.0, SR, 3).unwrap();
             assert!(x.iter().all(|v| v.is_finite()) && peak(&x) < 2.5, "Taste {m}");
         }
-        // Cowbell: Energie bei 540 und 800 Hz, kaum dazwischen
+        // Cowbell: energy at 540 and 800 Hz, hardly any in between
         let cb = cowbell(SR, &kit.hat, 1.0, 1);
         let mag = |f: f32| {
             let (mut re, mut im) = (0.0f32, 0.0f32);

@@ -1,9 +1,9 @@
-// Audiodateien aufs Fenster ziehen: je Datei eine Audiospur mit Clip. Über
-// der Zeitleiste zählt die Stelle – auf eine Audiospur gezogen kommt die erste
-// Datei in diese Spur, sonst entstehen neue Spuren (unter der Spur unter der
-// Maus bzw. am Ende), ab dem Schlag unter der Maus. Über den Spurköpfen: in
-// bzw. unter diese Spur, ab Anfang. MusicXML übernimmt die Bibliothek
-// (library.ts) – beide hören auf dasselbe Tauri-Ereignis.
+// Dragging audio files onto the window: one audio track with a clip per file. Over
+// the timeline the spot counts – dragged onto an audio track, the first
+// file goes into that track, otherwise new tracks are created (below the track under
+// the mouse or at the end), starting at the beat under the mouse. Over the track
+// headers: into or below that track, from the start. MusicXML is taken by the library
+// (library.ts) – both listen to the same Tauri event.
 
 import { backend } from "./bridge.js";
 import { libraryTakesDrops } from "./components/library.js";
@@ -12,16 +12,16 @@ import { language, t } from "./i18n.js";
 import { signal } from "./signals.js";
 import { errorText, notify, selection, snapshot } from "./store.js";
 
-/** Ziel einer Ablage: Spur (oder null = neue Spur am Ende) und Startschlag. */
+/** Target of a drop: track (or null = new track at the end) and start beat. */
 export interface DropTarget {
   trackId: number | null;
   startBeats: number;
 }
 
-/** Audiodateien werden gerade über das Fenster gezogen (Stelle in CSS-Pixeln, Anzahl). */
+/** Audio files are currently being dragged over the window (spot in CSS pixels, count). */
 export const audioDrag = signal<{ x: number; y: number; count: number } | null>(null);
 
-/** Elemente, die eine Stelle in ein Ziel übersetzen (Zeitleiste). */
+/** Elements that translate a spot into a target (timeline). */
 interface DropZone extends Element {
   dropTargetAt(x: number, y: number): DropTarget | null;
 }
@@ -30,7 +30,7 @@ function isZone(el: Element | null): el is DropZone {
   return !!el && typeof (el as Partial<DropZone>).dropTargetAt === "function";
 }
 
-/** Ziel unter einer Stelle (Fensterkoordinaten). */
+/** Target under a spot (window coordinates). */
 export function dropTargetAt(x: number, y: number): DropTarget {
   const el = x >= 0 && y >= 0 ? document.elementFromPoint(x, y) : null;
   const zone = el?.closest("kw-timeline") ?? null;
@@ -49,7 +49,7 @@ function secs(s: number): string {
   return `${m}:${String(Math.round(s - m * 60)).padStart(2, "0")} min`;
 }
 
-/** Dateien einfügen und Bescheid sagen (auch für den Agenten-freien Weg über Tests). */
+/** Inserts files and notifies (also for the agent-free path via tests). */
 export async function importAudio(paths: string[], target: DropTarget): Promise<boolean> {
   notify(paths.length === 1 ? t("Reading \"{name}\"…", { name: baseName(paths[0]!) }) : t("Reading {n} files…", { n: paths.length }));
   try {
@@ -72,7 +72,7 @@ export async function importAudio(paths: string[], target: DropTarget): Promise<
 
 let started = false;
 
-/** Beim Start: auf gezogene Dateien hören. */
+/** At startup: listen for dragged files. */
 export function initFileDrop(): void {
   if (started) return;
   started = true;
@@ -87,7 +87,7 @@ export function initFileDrop(): void {
       void importAudio(audio, at ? dropTargetAt(at.x, at.y) : { trackId: null, startBeats: 0 });
       return;
     }
-    // nichts für Klangwelt: MusicXML und Ordner nimmt die Bibliothek, wenn sie offen ist
+    // nothing for Klangwelt: MusicXML and folders are taken by the library when it is open
     if (paths.length && !(paths.some(isScorePath) && libraryTakesDrops())) {
       notify(
         paths.some(isScorePath)

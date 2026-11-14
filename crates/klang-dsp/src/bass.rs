@@ -1,32 +1,32 @@
-//! Bass-Synthesizer (subtraktiv, einstimmig) mit sprechenden Parametern.
+//! Bass synthesizer (subtractive, monophonic) with expressive parameters.
 //!
-//! Oszillator (Sinus ↔ Sägezahn ↔ Rechteck, bandbegrenzt per PolyBLEP),
-//! Sub-Oszillator eine Oktave tiefer, resonanter Tiefpass (2 × TPT-SVF) mit
-//! Hüllkurve, Sättigung („Biss“) und Glide zwischen gebundenen Noten.
+//! Oscillator (sine ↔ sawtooth ↔ square, band-limited via PolyBLEP),
+//! sub-oscillator one octave lower, resonant low-pass (2 × TPT-SVF) with
+//! envelope, saturation ("bite") and glide between tied notes.
 
 use crate::notes::midi_to_hz;
 use crate::synth::NoteSpec;
 use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
 
-/// Alle Werte 0…1.
+/// All values 0…1.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BassParams {
-    /// rund (Sinus) ↔ Sägezahn ↔ hohl/scharf (Rechteck)
+    /// round (sine) ↔ sawtooth ↔ hollow/sharp (square)
     pub wellenform: f32,
-    /// dunkel ↔ hell (Grenzfrequenz)
+    /// dark ↔ bright (cutoff frequency)
     pub filter: f32,
-    /// weich ↔ quäkig (Resonanz)
+    /// soft ↔ nasal (resonance)
     pub resonanz: f32,
-    /// weich ↔ knackig (Filter-Hüllkurve und Einschwingen)
+    /// soft ↔ punchy (filter envelope and attack)
     pub anschlag: f32,
-    /// kurz ↔ lang (Ausklingen, Haltepegel)
+    /// short ↔ long (decay, sustain level)
     pub abklingen: f32,
-    /// dünn ↔ tief (Sub-Oszillator)
+    /// thin ↔ deep (sub-oscillator)
     pub sub: f32,
-    /// sauber ↔ verzerrt (Sättigung)
+    /// clean ↔ distorted (saturation)
     pub biss: f32,
-    /// aus ↔ gleitend (Portamento bei gebundenen Noten)
+    /// off ↔ gliding (portamento on tied notes)
     pub glide: f32,
 }
 
@@ -49,7 +49,7 @@ pub(crate) fn poly_blep(t: f32, dt: f32) -> f32 {
     }
 }
 
-/// Zustandsvariablen-Filter (topologieerhaltend, Zavalishin) – Tiefpass-Ausgang.
+/// State-variable filter (topology-preserving, Zavalishin) – low-pass output.
 #[derive(Default, Clone, Copy)]
 pub(crate) struct Svf {
     ic1: f32,
@@ -70,9 +70,9 @@ impl Svf {
     }
 }
 
-/// Ein Bass-Ton. `from_hz` startet ein Glide von dieser Frequenz aus.
-/// Ausdruck aus `note`: Anschlag (Lautstärke, Filterhüllkurve), Helligkeit
-/// (Filter), Vibrato und Anschleifen (Tonhöhe).
+/// A bass note. `from_hz` starts a glide from that frequency.
+/// Expression from `note`: velocity (volume, filter envelope), brightness
+/// (filter), vibrato and scoop-in (pitch).
 fn voice(freq: f32, from_hz: Option<f32>, dur: f32, note: &NoteSpec, sr: f32, p: &BassParams) -> Vec<f32> {
     let velocity = note.velocity;
     let modulated = note.modulated();
@@ -85,14 +85,14 @@ fn voice(freq: f32, from_hz: Option<f32>, dur: f32, note: &NoteSpec, sr: f32, p:
     let attack = 0.002 + 0.02 * (1.0 - anschlag);
     let decay = 0.05 + 0.8 * abklingen;
     let sustain = 0.3 + 0.6 * abklingen;
-    // Helligkeit der Note verschiebt den Filter um bis zu ±1,5 Oktaven.
+    // The note's brightness shifts the filter by up to ±1.5 octaves.
     let base_cut = 40.0 * 2f32.powf(p.filter.clamp(0.0, 1.0) * 8.0 + 1.5 * note.brightness.clamp(-1.0, 1.0));
-    // Fester angeschlagen = Filter öffnet weiter.
-    let env_amt = anschlag * 4.0 * (0.55 + 0.5 * velocity.clamp(0.0, 1.0)); // Oktaven
+    // Played harder = filter opens further.
+    let env_amt = anschlag * 4.0 * (0.55 + 0.5 * velocity.clamp(0.0, 1.0)); // octaves
     let f_decay = 0.05 + 0.6 * abklingen;
     let k = 2.0 - 1.9 * p.resonanz.clamp(0.0, 1.0);
     let drive = 1.0 + 8.0 * p.biss.clamp(0.0, 1.0);
-    // Gleitzeit (Zeitkonstante) bis ca. 125 ms – typisch für Bass-Portamento.
+    // Glide time (time constant) up to about 125 ms – typical for bass portamento.
     let tau = 0.005 + 0.12 * p.glide.clamp(0.0, 1.0);
     let (mut ph, mut sub_ph) = (0.0f32, 0.0f32);
     let (mut f1, mut f2) = (Svf::default(), Svf::default());
@@ -146,16 +146,16 @@ fn voice(freq: f32, from_hz: Option<f32>, dur: f32, note: &NoteSpec, sr: f32, p:
     out
 }
 
-/// Rendert eine Basslinie einstimmig. Gebundene Noten (die nächste beginnt,
-/// bevor die vorherige endet bzw. höchstens 30 ms danach) gleiten bei `glide > 0`.
+/// Renders a bass line monophonically. Tied notes (the next one starts before
+/// the previous one ends, or at most 30 ms after it) glide when `glide > 0`.
 pub fn render_bass(notes: &[NoteSpec], total_secs: f32, sr: f32, p: &BassParams) -> Vec<f32> {
     let mut sorted: Vec<&NoteSpec> = notes.iter().collect();
     sorted.sort_by(|a, b| a.start_secs.total_cmp(&b.start_secs));
     let mut out = vec![0f32; ((total_secs.max(0.0) + 0.2) * sr) as usize];
-    let mut prev: Option<(f32, f32)> = None; // (Ende, Frequenz)
+    let mut prev: Option<(f32, f32)> = None; // (end, frequency)
     for (i, n) in sorted.iter().enumerate() {
         let freq = midi_to_hz(n.midi);
-        // einstimmig: Note endet spätestens, wenn die nächste beginnt
+        // monophonic: a note ends at the latest when the next one begins
         let next_start = sorted.get(i + 1).map(|m| m.start_secs).unwrap_or(f32::MAX);
         let dur = n.dur_secs.min((next_start - n.start_secs).max(0.02));
         let legato = prev.map(|(end, _)| n.start_secs <= end + 0.03).unwrap_or(false);
@@ -196,16 +196,16 @@ mod tests {
                 .collect();
             median(&mut est)
         };
-        // Anschleifen von 3 Halbtönen unten: Anfang tiefer, Ende auf dem Ton (A1 = 55 Hz).
+        // Scoop-in from 3 semitones below: start lower, end on the note (A1 = 55 Hz).
         let bent = render_bass(&[NoteSpec { bend: -3.0, ..note(33.0, 0.0, 1.0) }], 1.0, SR, &p);
         let early = mid(&bent, 0.0, 0.08);
         let late = mid(&bent, 0.5, 0.9);
         assert!(early < 52.0, "Anfang {early} Hz");
         assert!((late - 55.0).abs() < 1.5, "Ende {late} Hz");
-        // Helligkeit öffnet den Filter.
+        // Brightness opens the filter.
         let one = |b: f32| analyze_sound(&render_bass(&[NoteSpec { brightness: b, ..note(33.0, 0.0, 1.0) }], 1.0, SR, &p), SR);
         assert!(one(0.8).centroid_hz > one(-0.8).centroid_hz * 1.3);
-        // Vibrato bleibt beim Ton und schwankt hörbar.
+        // Vibrato stays on the note and audibly wavers.
         let vib = render_bass(&[NoteSpec { vibrato: 0.6, ..note(45.0, 0.0, 1.5) }], 1.5, SR, &p);
         let est: Vec<f32> = detect_pitch(&vib[(0.6 * SR) as usize..(1.4 * SR) as usize], SR, &YinConfig::default())
             .iter()
@@ -240,7 +240,7 @@ mod tests {
         assert!(deep.low_share > thin.low_share);
     }
 
-    /// Frequenz über aufsteigende Nulldurchgänge (für reine Sinus-Signale).
+    /// Frequency via rising zero crossings (for pure sine signals).
     fn zero_cross_hz(x: &[f32]) -> f32 {
         let n = x.windows(2).filter(|w| w[0] < 0.0 && w[1] >= 0.0).count();
         n as f32 / (x.len() as f32 / SR)
@@ -251,13 +251,13 @@ mod tests {
         let p = BassParams { glide: 0.8, wellenform: 0.0, sub: 0.0, filter: 0.9, biss: 0.0, ..Default::default() };
         let x = render_bass(&[note(33.0, 0.0, 0.5), note(45.0, 0.5, 0.5)], 1.0, SR, &p);
         assert!(x.iter().all(|v| v.is_finite()));
-        // stabil vorher (A1 = 55 Hz) und nachher (A2 = 110 Hz) …
+        // stable before (A1 = 55 Hz) and after (A2 = 110 Hz) …
         assert!((zero_cross_hz(&x[(0.2 * SR) as usize..(0.45 * SR) as usize]) - 55.0).abs() < 5.0);
         assert!((zero_cross_hz(&x[(0.85 * SR) as usize..(0.98 * SR) as usize]) - 110.0).abs() < 9.0);
-        // … dazwischen gleitet sie
+        // … in between it glides
         let f = zero_cross_hz(&x[(0.52 * SR) as usize..(0.6 * SR) as usize]);
         assert!(f > 60.0 && f < 100.0, "{f}");
-        // ohne Glide springt sie sofort (Fenster nach dem 40-ms-Ausklang des Vortons)
+        // without glide it jumps immediately (window after the 40 ms decay of the previous note)
         let hard = render_bass(&[note(33.0, 0.0, 0.5), note(45.0, 0.5, 0.5)], 1.0, SR, &BassParams { glide: 0.0, ..p });
         assert!(zero_cross_hz(&hard[(0.55 * SR) as usize..(0.63 * SR) as usize]) > 100.0);
     }

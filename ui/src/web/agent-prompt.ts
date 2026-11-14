@@ -1,20 +1,20 @@
-// Kopier-Prompt fürs Agent-Fenster der Browser-Version. Ein Agent mit
-// Browser-Werkzeug (z. B. Claude Desktop mit der Erweiterung „Claude in
-// Chrome“) bedient Klangwelt über den MCP-Server in der Seite
-// (`window.__klangweltWeb.mcp`, siehe docs/WEB.md) – ohne Netzwerk, ohne Port.
-// Gegenstück zu `agentPrompt()` des Desktops (HTTP-Endpunkt per curl).
+// Copy prompt for the agent window of the browser version. An agent with a
+// browser tool (e.g. Claude Desktop with the "Claude in
+// Chrome" extension) operates Klangwelt through the MCP server in the page
+// (`window.__klangweltWeb.mcp`, see docs/WEB.md) – without network, without a port.
+// Counterpart to `agentPrompt()` of the desktop (HTTP endpoint via curl).
 //
-// Ein eigenes Modul, damit der Desktop-Teil des Agent-Fensters (chat.ts)
-// davon unberührt bleibt.
+// A module of its own, so that the desktop part of the agent window (chat.ts)
+// stays untouched by it.
 
 import { t } from "../i18n.js";
 
-/** Wartezeit für `chat_poll` im Prompt: kurz genug für das Zeitlimit eines
- *  JavaScript-Werkzeugs, das wir nicht kennen (geht ein Aufruf vorher zu
- *  Ende, sagt der Prompt, was dann zu tun ist). */
+/** Wait time for `chat_poll` in the prompt: short enough for the time limit of a
+ *  JavaScript tool that we do not know (if a call ends before that,
+ *  the prompt says what to do then). */
 export const WEB_POLL_SECONDS = 20;
 
-/** Der Prompt mit der Adresse, unter der die Seite gerade läuft. */
+/** The prompt with the address under which the page is currently running. */
 export function webAgentPrompt(address: string): string {
   // paragraphs translated one by one (placeholders: address and waiting time)
   const seconds = WEB_POLL_SECONDS;

@@ -1,17 +1,17 @@
-//! Nachrichten an den Mischer als Zahlenfolge – für den Weg zwischen zwei
-//! WebAssembly-Instanzen im Browser (Web-Kern im Worker → Mixer im
-//! AudioWorklet, per `postMessage`). Auf dem Desktop gehen dieselben
-//! [`RtMsg`]s direkt durch den Ringpuffer.
+//! Messages to the mixer as a sequence of numbers – for the path between two
+//! WebAssembly instances in the browser (web core in the worker → mixer in the
+//! AudioWorklet, via `postMessage`). On the desktop the same
+//! [`RtMsg`]s go directly through the ring buffer.
 //!
-//! Klangpuffer reisen getrennt (einmal je Puffer, mit einer Kennung); eine
-//! Nachricht verweist nur auf deren Kennungen. Eine Nachricht ist eine Art
-//! ([`Kind`]) und eine Liste von `f64`.
+//! Sound buffers travel separately (once per buffer, with an ID); a
+//! message only refers to their IDs. A message is a kind
+//! ([`Kind`]) and a list of `f64`.
 
 use crate::{Arrangement, PlacedClip, RtMsg};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// Art einer Nachricht.
+/// Kind of a message.
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -19,26 +19,26 @@ pub enum Kind {
     Stop = 2,
     /// [Frame]
     Seek = 3,
-    /// [Tempo, Schläge je Takt]
+    /// [Tempo, beats per bar]
     Tempo = 4,
     /// [an (0/1)]
     Metronome = 5,
-    /// [gesetzt (0/1), Anfang, Ende] in Schlägen
+    /// [set (0/1), start, end] in beats
     Loop = 6,
-    /// [gesetzt (0/1), Halt, Rücksprung] in Schlägen
+    /// [set (0/1), stop, jump back] in beats
     StopAt = 7,
-    /// [Tempo (BPM, 0 = unverändert), Schläge je Takt, Clips …] – das Tempo
-    /// reist mit, damit Position und Klang im selben Block wechseln.
-    /// Clips: je [Puffer, Seite (0 = keine), Start-Frame, Pegel links, Pegel rechts, Hall]
+    /// [Tempo (BPM, 0 = unchanged), beats per bar, clips …] – the tempo
+    /// travels along so that position and sound change in the same block.
+    /// Clips: each [buffer, side (0 = none), start frame, level left, level right, reverb]
     Arrangement = 8,
-    /// [Clips …] wie bei `Arrangement`, ohne Tempo
+    /// [clips …] as in `Arrangement`, without tempo
     Preview = 9,
     PreviewMore = 10,
-    /// [an (0/1)] – nicht für den Mischer selbst, sondern für das Worklet
+    /// [on (0/1)] – not for the mixer itself, but for the worklet
     Mute = 11,
-    /// Puffer freigeben: [Kennung, …]
+    /// Free buffers: [ID, …]
     Free = 12,
-    /// Aufnahme: [an (0/1)]
+    /// Recording: [on (0/1)]
     Record = 13,
 }
 
@@ -64,13 +64,13 @@ impl Kind {
     }
 }
 
-/// Zahlen je Clip in einer Arrangement-Nachricht.
+/// Numbers per clip in an arrangement message.
 pub const CLIP_FIELDS: usize = 6;
 
-/// Zahlen vor den Clips einer `Arrangement`-Nachricht (Tempo, Schläge je Takt).
+/// Numbers before the clips of an `Arrangement` message (tempo, beats per bar).
 pub const ARRANGEMENT_HEAD: usize = 2;
 
-/// Kopf einer `Arrangement`-Nachricht; davor gehören die Clips ([`encode_clips`]).
+/// Header of an `Arrangement` message; the clips belong before it ([`encode_clips`]).
 pub fn arrangement_head(tempo: Option<(f64, u32)>) -> [f64; ARRANGEMENT_HEAD] {
     match tempo {
         Some((bpm, beats_per_bar)) if bpm > 0.0 => [bpm, beats_per_bar as f64],
@@ -89,7 +89,7 @@ fn put_range(r: Option<(f64, f64)>) -> Vec<f64> {
     }
 }
 
-/// Steuernachricht → Zahlen (Arrangements: siehe [`encode_clips`]).
+/// Control message → numbers (arrangements: see [`encode_clips`]).
 pub fn encode(msg: &RtMsg) -> Option<(Kind, Vec<f64>)> {
     Some(match msg {
         RtMsg::Play => (Kind::Play, vec![]),
@@ -103,7 +103,7 @@ pub fn encode(msg: &RtMsg) -> Option<(Kind, Vec<f64>)> {
     })
 }
 
-/// Clips → Zahlen; `id` liefert die Kennung eines Puffers.
+/// Clips → numbers; `id` returns the ID of a buffer.
 pub fn encode_clips(arr: &Arrangement, mut id: impl FnMut(&Arc<[f32]>) -> u32) -> Vec<f64> {
     let mut out = Vec::with_capacity(arr.clips.len() * CLIP_FIELDS);
     for c in arr.clips.iter().filter(|c| !c.data.is_empty()) {
@@ -114,9 +114,9 @@ pub fn encode_clips(arr: &Arrangement, mut id: impl FnMut(&Arc<[f32]>) -> u32) -
     out
 }
 
-/// Zahlen → Nachricht an den Mischer. Puffer kommen aus `buffers`; Clips mit
-/// unbekanntem Puffer fallen weg. `None` für Arten, die nicht an den Mischer
-/// gehen (Mute, Free, Record) oder kaputte Nachrichten.
+/// Numbers → message to the mixer. Buffers come from `buffers`; clips with
+/// an unknown buffer are dropped. `None` for kinds that do not go to the
+/// mixer (Mute, Free, Record) or for broken messages.
 pub fn decode(kind: Kind, d: &[f64], buffers: &HashMap<u32, Arc<[f32]>>) -> Option<RtMsg> {
     let n = |i: usize| d.get(i).copied();
     Some(match kind {
@@ -186,7 +186,7 @@ mod tests {
         assert!(Arc::ptr_eq(&c.data, &a) && Arc::ptr_eq(c.side.as_ref().unwrap(), &s));
         assert_eq!((c.start_frame, c.gain_l, c.gain_r), (480, 0.5, 0.75));
         assert!((c.send - 0.2).abs() < 1e-6);
-        // unbekannter Puffer: Clip fällt weg
+        // unknown buffer: clip is dropped
         let msg = [&arrangement_head(None)[..], &d].concat();
         let Some(RtMsg::Arrangement { arrangement: empty, tempo: None }) = decode(Kind::Arrangement, &msg, &HashMap::new()) else { panic!() };
         assert!(empty.clips.is_empty());
@@ -207,12 +207,12 @@ mod tests {
             let c = &arrangement.clips[0];
             assert!(Arc::ptr_eq(&c.data, &a));
             assert_eq!((c.start_frame, c.gain_l, c.gain_r, c.send), (96, 1.0, 0.25, 0.5));
-            // zurück in Zahlen: dieselbe Nachricht
+            // back to numbers: the same message
             assert_eq!([&arrangement_head(back)[..], &encode_clips(&arrangement, |_| 3)].concat(), msg);
         }
-        // ohne Kopf: kaputt, keine Nachricht
+        // without a header: broken, no message
         assert!(decode(Kind::Arrangement, &[120.0], &buffers).is_none());
-        // ohne Clips: leeres Arrangement, Tempo wirkt trotzdem
+        // without clips: empty arrangement, the tempo still takes effect
         let Some(RtMsg::Arrangement { arrangement, tempo }) = decode(Kind::Arrangement, &arrangement_head(Some((90.0, 4))), &buffers) else { panic!() };
         assert!(arrangement.clips.is_empty() && tempo == Some((90.0, 4)));
     }

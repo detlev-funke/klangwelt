@@ -1,9 +1,9 @@
-// Browser-Version: Klangwelt als statische Dateien (ui/dist-web) in Edge ohne
-// Fenster – der echte Kern als WebAssembly im Worker, der Mischer im
-// AudioWorklet. Geprüft: Laden, Demo, Wiedergabe mit Pegel (auch unabhängig
-// am Ausgang des Worklets gemessen), Bearbeiten und Rückgängig, Speichern und
-// Neuladen (OPFS), Export als Download, Analyse/Harmonie/Fuge, Aufnahme mit
-// dem Ersatz-Mikrofon des Browsers und Start ohne Server (Service Worker).
+// Browser version: Klangwelt as static files (ui/dist-web) in Edge without a
+// window – the real core as WebAssembly in the worker, the mixer in the
+// AudioWorklet. Checked: loading, demo, playback with level (also measured
+// independently at the output of the worklet), editing and undo, saving and
+// reloading (OPFS), export as a download, analysis/harmony/fugue, recording with
+// the browser's fake microphone and start without a server (service worker).
 import { before, after } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { startWeb, makeTest, sleep } from "./harness.mjs";
 
 let app;
-let wavSeconds = 0; // Länge der WAV aus dem Export-Test – Vergleich für Opus
+let wavSeconds = 0; // Length of the WAV from the export test – comparison for Opus
 const test = makeTest(() => app);
 before(async () => {
   app = await startWeb();
@@ -22,7 +22,7 @@ after(async () => {
 
 const snap = () => app.eval(() => T.st.snapshot.peek());
 
-/** Leeres Projekt, Transport am Anfang. */
+/** Empty project, transport at the start. */
 async function reset() {
   await app.eval(async () => {
     await T.st.act(T.backend.projectNew());
@@ -31,7 +31,7 @@ async function reset() {
   });
 }
 
-/** Wartet auf eine heruntergeladene Datei; gibt ihren Pfad zurück. */
+/** Waits for a downloaded file; returns its path. */
 async function downloaded(name, timeout = 20000) {
   const end = Date.now() + timeout;
   while (Date.now() < end) {
@@ -42,7 +42,7 @@ async function downloaded(name, timeout = 20000) {
   throw new Error(`Download fehlt: ${name} (da: ${readdirSync(app.downloads).join(", ") || "nichts"})`);
 }
 
-test("lädt mit dem echten Kern: Engine im Worklet, Agent erklärt, keine Fehler", async () => {
+test("loads with the real core: engine in the worklet, agent explained, no errors", async () => {
   const s = await snap();
   assert.equal(await app.eval(() => T.backend.platform), "web");
   assert.equal(await app.eval(() => T.backend.native), true);
@@ -50,17 +50,17 @@ test("lädt mit dem echten Kern: Engine im Worklet, Agent erklärt, keine Fehler
   assert.match(s.engine.outputDevice, /^Web Audio \(\d+ Hz\)$/);
   assert.equal(s.agent.url, null);
   assert.match(s.agent.error, /Agent-Server/);
-  // Befehl aus dem Kern, den die Attrappe nicht kann: Quintenzirkel aus klang-music
+  // Command from the core that the stand-in cannot do: circle of fifths from klang-music
   const view = await app.eval(() => T.backend.harmonyView(null));
   assert.equal(view.circle.length, 36, "Quintenzirkel: drei Ringe zu zwölf Feldern");
-  // Bibliothek: ohne eingerichtetes Paket (library.json leer) nur die eigenen Noten
+  // Library: without a configured pack (library.json empty) only your own scores
   const lib = await app.waitFor(async () => { const i = await T.backend.libraryInfo(); return i.web?.remote === "none" ? i : null; }, { what: "Bibliothek ohne Paket" });
   assert.equal(lib.id, "browser");
   assert.equal(lib.message, null);
   assert.deepEqual(app.errors, []);
 });
 
-test("„Demo laden“ (Klick) legt Beat, Arpeggio und Melodie an", async () => {
+test("“Load demo” (click) creates beat, arpeggio and melody", async () => {
   await reset();
   await app.clickOn("kw-timeline .empty-hint button", { text: "Demo laden" });
   await app.waitFor(() => T.st.snapshot.peek().project.tracks.length === 3, { what: "Demo" });
@@ -69,8 +69,8 @@ test("„Demo laden“ (Klick) legt Beat, Arpeggio und Melodie an", async () => 
   assert.equal(s.undoLabel, "Demo laden");
 });
 
-test("Wiedergabe: Position läuft, Pegel kommt aus dem Worklet – auch am Ausgang gemessen", async () => {
-  // Zweite, unabhängige Messung: ein Analyser direkt am Ausgang des Worklets
+test("playback: position advances, level comes from the worklet – also measured at the output", async () => {
+  // Second, independent measurement: an analyser directly at the output of the worklet
   await app.eval(() => {
     const { ctx, node } = window.__klangweltAudio;
     const a = ctx.createAnalyser();
@@ -100,9 +100,9 @@ test("Wiedergabe: Position läuft, Pegel kommt aus dem Worklet – auch am Ausga
   await app.waitFor(() => !T.st.status.peek().playing, { what: "Pause" });
 });
 
-test("Tempo während der Wiedergabe ändern: Worklet spielt weiter, Schlagposition bleibt", async () => {
+test("changing the tempo during playback: worklet keeps playing, beat position stays", async () => {
   await reset();
-  // Demo (Audio wird neu gestreckt, Noten neu gerendert), dahinter Noten bis Schlag 28
+  // Demo (audio is re-stretched, notes re-rendered), followed by notes up to beat 28
   await app.eval(async () => {
     await T.st.act(T.backend.createDemo());
     await T.st.run({ type: "addTrack", track: { id: 0, name: "Takte", kind: "instrument" } });
@@ -113,14 +113,14 @@ test("Tempo während der Wiedergabe ändern: Worklet spielt weiter, Schlagpositi
     }
   });
   let bpm = (await snap()).project.tempoBpm;
-  // ab Schlag 8: Ginge die Position in Schlägen verloren, spränge sie um mehrere Schläge
+  // from beat 8: if the position in beats were lost, it would jump by several beats
   await app.eval(async (bpm) => {
     await T.backend.seek((8 * 60) / bpm);
     await T.backend.transport("play");
   }, bpm);
   await app.waitFor(() => T.st.status.peek().playing, { what: "Wiedergabe" });
   const beat = () => app.eval(() => (T.st.status.peek().positionSecs * T.st.snapshot.peek().project.tempoBpm) / 60);
-  /** Größter Pegel über `ms`: im Status und am Ausgang des Worklets. */
+  /** Highest level over `ms`: in the status and at the output of the worklet. */
   const peaks = async (ms) => {
     let peak = 0;
     let out = 0;
@@ -139,7 +139,7 @@ test("Tempo während der Wiedergabe ändern: Worklet spielt weiter, Schlagpositi
   await sleep(300);
   let last = { beat: await beat(), t: Date.now() };
   for (const next of [132, 100, 140, 90]) {
-    // wie ein Schritt im Tempofeld
+    // like a step in the tempo field
     await app.eval((bpm) => {
       const i = T.$("kw-transport input.num");
       i.value = String(bpm);
@@ -149,7 +149,7 @@ test("Tempo während der Wiedergabe ändern: Worklet spielt weiter, Schlagpositi
     const p = await peaks(300);
     assert.ok(await app.eval(() => T.st.status.peek().playing), `spielt weiter nach ${next} BPM`);
     assert.ok(p.peak > 0.01 && p.out > 0.01, `klingt weiter nach ${next} BPM: Status ${p.peak}, Ausgang ${p.out}`);
-    // vorangekommen um die vergangene Zeit, zwischen altem und neuem Tempo
+    // advanced by the elapsed time, between old and new tempo
     const now = { beat: await beat(), t: Date.now() };
     const secs = (now.t - last.t) / 1000;
     const [lo, hi] = [(secs * Math.min(bpm, next)) / 60 - 0.5, (secs * Math.max(bpm, next)) / 60 + 0.5];
@@ -157,12 +157,12 @@ test("Tempo während der Wiedergabe ändern: Worklet spielt weiter, Schlagpositi
     assert.ok(d >= lo && d <= hi, `${bpm} → ${next} BPM: +${d.toFixed(2)} Schläge in ${secs.toFixed(2)} s (erwartet ${lo.toFixed(2)} bis ${hi.toFixed(2)})`);
     [last, bpm] = [now, next];
   }
-  // die folgenden Tests arbeiten mit dem reinen Demo weiter
+  // the following tests continue with the plain demo
   await reset();
   await app.eval(() => T.st.act(T.backend.createDemo()));
 });
 
-test("Bearbeiten und Rückgängig: Tempo ändern, Strg+Z, Strg+Y", async () => {
+test("editing and undo: change tempo, Ctrl+Z, Ctrl+Y", async () => {
   const before = (await snap()).project.tempoBpm;
   await app.eval(() => T.st.run({ type: "setProject", patch: { tempoBpm: 133 } }));
   assert.equal((await snap()).project.tempoBpm, 133);
@@ -172,7 +172,7 @@ test("Bearbeiten und Rückgängig: Tempo ändern, Strg+Z, Strg+Y", async () => {
   await app.waitFor(() => T.st.snapshot.peek().project.tempoBpm === 133, { what: "Wiederholen" });
 });
 
-test("Speichern und Neuladen: das Projekt liegt danach wieder in der Liste und öffnet sich", async () => {
+test("save and reload: the project is back in the list afterwards and opens", async () => {
   const saved = await app.eval(async () => {
     await T.st.act(T.backend.projectSave("E2E Lied"));
     await T.web.sync();
@@ -182,7 +182,7 @@ test("Speichern und Neuladen: das Projekt liegt danach wieder in der Liste und �
   assert.equal(saved.dirty, false);
   const tracks = saved.project.tracks.map((t) => t.name);
   await app.reload();
-  // nach dem Neuladen: leeres Projekt, aber die Datei ist da
+  // after reloading: empty project, but the file is there
   assert.equal((await snap()).project.tracks.length, 0);
   const [dir, list] = await app.eval(() => T.backend.projectList());
   assert.equal(dir, "/Klangwelt/Projekte");
@@ -193,19 +193,19 @@ test("Speichern und Neuladen: das Projekt liegt danach wieder in der Liste und �
   });
   assert.deepEqual(opened.project.tracks.map((t) => t.name), tracks);
   assert.equal(opened.project.tempoBpm, 133);
-  // die Aufnahme (Beat) kam mit: Wellenform aus dem gespeicherten Klang
+  // the recording (beat) came along: waveform from the stored sound
   const beat = opened.project.tracks.find((t) => t.kind === "audio");
   const wave = await app.eval((id) => T.backend.getWaveform(id, 64), beat.clips[0].source.assetId);
   assert.ok(wave.some((v) => v > 0.05), "Aufnahme mitgespeichert");
 });
 
-test("Projektdatei herunterladen (Menü) und wieder hochladen", async () => {
+test("download project file (menu) and upload it again", async () => {
   await app.clickOn(".file-controls .btn", { text: "Datei" });
   await app.clickOn(".file-menu .menu-item", { text: "Projektdatei herunterladen" });
   const file = await downloaded("E2E Lied.klangwelt");
   const bytes = readFileSync(file);
   assert.equal(bytes.toString("ascii", 0, 2), "PK", "ZIP-Container");
-  // hochladen wie über die Dateiauswahl: unter neuem Namen in den Speicher des Browsers, dann öffnen
+  // upload as via the file picker: under a new name into the browser's storage, then open
   const opened = await app.eval(async (b64) => {
     const data = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
     const path = await T.web.importFile(new File([data], "Hochgeladen.klangwelt"));
@@ -217,10 +217,10 @@ test("Projektdatei herunterladen (Menü) und wieder hochladen", async () => {
   assert.deepEqual(opened.project.tracks.map((t) => t.name), ["Beat", "Arpeggio", "Melodie"]);
 });
 
-test("Export: WAV wird heruntergeladen (Kopf, Länge, Pegel)", async () => {
+test("export: WAV is downloaded (header, length, level)", async () => {
   await app.clickOn(".export-btn");
   await app.waitFor(() => T.$(".export-modal"), { what: "Export-Dialog" });
-  // alle Formate wie auf dem Desktop – auch Opus (libopus als WebAssembly)
+  // all formats as on the desktop – Opus too (libopus as WebAssembly)
   assert.deepEqual(await app.eval(() => T.$$(".ex-format .seg-btn").filter((b) => !b.disabled).map((b) => b.dataset.format)), ["wav", "flac", "opus", "stems", "midi"]);
   await app.clickOn(".ex-format [data-format=wav]");
   await app.eval(() => {
@@ -250,11 +250,11 @@ test("Export: WAV wird heruntergeladen (Kopf, Länge, Pegel)", async () => {
   await app.key("Escape", { code: "Escape", vk: 27 });
 });
 
-test("Export: Opus (libopus als WebAssembly) – der Browser dekodiert die Datei, Länge passt zur WAV", async () => {
+test("export: Opus (libopus as WebAssembly) – the browser decodes the file, length matches the WAV", async () => {
   await app.clickOn(".export-btn");
   await app.waitFor(() => T.$(".export-modal"), { what: "Export-Dialog" });
   await app.clickOn(".ex-format [data-format=opus]");
-  // Bitrate wählen wie im Dialog: 96 kbit/s
+  // choose bitrate as in the dialog: 96 kbit/s
   await app.eval(() => {
     const rate = T.$(".ex-bitrate");
     rate.value = "96";
@@ -270,7 +270,7 @@ test("Export: Opus (libopus als WebAssembly) – der Browser dekodiert die Datei
   assert.equal(o.toString("ascii", 0, 4), "OggS");
   assert.ok(o.includes(Buffer.from("OpusHead")) && o.includes(Buffer.from("OpusTags")));
   assert.ok(o.includes(Buffer.from("libopus")), "Kennung der eingebauten libopus in den Kommentaren");
-  // 96 kbit/s ≈ 12 kB je Sekunde (variable Rate: großzügig) – die Bitrate kam also an
+  // 96 kbit/s ≈ 12 kB per second (variable rate: generous) – so the bitrate arrived
   assert.ok(o.length > wavSeconds * 12000 * 0.4 && o.length < wavSeconds * 12000 * 2 + 4000, `${o.length} Bytes für ${wavSeconds} s`);
   const d = await app.eval(async (b64) => {
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
@@ -286,7 +286,7 @@ test("Export: Opus (libopus als WebAssembly) – der Browser dekodiert die Datei
   await app.key("Escape", { code: "Escape", vk: 27 });
 });
 
-test("Analyse, Harmonie, Fuge und Kontrapunkt rechnen im Browser", async () => {
+test("analysis, harmony, fugue and counterpoint compute in the browser", async () => {
   const s = await snap();
   const beat = s.project.tracks.find((t) => t.kind === "audio");
   const analysis = await app.eval((id) => T.backend.analyzeAsset(id), beat.clips[0].source.assetId);
@@ -306,7 +306,7 @@ test("Analyse, Harmonie, Fuge und Kontrapunkt rechnen im Browser", async () => {
   assert.ok(Array.isArray(check.issues));
 });
 
-test("Aufnahme mit dem Mikrofon des Browsers (Ersatzgerät) wird eine Audiospur", async () => {
+test("recording with the browser's microphone (substitute device) becomes an audio track", async () => {
   await reset();
   await app.eval(() => T.backend.recordStart());
   await app.waitFor(() => T.st.status.peek().recording, { what: "Aufnahme läuft" });
@@ -319,10 +319,10 @@ test("Aufnahme mit dem Mikrofon des Browsers (Ersatzgerät) wird eine Audiospur"
   assert.ok(r.analysis.durationSecs > 1);
 });
 
-test("Audiodatei ins Fenster ziehen: landet im Dateibaum des Kerns und wird eine Audiospur", async () => {
+test("dragging an audio file into the window: lands in the core's file tree and becomes an audio track", async () => {
   await reset();
   const before = (await snap()).project.tracks.length;
-  // eine WAV (1 s, 440 Hz, 16 Bit mono) wie vom Rechner hereingezogen: echtes drop-Ereignis mit DataTransfer
+  // a WAV (1 s, 440 Hz, 16 bit mono) as if dragged in from the computer: real drop event with DataTransfer
   await app.eval(() => {
     const sr = 44100;
     const n = sr;
@@ -352,16 +352,16 @@ test("Audiodatei ins Fenster ziehen: landet im Dateibaum des Kerns und wird eine
   const t = s.project.tracks[s.project.tracks.length - 1];
   assert.equal(t.kind, "audio");
   assert.ok(Math.abs(t.clips[0].source.durationSecs - 1) < 0.05, `Dauer: ${t.clips[0].source.durationSecs}`);
-  // die Datei liegt im Dateibaum des Kerns (Ordner „Import“) – über den Pfad lässt sie sich
-  // noch einmal einfügen, wie auf dem Desktop (Oberfläche und Agent nutzen denselben Befehl)
+  // the file is in the core's file tree (folder "Import") – via the path it can
+  // be inserted once more, as on the desktop (UI and agent use the same command)
   const again = await app.eval(() => T.backend.audioImport(["/Klangwelt/Import/Sinus 440.wav"], null, 4));
   assert.equal(again.imported.length, 1, JSON.stringify(again.errors));
   assert.equal(again.snapshot.project.tracks.length, before + 2);
 });
 
-test("ohne Server: der Service Worker liefert die App aus dem Cache", async () => {
+test("without a server: the service worker serves the app from the cache", async () => {
   await app.waitFor(() => !!navigator.serviceWorker.controller, { timeout: 15000, what: "Service Worker aktiv" });
-  // ungespeicherte Änderungen (die Aufnahme): der Browser fragt beim Verlassen nach
+  // unsaved changes (the recording): the browser asks when leaving
   assert.equal((await app.eval(() => T.backend.getState())).dirty, true);
   app.stopServer();
   await sleep(300);

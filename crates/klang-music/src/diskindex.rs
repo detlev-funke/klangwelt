@@ -1,25 +1,25 @@
-//! Melodie-Index auf der Platte (Format KWIX04) – für große Bibliotheken wie
-//! den ganzen PDMX-Datensatz (≈ 254 000 Partituren, ≈ 200 Mio. Fundstellen).
+//! Melody index on disk (format KWIX04) – for large libraries such as
+//! the whole PDMX dataset (≈ 254,000 scores, ≈ 200 million occurrences).
 //!
-//! **Aufbau** ([`IndexWriter`]): Stimmen werden fortlaufend aufgenommen.
-//! Stimmangaben und Merkmalsfolgen gehen sofort in Zwischendateien, die
-//! Fundstellen (n-Gramm, Stimme, Position) sammeln sich in einem Block, der
-//! sortiert als „Lauf“ auf die Platte geschrieben wird, sobald er voll ist.
-//! Zum Schluss werden alle Läufe zusammengeführt (k-Wege-Mischen). Der
-//! Speicherbedarf bleibt dabei begrenzt (ein Block ≈ 130 MB).
+//! **Building** ([`IndexWriter`]): voices are added continuously.
+//! Voice entries and feature sequences go straight into temporary files, while the
+//! occurrences (n-gram, voice, position) collect in a block that is written to disk
+//! sorted as a "run" as soon as it is full.
+//! At the end all runs are merged (k-way merge). Memory
+//! use stays bounded (one block ≈ 130 MB).
 //!
-//! **Datei** (alle Zahlen little-endian):
-//! Kopf → Stimmangaben (JSON je Stimme) + Offsets → Merkmalsfolgen (2 Byte je
-//! Intervall/Rhythmus) + Offsets → Merkmale je Partitur (JSON) → Fundstellen
-//! (je n-Gramm: Stimme als Differenz und Position, beides als Varint) →
-//! Schlüsseltabelle (n-Gramm, Offset, Länge; sortiert) → dünnes
-//! Inhaltsverzeichnis (jeder 64. Schlüssel) → Akkordfolgen-Statistik
-//! ([`ChordStats`], seit KWIX04; der letzte Kopfwert zeigt darauf, 0 = keine).
+//! **File** (all numbers little-endian):
+//! header → voice entries (JSON per voice) + offsets → feature sequences (2 bytes per
+//! interval/rhythm) + offsets → features per score (JSON) → occurrences
+//! (per n-gram: voice as a difference and position, both as varints) →
+//! key table (n-gram, offset, length; sorted) → sparse
+//! table of contents (every 64th key) → chord progression statistics
+//! ([`ChordStats`], since KWIX04; the last header value points to it, 0 = none).
 //!
-//! **Lesen** ([`DiskIndex`]): Im Speicher liegen nur die Offsets, das dünne
-//! Inhaltsverzeichnis, die Merkmale für den Baum und die Akkordstatistik.
-//! Eine Suche liest die Listen ihrer n-Gramme und die Merkmalsfolgen der
-//! besten Kandidaten. KWIX03-Dateien (ohne Akkordstatistik) bleiben lesbar.
+//! **Reading** ([`DiskIndex`]): Only the offsets, the sparse
+//! table of contents, the features for the tree and the chord statistics are held in memory.
+//! A search reads the lists of its n-grams and the feature sequences of the
+//! best candidates. KWIX03 files (without chord statistics) remain readable.
 
 use crate::chordstats::{composer_groups, ChordStats, Progression, GROUPS};
 use crate::facets::{tree_children, tree_children_rows, ScoreFacets, TreeLevel};
@@ -36,15 +36,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 pub const MAGIC: &[u8; 6] = b"KWIX04";
-/// Vorgänger ohne Akkordstatistik – wird weiter gelesen.
+/// Predecessor without chord statistics – still readable.
 const MAGIC_V3: &[u8; 6] = b"KWIX03";
-/// Magic + 2 Füllbytes + 13 Zahlen.
+/// Magic + 2 padding bytes + 13 numbers.
 const HEADER_LEN: usize = 8 + 13 * 8;
-/// Fundstellen je Block, bevor er als Lauf geschrieben wird (16 Byte je Eintrag).
+/// Occurrences per block before it is written as a run (16 bytes per entry).
 const CHUNK: usize = 8_000_000;
-/// Jeder wievielte Schlüssel ins Inhaltsverzeichnis kommt.
+/// Every how-many-th key goes into the table of contents.
 const SPARSE_STEP: u64 = 64;
-/// Bytes je Eintrag der Schlüsseltabelle: n-Gramm (8), Offset (8), Länge (4).
+/// Bytes per key table entry: n-gram (8), offset (8), length (4).
 const KEY_ENTRY: usize = 20;
 
 fn put_varint(out: &mut Vec<u8>, mut v: u64) {
@@ -72,7 +72,7 @@ fn get_varint(buf: &[u8], i: &mut usize) -> Option<u64> {
     }
 }
 
-/// Liest genau `buf.len()` Bytes ab `off` (Datei, Speicher oder entfernte Datei).
+/// Reads exactly `buf.len()` bytes from `off` (file, memory or remote file).
 fn read_at(f: &dyn ReadAt, buf: &mut [u8], off: u64) -> io::Result<()> {
     f.read_at(buf, off)
 }
@@ -85,9 +85,9 @@ fn invalid(msg: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, msg.to_string())
 }
 
-// ---------------------------------------------------------------- Schreiben
+// ---------------------------------------------------------------- Writing
 
-/// Statistik eines fertigen Index.
+/// Statistics of a finished index.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct WriteStats {
     pub docs: u64,
@@ -98,23 +98,23 @@ pub struct WriteStats {
 
 pub struct IndexWriter {
     tmp: PathBuf,
-    /// Zwischendateien (beim Abschluss geschlossen – Windows löscht keine offenen Dateien).
+    /// Temporary files (closed on completion – Windows doesn't delete open files).
     docs: Option<BufWriter<File>>,
     docs_idx: Vec<u64>,
     seqs: Option<BufWriter<File>>,
     seqs_idx: Vec<u64>,
     facets: Vec<ScoreFacets>,
-    /// Akkordstatistik je Gruppe (siehe [`GROUPS`]).
+    /// Chord statistics per group (see [`GROUPS`]).
     chords: Vec<ChordStats>,
     chunk: Vec<(u64, u32, u32)>,
     runs: Vec<PathBuf>,
     chunk_limit: usize,
-    /// Herkunft (JSON) zwischen Kopf und Stimmangaben, siehe [`DiskIndex::provenance`].
+    /// Provenance (JSON) between header and voice entries, see [`DiskIndex::provenance`].
     provenance: Vec<u8>,
 }
 
 impl IndexWriter {
-    /// `tmp`: Ordner für Zwischendateien (wird angelegt und am Ende gelöscht).
+    /// `tmp`: folder for temporary files (created, and deleted at the end).
     pub fn new(tmp: &Path) -> io::Result<Self> {
         Self::with_chunk(tmp, CHUNK)
     }
@@ -144,8 +144,8 @@ impl IndexWriter {
         self.provenance = json.as_bytes().to_vec();
     }
 
-    /// Akkordfolge einer Partitur für die Statistik (doc = ihre erste Stimme);
-    /// `composer` ordnet sie zusätzlich den Gruppen Barock/Bach zu.
+    /// Chord progression of a score for the statistics (doc = its first voice);
+    /// `composer` additionally assigns it to the Baroque/Bach groups.
     pub fn add_progression(&mut self, doc: u32, p: &Progression, composer: &str) {
         for (g, member) in composer_groups(composer).into_iter().enumerate() {
             if member {
@@ -158,7 +158,7 @@ impl IndexWriter {
         (self.docs_idx.len() - 1) as u32
     }
 
-    /// Nimmt eine Melodielinie auf (wie [`MelodyIndex::add_melody`]: zu kurze Linien zählen nicht).
+    /// Adds a melody line (like [`MelodyIndex::add_melody`]: lines that are too short don't count).
     pub fn add_melody(&mut self, mut info: DocInfo, notes: &[MelodyNote]) -> io::Result<Option<u32>> {
         if notes.len() < 8 {
             return Ok(None);
@@ -181,7 +181,7 @@ impl IndexWriter {
                 self.chunk.push((gram_key(level.id, &f[pos..pos + level.n]), doc, pos as u32));
             }
         }
-        // Erst nach einer ganzen Stimme leeren: eine Stimme liegt nie in zwei Läufen.
+        // Only flush after a whole voice: a voice never spans two runs.
         if self.chunk.len() >= self.chunk_limit {
             self.flush_chunk()?;
         }
@@ -220,7 +220,7 @@ impl IndexWriter {
         Ok(())
     }
 
-    /// Führt alles zur fertigen Indexdatei `out` zusammen.
+    /// Merges everything into the finished index file `out`.
     pub fn finish(mut self, out: &Path, cancel: &AtomicBool) -> io::Result<WriteStats> {
         self.flush_chunk()?;
         self.chunk = Vec::new();
@@ -268,7 +268,7 @@ impl IndexWriter {
         w.write_all(&facets)?;
         pos += facets.len() as u64;
 
-        // Läufe zusammenführen: je n-Gramm alle Fundstellen in Stimmenreihenfolge.
+        // Merge runs: for each n-gram, all occurrences in voice order.
         let post_off = pos;
         let keys_path = self.tmp.join("schluessel.bin");
         let mut keys = BufWriter::with_capacity(1 << 20, File::create(&keys_path)?);
@@ -296,7 +296,7 @@ impl IndexWriter {
                 heap.pop();
                 from.push(i);
             }
-            from.sort_unstable(); // Läufe sind zeitlich geordnet → Stimmen aufsteigend
+            from.sort_unstable(); // Runs are ordered by time → voices ascending
             list.clear();
             for &i in &from {
                 readers[i].read_group(&mut list)?;
@@ -304,7 +304,7 @@ impl IndexWriter {
                     heap.push(Reverse((k, i)));
                 }
             }
-            // Wie im Speicher-Index: zu häufige n-Gramme übergeht die Suche, also nicht speichern.
+            // As in the in-memory index: the search skips n-grams that are too frequent, so don't store them.
             if list.len() > MAX_POSTINGS_PER_GRAM {
                 continue;
             }
@@ -357,7 +357,7 @@ impl IndexWriter {
     }
 }
 
-/// Liest einen Lauf gruppenweise: (n-Gramm, Anzahl, Anzahl × (Stimme, Position)).
+/// Reads a run group by group: (n-gram, count, count × (voice, position)).
 struct RunReader {
     r: BufReader<File>,
     next: Option<(u64, u32)>,
@@ -398,7 +398,7 @@ impl RunReader {
     }
 }
 
-// ---------------------------------------------------------------- Lesen
+// ---------------------------------------------------------------- Reading
 
 /// Offsets of the voice entries or feature sequences: in memory, or – for a
 /// large remote index in the browser – read whole on first use instead of at
@@ -532,8 +532,8 @@ pub struct DiskIndex {
     n_keys: u64,
     sparse_off: u64,
     sparse_end: u64,
-    /// Dünnes Inhaltsverzeichnis – beim Öffnen geladen, bei einem entfernten
-    /// Index bei der ersten Melodiesuche.
+    /// Sparse table of contents – loaded on opening, for a remote
+    /// index on the first melody search.
     sparse: OnceLock<Vec<u64>>,
     facets: Vec<ScoreFacets>,
     chords: Vec<ChordStats>,
@@ -648,12 +648,12 @@ impl DiskIndex {
         self.web.is_some()
     }
 
-    /// Akkordfolgen-Statistik aller Stücke (None bei Indexdateien vor KWIX04).
+    /// Chord progression statistics of all pieces (None for index files before KWIX04).
     pub fn chords(&self) -> Option<&ChordStats> {
         self.chords_group(0)
     }
 
-    /// Statistik einer Gruppe (0 = alle, 1 = Barock, 2 = Bach), falls vorhanden.
+    /// Statistics of a group (0 = all, 1 = Baroque, 2 = Bach), if present.
     /// A remote index loads it on first use.
     pub fn chords_group(&self, g: usize) -> Option<&ChordStats> {
         match &self.web {
@@ -717,7 +717,7 @@ impl DiskIndex {
         self.sparse.get().map(Vec::as_slice)
     }
 
-    /// Schlüssel → (Offset, Länge) der Fundstellen.
+    /// Key → (offset, length) of the occurrences.
     fn lookup(&self, key: u64) -> Option<(u64, u32)> {
         let sparse = self.sparse()?;
         let block = sparse.partition_point(|&k| k <= key).checked_sub(1)?;
@@ -742,8 +742,8 @@ impl DiskIndex {
         search_in(self, query, limit)
     }
 
-    /// Textsuche über Titel, Komponist, Stimmnamen, Genre, Instrumentengruppen,
-    /// Tonart und Stimmung (je Partitur; alle Wörter müssen vorkommen).
+    /// Text search over title, composer, voice names, genre, instrument groups,
+    /// key and mood (per score; all words must occur).
     pub fn search_text(&self, query: &str, limit: usize) -> Vec<(u32, DocInfo)> {
         if self.web.is_some() {
             // the hits' voice entries need it: fetched in the round of the terms
@@ -819,31 +819,31 @@ impl SearchData for DiskIndex {
     }
 }
 
-// ---------------------------------------------------------------- beide Formate
+// ---------------------------------------------------------------- both formats
 
-/// Bibliotheksindex: neu auf der Platte (Format 3/4) oder älter im Speicher
-/// (1/2) – ggf. mit einzeln hinzugefügten Partituren darüber ([`Layered`]).
+/// Library index: new on disk (format 3/4) or older in memory
+/// (1/2) – possibly with individually added scores on top ([`Layered`]).
 pub enum AnyIndex {
     Mem(MelodyIndex),
     Disk(DiskIndex),
     Layered(Box<Layered>),
 }
 
-/// Ein Index plus Zusatz: einzeln hinzugefügte Partituren liegen in einer
-/// kleinen Nebendatei ([`extra_path`]); der große Index bleibt unverändert.
-/// Die Stimmen des Zusatzes folgen auf die des Grundindex (Nummern ab
-/// `offset`), die Merkmale beider liegen zusammen in `facets`.
+/// An index plus extra: individually added scores live in a
+/// small side file ([`extra_path`]); the large index stays unchanged.
+/// The extra's voices follow those of the base index (numbers starting at
+/// `offset`), the features of both are kept together in `facets`.
 pub struct Layered {
     base: AnyIndex,
     extra: MelodyIndex,
     offset: u32,
     base_scores: usize,
-    /// Der Grundindex hatte eigene Merkmale (sonst: alte Textsuche über Stimmen).
+    /// The base index had its own features (otherwise: old text search over voices).
     base_has_facets: bool,
     facets: Vec<ScoreFacets>,
 }
 
-/// Nebendatei mit einzeln hinzugefügten Partituren zu einem Index:
+/// Side file with individually added scores for an index:
 /// `klangwelt-bibliothek.kwix` → `klangwelt-bibliothek.zusatz.kwix`.
 pub fn extra_path(index: &Path) -> PathBuf {
     let stem = index.file_stem().and_then(|s| s.to_str()).unwrap_or("klangwelt-bibliothek");
@@ -854,7 +854,7 @@ fn is_extra_file(path: &Path) -> bool {
     path.file_stem().and_then(|s| s.to_str()).is_some_and(|s| s.ends_with(".zusatz"))
 }
 
-/// Textsuche über die Merkmale je Partitur (alle Wörter müssen vorkommen).
+/// Text search over the features per score (all words must occur).
 fn facet_text_search<'a>(facets: impl Iterator<Item = &'a ScoreFacets> + 'a, query: &str) -> impl Iterator<Item = u32> + 'a {
     let words: Vec<String> = query.split_whitespace().map(|w| w.to_lowercase()).collect();
     facets
@@ -876,21 +876,21 @@ fn facet_text_search<'a>(facets: impl Iterator<Item = &'a ScoreFacets> + 'a, que
 }
 
 impl AnyIndex {
-    /// Lädt einen Index; liegt daneben eine Zusatzdatei ([`extra_path`]), kommt sie dazu.
+    /// Loads an index; if an extra file ([`extra_path`]) lies next to it, it is added.
     pub fn load(path: &Path) -> io::Result<Self> {
         let base = Self::load_plain(path)?;
         let extra = extra_path(path);
         if is_extra_file(path) || !extra.is_file() {
             return Ok(base);
         }
-        // Ein beschädigter Zusatz soll die große Bibliothek nicht blockieren.
+        // A damaged extra must not block the large library.
         match MelodyIndex::load(&extra) {
             Ok(e) => Ok(Self::layered(base, e)),
             Err(_) => Ok(base),
         }
     }
 
-    /// Lädt nur die Datei selbst, ohne Zusatz.
+    /// Loads only the file itself, without the extra.
     pub fn load_plain(path: &Path) -> io::Result<Self> {
         let mut magic = [0u8; 6];
         File::open(path)?.read_exact(&mut magic)?;
@@ -901,7 +901,7 @@ impl AnyIndex {
         }
     }
 
-    /// Legt `extra` über `base` (Stimmnummern des Zusatzes werden verschoben).
+    /// Layers `extra` over `base` (voice numbers of the extra are shifted).
     pub fn layered(mut base: AnyIndex, extra: MelodyIndex) -> Self {
         let offset = base.doc_count() as u32;
         let base_scores = base.score_count();
@@ -922,7 +922,7 @@ impl AnyIndex {
         }
     }
 
-    /// Quelldateien der einzeln hinzugefügten Partituren (ohne Doppelte).
+    /// Source files of the individually added scores (without duplicates).
     pub fn extra_sources(&self) -> Vec<String> {
         let Self::Layered(l) = self else { return Vec::new() };
         let mut out: Vec<String> = l.extra.parts().0.iter().map(|d| d.source.clone()).collect();
@@ -930,7 +930,7 @@ impl AnyIndex {
         out
     }
 
-    /// Anzahl einzeln hinzugefügter Partituren.
+    /// Number of individually added scores.
     pub fn extra_scores(&self) -> usize {
         match self {
             Self::Layered(l) => l.extra.facets().len(),
@@ -938,7 +938,7 @@ impl AnyIndex {
         }
     }
 
-    /// Akkordfolgen-Statistik, falls der Index eine hat (ab KWIX04).
+    /// Chord progression statistics, if the index has them (from KWIX04).
     pub fn chords(&self) -> Option<&ChordStats> {
         match self {
             Self::Mem(_) => None,
@@ -947,7 +947,7 @@ impl AnyIndex {
         }
     }
 
-    /// Statistik einer Gruppe (0 = alle, 1 = Barock, 2 = Bach).
+    /// Statistics of a group (0 = all, 1 = Baroque, 2 = Bach).
     pub fn chords_group(&self, g: usize) -> Option<&ChordStats> {
         match self {
             Self::Mem(_) => None,
@@ -1126,7 +1126,7 @@ impl AnyIndex {
                 out
             }
             Self::Layered(l) => {
-                // Ohne eigene Merkmale sucht der Grundindex selbst (über seine Stimmen).
+                // Without its own features the base index searches by itself (via its voices).
                 let mut out = if l.base_has_facets { Vec::new() } else { l.base.search_text(query, limit) };
                 let rest = limit.saturating_sub(out.len());
                 out.extend(facet_text_search(l.facets.iter(), query).take(rest).filter_map(|doc| self.doc(doc).map(|d| (doc, d))));
@@ -1136,31 +1136,31 @@ impl AnyIndex {
     }
 }
 
-// ---------------------------------------------------------------- Verschmelzen
+// ---------------------------------------------------------------- Merging
 //
-// Mehrere Indizes werden zu einer KWIX04-Datei, ohne eine einzige Partitur neu
-// zu lesen: Stimmangaben und Merkmalsfolgen werden hintereinander kopiert
-// (Nummern verschoben), die Fundstellen über die sortierten Schlüsseltabellen
-// zusammengeführt, Merkmale und Akkordstatistik umnummeriert. Ein n-Gramm, das
-// nur die erste Quelle kennt, wird unverändert kopiert – bei einer großen
-// Bibliothek plus einem kleinen Paket also fast alles.
+// Several indexes become one KWIX04 file without re-reading a single score:
+// voice entries and feature sequences are copied one after another
+// (numbers shifted), the occurrences are merged via the sorted key tables,
+// features and chord statistics are renumbered. An n-gram that
+// only the first source knows is copied unchanged – for a large
+// library plus a small package that is almost everything.
 
-/// Ergebnis von [`merge`].
+/// Result of [`merge`].
 #[derive(Clone, Copy, Debug, Default)]
 pub struct MergeStats {
     pub docs: u64,
     pub scores: u64,
     pub keys: u64,
     pub postings: u64,
-    /// Stimmen bzw. Partituren, die eine frühere Quelle schon enthielt (übersprungen).
+    /// Voices or scores that an earlier source already contained (skipped).
     pub skipped_docs: u64,
     pub skipped_scores: u64,
 }
 
-/// Schlüssel, unter dem eine Partitur nur einmal in eine Bibliothek kommt:
-/// PDMX-Dateien heißen nach ihrer IPFS-Kennung („Qm…“, weltweit eindeutig) –
-/// so fallen Kostprobe und Auswahl in der vollen PDMX zusammen, egal in
-/// welchem Ordner sie liegen. Alle anderen nach ihrem Pfad.
+/// Key under which a score enters a library only once:
+/// PDMX files are named after their IPFS identifier ("Qm…", globally unique) –
+/// so the sample and the selection coincide in the full PDMX, no matter
+/// which folder they are in. All others by their path.
 pub fn source_key(source: &str) -> String {
     let norm = source.replace('/', "\\");
     let name = norm.rsplit('\\').next().unwrap_or(&norm);
@@ -1171,7 +1171,7 @@ pub fn source_key(source: &str) -> String {
     norm.strip_prefix(r"\\?\").unwrap_or(&norm).to_lowercase()
 }
 
-/// Teil eines Index (ein geschichteter Index besteht aus zweien).
+/// Part of an index (a layered index consists of two).
 enum Part<'a> {
     Disk(&'a DiskIndex),
     Mem(&'a MelodyIndex),
@@ -1188,10 +1188,10 @@ fn collect_parts<'a>(any: &'a AnyIndex, offset: u32, out: &mut Vec<(Part<'a>, u3
     }
 }
 
-/// Liest einen Bereich der Datei der Reihe nach in großen Blöcken.
+/// Reads a range of the file sequentially in large blocks.
 struct BlockReader<'a> {
     file: &'a dyn ReadAt,
-    /// Dateiposition des ersten Bytes in `buf`.
+    /// File position of the first byte in `buf`.
     start: u64,
     buf: Vec<u8>,
     at: usize,
@@ -1205,7 +1205,7 @@ impl<'a> BlockReader<'a> {
         Self { file, start: pos, buf: Vec::new(), at: 0, end }
     }
 
-    /// `len` Bytes ab der Dateiposition `pos` (meist direkt hinter dem letzten Lesen).
+    /// `len` bytes from file position `pos` (usually right after the last read).
     fn take(&mut self, pos: u64, len: usize, out: &mut Vec<u8>) -> io::Result<()> {
         out.clear();
         if pos != self.start + self.at as u64 {
@@ -1247,7 +1247,7 @@ impl Part<'_> {
         }
     }
 
-    /// `f(i, json)` für jede Stimmangabe der Reihe nach.
+    /// `f(i, json)` for each voice entry in order.
     fn each_doc(&self, mut f: impl FnMut(usize, &[u8]) -> io::Result<()>) -> io::Result<()> {
         match self {
             Part::Disk(d) => each_slice(&*d.file, d.docs_off, d.docs_idx.all()?, f),
@@ -1260,7 +1260,7 @@ impl Part<'_> {
         }
     }
 
-    /// `f(i, folge)` für jede Merkmalsfolge (2 Byte je Merkmal) der Reihe nach.
+    /// `f(i, folge)` for each feature sequence (2 bytes per feature) in order.
     fn each_seq(&self, mut f: impl FnMut(usize, &[u8]) -> io::Result<()>) -> io::Result<()> {
         match self {
             Part::Disk(d) => each_slice(&*d.file, d.seqs_off, d.seqs_idx.all()?, f),
@@ -1293,13 +1293,13 @@ impl Part<'_> {
     }
 }
 
-/// Einträge `idx[i]..idx[i+1]` ab `base` der Reihe nach, in Blöcken gelesen.
+/// Entries `idx[i]..idx[i+1]` from `base` in order, read in blocks.
 fn each_slice(file: &dyn ReadAt, base: u64, idx: &[u64], mut f: impl FnMut(usize, &[u8]) -> io::Result<()>) -> io::Result<()> {
     let n = idx.len().saturating_sub(1);
     let mut i = 0;
     let mut buf = Vec::new();
     while i < n {
-        // so viele Einträge wie in einen Block passen (mindestens einer)
+        // as many entries as fit in a block (at least one)
         let mut j = i + 1;
         while j < n && idx[j + 1] - idx[i] <= BlockReader::BLOCK {
             j += 1;
@@ -1314,11 +1314,11 @@ fn each_slice(file: &dyn ReadAt, base: u64, idx: &[u64], mut f: impl FnMut(usize
     Ok(())
 }
 
-/// Läuft in Schlüsselreihenfolge durch die Fundstellen eines Teils.
+/// Walks through the occurrences of a part in key order.
 struct KeyCursor<'a> {
     src: KeySrc<'a>,
     key: Option<u64>,
-    /// Fundstellen des aktuellen Schlüssels: Varints, Stimme als Differenz (ab 0) und Position.
+    /// Occurrences of the current key: varints, voice as a difference (from 0) and position.
     raw: Vec<u8>,
     entry: Vec<u8>,
 }
@@ -1362,12 +1362,12 @@ impl KeyCursor<'_> {
     }
 }
 
-/// Neue Nummern der Stimmen eines Teils.
+/// New numbers of the voices of a part.
 struct Renumber {
-    /// erste Stimme des Teils in der Zählung aller Quellen
+    /// first voice of the part in the count of all sources
     old_start: u32,
     count: u32,
-    /// None: alle bleiben, neue Nummer = alt + `shift`; sonst je Stimme (u32::MAX = entfällt)
+    /// None: all stay, new number = old + `shift`; otherwise per voice (u32::MAX = dropped)
     map: Option<Vec<u32>>,
     shift: u32,
 }
@@ -1387,11 +1387,11 @@ fn renumber_global(parts: &[Renumber], old: u32) -> Option<u32> {
     r.get(old.checked_sub(r.old_start)?)
 }
 
-/// Verschmilzt `sources` (in dieser Reihenfolge) zu einer KWIX04-Datei `out`.
-/// Mit `dedupe` kommt jede Partitur nur einmal hinein ([`source_key`]): Was eine
-/// frühere Quelle schon hat, wird bei späteren übersprungen. `progress(0…1)`
-/// kommt regelmäßig; `cancel` bricht ab (Fehler `Interrupted`, `out` bleibt
-/// unberührt). Die Akkordzählungen übersprungener Partituren bleiben enthalten.
+/// Merges `sources` (in this order) into a KWIX04 file `out`.
+/// With `dedupe` each score goes in only once ([`source_key`]): whatever an
+/// earlier source already has is skipped in later ones. `progress(0…1)`
+/// is called regularly; `cancel` aborts (error `Interrupted`, `out` stays
+/// untouched). The chord counts of skipped scores remain included.
 pub fn merge(sources: &[&AnyIndex], out: &Path, dedupe: bool, progress: &dyn Fn(f32), cancel: &AtomicBool) -> io::Result<MergeStats> {
     let part = out.with_extension("kwix.teil");
     let result = write_merged(sources, &part, dedupe, progress, cancel);
@@ -1420,7 +1420,7 @@ fn write_merged(sources: &[&AnyIndex], out: &Path, dedupe: bool, progress: &dyn 
             Ok(())
         }
     };
-    // Teile aller Quellen mit ihrer Startnummer in der Gesamtzählung
+    // Parts of all sources with their start number in the overall count
     let mut parts: Vec<(Part, u32)> = Vec::new();
     let mut input_start = Vec::with_capacity(sources.len());
     let mut total = 0u32;
@@ -1430,7 +1430,7 @@ fn write_merged(sources: &[&AnyIndex], out: &Path, dedupe: bool, progress: &dyn 
         total += s.doc_count() as u32;
     }
 
-    // Neue Nummern (Doppelte überspringen)
+    // New numbers (skip duplicates)
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut renum: Vec<Renumber> = Vec::with_capacity(parts.len());
     let mut kept = 0u32;
@@ -1477,7 +1477,7 @@ fn write_merged(sources: &[&AnyIndex], out: &Path, dedupe: bool, progress: &dyn 
     w.write_all(&[0u8; HEADER_LEN])?;
     let mut pos = HEADER_LEN as u64;
 
-    // Stimmangaben und Merkmalsfolgen
+    // Voice entries and feature sequences
     let copy_section = |w: &mut BufWriter<File>, pos: &mut u64, seqs: bool| -> io::Result<Vec<u64>> {
         let mut idx = Vec::with_capacity(kept as usize + 1);
         idx.push(0u64);
@@ -1516,7 +1516,7 @@ fn write_merged(sources: &[&AnyIndex], out: &Path, dedupe: bool, progress: &dyn 
     pos += 8 * seqs_idx.len() as u64;
     progress(0.15);
 
-    // Merkmale je Partitur (alte Indizes ohne Merkmale: aus den Stimmangaben)
+    // Features per score (old indexes without features: from the voice entries)
     let mut facets: Vec<ScoreFacets> = Vec::new();
     let mut all_scores = 0usize;
     for (s, &start) in sources.iter().zip(&input_start) {
@@ -1533,7 +1533,7 @@ fn write_merged(sources: &[&AnyIndex], out: &Path, dedupe: bool, progress: &dyn 
     w.write_all(&facets_json)?;
     pos += facets_json.len() as u64;
 
-    // Fundstellen: alle Teile in Schlüsselreihenfolge zusammenführen
+    // Occurrences: merge all parts in key order
     let post_off = pos;
     let keys_path = out.with_extension("schluessel");
     let mut keys_w = BufWriter::with_capacity(1 << 20, File::create(&keys_path)?);
@@ -1558,7 +1558,7 @@ fn write_merged(sources: &[&AnyIndex], out: &Path, dedupe: bool, progress: &dyn 
             done += from.len() as u64;
             let only = from[0];
             let (bytes, count): (&[u8], u64) = if from.len() == 1 && renum[only].map.is_none() && renum[only].shift == 0 {
-                // nur in einem Teil und dort unverändert: Bytes übernehmen
+                // only in one part and unchanged there: copy the bytes
                 let raw = &cursors[only].raw;
                 (raw, raw.iter().filter(|&&b| b < 0x80).count() as u64 / 2)
             } else {
@@ -1625,7 +1625,7 @@ fn write_merged(sources: &[&AnyIndex], out: &Path, dedupe: bool, progress: &dyn 
     }
     pos += 8 * sparse.len() as u64;
 
-    // Akkordstatistik je Gruppe
+    // Chord statistics per group
     let mut chords = vec![ChordStats::default(); GROUPS.len()];
     for (s, &start) in sources.iter().zip(&input_start) {
         for (g, merged) in chords.iter_mut().enumerate() {
@@ -1657,7 +1657,7 @@ fn write_merged(sources: &[&AnyIndex], out: &Path, dedupe: bool, progress: &dyn 
     Ok(MergeStats { docs: n_docs, scores: facets.len() as u64, keys: n_keys, postings: n_post, skipped_docs, skipped_scores })
 }
 
-/// Merkmale für Indizes ohne eigene (Format 1): je Quelldatei ein Eintrag.
+/// Features for indexes without their own (format 1): one entry per source file.
 fn facets_from_docs(index: &AnyIndex) -> Vec<ScoreFacets> {
     let mut out: Vec<ScoreFacets> = Vec::new();
     let mut last = String::new();
@@ -1679,7 +1679,7 @@ fn facets_from_docs(index: &AnyIndex) -> Vec<ScoreFacets> {
 mod tests {
     use super::*;
 
-    /// Pseudozufällige, aber reproduzierbare Melodien.
+    /// Pseudo-random but reproducible melodies.
     fn melodies(n: usize) -> Vec<Vec<MelodyNote>> {
         let mut x: u32 = 12345;
         let mut rnd = move |m: u32| {
@@ -1715,7 +1715,7 @@ mod tests {
         let tunes = melodies(300);
         let dir = std::env::temp_dir().join(format!("klang-disk-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        // Kleine Blöcke erzwingen viele Läufe → Zusammenführen wird mitgetestet.
+        // Small blocks force many runs → merging gets tested too.
         let mut w = IndexWriter::with_chunk(&dir.join("tmp"), 2_000).unwrap();
         let mut mem = MelodyIndex::new();
         for (i, t) in tunes.iter().enumerate() {
@@ -1741,7 +1741,7 @@ mod tests {
         assert_eq!(disk.facets(), mem.facets());
         assert_eq!(disk.doc(7), mem.doc(7).cloned());
         assert_eq!(disk.seq(5), mem.seq(5));
-        // Fundstellen identisch, auch für unbekannte Schlüssel
+        // Occurrences identical, also for unknown keys
         for t in tunes.iter().take(40) {
             let f = features(t);
             for pos in 0..f.len().saturating_sub(4) {
@@ -1750,7 +1750,7 @@ mod tests {
             }
         }
         assert_eq!(SearchData::postings(disk, 0xdead_beef), None);
-        // Suche liefert dieselben Treffer
+        // Search returns the same hits
         for i in [3usize, 77, 150, 299] {
             let q: Vec<MelodyNote> = tunes[i][2..10].to_vec();
             let a = any.search(&q, 5);
@@ -1763,7 +1763,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// Akkordfolge I – V7 – I (bei `vi` zusätzlich V7 – vi).
+    /// Chord progression I – V7 – I (with `vi` additionally V7 – vi).
     fn progression(vi: bool) -> Progression {
         use crate::chordstats::{ProgItem, Rel};
         use crate::harmony::parse_roman;
@@ -1778,7 +1778,7 @@ mod tests {
         Progression { minor: false, items, notable: true }
     }
 
-    /// Index aus den Melodien `range` (je zwei Stimmen eine Partitur) als Datei.
+    /// Index from the melodies `range` (every two voices one score) as a file.
     fn build(dir: &Path, name: &str, tunes: &[Vec<MelodyNote>], range: std::ops::Range<usize>, source: impl Fn(usize) -> String) -> PathBuf {
         let mut w = IndexWriter::with_chunk(&dir.join(format!("tmp-{name}")), 3_000).unwrap();
         for i in range {
@@ -1831,7 +1831,7 @@ mod tests {
             assert_eq!(hits(&m), hits(&whole));
             assert_eq!(m.search(&q, 1)[0].doc as usize, i);
         }
-        // Akkordstatistik addiert sich; Beispiele zeigen auf die richtigen Stücke
+        // Chord statistics add up; examples point to the right pieces
         for g in 0..GROUPS.len() {
             assert_eq!(m.chords_group(g).unwrap().scores, whole.chords_group(g).unwrap().scores);
         }
@@ -1850,12 +1850,12 @@ mod tests {
         let tunes = melodies(120);
         let dir = std::env::temp_dir().join(format!("klang-merge-doppelt-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        // PDMX-Dateien heißen überall gleich, egal in welchem Ordner
+        // PDMX files are named the same everywhere, no matter which folder
         let cid = |i: usize| format!("Qm{:0>44}", i / 2);
         let big = AnyIndex::load(&build(&dir, "pdmx", &tunes, 0..80, |i| format!(r"C:\Bib\PDMX\{}.mxl", cid(i)))).unwrap();
-        // Kostprobe: 20 Stimmen schon in der großen, 20 neu
+        // Sample: 20 voices already in the large one, 20 new
         let small = AnyIndex::load(&build(&dir, "kostprobe", &tunes, 60..100, |i| format!(r"C:\Bib\PDMX-Kostprobe\{}.mxl", cid(i)))).unwrap();
-        // Zusatz (Speicherformat) über der Kostprobe: ein Stück neu, eins doppelt (gleicher Pfad, andere Schreibweise)
+        // Extra (in-memory format) on top of the sample: one piece new, one duplicate (same path, different spelling)
         let mut extra = MelodyIndex::new();
         for i in [100usize, 101, 0, 1] {
             let source = if i < 100 { format!(r"c:/bib/pdmx/{}.MXL", cid(i)) } else { r"C:\Eigene\Souvenir.mxl".to_string() };
@@ -1872,7 +1872,7 @@ mod tests {
         let m = AnyIndex::load(&out).unwrap();
         assert_eq!(m.doc_count(), 102);
         assert_eq!(m.score_count(), 51);
-        // jede Partitur genau einmal, Merkmale zeigen auf ihre Stimmen
+        // each score exactly once, features point to their voices
         let mut titles: Vec<String> = m.facets().iter().map(|f| f.title.clone()).collect();
         titles.sort();
         titles.dedup();
@@ -1880,15 +1880,15 @@ mod tests {
         for f in m.facets() {
             assert_eq!(m.doc(f.doc).unwrap().title, f.title);
         }
-        // neue Stücke aus beiden Teilen der zweiten Quelle werden gefunden
+        // new pieces from both parts of the second source are found
         for i in [90usize, 100] {
             let hit = &m.search(&tunes[i][1..9].to_vec(), 1)[0];
             assert_eq!(hit.info.part, format!("Stimme {i}"));
         }
-        // ohne Abgleich bleibt alles drin
+        // without the comparison everything stays in
         let all = dir.join("alles.kwix");
         assert_eq!(merge(&[&big, &layered], &all, false, &|_| {}, &AtomicBool::new(false)).unwrap().docs, 124);
-        // Abbrechen lässt nichts zurück
+        // Aborting leaves nothing behind
         let gone = dir.join("abgebrochen.kwix");
         let err = merge(&[&big, &layered], &gone, true, &|_| {}, &AtomicBool::new(true)).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::Interrupted);

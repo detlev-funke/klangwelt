@@ -1,28 +1,28 @@
-// Kontextmenü (Rechtsklick): eine Liste von Einträgen an der Mausposition.
-// Einträge sind Knöpfe, Zwischentitel, Trennlinien oder Zeilen mit kleinen
-// Wahlknöpfen („Chips“, z. B. das Raster 1/4 · 1/8 · 1/16). Ein Klick
-// außerhalb, Esc, Mausrad oder Fensterwechsel schließt das Menü.
+// Context menu (right click): a list of entries at the mouse position.
+// Entries are buttons, subheadings, separators or rows with small
+// option buttons ("chips", e.g. the grid 1/4 · 1/8 · 1/16). A click
+// outside, Esc, mouse wheel or window switch closes the menu.
 
 import { h } from "./dom.js";
 
 export interface MenuChip {
   label: string;
   title?: string;
-  /** Kennung für Tests und Hilfe (data-act). */
+  /** Identifier for tests and help (data-act). */
   act?: string;
   action: () => void;
 }
 
 export interface MenuItem {
   label: string;
-  /** Rechts daneben, z. B. die Taste („Entf“). */
+  /** On the right, e.g. the key ("Delete"). */
   hint?: string;
   title?: string;
-  /** Kennung für Tests und Hilfe (data-act). */
+  /** Identifier for tests and help (data-act). */
   act?: string;
   action?: () => void;
   disabled?: boolean;
-  /** Wahlknöpfe in der Zeile statt einer eigenen Aktion. */
+  /** Option buttons in the row instead of an action of its own. */
   chips?: MenuChip[];
 }
 
@@ -34,7 +34,7 @@ export function closeContextMenu(): void {
   open?.close();
 }
 
-/** Menü an der Stelle (Fensterkoordinaten) öffnen; ein offenes schließt sich vorher. */
+/** Opens a menu at the position (window coordinates); an open one closes first. */
 export function openContextMenu(x: number, y: number, entries: MenuEntry[]): HTMLElement {
   closeContextMenu();
   const el = h("div", { class: "menu ctx-menu open", role: "menu" });
@@ -89,7 +89,7 @@ export function openContextMenu(x: number, y: number, entries: MenuEntry[]): HTM
   };
   open = { el, close };
   document.body.append(el);
-  // im Fenster halten
+  // keep within the window
   const r = el.getBoundingClientRect();
   el.style.left = `${Math.max(4, Math.min(x, window.innerWidth - r.width - 4))}px`;
   el.style.top = `${Math.max(4, Math.min(y, window.innerHeight - r.height - 4))}px`;

@@ -1,6 +1,6 @@
-// Hilfefenster: zeigt den ausführlichen Hilfetext zum Element unter der Maus.
-// F1 hält den Text fest (Schloss-Symbol) und öffnet das Fenster in jedem Fall,
-// auch wenn es geschlossen war; F1 auf demselben Element löst es wieder.
+// Help window: shows the detailed help text for the element under the mouse.
+// F1 pins the text (lock icon) and opens the window in any case,
+// even if it was closed; F1 on the same element unpins it again.
 
 import { h, icon } from "../dom.js";
 import { helpFor, type HelpTopic, type HelpView } from "../help.js";
@@ -26,14 +26,14 @@ let queued = false;
 function track(): void {
   queued = false;
   if (frozen || !pointer || !visiblePanels.peek().has("hilfe")) return;
-  if (inHelp(pointer.el)) return; // die Hilfe erklärt nicht sich selbst
+  if (inHelp(pointer.el)) return; // the help does not explain itself
   const v = helpFor(pointer.el, pointer.x, pointer.y);
   if (!v || same(v, current)) return;
   current = v;
   refresh();
 }
 
-/** Mausbewegung verfolgen (einmal beim Start). */
+/** Track mouse movement (once at startup). */
 export function initHelp(): void {
   document.addEventListener(
     "pointermove",
@@ -50,7 +50,7 @@ export function initHelp(): void {
   );
 }
 
-/** F1: Fenster öffnen und den Text zum Element unter der Maus festhalten (noch einmal: lösen). */
+/** F1: open the window and pin the text for the element under the mouse (again: unpin). */
 export function helpKey(): void {
   if (pointer && !inHelp(pointer.el)) {
     const v = helpFor(pointer.el, pointer.x, pointer.y);
@@ -68,7 +68,7 @@ export function helpKey(): void {
   refresh();
 }
 
-/** Text zu einem Element zeigen, ohne festzuhalten (z. B. in der Intro-Tour). */
+/** Show the text for an element without pinning (e.g. in the intro tour). */
 export function helpShow(el: Element): void {
   const v = helpFor(el);
   if (!v) return;
@@ -81,7 +81,7 @@ export function isHelpFrozen(): boolean {
   return !!frozen;
 }
 
-/** Text mit **fett** als Knoten (ohne HTML aus den Texten). */
+/** Text with **bold** as nodes (without HTML from the texts). */
 function rich(text: string): Node[] {
   return text.split(/\*\*(.+?)\*\*/g).map((part, i) => (i % 2 ? h("b", {}, part) : document.createTextNode(part)));
 }

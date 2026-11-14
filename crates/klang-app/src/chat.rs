@@ -1,8 +1,8 @@
-//! Chat zwischen Oberfläche und Agent.
+//! Chat between the UI and the agent.
 //!
-//! Die Oberfläche legt Aufträge ab; der Agent holt sie per MCP-Werkzeug
-//! `chat_poll` ab (Long-Poll: der Aufruf wartet, bis ein Auftrag da ist) und
-//! antwortet mit `chat_reply`. So kann ein Agent dauerhaft „zuhören“.
+//! The UI posts tasks; the agent picks them up with the MCP tool `chat_poll`
+//! (long poll: the call waits until a task is available) and replies with
+//! `chat_reply`. This way an agent can "listen" permanently.
 
 use klang_i18n::tr;
 use serde::Serialize;
@@ -20,9 +20,9 @@ pub enum Author {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Status {
-    /// Wartet darauf, abgeholt zu werden.
+    /// Waiting to be picked up.
     Neu,
-    /// Vom Agenten abgeholt.
+    /// Picked up by the agent.
     InArbeit,
     Erledigt,
 }
@@ -33,13 +33,13 @@ pub struct ChatMessage {
     pub id: u64,
     pub from: Author,
     pub text: String,
-    /// Unix-Zeit in Millisekunden.
+    /// Unix time in milliseconds.
     pub time: u64,
-    /// Nur bei Aufträgen (Nachrichten der Nutzerin / des Nutzers).
+    /// Only for tasks (messages from the user).
     pub status: Option<Status>,
     pub reply_to: Option<u64>,
-    /// Lage im Projekt beim Absenden (hörbare/stumme/Solo-Spuren, markierter
-    /// Zeitraum) – geht mit dem Auftrag an den Agenten.
+    /// Situation in the project at the time of sending (audible/muted/solo
+    /// tracks, selected time range) – goes to the agent along with the task.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kontext: Option<String>,
 }
@@ -48,10 +48,10 @@ pub struct ChatMessage {
 #[serde(rename_all = "camelCase")]
 pub struct ChatView {
     pub messages: Vec<ChatMessage>,
-    /// Ein Agent wartet gerade per `chat_poll` oder hat es vor Kurzem getan.
+    /// An agent is currently waiting in `chat_poll` or did so a moment ago.
     pub agent_listening: bool,
-    /// Ein Agent ist über MCP verbunden (aktive Sitzung) oder hört zu –
-    /// setzt `AppState::chat_view`, der Chat selbst weiß davon nichts.
+    /// An agent is connected via MCP (active session) or is listening –
+    /// set by `AppState::chat_view`, the chat itself knows nothing about it.
     pub agent_connected: bool,
 }
 
@@ -61,15 +61,15 @@ struct Inner {
     next_id: u64,
     pollers: usize,
     last_poll: Option<Instant>,
-    /// Ein Poll wurde vom Client nach so vielen Sekunden aufgegeben (wird beim
-    /// nächsten Poll gemeldet).
+    /// A poll was given up by the client after this many seconds (reported at
+    /// the next poll).
     abandoned_after: Option<f64>,
 }
 
-/// Ergebnis eines Long-Polls.
+/// Result of a long poll.
 pub struct PollResult {
     pub tasks: Vec<ChatMessage>,
-    /// Ein früherer Poll wurde vom Client nach so vielen Sekunden abgebrochen.
+    /// An earlier poll was aborted by the client after this many seconds.
     pub abandoned_before: Option<f64>,
 }
 
@@ -83,7 +83,7 @@ fn now_ms() -> u64 {
     crate::clock::now_ms()
 }
 
-/// Wie lange ein Agent nach seinem letzten Poll noch als „zuhörend“ gilt.
+/// How long an agent still counts as "listening" after its last poll.
 const LISTEN_GRACE: Duration = Duration::from_secs(90);
 const MAX_MESSAGES: usize = 500;
 
@@ -112,13 +112,13 @@ impl Chat {
         g.pollers > 0 || g.last_poll.map(|t| t.elapsed() < LISTEN_GRACE).unwrap_or(false)
     }
 
-    /// Hört gerade ein Agent zu (ohne die Nachrichten zu kopieren)?
+    /// Is an agent currently listening (without copying the messages)?
     pub fn listening(&self) -> bool {
         Self::is_listening(&self.lock())
     }
 
-    /// Neuer Auftrag aus der Oberfläche; weckt wartende `chat_poll`-Aufrufe.
-    /// `kontext`: Lage im Projekt beim Absenden (für den Agenten).
+    /// New task from the UI; wakes waiting `chat_poll` calls.
+    /// `kontext`: situation in the project at the time of sending (for the agent).
     pub fn send_user(&self, text: &str, kontext: Option<String>) -> Result<ChatMessage, String> {
         let text = text.trim();
         if text.is_empty() {
@@ -135,12 +135,12 @@ impl Chat {
         Ok(m)
     }
 
-    /// Long-Poll: antwortet sofort, wenn ein Auftrag da ist bzw. eintrifft, sonst
-    /// nach `timeout` mit leerer Liste. Abgeholte Aufträge stehen danach auf
-    /// „in Arbeit“. `on_change` meldet Zustandswechsel an die Oberfläche
-    /// (Agent hört zu / Aufträge abgeholt). `gone` prüft, ob der Aufrufer die
-    /// Verbindung aufgegeben hat (Client-Timeout) – dann wird nichts abgeholt,
-    /// damit kein Auftrag an eine tote Verbindung verloren geht.
+    /// Long poll: replies immediately if a task is available or arrives, otherwise
+    /// after `timeout` with an empty list. Tasks picked up are then set to
+    /// "in progress". `on_change` reports state changes to the UI
+    /// (agent listening / tasks picked up). `gone` checks whether the caller
+    /// has given up the connection (client timeout) – then nothing is picked up,
+    /// so that no task is lost to a dead connection.
     pub fn poll(&self, timeout: Duration, on_change: impl Fn(), gone: impl Fn() -> bool) -> PollResult {
         let mut g = self.lock();
         g.pollers += 1;
@@ -161,13 +161,13 @@ impl Chat {
             if left.is_zero() {
                 break;
             }
-            // Im Browser gibt es nur einen Thread, der Kern darf nicht warten:
-            // Dort hält der Web Worker die Antwort offen und fragt neu, sobald
-            // ein Auftrag kommt (ui/src/web/worker.ts, „wartender chat_poll“).
+            // In the browser there is only one thread, the core must not wait:
+            // there the web worker keeps the reply open and asks again as soon as
+            // a task arrives (ui/src/web/worker.ts, "waiting chat_poll").
             if cfg!(target_arch = "wasm32") {
                 break;
             }
-            // In Scheiben warten, um zwischendurch die Verbindung zu prüfen.
+            // Wait in slices to check the connection in between.
             let (next, _) = self
                 .cond
                 .wait_timeout_while(g, left.min(Duration::from_secs(1)), |s| !has_new(s))
@@ -197,7 +197,7 @@ impl Chat {
         PollResult { tasks: taken, abandoned_before }
     }
 
-    /// Antwort des Agenten. Mit `done` wird der Auftrag (oder alle offenen) erledigt.
+    /// Reply from the agent. With `done` the task (or all open ones) is completed.
     pub fn reply(&self, text: &str, reply_to: Option<u64>, done: bool) -> Result<ChatMessage, String> {
         let text = text.trim();
         if text.is_empty() {
@@ -224,7 +224,7 @@ impl Chat {
         Ok(Self::push(&mut g, Author::Agent, text.to_string(), None, reply_to))
     }
 
-    /// Letzte Nachrichten als Kontext für den Agenten.
+    /// Latest messages as context for the agent.
     pub fn recent(&self, n: usize) -> Vec<ChatMessage> {
         let g = self.lock();
         g.messages.iter().rev().take(n).rev().cloned().collect()
@@ -241,7 +241,7 @@ mod tests {
         let chat = Arc::new(Chat::default());
         let c2 = chat.clone();
         let waiter = std::thread::spawn(move || c2.poll(Duration::from_secs(5), || {}, || false).tasks);
-        // warten, bis der Poll wirklich lauscht (unter Last kann das dauern)
+        // wait until the poll is really listening (can take a while under load)
         let t0 = Instant::now();
         while !chat.view().agent_listening && t0.elapsed() < Duration::from_secs(2) {
             std::thread::sleep(Duration::from_millis(10));
@@ -277,7 +277,7 @@ mod tests {
 
     #[test]
     fn abandoned_poll_leaves_tasks_for_the_next_one() {
-        // Der Client hat aufgegeben (Timeout): Auftrag darf nicht verloren gehen.
+        // The client gave up (timeout): the task must not be lost.
         let chat = Arc::new(Chat::default());
         let c2 = chat.clone();
         let gone = Arc::new(std::sync::atomic::AtomicBool::new(false));

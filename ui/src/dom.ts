@@ -1,4 +1,4 @@
-// Kleine DOM-Helfer und Icons (inline SVG).
+// Small DOM helpers and icons (inline SVG).
 
 import { t, tid } from "./i18n.js";
 
@@ -73,8 +73,8 @@ export interface ModalAction {
 }
 
 /**
- * Einfacher Dialog über der App. Liefert den `value` der gewählten Aktion,
- * `null` bei Esc oder Klick daneben. Enter löst die erste Aktion aus.
+ * Simple dialog over the app. Returns the `value` of the chosen action,
+ * `null` on Esc or a click outside. Enter triggers the first action.
  */
 export function modal(title: string, body: Node[], actions: ModalAction[], focus?: HTMLElement): Promise<string | null> {
   return new Promise((resolve) => {
@@ -114,8 +114,8 @@ export function modal(title: string, body: Node[], actions: ModalAction[], focus
 }
 
 /**
- * Knopf mit Aufklappmenü. `fill` baut den Inhalt bei jedem Öffnen neu und
- * bekommt `close`; ein Klick außerhalb schließt das Menü.
+ * Button with a drop-down menu. `fill` rebuilds the content on every open and
+ * receives `close`; a click outside closes the menu.
  */
 export function dropdown(btn: HTMLButtonElement, menuClass: string, fill: (menu: HTMLElement, close: () => void) => void): HTMLElement {
   const menu = h("div", { class: `menu ${menuClass}` });
@@ -144,7 +144,7 @@ export function icon(name: keyof typeof PATHS | string): SVGSVGElement {
 
 export const LOGO = `<svg viewBox="0 0 32 32"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffb454"/><stop offset="1" stop-color="#6ee7d8"/></linearGradient></defs><rect x="1" y="1" width="30" height="30" rx="9" fill="#171c27" stroke="url(#lg)" stroke-width="1.5"/><path d="M6 16h2.5M10.5 11v10M14.5 7v18M18.5 10v12M22.5 13v6M25.5 16h.5" stroke="url(#lg)" stroke-width="2.4" stroke-linecap="round"/></svg>`;
 
-/** Hängt Canvas-Auflösung an die Elementgröße (inkl. devicePixelRatio) an. */
+/** Attaches the canvas resolution to the element size (incl. devicePixelRatio). */
 export function fitCanvas(canvas: HTMLCanvasElement): { ctx: CanvasRenderingContext2D; w: number; h: number } {
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.clientWidth;

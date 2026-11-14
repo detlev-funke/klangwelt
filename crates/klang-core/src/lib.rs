@@ -1,9 +1,9 @@
-//! Klangwelt-Kern: Projektmodell, Befehle und Undo/Redo.
+//! Klangwelt core: project model, commands and undo/redo.
 //!
-//! Jede Änderung am Projekt läuft über einen [`Command`]. Die Oberfläche und
-//! später der Agent (MCP) benutzen dieselbe, als JSON serialisierbare
-//! Schnittstelle. `apply` liefert zu jedem Befehl seinen Umkehrbefehl –
-//! daraus entsteht die Undo-Historie in [`Session`].
+//! Every change to the project goes through a [`Command`]. The UI and
+//! later the agent (MCP) use the same interface, which is serializable as JSON.
+//! `apply` returns the inverse command for every command -
+//! this builds the undo history in [`Session`].
 
 mod command;
 pub mod edit;

@@ -1,9 +1,9 @@
-//! Opus-Export: libopus (gebaut aus `opus/`, siehe build.rs) und ein eigener
-//! Ogg-Container nach RFC 7845 – Ergebnis ist eine `.opus`-Datei, die Android,
-//! iOS (ab 17), Browser und VLC abspielen.
+//! Opus export: libopus (built from `opus/`, see build.rs) and a custom
+//! Ogg container per RFC 7845 - the result is an `.opus` file that Android,
+//! iOS (from 17), browsers and VLC can play.
 //!
-//! Dieselbe libopus läuft auf dem Desktop und im Browser: dort mit clang nach
-//! WebAssembly übersetzt und in klang_web.wasm gelinkt (siehe build.rs).
+//! The same libopus runs on the desktop and in the browser: there it is compiled with clang to
+//! WebAssembly and linked into klang_web.wasm (see build.rs).
 
 use std::os::raw::{c_char, c_int, c_uchar};
 
@@ -38,17 +38,17 @@ const SET_SIGNAL: c_int = 4024;
 const GET_LOOKAHEAD: c_int = 4027;
 const SIGNAL_MUSIC: i32 = 3002;
 
-/// Abtastrate von Opus (fest).
+/// Sample rate of Opus (fixed).
 pub const SAMPLE_RATE: u32 = 48_000;
-/// 20 ms je Paket.
+/// 20 ms per packet.
 const FRAME: usize = 960;
-/// Erlaubte Bitraten in kbit/s (Stereo); 160 ist für Musik praktisch nicht vom Original zu unterscheiden.
+/// Allowed bitrates in kbit/s (stereo); 160 is practically indistinguishable from the original for music.
 pub const BITRATES: [u32; 7] = [64, 96, 128, 160, 192, 256, 320];
 pub const DEFAULT_BITRATE: u32 = 160;
 
-/// Version der eingebauten libopus.
+/// Version of the built-in libopus.
 pub fn version() -> String {
-    // SAFETY: libopus liefert eine statische, nullterminierte Zeichenkette.
+    // SAFETY: libopus returns a static, null-terminated string.
     unsafe { std::ffi::CStr::from_ptr(opus_get_version_string()) }.to_string_lossy().into_owned()
 }
 
@@ -57,13 +57,13 @@ struct Encoder(*mut OpusEncoder);
 impl Encoder {
     fn new(bitrate_kbps: u32) -> Result<Self, String> {
         let mut err = 0;
-        // SAFETY: gültige Parameter; das Ergebnis wird geprüft und in Drop freigegeben.
+        // SAFETY: valid parameters; the result is checked and freed in Drop.
         let st = unsafe { opus_encoder_create(SAMPLE_RATE as i32, 2, APPLICATION_AUDIO, &mut err) };
         if st.is_null() || err != 0 {
             return Err(format!("Opus-Kodierer nicht verfügbar (Fehler {err})"));
         }
         let e = Encoder(st);
-        // SAFETY: Steuerbefehle mit dem erwarteten opus_int32-Argument.
+        // SAFETY: control commands with the expected opus_int32 argument.
         unsafe {
             opus_encoder_ctl(e.0, SET_BITRATE, (bitrate_kbps as i32) * 1000);
             opus_encoder_ctl(e.0, SET_VBR, 1i32);
@@ -75,15 +75,15 @@ impl Encoder {
 
     fn lookahead(&self) -> u32 {
         let mut v: i32 = 0;
-        // SAFETY: GET-Befehl schreibt einen opus_int32 an die übergebene Adresse.
+        // SAFETY: GET command writes an opus_int32 to the passed address.
         unsafe { opus_encoder_ctl(self.0, GET_LOOKAHEAD, &mut v as *mut i32) };
         v.max(0) as u32
     }
 
-    /// Ein Paket aus 960 verschachtelten Stereo-Frames.
+    /// One packet from 960 interleaved stereo frames.
     fn encode(&mut self, pcm: &[f32]) -> Result<Vec<u8>, String> {
         let mut out = vec![0u8; 4000];
-        // SAFETY: pcm hat 2 × FRAME Werte, out hat die angegebene Größe.
+        // SAFETY: pcm has 2 × FRAME values, out has the stated size.
         let n = unsafe { opus_encode_float(self.0, pcm.as_ptr(), FRAME as c_int, out.as_mut_ptr(), out.len() as i32) };
         if n < 0 {
             return Err(format!("Opus-Kodierung fehlgeschlagen (Fehler {n})"));
@@ -95,18 +95,18 @@ impl Encoder {
 
 impl Drop for Encoder {
     fn drop(&mut self) {
-        // SAFETY: in new() erzeugt, genau einmal freigegeben.
+        // SAFETY: created in new(), freed exactly once.
         unsafe { opus_encoder_destroy(self.0) }
     }
 }
 
-/// Opus-Dekoder (für Tests und zum Prüfen von Dateien).
+/// Opus decoder (for tests and for checking files).
 pub struct Decoder(*mut OpusDecoder);
 
 impl Decoder {
     pub fn new() -> Result<Self, String> {
         let mut err = 0;
-        // SAFETY: gültige Parameter; geprüft, in Drop freigegeben.
+        // SAFETY: valid parameters; checked, freed in Drop.
         let st = unsafe { opus_decoder_create(SAMPLE_RATE as i32, 2, &mut err) };
         if st.is_null() || err != 0 {
             return Err(format!("Opus-Dekoder nicht verfügbar (Fehler {err})"));
@@ -114,10 +114,10 @@ impl Decoder {
         Ok(Decoder(st))
     }
 
-    /// Ein Paket → verschachtelte Stereo-Frames.
+    /// One packet → interleaved stereo frames.
     pub fn decode(&mut self, packet: &[u8]) -> Result<Vec<f32>, String> {
         let mut pcm = vec![0f32; 5760 * 2];
-        // SAFETY: Puffer für bis zu 120 ms Stereo.
+        // SAFETY: buffer for up to 120 ms of stereo.
         let n = unsafe { opus_decode_float(self.0, packet.as_ptr(), packet.len() as i32, pcm.as_mut_ptr(), 5760, 0) };
         if n < 0 {
             return Err(format!("Opus-Dekodierung fehlgeschlagen (Fehler {n})"));
@@ -129,14 +129,14 @@ impl Decoder {
 
 impl Drop for Decoder {
     fn drop(&mut self) {
-        // SAFETY: in new() erzeugt, genau einmal freigegeben.
+        // SAFETY: created in new(), freed exactly once.
         unsafe { opus_decoder_destroy(self.0) }
     }
 }
 
 // ---------------------------------------------------------------- Ogg
 
-/// CRC-32 nach Ogg (Polynom 0x04C11DB7, ohne Spiegelung, Startwert 0).
+/// CRC-32 per Ogg (polynomial 0x04C11DB7, no reflection, initial value 0).
 fn ogg_crc(data: &[u8]) -> u32 {
     static TABLE: std::sync::OnceLock<[u32; 256]> = std::sync::OnceLock::new();
     let t = TABLE.get_or_init(|| {
@@ -160,7 +160,7 @@ struct OggWriter {
 }
 
 impl OggWriter {
-    /// Eine Seite mit ganzen Paketen (höchstens 255 Segmente).
+    /// A page with whole packets (at most 255 segments).
     fn page(&mut self, packets: &[&[u8]], granule: u64, flags: u8) {
         let mut lacing = Vec::new();
         for p in packets {
@@ -195,8 +195,8 @@ fn segments(p: &[u8]) -> usize {
     p.len() / 255 + 1
 }
 
-/// Stereo bei 48 kHz als Ogg-Opus-Datei (`bitrate_kbps` je Stereo-Strom).
-/// `title` landet als TITLE in den Kommentaren.
+/// Stereo at 48 kHz as an Ogg Opus file (`bitrate_kbps` per stereo stream).
+/// `title` ends up as TITLE in the comments.
 pub fn encode_ogg_opus(left: &[f32], right: &[f32], bitrate_kbps: u32, title: &str) -> Result<Vec<u8>, String> {
     if left.len() != right.len() {
         return Err("Kanäle verschieden lang".into());
@@ -207,12 +207,12 @@ pub fn encode_ogg_opus(left: &[f32], right: &[f32], bitrate_kbps: u32, title: &s
     let mut w = OggWriter { out: Vec::new(), serial: 0x4B4C_5754, seq: 0 };
 
     let mut head = b"OpusHead".to_vec();
-    head.push(1); // Version
-    head.push(2); // Kanäle
+    head.push(1); // version
+    head.push(2); // channels
     head.extend_from_slice(&(pre_skip as u16).to_le_bytes());
     head.extend_from_slice(&SAMPLE_RATE.to_le_bytes());
-    head.extend_from_slice(&0i16.to_le_bytes()); // Ausgangspegel
-    head.push(0); // Kanalzuordnung: Mono/Stereo
+    head.extend_from_slice(&0i16.to_le_bytes()); // output gain
+    head.push(0); // channel mapping: mono/stereo
     w.page(&[&head], 0, 0x02);
 
     let vendor = format!("Klangwelt ({})", version());
@@ -227,7 +227,7 @@ pub fn encode_ogg_opus(left: &[f32], right: &[f32], bitrate_kbps: u32, title: &s
     }
     w.page(&[&tags], 0, 0);
 
-    // Kodieren: so viele Pakete, dass auch der Vorlauf (pre_skip) noch abgedeckt ist
+    // Encoding: enough packets that the pre-roll (pre_skip) is covered too
     let needed = total + pre_skip as u64;
     let packets_n = needed.div_ceil(FRAME as u64).max(1);
     let mut page: Vec<Vec<u8>> = Vec::new();
@@ -251,7 +251,7 @@ pub fn encode_ogg_opus(left: &[f32], right: &[f32], bitrate_kbps: u32, title: &s
         segs += segments(&pkt);
         page.push(pkt);
         if last {
-            // Ende genau beim letzten echten Frame (Granule = Vorlauf + Länge)
+            // end exactly at the last real frame (granule = pre-roll + length)
             let refs: Vec<&[u8]> = page.iter().map(Vec::as_slice).collect();
             w.page(&refs, pre_skip as u64 + total, 0x04);
         }
@@ -259,7 +259,7 @@ pub fn encode_ogg_opus(left: &[f32], right: &[f32], bitrate_kbps: u32, title: &s
     Ok(w.out)
 }
 
-/// Pakete einer Ogg-Opus-Datei (für Tests): prüft Kennung und Prüfsummen.
+/// Packets of an Ogg Opus file (for tests): checks the identification and checksums.
 pub fn read_ogg_packets(data: &[u8]) -> Result<Vec<Vec<u8>>, String> {
     let mut packets = Vec::new();
     let mut cur = Vec::new();
@@ -297,7 +297,7 @@ mod tests {
 
     #[test]
     fn crc_matches_the_ogg_reference() {
-        // bekannte Prüfsumme von "OggS" mit Nullen (aus der Ogg-Spezifikation nachgerechnet)
+        // known checksum of "OggS" with zeros (recomputed from the Ogg specification)
         assert_eq!(ogg_crc(b""), 0);
         assert_ne!(ogg_crc(b"OggS"), 0);
         assert_eq!(ogg_crc(b"a"), 0x18C2_8F83 ^ 0x18C2_8F83 ^ ogg_crc(b"a"));
@@ -321,7 +321,7 @@ mod tests {
         }
         let out: Vec<f32> = pcm.iter().step_by(2).copied().skip(pre).take(n).collect();
         assert!(out.len() >= n - FRAME);
-        // Pegel und Tonhöhe bleiben: Effektivwert ≈ 0,35, ≈ 880 Nulldurchgänge je Sekunde
+        // level and pitch are preserved: RMS ≈ 0.35, ≈ 880 zero crossings per second
         let rms = (out.iter().map(|v| v * v).sum::<f32>() / out.len() as f32).sqrt();
         assert!((rms - 0.354).abs() < 0.05, "Effektivwert {rms}");
         let zc = out.windows(2).filter(|w| (w[0] < 0.0) != (w[1] < 0.0)).count();
@@ -334,7 +334,7 @@ mod tests {
         let n = 12_345;
         let s = vec![0.1f32; n];
         let file = encode_ogg_opus(&s, &s, 96, "x").unwrap();
-        // letzte Seite: EOS-Flag und Granule = Vorlauf + Länge
+        // last page: EOS flag and granule = pre-roll + length
         let last = file.windows(4).rposition(|w| w == b"OggS").unwrap();
         assert_eq!(file[last + 5] & 0x04, 0x04);
         let granule = u64::from_le_bytes(file[last + 6..last + 14].try_into().unwrap());

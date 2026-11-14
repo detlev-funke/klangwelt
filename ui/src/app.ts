@@ -13,12 +13,12 @@ import { initFileDrop } from "./filedrop.js";
 import { t } from "./i18n.js";
 import { agentPulse, chat, chatUnread, errorText, instrumentSpecs, libraryBusy, notify, savedSounds, snapshot, status, visiblePanels } from "./store.js";
 
-// Fenster (Spuren, Clip, Analyse, Klang, Bibliothek, Agent) im Docksystem.
+// Windows (tracks, clip, analysis, sound, library, agent) in the dock system.
 initLayout(document.getElementById("dock")!);
 initHelp();
-// zuletzt benutzte Bibliothek gleich laden – nicht erst, wenn das Fenster „Bibliothek“ aufgeht
+// load the most recently used library right away – not only when the "Library" window opens
 initLibrary();
-// Audiodateien aufs Fenster ziehen: werden Spuren
+// Drag audio files onto the window: they become tracks
 initFileDrop();
 
 function isTyping(e: KeyboardEvent): boolean {
@@ -26,8 +26,8 @@ function isTyping(e: KeyboardEvent): boolean {
   return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
 }
 
-// F1: Hilfe zum Element unter der Maus festhalten – vor allen anderen
-// (Capture), damit es auch in Feldern wirkt, die Tasten selbst abfangen
+// F1: capture help for the element under the mouse – before all others
+// (capture), so it also works in fields that intercept keys themselves
 window.addEventListener("keydown", (e) => {
   if (e.key !== "F1") return;
   e.preventDefault();
@@ -36,7 +36,7 @@ window.addEventListener("keydown", (e) => {
 }, true);
 
 window.addEventListener("keydown", (e) => {
-  // Speichern/Öffnen/Neu auch beim Tippen in einem Feld
+  // Save/Open/New also while typing in a field
   if (fileShortcut(e)) return;
   if (isTyping(e)) return;
   const mod = e.ctrlKey || e.metaKey;
@@ -54,10 +54,10 @@ window.addEventListener("keydown", (e) => {
   } else if (!mod && !e.altKey && e.key.toLowerCase() === "l") {
     void toggleLoop();
   } else if (e.key === "Delete" || e.key === "Backspace") {
-    // markierte Noten, sonst ein zuletzt markierter Zeitbereich (aus allen Spuren), sonst Clip/Spur
+    // selected notes, otherwise a most recently selected time range (from all tracks), otherwise clip/track
     deleteSelection();
   } else if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.altKey && !mod && noteSel.peek()?.keys.length) {
-    // markierte Noten in Halbtönen (Umschalt: Oktave) verschieben
+    // move selected notes by semitones (Shift: octave)
     e.preventDefault();
     transposeSelectedNotes((e.key === "ArrowUp" ? 1 : -1) * (e.shiftKey ? 12 : 1));
   } else if (e.key === "Escape") {
@@ -84,7 +84,7 @@ async function boot(): Promise<void> {
   try {
     // (the core got the UI's language in main.ts, before the layout was built)
     snapshot.value = await backend.getState();
-    // gemerktes Audiogerät fehlt: Klangwelt nimmt den Systemstandard – kurz Bescheid sagen
+    // remembered audio device is missing: Klangwelt takes the system default – give a short notice
     const e = snapshot.peek()?.engine;
     const missing = [e?.outputNotice, e?.inputNotice].filter(Boolean).join(" ");
     if (missing) notify(missing);
@@ -107,7 +107,7 @@ async function boot(): Promise<void> {
   });
   backend.onStatus((s) => (status.value = s));
   handleCloseRequests();
-  // Bibliotheksarbeit im Hintergrund (auch fortgesetzt nach einem Neustart): Beginn und Ende melden
+  // Library work in the background (also resumed after a restart): report start and end
   backend.onLibraryChanged((i) => {
     const busy = !!(i.building || i.download);
     if (busy !== libraryBusy.peek() && i.message) notify(t("Library: {message}", { message: i.message }));
@@ -118,7 +118,7 @@ async function boot(): Promise<void> {
     if (i.message && resumedWork(i.message)) notify(t("Library: {message}", { message: i.message }));
   }).catch(() => {});
   backend.onProjectChanged((s) => (snapshot.value = s));
-  // Doppelklick auf eine .klangwelt-Datei, während Klangwelt schon läuft (oder Agent)
+  // Double-click on a .klangwelt file while Klangwelt is already running (or agent)
   backend.onOpenFile((path) => void openPath(path));
   backend.onAgentActivity((a) => {
     agentPulse.update((n) => n + 1);
@@ -130,14 +130,14 @@ async function boot(): Promise<void> {
 
 void boot();
 
-/** Browser-Version: einmal erklären, was anders ist als in der Desktop-App. */
+/** Browser version: explain once what is different from the desktop app. */
 function webNotice(): void {
   const key = "klangwelt.web.hinweis";
   try {
     if (localStorage.getItem(key)) return;
     localStorage.setItem(key, "1");
   } catch {
-    /* ohne Speicher: jedes Mal */
+    /* without storage: every time */
   }
   notify(t("Klangwelt in the browser: projects are stored in this browser, exports are downloaded. No agent and no library downloads – details in docs/WEB.md."));
 }

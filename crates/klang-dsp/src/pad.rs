@@ -1,11 +1,11 @@
-//! Synthesizer für Flächen und lange Klänge (subtraktiv, mehrstimmig).
+//! Synthesizer for pads and long sounds (subtractive, polyphonic).
 //!
-//! Je Ton mehrere leicht verstimmte Oszillatoren (Sinus ↔ Sägezahn ↔
-//! Rechteck, bandbegrenzt per PolyBLEP), ein Sub-Oszillator eine Oktave
-//! tiefer und „Schimmer“ eine Oktave höher, dahinter ein resonanter Tiefpass
-//! (2 × SVF). Der zeitliche Verlauf ist **gezeichnet** ([`Verlauf`]):
-//! Lautstärke und Helligkeit als Kurven über die Zeit ab Tonbeginn, dazu ein
-//! Puls im Takt und langsame Bewegung (LFO) im Filter.
+//! Per note several slightly detuned oscillators (sine ↔ sawtooth ↔
+//! square, band-limited via PolyBLEP), a sub oscillator one octave
+//! lower and "shimmer" one octave higher, followed by a resonant low-pass
+//! (2 × SVF). The progression over time is **drawn** ([`Verlauf`]):
+//! volume and brightness as curves over time from the start of the note, plus a
+//! pulse in time with the beat and slow movement (LFO) in the filter.
 
 use crate::bass::{poly_blep, Svf};
 use crate::notes::midi_to_hz;
@@ -13,26 +13,26 @@ use crate::synth::{NoteSpec, Rng};
 use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
 
-/// Klangregler, alle 0…1.
+/// Sound controls, all 0…1.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SynthParams {
-    /// eine ↔ sieben Stimmen je Ton (Unisono)
+    /// one ↔ seven voices per note (unison)
     pub stimmen: f32,
-    /// rein ↔ stark verstimmt (Abstand der Stimmen, bis 30 Cent)
+    /// pure ↔ strongly detuned (spacing of the voices, up to 30 cents)
     pub verstimmung: f32,
-    /// rund (Sinus) ↔ Sägezahn ↔ hohl (Rechteck)
+    /// round (sine) ↔ sawtooth ↔ hollow (square)
     pub wellenform: f32,
-    /// Sinus eine Oktave tiefer
+    /// Sine one octave lower
     pub sub: f32,
-    /// Sägezahn eine Oktave höher (Glanz)
+    /// Sawtooth one octave higher (sheen)
     pub schimmer: f32,
-    /// dunkel ↔ hell (Grundstellung des Filters, die Kurve „hell“ wirkt darauf)
+    /// dark ↔ bright (base position of the filter, the "bright" curve acts on it)
     pub filter: f32,
-    /// weich ↔ singend (Betonung an der Grenzfrequenz)
+    /// soft ↔ singing (emphasis at the cutoff frequency)
     pub resonanz: f32,
-    /// ruhig ↔ wogend (Tiefe der langsamen Filterbewegung)
+    /// calm ↔ surging (depth of the slow filter movement)
     pub bewegung: f32,
-    /// langsam ↔ schnell (Tempo dieser Bewegung, 0,05–6 Hz)
+    /// slow ↔ fast (speed of this movement, 0.05–6 Hz)
     pub tempo: f32,
 }
 
@@ -42,17 +42,17 @@ impl Default for SynthParams {
     }
 }
 
-/// Zeitlicher Verlauf eines Tons. Kurvenpunkte: [Sekunden ab Tonbeginn, Wert 0…1].
-/// Nach dem letzten Punkt hält der Wert, solange der Ton gehalten wird; nach dem
-/// Loslassen klingt er in `ausklang` Sekunden aus.
+/// Progression of a note over time. Curve points: [seconds from note start, value 0…1].
+/// After the last point the value holds as long as the note is held; after
+/// release it decays over `ausklang` seconds.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Verlauf {
     pub laut: Vec<[f32; 2]>,
     pub hell: Vec<[f32; 2]>,
     pub ausklang: f32,
-    /// Puls im Takt: 0 = aus, 1 = Viertel, 2 = Achtel, 3 = Sechzehntel
+    /// Pulse in time with the beat: 0 = off, 1 = quarter, 2 = eighth, 3 = sixteenth
     pub puls: u8,
-    /// Wie tief der Puls die Lautstärke absenkt (0…1)
+    /// How deeply the pulse lowers the volume (0…1)
     pub pulstiefe: f32,
 }
 
@@ -62,7 +62,7 @@ impl Default for Verlauf {
     }
 }
 
-/// Eine Vorlage für den Verlauf.
+/// A template for the progression.
 pub struct VerlaufPreset {
     pub name: &'static str,
     pub beschreibung: &'static str,
@@ -154,7 +154,7 @@ pub const VERLAUF_PRESETS: [VerlaufPreset; 8] = [
     },
 ];
 
-/// Wert einer Kurve zur Zeit `t` (linear zwischen den Punkten, außerhalb gehalten).
+/// Value of a curve at time `t` (linear between the points, held outside).
 pub fn curve_at(points: &[[f32; 2]], t: f32) -> f32 {
     let Some(first) = points.first() else { return 1.0 };
     if t <= first[0] {
@@ -170,8 +170,8 @@ pub fn curve_at(points: &[[f32; 2]], t: f32) -> f32 {
     points.last().map(|p| p[1]).unwrap_or(1.0)
 }
 
-/// Pulsfaktor (1 = voll) an der Stelle `phase` (0…1) einer Pulsperiode – mit
-/// kurzen Rampen, damit es nicht knackt.
+/// Pulse factor (1 = full) at position `phase` (0…1) of a pulse period – with
+/// short ramps so it does not click.
 fn gate(phase: f32, depth: f32) -> f32 {
     const E: f32 = 0.05;
     let off = if phase < 0.5 - E {
@@ -186,7 +186,7 @@ fn gate(phase: f32, depth: f32) -> f32 {
     1.0 - depth.clamp(0.0, 1.0) * off
 }
 
-/// Dauer einer Pulsperiode in Sekunden (`spb` = Sekunden je Schlag).
+/// Duration of a pulse period in seconds (`spb` = seconds per beat).
 pub fn puls_period(puls: u8, spb: f32) -> Option<f32> {
     match puls {
         1 => Some(spb),
@@ -196,7 +196,7 @@ pub fn puls_period(puls: u8, spb: f32) -> Option<f32> {
     }
 }
 
-/// Lautstärke des Verlaufs zur Zeit `t` bei einem Ton der Länge `held` (ohne Puls).
+/// Volume of the progression at time `t` for a note of length `held` (without pulse).
 pub fn level_at(v: &Verlauf, t: f32, held: f32) -> f32 {
     if t < held {
         curve_at(&v.laut, t)
@@ -269,14 +269,14 @@ fn voice(n: &NoteSpec, sr: f32, p: &SynthParams, v: &Verlauf, spb: f32, seed: u3
         let x = sum * norm + p.sub.clamp(0.0, 1.0) * 0.55 * (2.0 * PI * sub_ph).sin() + p.schimmer.clamp(0.0, 1.0) * 0.3 * shimmer;
         let y = f2.lowpass(f1.lowpass(x, g, k_res), g, 1.414);
         let pulse = period.map(|per| gate((t % per) / per, v.pulstiefe)).unwrap_or(1.0);
-        // weiche Kanten: 2 ms ein, Ende ohne Knacken
+        // soft edges: 2 ms in, end without clicking
         let edge = (t / 0.002).min(1.0) * ((len - i) as f32 / (0.003 * sr)).min(1.0);
         *o += y * level_at(v, t, held) * pulse * edge * velocity * 0.3;
     }
 }
 
-/// Rendert Noten mit dem Synthesizer. `spb` = Sekunden je Schlag (für den Puls).
-/// Der Ausklang darf über `total_secs` hinausreichen (bis zu 2 s).
+/// Renders notes with the synthesizer. `spb` = seconds per beat (for the pulse).
+/// The decay may extend beyond `total_secs` (up to 2 s).
 pub fn render_synth(notes: &[NoteSpec], total_secs: f32, sr: f32, p: &SynthParams, v: &Verlauf, spb: f32) -> Vec<f32> {
     let tail = v.ausklang.clamp(0.0, 2.0);
     let mut out = vec![0f32; ((total_secs.max(0.0) + tail + 0.05) * sr) as usize];
@@ -317,12 +317,12 @@ mod tests {
 
     #[test]
     fn swell_follows_the_drawn_loudness() {
-        let v = Verlauf::default(); // Anschwellen
+        let v = Verlauf::default(); // Swelling
         let x = render_synth(&chord(3.0), 3.0, SR, &SynthParams::default(), &v, 0.5);
         assert!(x.iter().all(|s| s.is_finite()));
         let at = |t: f32| rms(&x[(t * SR) as usize..((t + 0.1) * SR) as usize]);
         assert!(at(0.05) < 0.3 * at(2.5), "leise Anfang {} → {}", at(0.05), at(2.5));
-        // nach dem Loslassen klingt es aus
+        // after release it decays
         assert!(at(4.5) < 0.1 * at(2.5));
         let bell = VERLAUF_PRESETS.iter().find(|p| p.name == "Glocke").unwrap().verlauf();
         let y = render_synth(&chord(3.0), 3.0, SR, &SynthParams::default(), &bell, 0.5);
@@ -344,7 +344,7 @@ mod tests {
     #[test]
     fn pulse_chops_in_time() {
         let gatev = VERLAUF_PRESETS.iter().find(|p| p.name == "Gate").unwrap().verlauf();
-        let spb = 0.5; // 120 BPM → Sechzehntel = 125 ms
+        let spb = 0.5; // 120 BPM → sixteenth = 125 ms
         let x = render_synth(&chord(2.0), 2.0, SR, &SynthParams::default(), &gatev, spb);
         let per = 0.125;
         let on = rms(&x[((1.0 + 0.1 * per) * SR) as usize..((1.0 + 0.4 * per) * SR) as usize]);

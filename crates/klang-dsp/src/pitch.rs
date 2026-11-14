@@ -1,7 +1,7 @@
-//! Tonhöhenerkennung nach YIN (de Cheveigné & Kawahara, 2002).
+//! Pitch detection after YIN (de Cheveigné & Kawahara, 2002).
 //!
-//! Die Differenzfunktion wird über eine FFT-Kreuzkorrelation berechnet,
-//! dadurch kostet ein Analyseframe O(N log N) statt O(N²).
+//! The difference function is computed via an FFT cross-correlation,
+//! so an analysis frame costs O(N log N) instead of O(N²).
 
 use crate::fft::{Complex, Fft};
 use crate::synth::Biquad;
@@ -9,19 +9,19 @@ use serde::Serialize;
 
 #[derive(Clone, Copy, Debug)]
 pub struct YinConfig {
-    /// Gesamtlänge eines Analyseframes in Samples (Integrationsfenster = Hälfte).
+    /// Total length of an analysis frame in samples (integration window = half).
     pub frame_len: usize,
     pub hop: usize,
     pub min_freq: f32,
     pub max_freq: f32,
-    /// Schwelle der normierten Differenzfunktion (kleiner = strenger).
+    /// Threshold of the normalized difference function (smaller = stricter).
     pub threshold: f32,
-    /// Frames unterhalb dieses RMS-Pegels gelten als Stille.
+    /// Frames below this RMS level count as silence.
     pub silence_rms: f32,
 }
 
 impl Default for YinConfig {
-    /// Für Melodien: Gesang, Melodieinstrumente und Bass (bis E1 ≈ 41 Hz).
+    /// For melodies: singing, melody instruments and bass (down to E1 ≈ 41 Hz).
     fn default() -> Self {
         Self {
             frame_len: 2560,
@@ -35,13 +35,13 @@ impl Default for YinConfig {
 }
 
 impl YinConfig {
-    /// Für vorgesungene oder gepfiffene Melodien: Männerstimme bis Pfiff
-    /// (≈ 60 Hz … 3,2 kHz – Pfeifen liegt meist bei 0,9–2,8 kHz).
+    /// For sung or whistled melodies: from a male voice up to a whistle
+    /// (≈ 60 Hz … 3.2 kHz – whistling usually lies at 0.9–2.8 kHz).
     pub fn voice_and_whistle() -> Self {
         Self { min_freq: 60.0, max_freq: 3200.0, ..Self::default() }
     }
 
-    /// Für Anschläge (Schlagzeug, gezupfte Bässe): tiefer, toleranter, längeres Fenster.
+    /// For attacks (drums, plucked basses): lower, more tolerant, longer window.
     pub fn percussive() -> Self {
         Self {
             frame_len: 4096,
@@ -54,27 +54,27 @@ impl YinConfig {
     }
 }
 
-/// Grundtonhöhe eines einzelnen Anschlags.
+/// Fundamental pitch of a single attack.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HitPitch {
-    /// Einsatz in Sekunden.
+    /// Onset in seconds.
     pub time: f32,
-    /// Ende des ausgewerteten Abschnitts (nächster Einsatz, höchstens 0,4 s später).
+    /// End of the analyzed section (next onset, at most 0.4 s later).
     pub end: f32,
-    /// Grundton als MIDI-Wert (gebrochen), `None` bei reinem Geräusch (z. B. Hi-Hat).
+    /// Fundamental as a MIDI value (fractional), `None` for pure noise (e.g. hi-hat).
     pub midi: Option<f32>,
-    /// 0…1 – wie eindeutig die Tonhöhe ist.
+    /// 0…1 – how unambiguous the pitch is.
     pub clarity: f32,
-    /// 0…1 – Lautstärke relativ zum lautesten Anschlag.
+    /// 0…1 – volume relative to the loudest attack.
     pub strength: f32,
 }
 
-/// Bestimmt für jeden Einsatz den Grundton des folgenden Abschnitts.
+/// Determines the fundamental of the following section for each onset.
 ///
-/// Anders als die Melodie-Erkennung verlangt das keinen lange gleichbleibenden
-/// Ton: Bassdrum (mit fallender Tonhöhe), Snare-Kessel, Toms oder gezupfte
-/// Basstöne bekommen so ihren Grundton – energiegewichtet über den Abschnitt.
+/// Unlike melody detection, this does not require a long, steady
+/// note: bass drum (with falling pitch), snare shell, toms or plucked
+/// bass notes get their fundamental this way – energy-weighted over the section.
 pub fn hit_pitches(samples: &[f32], sample_rate: f32, onsets: &[f32]) -> Vec<HitPitch> {
     let cfg = YinConfig::percussive();
     let len = samples.len();
@@ -85,13 +85,13 @@ pub fn hit_pitches(samples: &[f32], sample_rate: f32, onsets: &[f32]) -> Vec<Hit
         .enumerate()
         .map(|(i, &t)| {
             let end = onsets.get(i + 1).copied().unwrap_or(f32::MAX).min(t + 0.4).min(total_secs);
-            // Den ersten Knack (Schlägel, Stick) überspringen.
+            // Skip the first click (beater, stick).
             let s = (((t + 0.008) * sample_rate) as usize).min(len);
             let e = ((end * sample_rate) as usize).clamp(s, len);
             let seg = &samples[s..e];
             let strength = seg.iter().fold(0.0f32, |m, v| m.max(v.abs())) / max_peak;
-            // Tiefpass (4. Ordnung, 1,2 kHz): Teppich, Becken und Stick-Geräusch
-            // überdecken sonst den Grundton von Kessel, Bassdrum oder Bass.
+            // Low-pass (4th order, 1.2 kHz): snare wires, cymbals and stick noise
+            // would otherwise mask the fundamental of shell, bass drum or bass.
             let mut lp1 = Biquad::lowpass(1200.0, 0.707, sample_rate);
             let mut lp2 = Biquad::lowpass(1200.0, 0.707, sample_rate);
             let mut buf: Vec<f32> = seg.iter().map(|&v| lp2.process(lp1.process(v))).collect();
@@ -133,11 +133,11 @@ fn weighted_median(values: &mut [(f32, f32)]) -> Option<f32> {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PitchFrame {
-    /// Mittelpunkt des Frames in Sekunden.
+    /// Center of the frame in seconds.
     pub time: f32,
-    /// Grundfrequenz in Hz, `None` bei Stille oder unsicherer Erkennung.
+    /// Fundamental frequency in Hz, `None` for silence or uncertain detection.
     pub freq: Option<f32>,
-    /// 0…1 – wie periodisch das Signal ist (1 − normierte Differenz).
+    /// 0…1 – how periodic the signal is (1 − normalized difference).
     pub clarity: f32,
     pub rms: f32,
 }
@@ -178,7 +178,7 @@ pub fn detect_pitch(samples: &[f32], sample_rate: f32, cfg: &YinConfig) -> Vec<P
             continue;
         }
 
-        // r(τ) = Σ_j x[j]·x[j+τ] per FFT-Kreuzkorrelation.
+        // r(τ) = Σ_j x[j]·x[j+τ] via FFT cross-correlation.
         for i in 0..n {
             a[i] = if i < w { Complex::new(x[i], 0.0) } else { Complex::ZERO };
             b[i] = if i < span { Complex::new(x[i], 0.0) } else { Complex::ZERO };
@@ -197,7 +197,7 @@ pub fn detect_pitch(samples: &[f32], sample_rate: f32, cfg: &YinConfig) -> Vec<P
             d[tau] = (e0 + et - 2.0 * a[tau].re as f64).max(0.0) as f32;
         }
 
-        // Kumulativ normierte Differenzfunktion.
+        // Cumulative mean normalized difference function.
         cm[0] = 1.0;
         let mut running = 0f64;
         for tau in 1..=tau_max {
@@ -209,7 +209,7 @@ pub fn detect_pitch(samples: &[f32], sample_rate: f32, cfg: &YinConfig) -> Vec<P
             };
         }
 
-        // Erstes Minimum unter der Schwelle suchen.
+        // Search for the first minimum below the threshold.
         let mut found = None;
         let mut tau = tau_min;
         while tau < tau_max {
@@ -312,7 +312,7 @@ mod tests {
         mix_into(&mut x, &hat(sr, 5, false), (1.0 * sr) as usize, 0.5);
         let hits = hit_pitches(&x, sr, &[0.0, 0.5, 1.0]);
         let kick_midi = hits[0].midi.expect("Bassdrum hat einen Grundton");
-        // Synth-Kick fällt von 130 auf 45 Hz und klingt dort aus – Grundton ≈ 45 Hz (MIDI ≈ 30,3).
+        // Synth kick falls from 130 to 45 Hz and decays there – fundamental ≈ 45 Hz (MIDI ≈ 30.3).
         assert!((29.0..34.0).contains(&kick_midi), "Bassdrum {kick_midi}");
         let snare_midi = hits[1].midi.expect("Snare hat einen Kesselton");
         assert!((snare_midi - 54.4).abs() < 1.0, "Snare {snare_midi} (185 Hz ≈ 54,4)");

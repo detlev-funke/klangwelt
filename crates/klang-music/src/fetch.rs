@@ -1,10 +1,10 @@
-//! Musikbibliothek herunterladen: ein `.tar.gz`-Archiv als Datenstrom lesen und
-//! die MusicXML-Dateien (`.mxl`, `.musicxml`, `.xml`) in einen Ordner schreiben –
-//! ohne das Archiv zwischenzuspeichern. Optional nach N Dateien aufhören
-//! (Kostprobe aus dem Anfang eines großen Archivs).
+//! Downloading a music library: reads a `.tar.gz` archive as a data stream and
+//! writes the MusicXML files (`.mxl`, `.musicxml`, `.xml`) to a folder –
+//! without caching the archive. Optionally stops after N files
+//! (a sample from the start of a large archive).
 //!
-//! Der Download selbst läuft über das `curl` des Betriebssystems (Windows 10+,
-//! macOS, Linux): so braucht die App keinen eigenen TLS-Stapel.
+//! The download itself goes through the operating system's `curl` (Windows 10+,
+//! macOS, Linux): this way the app needs no TLS stack of its own.
 
 use flate2::read::MultiGzDecoder;
 use std::io::{self, Read};
@@ -15,18 +15,18 @@ use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug, Default)]
 pub struct ExtractStats {
-    /// Partituren im Zielordner (neu geschrieben oder schon vorhanden).
+    /// Scores in the target folder (newly written or already present).
     pub files: usize,
-    /// Davon schon vorhanden (gleiche Größe) – z. B. nach einem Abbruch.
+    /// Of those, already present (same size) – e.g. after an abort.
     pub existing: usize,
     pub bytes_written: u64,
-    /// Aufgehört, weil die gewünschte Anzahl erreicht war.
+    /// Stopped because the requested number was reached.
     pub limit_reached: bool,
-    /// So oft ist die Verbindung abgerissen und wurde fortgesetzt.
+    /// This many times the connection dropped and was resumed.
     pub resumed: u32,
 }
 
-/// Zählt die gelesenen (komprimierten) Bytes für die Fortschrittsanzeige.
+/// Counts the bytes read (compressed) for the progress display.
 pub struct Counting<R> {
     inner: R,
     count: Arc<AtomicU64>,
@@ -50,8 +50,8 @@ fn is_score(p: &Path) -> bool {
     crate::score::is_score_file(p)
 }
 
-/// Relativer Zielpfad aus einem Archivpfad – nur normale Bestandteile (kein
-/// absoluter Pfad, kein „..“), optional ohne führenden Ordner `strip`.
+/// Relative target path from an archive path – normal components only (no
+/// absolute path, no "..") – optionally without the leading folder `strip`.
 fn safe_relative(p: &Path, strip: Option<&str>) -> Option<PathBuf> {
     let mut parts: Vec<&std::ffi::OsStr> = Vec::new();
     for c in p.components() {
@@ -76,16 +76,16 @@ fn interrupted() -> io::Error {
     io::Error::new(io::ErrorKind::Interrupted, klang_i18n::tr!("canceled"))
 }
 
-/// Abbruch innerhalb eines Datenstroms (`Read`): bewusst nicht `Interrupted` –
-/// das werten `read_exact`/`read_to_end` als „gleich nochmal lesen“ und hingen
-/// dann fest. Wer den Strom verarbeitet, macht daraus wieder [`interrupted`].
+/// Abort within a data stream (`Read`): deliberately not `Interrupted` –
+/// `read_exact`/`read_to_end` treat that as "just read again" and would then
+/// hang. Whoever processes the stream turns it back into [`interrupted`].
 fn cancelled() -> io::Error {
     io::Error::new(io::ErrorKind::ConnectionAborted, klang_i18n::tr!("canceled"))
 }
 
-/// Entpackt Partituren aus einem `.tar.gz`-Datenstrom nach `dest`.
-/// `on_file` wird nach jeder Partitur aufgerufen; `cancel` bricht ab (Fehler
-/// `Interrupted`, auch wenn der Abbruch mitten im Datenstrom kam).
+/// Unpacks scores from a `.tar.gz` data stream into `dest`.
+/// `on_file` is called after every score; `cancel` aborts (error
+/// `Interrupted`, even if the abort came in the middle of the stream).
 pub fn extract_scores(
     reader: impl Read,
     dest: &Path,
@@ -129,7 +129,7 @@ fn extract_inner(
             if let Some(parent) = target.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            // Erst vollständig schreiben, dann umbenennen: keine halben Dateien nach einem Abbruch.
+            // Write completely first, then rename: no half-written files after an abort.
             let tmp = target.with_extension("teil");
             let mut f = std::fs::File::create(&tmp)?;
             io::copy(&mut entry, &mut f)?;
@@ -150,13 +150,13 @@ fn extract_inner(
     Ok(stats)
 }
 
-/// Startet `curl` für `url`; die Antwort kommt als Datenstrom auf stdout.
+/// Starts `curl` for `url`; the response arrives as a data stream on stdout.
 pub fn curl(url: &str) -> io::Result<(Child, ChildStdout)> {
     curl_at(url, 0)
 }
 
-/// Wie [`curl`], aber ab Byte `from` (HTTP-Range). Antwortet der Server nicht
-/// mit genau diesem Ausschnitt, bricht curl ab (statt von vorn zu liefern).
+/// Like [`curl`], but from byte `from` (HTTP range). If the server does not answer
+/// with exactly this range, curl aborts (instead of delivering from the start).
 fn curl_at(url: &str, from: u64) -> io::Result<(Child, ChildStdout)> {
     let mut cmd = Command::new("curl");
     cmd.args([
@@ -166,7 +166,7 @@ fn curl_at(url: &str, from: u64) -> io::Result<(Child, ChildStdout)> {
         "--show-error",
         "--connect-timeout",
         "30",
-        // abbrechen, wenn eine Minute lang weniger als 1 kB/s ankommt
+        // abort if less than 1 kB/s arrives for a minute
         "--speed-limit",
         "1000",
         "--speed-time",
@@ -196,37 +196,37 @@ fn curl_at(url: &str, from: u64) -> io::Result<(Child, ChildStdout)> {
     Ok((child, stdout))
 }
 
-/// Datenstrom einer URL über `curl`, der nach einem Verbindungsabbruch an
-/// derselben Stelle weitermacht (HTTP-Range). Für große Archive, die entpackt
-/// werden, während sie ankommen: Der Leser dahinter merkt vom Abbruch nichts.
-/// Der laufende curl-Prozess liegt in `slot` (dort kann ihn ein Abbruch
-/// beenden); ist `cancel` gesetzt, gibt es keinen neuen Versuch. Beim Drop
-/// wird curl beendet (z. B. wenn eine Kostprobe genug gelesen hat).
+/// Data stream of a URL via `curl` that continues at the same place after a
+/// connection drop (HTTP range). For large archives that are unpacked while
+/// they arrive: the reader behind it does not notice the drop.
+/// The running curl process lives in `slot` (an abort can end it there);
+/// if `cancel` is set, there is no new attempt. On drop, curl is ended
+/// (e.g. when a sample has read enough).
 pub struct ResumingDownload<'a> {
     url: String,
     pos: u64,
-    /// Stand beim letzten Verbinden (hat die Verbindung etwas gebracht?)
+    /// State at the last connect (did the connection deliver anything?)
     start_pos: u64,
     stdout: Option<ChildStdout>,
     slot: &'a Mutex<Option<Child>>,
     cancel: &'a AtomicBool,
-    /// Verbindungen hintereinander, die kein einziges Byte gebracht haben
+    /// Consecutive connections that delivered not a single byte
     fruitless: u32,
     connections: u32,
     done: bool,
     on_resume: Box<dyn FnMut(u64, u32, &str) + 'a>,
-    /// Wartezeit vor einem neuen Versuch (Tests: kurz)
+    /// Wait time before a new attempt (tests: short)
     pause: std::time::Duration,
 }
 
-/// So viele Verbindungen ohne neues Byte hintereinander, dann aufgeben.
+/// This many connections in a row without a new byte, then give up.
 const MAX_FRUITLESS: u32 = 5;
-/// So viele Verbindungen insgesamt höchstens.
+/// At most this many connections in total.
 const MAX_CONNECTIONS: u32 = 60;
 
 impl<'a> ResumingDownload<'a> {
-    /// Verbindet sofort (Fehler wie „curl fehlt“ kommen gleich). `on_resume`
-    /// meldet einen neuen Versuch: (Byte-Position, Nummer der Verbindung, Grund).
+    /// Connects immediately (errors like "curl is missing" come right away). `on_resume`
+    /// reports a new attempt: (byte position, connection number, reason).
     pub fn new(url: &str, slot: &'a Mutex<Option<Child>>, cancel: &'a AtomicBool, on_resume: impl FnMut(u64, u32, &str) + 'a) -> io::Result<Self> {
         let mut d = Self {
             url: url.to_string(),
@@ -245,12 +245,12 @@ impl<'a> ResumingDownload<'a> {
         Ok(d)
     }
 
-    /// Bisher gelesene Bytes.
+    /// Bytes read so far.
     pub fn position(&self) -> u64 {
         self.pos
     }
 
-    /// Wie oft die Verbindung abgerissen ist und fortgesetzt wurde.
+    /// How often the connection dropped and was resumed.
     pub fn resumed(&self) -> u32 {
         self.connections.saturating_sub(1)
     }
@@ -264,8 +264,8 @@ impl<'a> ResumingDownload<'a> {
         Ok(())
     }
 
-    /// curl beenden (`kill`: noch nicht von selbst fertig) – liefert
-    /// (erfolgreich, Exit-Code, Fehlertext).
+    /// Ends curl (`kill`: not yet finished on its own) – returns
+    /// (success, exit code, error text).
     fn finish(&mut self, kill: bool) -> (bool, Option<i32>, String) {
         self.stdout = None;
         let child = self.slot.lock().unwrap_or_else(|e| e.into_inner()).take();
@@ -281,8 +281,8 @@ impl<'a> ResumingDownload<'a> {
         (status.is_some_and(|s| s.success()), status.and_then(|s| s.code()), err.trim().to_string())
     }
 
-    /// Lohnt ein neuer Versuch? Nicht bei „kein Ausschnitt möglich“ (33) und
-    /// bei HTTP-Fehlern 4xx außer 408/429 (z. B. 404: die Datei gibt es nicht).
+    /// Is a new attempt worthwhile? Not for "range not possible" (33) and
+    /// for HTTP errors 4xx except 408/429 (e.g. 404: the file does not exist).
     fn retryable(code: Option<i32>, text: &str) -> bool {
         match code {
             Some(33) => false,
@@ -294,7 +294,7 @@ impl<'a> ResumingDownload<'a> {
         }
     }
 
-    /// Kurz warten (in kleinen Schritten, damit ein Abbruch sofort greift).
+    /// Waits briefly (in small steps so that an abort takes effect immediately).
     fn wait_before_retry(&self) -> io::Result<()> {
         let factor = 1u32 << self.fruitless.min(4);
         let end = std::time::Instant::now() + (self.pause * factor).min(std::time::Duration::from_secs(30));
@@ -352,7 +352,7 @@ impl Read for ResumingDownload<'_> {
                 };
                 return Err(io::Error::other(msg));
             }
-            // erst melden, dann kurz warten – so steht die Meldung während der Pause
+            // report first, then wait briefly – so the message is shown during the pause
             (self.on_resume)(self.pos, self.connections + 1, &reason);
             self.wait_before_retry()?;
         }
@@ -367,26 +367,26 @@ impl Drop for ResumingDownload<'_> {
     }
 }
 
-// ---------------------------------------------------------------- Einzeldateien (GitHub)
+// ---------------------------------------------------------------- Single files (GitHub)
 //
-// Sammlungen wie OpenScore, KernScores oder die DCML-Korpora liegen als
-// Git-Repositorien auf GitHub. Ihre Archive enthalten viel, was die App nicht
-// braucht (PDF, MuseScore-Rohdateien – bei OpenScore über 90 %). Deshalb: erst
-// die Dateiliste holen (eine Anfrage an die GitHub-API), dann nur die passenden
-// Dateien einzeln von raw.githubusercontent.com laden – mit `curl`, mehrere
-// gleichzeitig.
+// Collections such as OpenScore, KernScores or the DCML corpora live as
+// Git repositories on GitHub. Their archives contain a lot the app does not
+// need (PDF, MuseScore raw files – over 90 % for OpenScore). Hence: first
+// fetch the file list (one request to the GitHub API), then download only the
+// matching files one by one from raw.githubusercontent.com – with `curl`, several
+// at the same time.
 
-/// Eine Datei zum Herunterladen.
+/// A file to download.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RemoteFile {
     pub url: String,
-    /// Zielpfad relativ zum Bibliotheksordner (nur ASCII, siehe [`ascii_path`]).
+    /// Target path relative to the library folder (ASCII only, see [`ascii_path`]).
     pub rel: PathBuf,
-    /// Erwartete Größe in Bytes (aus der Dateiliste).
+    /// Expected size in bytes (from the file list).
     pub size: u64,
 }
 
-/// Dateien (Pfad, Größe) eines GitHub-Repositoriums aus der Antwort von
+/// Files (path, size) of a GitHub repository from the response to
 /// `GET /repos/{repo}/git/trees/{branch}?recursive=1`.
 pub fn parse_github_tree(json: &[u8]) -> io::Result<Vec<(String, u64)>> {
     let v: serde_json::Value = serde_json::from_slice(json).map_err(|e| io::Error::other(klang_i18n::tr!("File list unreadable: {e}", e = e)))?;
@@ -406,8 +406,8 @@ pub fn parse_github_tree(json: &[u8]) -> io::Result<Vec<(String, u64)>> {
         .collect())
 }
 
-/// Dateien eines Repositoriums aus einer mitgelieferten Liste:
-/// `# besitzer/name@zweig`, darunter Zeilen `pfad<TAB>größe` (0 = unbekannt).
+/// Files of a repository from a bundled list:
+/// `# owner/name@branch`, below it lines `path<TAB>size` (0 = unknown).
 pub fn manifest_files(text: &str, repo: &str) -> Option<Vec<(String, u64)>> {
     let mut found = false;
     let mut out = Vec::new();
@@ -429,7 +429,7 @@ pub fn manifest_files(text: &str, repo: &str) -> Option<Vec<(String, u64)>> {
     found.then_some(out)
 }
 
-/// Liest die Dateiliste eines GitHub-Repositoriums (über `curl`).
+/// Reads the file list of a GitHub repository (via `curl`).
 pub fn github_tree(repo: &str, branch: &str) -> io::Result<Vec<(String, u64)>> {
     let url = format!("https://api.github.com/repos/{repo}/git/trees/{branch}?recursive=1");
     let (mut child, mut stdout) = curl(&url)?;
@@ -446,7 +446,7 @@ pub fn github_tree(repo: &str, branch: &str) -> io::Result<Vec<(String, u64)>> {
     parse_github_tree(&body)
 }
 
-/// URL einer Datei in einem GitHub-Repositorium (Pfad prozentkodiert).
+/// URL of a file in a GitHub repository (path percent-encoded).
 pub fn github_raw_url(repo: &str, branch: &str, path: &str) -> String {
     let mut enc = String::new();
     for b in path.bytes() {
@@ -459,8 +459,8 @@ pub fn github_raw_url(repo: &str, branch: &str, path: &str) -> String {
     format!("https://raw.githubusercontent.com/{repo}/{branch}/{enc}")
 }
 
-/// Pfad nur aus ASCII-Zeichen (Umlaute umschrieben, Akzente weg, Rest „_“) –
-/// so kommt `curl` unter jedem Betriebssystem mit den Dateinamen zurecht.
+/// Path of ASCII characters only (umlauts transliterated, accents dropped, rest "_") –
+/// so `curl` copes with the file names on any operating system.
 pub fn ascii_path(path: &str) -> PathBuf {
     let mut out = PathBuf::new();
     for part in path.split('/').filter(|p| !p.is_empty() && *p != "." && *p != "..") {
@@ -500,10 +500,10 @@ pub fn ascii_path(path: &str) -> PathBuf {
 
 #[derive(Clone, Debug, Default)]
 pub struct FetchStats {
-    /// Dateien im Zielordner (neu oder schon vorhanden).
+    /// Files in the target folder (new or already present).
     pub files: usize,
     pub existing: usize,
-    /// Nicht geladen (Fehler), mit den ersten Pfaden.
+    /// Not downloaded (errors), with the first paths.
     pub failed: usize,
     pub failed_paths: Vec<String>,
     pub bytes: u64,
@@ -513,16 +513,16 @@ fn complete(target: &Path, size: u64) -> bool {
     target.metadata().map(|m| m.is_file() && (size == 0 || m.len() == size)).unwrap_or(false)
 }
 
-/// Eintrag für eine `curl`-Konfigurationsdatei (Anführungszeichen, Schrägstriche).
+/// Entry for a `curl` configuration file (quotation marks, slashes).
 fn curl_quote(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "/").replace('"', "\\\""))
 }
 
-/// Lädt `files` nach `dest` – schon vollständige Dateien (gleiche Größe)
-/// werden übersprungen. Je Schub startet ein `curl` mit mehreren parallelen
-/// Verbindungen; der Prozess liegt währenddessen in `slot` (dort kann ihn ein
-/// Abbruch beenden), `cancel` hört zwischen den Schüben auf, `progress`
-/// meldet den Stand.
+/// Downloads `files` to `dest` – files that are already complete (same size)
+/// are skipped. For each batch a `curl` starts with several parallel
+/// connections; meanwhile the process lives in `slot` (an abort can end it
+/// there), `cancel` is checked between batches, `progress`
+/// reports the state.
 pub fn fetch_files(
     files: &[RemoteFile],
     dest: &Path,
@@ -581,7 +581,7 @@ pub fn fetch_files(
                 }
             })?;
             *slot.lock().map_err(|_| io::Error::other(klang_i18n::tr!("Lock")))? = Some(child);
-            // Warten, ohne die Sperre zu halten (ein Abbruch beendet den Prozess über `slot`).
+            // Wait without holding the lock (an abort ends the process via `slot`).
             let (status, mut child) = loop {
                 std::thread::sleep(std::time::Duration::from_millis(100));
                 let mut g = slot.lock().map_err(|_| io::Error::other(klang_i18n::tr!("Lock")))?;
@@ -594,7 +594,7 @@ pub fn fetch_files(
             if let Some(mut e) = child.stderr.take() {
                 let _ = e.read_to_string(&mut err);
             }
-            // Altes curl (vor 7.66) kennt --parallel nicht: nacheinander laden.
+            // Old curl (before 7.66) does not know --parallel: download one after another.
             if parallel && !status.success() && (err.contains("parallel") || status.code() == Some(2)) && tries == 1 {
                 parallel = false;
                 continue;
@@ -611,7 +611,7 @@ pub fn fetch_files(
                 stats.files += 1;
                 stats.bytes += f.size;
             } else {
-                // Fehlerseiten oder halbe Dateien nicht liegen lassen
+                // Do not leave error pages or half files behind
                 let _ = std::fs::remove_file(&target);
                 stats.failed += 1;
                 if stats.failed_paths.len() < 5 {
@@ -631,9 +631,9 @@ mod tests {
     use flate2::write::GzEncoder;
     use std::io::Write;
 
-    /// HTTP-Server für Tests: liefert `data` (auf Wunsch ab einer Range), reißt
-    /// aber jede Antwort nach `cut` Bytes ab. `honor_range = false`: liefert
-    /// immer von vorn. Gibt URL und Zahl der Anfragen zurück.
+    /// HTTP server for tests: serves `data` (from a range if requested), but
+    /// cuts off every response after `cut` bytes. `honor_range = false`: always
+    /// serves from the start. Returns URL and number of requests.
     fn flaky_server(data: Vec<u8>, cut: usize, honor_range: bool) -> (String, Arc<AtomicU64>) {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -673,7 +673,7 @@ mod tests {
                     let _ = s.write_all(head.as_bytes());
                     let _ = s.write_all(&body[..body.len().min(cut)]);
                     let _ = s.flush();
-                    // Verbindung schließen, obwohl noch Bytes fehlen
+                    // Close the connection although bytes are still missing
                 });
             }
         });
@@ -723,7 +723,7 @@ mod tests {
             assert_eq!(&std::fs::read(dir.join(rel)).unwrap(), data, "{rel}");
         }
         drop(d);
-        // Abbruch mitten im Datenstrom: Entpacken meldet „abgebrochen“ (Interrupted)
+        // Abort in the middle of the stream: unpacking reports "aborted" (Interrupted)
         let _ = std::fs::remove_dir_all(&dir);
         let (url, _) = flaky_server(gz.clone(), gz.len() / 5 + 1, true);
         let mut d = ResumingDownload::new(&url, &slot, &cancel, |_, _, _| cancel.store(true, Ordering::SeqCst)).unwrap();
@@ -736,7 +736,7 @@ mod tests {
 
     #[test]
     fn download_gives_up_when_server_ignores_ranges_or_on_cancel() {
-        // Server liefert immer von vorn: kein Fortsetzen (sonst wäre der Strom kaputt)
+        // Server always serves from the start: no resuming (otherwise the stream would be broken)
         let data = vec![7u8; 50_000];
         let (url, hits) = flaky_server(data.clone(), 20_000, false);
         let (slot, cancel) = (Mutex::new(None), AtomicBool::new(false));
@@ -749,7 +749,7 @@ mod tests {
         drop(d);
         assert_eq!(hits.load(Ordering::SeqCst), 2);
 
-        // Abbruch: kein neuer Versuch
+        // Abort: no new attempt
         let (url, hits) = flaky_server(data, 20_000, true);
         let mut d = ResumingDownload::new(&url, &slot, &cancel, |_, _, _| {}).unwrap();
         quick(&mut d);
@@ -818,7 +818,7 @@ mod tests {
         assert!(!dir.join("8/31/liesmich.txt").exists(), "nur Partituren");
         assert!(!dir.join("1/c.xml").exists(), "nach 2 Dateien Schluss");
 
-        // Zweiter Lauf ohne Grenze: vorhandene Dateien werden erkannt, der Rest kommt dazu.
+        // Second run without a limit: existing files are recognized, the rest is added.
         let s = extract_scores(&data[..], &dir, Some("mxl"), None, &never, |_| {}).unwrap();
         assert_eq!((s.files, s.existing, s.limit_reached), (3, 2, false));
         assert!(dir.join("1/c.xml").is_file());

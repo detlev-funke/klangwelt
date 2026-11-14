@@ -1,11 +1,11 @@
-//! Baut libopus (Xiph, BSD-Lizenz, Quellen unter `opus/`) direkt mit dem
-//! C-Compiler – ohne CMake. Welche Dateien dazugehören, steht in den
-//! `*_sources.mk` von libopus selbst; gebaut wird die Gleitkomma-Fassung
-//! ohne Prozessor-Sonderwege und ohne neuronale Netze.
+//! Builds libopus (Xiph, BSD license, sources under `opus/`) directly with the
+//! C compiler – without CMake. Which files belong to it is listed in libopus's
+//! own `*_sources.mk`; the floating-point version is built, without
+//! processor-specific paths and without neural networks.
 
 use std::path::Path;
 
-/// Dateien einer Variablen aus einer libopus-`.mk`-Datei (`NAME = \ a.c \ b.c`).
+/// Files of a variable from a libopus `.mk` file (`NAME = \ a.c \ b.c`).
 fn list(mk: &str, var: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut inside = false;
@@ -65,18 +65,18 @@ fn main() {
     println!("cargo:rerun-if-changed=wasm");
 }
 
-/// Browser (wasm32-unknown-unknown): libopus mit clang aus LLVM, ohne libc.
-/// Die wenigen Kopfdateien, die libopus aus der Standardbibliothek braucht,
-/// liegen unter `wasm/include`; Mathe und `mem*` liefert Rusts
-/// compiler_builtins, Speicher `src/wasm_libc.rs`. Zwischenspeicher als
-/// C99-Felder variabler Länge statt `alloca`.
+/// Browser (wasm32-unknown-unknown): libopus with clang from LLVM, without libc.
+/// The few headers libopus needs from the standard library
+/// live under `wasm/include`; math and `mem*` come from Rust's
+/// compiler_builtins, memory from `src/wasm_libc.rs`. Scratch buffers as
+/// C99 variable-length arrays instead of `alloca`.
 fn wasm(b: &mut cc::Build) {
     b.define("VAR_ARRAYS", None).include("wasm/include").flag("-ffreestanding").flag("-fno-stack-protector");
     for var in ["CC_wasm32_unknown_unknown", "TARGET_CC", "CC", "AR_wasm32_unknown_unknown", "TARGET_AR", "AR"] {
         println!("cargo:rerun-if-env-changed={var}");
     }
     if std::env::var_os("CC_wasm32_unknown_unknown").is_some() || std::env::var_os("TARGET_CC").is_some() {
-        return; // ausdrücklich gesetzt – cc nimmt diesen Compiler
+        return; // explicitly set – cc uses this compiler
     }
     let exe = if cfg!(windows) { ".exe" } else { "" };
     let on_path = |name: &str| {

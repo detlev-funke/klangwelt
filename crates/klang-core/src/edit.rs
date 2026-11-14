@@ -1,29 +1,29 @@
-//! Bearbeitungen über alle Spuren hinweg.
+//! Edits across all tracks.
 //!
-//! **Zeitbereich löschen** (Entf bei markiertem Bereich): Der Bereich
-//! `[start, end)` verschwindet aus allen Spuren, alles danach rückt um seine
-//! Länge nach vorn (Aufrücken, „Ripple-Delete“) – so entsteht keine Lücke.
-//! Rechnerisch ist das eine Zeitabbildung, die den Bereich auf einen Punkt
-//! zusammenzieht ([`collapse`]); Clips und Noten werden mit ihr abgebildet:
+//! **Delete time range** (Delete with a range selected): The range
+//! `[start, end)` disappears from all tracks, and everything after it moves
+//! forward by its length (ripple delete) – so no gap is left.
+//! Mathematically this is a time mapping that collapses the range to a
+//! point ([`collapse`]); clips and notes are mapped with it:
 //!
-//! * Clips ganz im Bereich fallen weg, Clips dahinter rücken nach vorn.
-//! * Ein Noten-Clip, der den Bereich schneidet, wird gekürzt; seine Noten im
-//!   Bereich fallen weg, Noten über eine Kante hinweg werden um den Anteil im
-//!   Bereich kürzer (ein gehaltener Ton bleibt ein Ton).
-//! * Bei einem Audio-Clip bleibt nur das Material außerhalb des Bereichs; das
-//!   Ausschneiden selbst erledigt der Aufrufer (`cut`), der die Audiodaten hält.
+//! * Clips entirely inside the range are dropped, clips after it move forward.
+//! * A note clip that intersects the range is shortened; its notes inside the
+//!   range are dropped, and notes crossing an edge become shorter by the part
+//!   inside the range (a held note stays one note).
+//! * For an audio clip only the material outside the range remains; the cutting
+//!   itself is done by the caller (`cut`), which holds the audio data.
 //!
-//! Alles zusammen ist ein Befehl (`Batch`) – also ein Rückgängig-Schritt.
+//! Everything together is one command (`Batch`) – so one undo step.
 
 use crate::command::{ClipPatch, Command, CoreError};
 use crate::model::{Clip, ClipSource, Note, Project};
 use klang_i18n::tr;
 
 const EPS: f64 = 1e-9;
-/// Kürzere Noten (in Schlägen) fallen nach dem Zusammenziehen weg.
+/// Shorter notes (in beats) are dropped after collapsing.
 const MIN_NOTE: f64 = 1.0 / 128.0;
 
-/// Position nach dem Löschen von `[start, end)`.
+/// Position after deleting `[start, end)`.
 pub fn collapse(x: f64, start: f64, end: f64) -> f64 {
     if x <= start {
         x
@@ -34,15 +34,15 @@ pub fn collapse(x: f64, start: f64, end: f64) -> f64 {
     }
 }
 
-/// Teile der Quelle (Sekunden ab Anfang der Audiodatei), die von einem
-/// Audio-Clip übrig bleiben sollen – in dieser Reihenfolge aneinandergehängt.
+/// Parts of the source (seconds from the start of the audio file) that an
+/// audio clip should keep – joined together in this order.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AudioKeep {
     pub asset_id: String,
     pub parts: Vec<(f64, f64)>,
 }
 
-/// Schläge je Sekunde Quellmaterial eines Audio-Clips.
+/// Beats per second of source material of an audio clip.
 pub fn audio_beats_per_sec(source: &ClipSource, project_bpm: f64) -> f64 {
     match source {
         ClipSource::Audio { source_bpm, warp, .. } => (if *warp { *source_bpm } else { project_bpm }) / 60.0,
@@ -50,7 +50,7 @@ pub fn audio_beats_per_sec(source: &ClipSource, project_bpm: f64) -> f64 {
     }
 }
 
-/// Takt.Schlag einer Position (1-basiert), z. B. „3.1“ oder „2.2,5“.
+/// Bar.beat of a position (1-based), e.g. "3.1" or "2.2,5".
 fn bar_beat(beats: f64, bpb: u32) -> String {
     let bpb = bpb.max(1) as f64;
     let bar = (beats / bpb + EPS).floor();
@@ -72,11 +72,11 @@ fn map_notes(notes: &[Note], clip_start: f64, start: f64, end: f64) -> Vec<Note>
         .collect()
 }
 
-/// Plant das Löschen von `[start, end)` aus allen Spuren mit Aufrücken.
+/// Plans deleting `[start, end)` from all tracks with ripple delete.
 ///
-/// `cut` schneidet Audio: Es bekommt den Clip und die zu behaltenden Teile der
-/// Quelle und liefert die neue Quelle (`ClipSource::Audio` mit neuer Datei und
-/// Dauer). Ergebnis ist ein Stapelbefehl; Fehler, wenn nichts betroffen ist.
+/// `cut` cuts audio: It gets the clip and the parts of the source to keep and
+/// returns the new source (`ClipSource::Audio` with a new file and
+/// duration). The result is a batch command; an error if nothing is affected.
 pub fn delete_range(
     project: &Project,
     start: f64,
@@ -94,11 +94,11 @@ pub fn delete_range(
             let cs = clip.start_beats;
             let ce = cs + clip.length_beats(bpm);
             if ce <= start + EPS {
-                continue; // ganz davor
+                continue; // entirely before
             }
             let (ns, ne) = (collapse(cs, start, end), collapse(ce, start, end));
             if cs >= end - EPS {
-                // ganz dahinter: nur aufrücken
+                // entirely after: just move forward
                 let patch = ClipPatch { start_beats: Some((cs - len).max(0.0)), ..Default::default() };
                 commands.push(Command::SetClip { track_id: track.id, clip_id: clip.id, patch });
                 continue;
@@ -122,13 +122,13 @@ pub fn delete_range(
                 }
                 ClipSource::Audio { asset_id, duration_secs, .. } => {
                     let bps = audio_beats_per_sec(&clip.source, bpm);
-                    // gelöschter Teil in Sekunden der Quelle
+                    // deleted part in seconds of the source
                     let a = ((start.max(cs) - cs) / bps).clamp(0.0, *duration_secs);
                     let b = ((end.min(ce) - cs) / bps).clamp(0.0, *duration_secs);
                     let parts: Vec<(f64, f64)> = [(0.0, a), (b, *duration_secs)].into_iter().filter(|(x, y)| y - x > 1e-4).collect();
                     let keep = AudioKeep { asset_id: asset_id.clone(), parts };
                     let source = cut(clip, &keep).map_err(CoreError::Invalid)?;
-                    // derselbe Clip (gleiche ID) mit neuer Quelle an neuer Stelle
+                    // the same clip (same ID) with a new source at a new position
                     commands.push(Command::RemoveClip { track_id: track.id, clip_id: clip.id });
                     commands.push(Command::AddClip { track_id: track.id, clip: Clip { start_beats: ns, source, ..clip.clone() } });
                 }
@@ -143,16 +143,16 @@ pub fn delete_range(
     Ok(Command::Batch { label, commands })
 }
 
-/// Richtet Noten am Raster aus („am Takt ausrichten“). Gerechnet wird in
-/// Projektzeit (`clip_start` + Notenanfang), damit auch ein Clip, der nicht auf
-/// einem Taktstrich beginnt, sauber im Takt liegt. Der Anfang springt zum
-/// nächsten Rasterpunkt (nie vor den Clipanfang); mit `lengths` auch das Ende,
-/// mindestens ein Raster nach dem Anfang. `only`: Indizes der zu bearbeitenden
-/// Noten (None = alle).
+/// Aligns notes to the grid ("align to bar"). Calculation is done in
+/// project time (`clip_start` + note start), so that a clip that does not begin
+/// on a bar line also sits cleanly on the bars. The start jumps to the
+/// nearest grid point (never before the clip start); with `lengths` the end does
+/// too, at least one grid step after the start. `only`: indices of the notes to
+/// edit (None = all).
 ///
-/// Ergebnis: Noten in der Reihenfolge von `SetClipNotes` (Anfang, Tonhöhe) und
-/// die neuen Indizes der bearbeiteten Noten. Landen zwei Noten gleicher
-/// Tonhöhe auf demselben Anfang, bleibt die längere.
+/// Result: notes in the order of `SetClipNotes` (start, pitch) and the
+/// new indices of the edited notes. If two notes of the same pitch end up on
+/// the same start, the longer one stays.
 pub fn quantize_notes(notes: &[Note], only: Option<&[usize]>, clip_start: f64, grid: f64, lengths: bool) -> Result<(Vec<Note>, Vec<usize>), CoreError> {
     if !grid.is_finite() || grid < 1.0 / 64.0 - EPS {
         return Err(CoreError::Invalid(tr!("The grid must be at least 1/64 beat")));
@@ -196,7 +196,7 @@ pub fn quantize_notes(notes: &[Note], only: Option<&[usize]>, clip_start: f64, g
     Ok((merged.into_iter().map(|(n, _)| n).collect(), selected))
 }
 
-/// Notenwert eines Rasters in Worten: „1/8“ (bei Viertel als Schlag) oder „0,3 Schläge“.
+/// Note value of a grid in words: "1/8" (with a quarter as the beat) or "0.3 beats".
 pub fn grid_name(grid: f64, beat_unit: u32) -> String {
     let d = beat_unit as f64 / grid;
     if d >= 1.0 && (d - d.round()).abs() < 1e-6 {
@@ -215,12 +215,12 @@ mod tests {
     #[test]
     fn quantize_snaps_starts_and_optionally_lengths() {
         let notes: Vec<Note> = [(60, 0.1, 0.8), (62, 1.15, 0.3), (64, 1.6, 1.1), (65, 3.0, 0.5)].iter().map(|&(p, s, l)| Note::new(p, s, l, 90)).collect();
-        // nur die ersten drei, Achtel (0,5), Clip ab Schlag 4
+        // only the first three, eighth (0.5), clip from beat 4
         let (q, sel) = quantize_notes(&notes, Some(&[0, 1, 2]), 4.0, 0.5, false).unwrap();
         let v: Vec<(u8, f64, f64)> = q.iter().map(|n| (n.pitch, n.start_beats, n.length_beats)).collect();
         assert_eq!(v, vec![(60, 0.0, 0.8), (62, 1.0, 0.3), (64, 1.5, 1.1), (65, 3.0, 0.5)]);
         assert_eq!(sel, vec![0, 1, 2]);
-        // mit Längen: Ende auf das Raster, mindestens ein Raster
+        // with lengths: end on the grid, at least one grid step
         let (q, _) = quantize_notes(&notes, None, 4.0, 0.5, true).unwrap();
         let v: Vec<(u8, f64, f64)> = q.iter().map(|n| (n.pitch, n.start_beats, n.length_beats)).collect();
         assert_eq!(v, vec![(60, 0.0, 1.0), (62, 1.0, 0.5), (64, 1.5, 1.0), (65, 3.0, 0.5)]);
@@ -228,10 +228,10 @@ mod tests {
 
     #[test]
     fn quantize_uses_project_time_and_never_leaves_the_clip() {
-        // Clip beginnt bei 4,2: Note bei 0,1 (Projekt 4,3) → Viertel-Raster 4,0 liegt vor dem Clip → 5,0
+        // Clip starts at 4.2: note at 0.1 (project 4.3) → quarter grid 4.0 lies before the clip → 5.0
         let notes = vec![Note::new(60, 0.1, 0.5, 90), Note::new(60, 0.9, 0.5, 90)];
         let (q, sel) = quantize_notes(&notes, None, 4.2, 1.0, false).unwrap();
-        // beide landen auf Projektschlag 5 → zusammengeführt
+        // both land on project beat 5 → merged
         assert_eq!(q.len(), 1);
         assert!((q[0].start_beats - 0.8).abs() < 1e-9);
         assert_eq!(sel, vec![0]);
@@ -252,7 +252,7 @@ mod tests {
     }
 
     fn audio_clip(start: f64, secs: f64) -> Clip {
-        // 120 BPM ohne Warp: 2 Schläge je Sekunde
+        // 120 BPM without warp: 2 beats per second
         Clip { id: Id::NEW, name: "A".into(), start_beats: start, source: ClipSource::Audio { asset_id: "a1".into(), source_bpm: 90.0, warp: false, duration_secs: secs } }
     }
 
@@ -287,7 +287,7 @@ mod tests {
 
     #[test]
     fn notes_clips_shrink_and_later_clips_move_up() {
-        // Spur 1: Clip 0–8 mit Noten; Spur 2: Clip ganz im Bereich und einer dahinter
+        // Track 1: clip 0–8 with notes; track 2: a clip entirely inside the range and one after it
         let mut s = session(vec![
             (TrackKind::Instrument, vec![notes_clip(0.0, 8.0, &[(60, 0.0, 1.0), (62, 2.5, 1.0), (64, 3.5, 2.0), (65, 5.0, 1.0), (67, 6.0, 1.0)])]),
             (TrackKind::Instrument, vec![notes_clip(3.0, 1.0, &[(50, 0.0, 1.0)]), notes_clip(8.0, 4.0, &[(52, 1.0, 1.0)])]),
@@ -297,13 +297,13 @@ mod tests {
         assert_eq!(cmd.label(), "Delete time range (bars 1.3 – 2.2)");
         s.execute(cmd, false).unwrap();
         let t1 = &s.project.tracks[0].clips;
-        // 62 im Bereich: weg; 64 (3,5–5,5) ragt hinaus: bleibt mit dem Rest 0,5 ab Schlag 2;
-        // 65 (Start an der Endkante) rückt auf 2; 67 auf 3
+        // 62 inside the range: gone; 64 (3.5–5.5) extends beyond it: stays with the remaining 0.5 from beat 2;
+        // 65 (starts at the end edge) moves to 2; 67 to 3
         assert_eq!(summary(&t1[0]), (0.0, 5.0, vec![(60, 0.0, 1.0), (64, 2.0, 0.5), (65, 2.0, 1.0), (67, 3.0, 1.0)]));
         let t2 = &s.project.tracks[1].clips;
         assert_eq!(t2.len(), 1, "Clip im Bereich ist weg");
         assert_eq!(summary(&t2[0]), (5.0, 4.0, vec![(52, 1.0, 1.0)]));
-        // ein Rückgängig-Schritt (ein gelöschter Clip kommt hinten in die Liste zurück)
+        // one undo step (a deleted clip comes back at the end of the list)
         assert!(s.undo().unwrap());
         let sorted = |p: &Project| {
             let mut t = p.tracks.clone();
@@ -324,13 +324,13 @@ mod tests {
     fn clip_starting_inside_loses_its_head() {
         let mut s = session(vec![(TrackKind::Instrument, vec![notes_clip(3.0, 4.0, &[(60, 0.0, 1.0), (62, 2.0, 1.0)])])]);
         s.execute(delete_range(&s.project, 2.0, 4.0, &mut no_audio).unwrap(), false).unwrap();
-        // Clip 3–7 → 2–5; Note bei 3 (im Bereich) weg, Note bei 5 → 3 (relativ 1)
+        // Clip 3–7 → 2–5; note at 3 (inside the range) gone, note at 5 → 3 (relative 1)
         assert_eq!(summary(&s.project.tracks[0].clips[0]), (2.0, 3.0, vec![(62, 1.0, 1.0)]));
     }
 
     #[test]
     fn audio_clip_keeps_material_outside_the_range() {
-        // Audio 4 s ab Schlag 1 → Schläge 1–9 (120 BPM, ohne Warp)
+        // Audio 4 s from beat 1 → beats 1–9 (120 BPM, without warp)
         let mut s = session(vec![(TrackKind::Audio, vec![audio_clip(1.0, 4.0), audio_clip(10.0, 1.0)])]);
         let first_id = s.project.tracks[0].clips[0].id;
         let mut seen = Vec::new();
@@ -362,7 +362,7 @@ mod tests {
             parts = Some(k.parts.clone());
             Ok(ClipSource::Audio { asset_id: "x".into(), source_bpm: 60.0, warp: true, duration_secs: 6.0 })
         };
-        // 60 BPM Quelle: ein Schlag = eine Sekunde
+        // 60 BPM source: one beat = one second
         delete_range(&s.project, 2.0, 4.0, &mut cut).unwrap();
         assert_eq!(parts, Some(vec![(0.0, 2.0), (4.0, 8.0)]));
     }

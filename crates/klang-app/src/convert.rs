@@ -1,15 +1,15 @@
-//! Audio und Noten über Spuren hinweg:
+//! Audio and notes across tracks:
 //!
-//! * **Audiodateien einfügen** (Drag & Drop, Agent): je Datei eine Audiospur
-//!   mit Clip – oder, auf eine Audiospur gezogen, die erste Datei dort hinein.
-//! * **Aufnahme → Noten**: erkannte Melodie (Instrumentspur) oder erkannte
-//!   Anschläge (Schlagzeug-Spur) direkt unter der Audiospur.
-//! * **Zeitbereich löschen** über alle Spuren mit Aufrücken; Audio wird dabei
-//!   geschnitten (neue Datei im Klangspeicher, die alte bleibt für Rückgängig).
-//! * **Noten am Raster ausrichten** (Quantisieren).
+//! * **Insert audio files** (drag & drop, agent): one audio track with a clip
+//!   per file – or, when dropped onto an audio track, the first file into it.
+//! * **Recording → notes**: detected melody (instrument track) or detected
+//!   hits (drums track) directly below the audio track.
+//! * **Delete a time range** across all tracks with ripple delete; audio is cut
+//!   in the process (new file in the sound store, the old one stays for undo).
+//! * **Align notes to the grid** (quantize).
 //!
-//! Die Planung liegt im Kern (`klang_core::edit`), hier nur, was Audiodaten
-//! oder die Analyse braucht. Jede Aktion ist ein Rückgängig-Schritt.
+//! Planning lives in the core (`klang_core::edit`); this module only holds what
+//! needs audio data or the analysis. Every action is one undo step.
 
 use crate::analysis::Analysis;
 use crate::audiofile;
@@ -23,11 +23,11 @@ use klang_music::theory::{quantize, TimedNote};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// Längere Dateien werden abgelehnt (Klangwelt hält Audio im Speicher).
+/// Longer files are rejected (Klangwelt keeps audio in memory).
 pub const MAX_IMPORT_SECS: f64 = 30.0 * 60.0;
-/// Anschläge darunter (relativ zum lautesten) gelten als Rauschen.
+/// Hits below this (relative to the loudest) count as noise.
 const MIN_HIT_STRENGTH: f32 = 0.05;
-/// Kurze Blenden an Schnittkanten gegen Knacken (Sekunden).
+/// Short fades at cut edges against clicks (seconds).
 const CUT_FADE_SECS: f64 = 0.003;
 
 #[derive(Serialize, Clone)]
@@ -36,10 +36,10 @@ pub struct Imported {
     pub track_id: Id,
     pub clip_id: Id,
     pub name: String,
-    /// Format in Worten („WAV 24 Bit“).
+    /// Format in words ("WAV 24 Bit").
     pub format: String,
     pub seconds: f64,
-    /// Kanäle der Datei (Klangwelt mittelt zu mono).
+    /// Channels of the file (Klangwelt averages them to mono).
     pub channels: u16,
 }
 
@@ -48,18 +48,18 @@ pub struct Imported {
 pub struct ImportResult {
     pub snapshot: Snapshot,
     pub imported: Vec<Imported>,
-    /// Dateien, die sich nicht lesen ließen (mit Grund).
+    /// Files that could not be read (with reason).
     pub errors: Vec<String>,
 }
 
-/// Wohin eine Aufnahme umgewandelt wird.
+/// What a recording is converted to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Target {
-    /// Erkannte Töne als Instrumentspur (tiefe Lagen: Bass).
+    /// Detected notes as an instrument track (low registers: bass).
     #[serde(alias = "melody", alias = "noten", alias = "notes")]
     Melodie,
-    /// Erkannte Anschläge als Schlagzeug-Spur (Bassdrum, Snare, Hi-Hat).
+    /// Detected hits as a drums track (bass drum, snare, hi-hat).
     #[serde(alias = "rhythm", alias = "drums", alias = "schlagzeug")]
     Rhythmus,
 }
@@ -69,7 +69,7 @@ pub enum Target {
 pub struct Converted {
     pub snapshot: Snapshot,
     pub track_id: Id,
-    /// Anzahl erzeugter Noten.
+    /// Number of notes created.
     pub notes: usize,
 }
 
@@ -77,11 +77,11 @@ pub struct Converted {
 #[serde(rename_all = "camelCase")]
 pub struct Quantized {
     pub snapshot: Snapshot,
-    /// Neue Indizes der ausgerichteten Noten (für die Auswahl).
+    /// New indices of the aligned notes (for the selection).
     pub selected: Vec<usize>,
 }
 
-/// Dateiname ohne Ordner und Endung.
+/// File name without folder and extension.
 pub fn stem(name: &str) -> String {
     let base = name.rsplit(['/', '\\']).next().unwrap_or(name);
     match base.rfind('.') {
@@ -90,7 +90,7 @@ pub fn stem(name: &str) -> String {
     }
 }
 
-/// Teile (Sekunden) einer Aufnahme aneinanderhängen; an Schnittkanten kurz blenden.
+/// Joins parts (seconds) of a recording together; short fades at cut edges.
 fn splice(x: &[f32], sr: u32, parts: &[(f64, f64)]) -> Vec<f32> {
     let fade = (sr as f64 * CUT_FADE_SECS) as usize;
     let mut out = Vec::new();
@@ -118,7 +118,7 @@ fn splice(x: &[f32], sr: u32, parts: &[(f64, f64)]) -> Vec<f32> {
     out
 }
 
-/// Erkannte Melodie → Noten (Sechzehntel-Raster); `spb` = Sekunden je Schlag der Quelle.
+/// Detected melody → notes (sixteenth-note grid); `spb` = seconds per beat of the source.
 fn melody_notes(a: &Analysis, spb: f64, shift: i32) -> Vec<Note> {
     let timed: Vec<TimedNote> = a
         .notes
@@ -131,8 +131,8 @@ fn melody_notes(a: &Analysis, spb: f64, shift: i32) -> Vec<Note> {
         .collect()
 }
 
-/// Erkannte Anschläge → Schlagzeug-Noten (Sechzehntel); je Trommel und Schritt der stärkste.
-/// Dazu Bassdrums aus dem tiefen Band, die die allgemeine Einsatzerkennung übersieht.
+/// Detected hits → drum notes (sixteenth notes); the strongest per drum and step.
+/// Plus bass drums from the low band that the general onset detection overlooks.
 fn rhythm_notes(a: &Analysis, samples: &[f32], sr: f32, spb: f64) -> Vec<Note> {
     let mut best: BTreeMap<(i64, u8), u8> = BTreeMap::new();
     let mut put = |time: f32, drum: hits::Drum, strength: f32| {
@@ -161,10 +161,10 @@ fn rhythm_notes(a: &Analysis, samples: &[f32], sr: f32, spb: f64) -> Vec<Note> {
 }
 
 impl AppState {
-    /// Audiodateien (Name, Inhalt oder Lesefehler) einfügen. Auf eine Audiospur
-    /// (`track_id`) kommt die erste Datei dort hinein, jede weitere bekommt eine
-    /// eigene Spur direkt darunter; sonst (Instrumentspur: darunter, keine
-    /// Spur: am Ende) je Datei eine neue Audiospur. Alle ab `start_beats`.
+    /// Inserts audio files (name, content or read error). Onto an audio track
+    /// (`track_id`) the first file goes into it, every further one gets its own
+    /// track directly below; otherwise (instrument track: below, no track: at
+    /// the end) a new audio track per file. All from `start_beats`.
     pub fn import_audio(&self, files: Vec<(String, Result<Vec<u8>, String>)>, track_id: Option<Id>, start_beats: f64) -> CmdResult<ImportResult> {
         let mut decoded = Vec::new();
         let mut errors = Vec::new();
@@ -194,8 +194,8 @@ impl AppState {
                 let (format, channels) = (d.format.clone(), d.channels);
                 let asset_id = pool.insert(name.clone(), d.samples, d.sample_rate);
                 let clip_id = p.alloc_id();
-                // Originaltempo: der Clip wird nicht gedehnt, wenn sich das Projekttempo ändert
-                // („Tempo erkennen“ im Clip-Fenster schaltet das Mitlaufen ein).
+                // Original tempo: the clip is not stretched when the project tempo changes
+                // ("Detect tempo" in the clip window turns on following it).
                 let clip = Clip { id: clip_id, name: name.clone(), start_beats: start, source: ClipSource::Audio { asset_id, source_bpm: bpm, warp: false, duration_secs: seconds } };
                 let track_id = match target {
                     Some((_, tid, true)) if k == 0 => {
@@ -223,9 +223,9 @@ impl AppState {
         Ok(ImportResult { snapshot, imported, errors })
     }
 
-    /// Erkannte Melodie bzw. Anschläge von Audio-Clips als neue Instrumentspur
-    /// direkt unter der Audiospur (ein Clip je Audio-Clip, an derselben Stelle,
-    /// Länge auf ganze Takte). `clip_id`: None = alle Audio-Clips der Spur.
+    /// Detected melody or hits of audio clips as a new instrument track
+    /// directly below the audio track (one clip per audio clip, in the same
+    /// place, length rounded to whole bars). `clip_id`: None = all audio clips of the track.
     pub fn audio_to_notes(&self, track_id: Id, clip_id: Option<Id>, target: Target, label: &str) -> CmdResult<Converted> {
         let (track, index, bpm, bpb) = {
             let s = lock(&self.session)?;
@@ -318,8 +318,8 @@ impl AppState {
         Ok(Converted { snapshot, track_id: new_id, notes })
     }
 
-    /// Zeitbereich `[start, end)` (Schläge) aus allen Spuren löschen; alles
-    /// danach rückt auf. Die Markierung ist danach aufgehoben.
+    /// Deletes the time range `[start, end)` (beats) from all tracks; everything
+    /// after it moves up. The selection is cleared afterwards.
     pub fn delete_range(&self, start: f64, end: f64) -> CmdResult<Snapshot> {
         let (start, end) = (start.min(end), start.max(end));
         let project = lock(&self.session)?.project.clone();
@@ -341,7 +341,7 @@ impl AppState {
         self.set_loop(None, Some(None))
     }
 
-    /// Noten eines Clips am Raster ausrichten (`indices`: None = alle).
+    /// Aligns the notes of a clip to the grid (`indices`: None = all).
     pub fn quantize_notes(&self, track_id: Id, clip_id: Id, indices: Option<Vec<usize>>, grid: f64, lengths: bool, label: Option<&str>) -> CmdResult<Quantized> {
         let (clip, beat_unit) = {
             let s = lock(&self.session)?;
@@ -388,7 +388,7 @@ mod tests {
     #[test]
     fn drum_recording_becomes_kick_snare_hat_on_their_steps() {
         use klang_dsp::drums::{self, DrumKit};
-        // zwei Takte bei 120 BPM: Bassdrum 1/3, Snare 2/4, Hi-Hat auf den Achteln dazwischen
+        // two bars at 120 BPM: bass drum 1/3, snare 2/4, hi-hat on the eighths in between
         let sr = 44_100.0f32;
         let kit = DrumKit::default();
         let step = 0.125f32;
@@ -417,7 +417,7 @@ mod tests {
 
     #[test]
     fn splice_joins_parts_and_fades_only_at_cuts() {
-        let sr = 1000; // 3 ms Blende = 3 Samples
+        let sr = 1000; // 3 ms fade = 3 samples
         let x = vec![1.0f32; 100];
         let y = splice(&x, sr, &[(0.0, 0.02), (0.05, 0.1)]);
         assert_eq!(y.len(), 20 + 50);

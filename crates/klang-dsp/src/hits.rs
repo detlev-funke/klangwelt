@@ -1,16 +1,16 @@
-//! Anschläge einer Aufnahme Trommeln zuordnen – für „Audio → Rhythmus-Spur“.
+//! Assigning the hits of a recording to drums – for "Audio → Rhythm track".
 //!
-//! Vom Anfang jedes Anschlags (bis 100 ms, höchstens bis zum nächsten) wird
-//! gemessen, wie sich die Energie auf drei Bänder verteilt: tief (unter
-//! ≈ 150 Hz), Mitte und hoch (über ≈ 5 kHz). Bassdrum: überwiegend tief.
-//! Hi-Hat (auch Shaker, Becken): viel Höhe, kaum Tiefe. Alles dazwischen –
-//! Snare, Clap, Rimshot, höhere Toms – wird zur Snare; tiefe Toms können als
-//! Bassdrum durchgehen. Ein erkannter tiefer Grundton (unter ≈ 80 Hz) hilft
-//! bei knappen Fällen.
+//! From the start of each hit (up to 100 ms, at most up to the next one) it is
+//! measured how the energy is distributed over three bands: low (below
+//! ≈ 150 Hz), mid and high (above ≈ 5 kHz). Bass drum: mostly low.
+//! Hi-hat (also shaker, cymbal): a lot of highs, hardly any lows. Everything in
+//! between – snare, clap, rimshot, higher toms – becomes the snare; low toms may
+//! pass as a bass drum. A detected low fundamental (below ≈ 80 Hz) helps
+//! in close cases.
 
 use crate::drums::{HAT_CLOSED, KICK, SNARE};
 
-/// Trommel einer Rhythmus-Spur aus einer Aufnahme.
+/// Drum of a rhythm track from a recording.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Drum {
     Kick,
@@ -19,7 +19,7 @@ pub enum Drum {
 }
 
 impl Drum {
-    /// Taste (General MIDI) der Schlagzeug-Spur.
+    /// Key (General MIDI) of the drums track.
     pub fn midi(self) -> u8 {
         match self {
             Drum::Kick => KICK,
@@ -29,14 +29,14 @@ impl Drum {
     }
 }
 
-/// Energieanteile (0…1) im tiefen und im hohen Band.
+/// Energy shares (0…1) in the low and the high band.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Bands {
     pub low: f32,
     pub high: f32,
 }
 
-/// Zweistufiger Tiefpass (je eine Polstelle) bei `fc` Hz.
+/// Two-stage low-pass (one pole each) at `fc` Hz.
 fn lowpass(x: &[f32], sr: f32, fc: f32) -> Vec<f32> {
     let a = (-2.0 * std::f32::consts::PI * fc / sr).exp();
     let (mut y1, mut y2) = (0.0f32, 0.0f32);
@@ -53,7 +53,7 @@ fn energy(v: &[f32]) -> f32 {
     v.iter().map(|s| s * s).sum::<f32>()
 }
 
-/// Energie (nicht Anteile) im tiefen, mittleren und hohen Band.
+/// Energy (not shares) in the low, mid and high band.
 fn band_energy(x: &[f32], sr: f32) -> [f32; 3] {
     let total = energy(x);
     let low = energy(&lowpass(x, sr, 150.0));
@@ -74,8 +74,8 @@ pub fn bands(x: &[f32], sr: f32) -> Bands {
     shares(band_energy(x, sr))
 }
 
-/// Was ein Anschlag hinzufügt: Bandanteile und Energiezuwachs je Band
-/// gegenüber dem gleich langen Abschnitt davor.
+/// What a hit adds: band shares and energy increase per band
+/// relative to the section of equal length before it.
 fn measure(samples: &[f32], sr: f32, time: f32, end: f32) -> (Bands, [f32; 3]) {
     let a = ((time.max(0.0) * sr) as usize).min(samples.len());
     let len = ((end - time).clamp(0.02, 0.1) * sr) as usize;
@@ -98,18 +98,18 @@ fn decide(bd: Bands, midi: Option<f32>) -> Drum {
     }
 }
 
-/// Ordnet einen Anschlag (Einsatz `time`, Abschnittsende `end`, beides
-/// Sekunden; `midi` = erkannter Grundton) einer Trommel zu. Gemessen wird,
-/// was gegenüber dem Abschnitt davor *hinzukommt* – eine ausklingende
-/// Bassdrum unter der nächsten Hi-Hat zählt so nicht mit.
+/// Assigns a hit (onset `time`, section end `end`, both in
+/// seconds; `midi` = detected fundamental) to a drum. What is measured is
+/// what *is added* relative to the section before – a decaying
+/// bass drum under the next hi-hat does not count.
 pub fn classify(samples: &[f32], sr: f32, time: f32, end: f32, midi: Option<f32>) -> Drum {
     decide(measure(samples, sr, time, end).0, midi)
 }
 
-/// Alle Anschläge einer Aufnahme (Einsatz, Abschnittsende, Grundton) zuordnen.
-/// Eine Bassdrum, die so viel Höhe mitbringt wie die Hi-Hats derselben
-/// Aufnahme, bekommt die Hi-Hat dazu (Hi-Hat auf der Zählzeit) – neben einer
-/// Bassdrum ist eine Hi-Hat am Energieanteil allein nicht zu erkennen.
+/// Assigns all hits of a recording (onset, section end, fundamental).
+/// A bass drum that brings as much high content as the hi-hats of the same
+/// recording gets the hi-hat added (hi-hat on the beat) – next to a
+/// bass drum a hi-hat cannot be recognized by its energy share alone.
 pub fn classify_hits(samples: &[f32], sr: f32, hits: &[(f32, f32, Option<f32>)]) -> Vec<Vec<Drum>> {
     let measured: Vec<(Drum, f32)> = hits
         .iter()
@@ -130,10 +130,10 @@ pub fn classify_hits(samples: &[f32], sr: f32, hits: &[(f32, f32, Option<f32>)])
         .collect()
 }
 
-/// Einsätze im tiefen Band (unter ≈ 150 Hz) mit Stärke 0…1: Bassdrums gehen in
-/// der allgemeinen Einsatzerkennung (über alle Frequenzen) neben lauten
-/// Becken leicht unter. Ein Einsatz ist ein Energiesprung um mindestens 6 dB
-/// binnen 20 ms auf mindestens 8 % der lautesten Stelle.
+/// Onsets in the low band (below ≈ 150 Hz) with strength 0…1: bass drums are
+/// easily lost next to loud cymbals in the general onset detection (over all
+/// frequencies). An onset is an energy jump of at least 6 dB
+/// within 20 ms to at least 8 % of the loudest spot.
 pub fn low_onsets(samples: &[f32], sr: f32) -> Vec<(f32, f32)> {
     let low = lowpass(samples, sr, 150.0);
     let hop = ((0.005 * sr) as usize).max(1);
@@ -151,7 +151,7 @@ pub fn low_onsets(samples: &[f32], sr: f32) -> Vec<(f32, f32)> {
         if env[k] < 0.08 * max || env[k] < 4.0 * before {
             continue;
         }
-        // steilster Anstieg in der Nachbarschaft (±30 ms)
+        // steepest rise in the neighborhood (±30 ms)
         let r = rise(k);
         let span = (0.03 * sr) as usize / hop;
         if (k.saturating_sub(span)..(k + span + 1).min(env.len())).any(|j| j != k && rise(j) > r) {
@@ -161,7 +161,7 @@ pub fn low_onsets(samples: &[f32], sr: f32) -> Vec<(f32, f32)> {
         if out.last().is_some_and(|(p, _)| t - p < 0.08) {
             continue;
         }
-        // Stärke: Spitze der folgenden 50 ms relativ zur lautesten Stelle
+        // strength: peak of the following 50 ms relative to the loudest spot
         let peak = env[k..(k + (0.05 * sr) as usize / hop + 1).min(env.len())].iter().copied().fold(0.0f32, f32::max);
         out.push((t, (peak / max).sqrt().min(1.0)));
     }
@@ -193,7 +193,7 @@ mod tests {
                 assert_eq!(got, want, "Taste {midi} (Anschlag {vel}): {:?}", bands(&x[..(0.06 * sr) as usize], sr));
             }
         }
-        // tiefere und höhere Bassdrum
+        // lower and higher bass drum
         for grundton in [28.0, 36.0, 40.0] {
             let k = DrumKit { kick: drums::KickParams { grundton, ..kit.kick }, ..kit };
             let x = drums::render_hit(&k, drums::KICK, 0.8, sr, 3).unwrap();
@@ -201,7 +201,7 @@ mod tests {
         }
     }
 
-    /// Takt bei 120 BPM aus Klängen des eigenen Schlagzeugs: (Taste, Sekunde).
+    /// Bar at 120 BPM from sounds of the built-in drum kit: (key, second).
     fn beat(hits: &[(u8, f32)], sr: f32) -> Vec<f32> {
         let kit = DrumKit::default();
         let mut out = vec![0.0f32; (2.6 * sr) as usize];
@@ -223,7 +223,7 @@ mod tests {
         let x = beat(&[(drums::KICK, 0.0), (drums::HAT_CLOSED, 0.25), (drums::SNARE, 0.5), (drums::KICK, 1.0), (drums::HAT_CLOSED, 1.0)], sr);
         assert_eq!(classify(&x, sr, 0.25, 0.5, None), Drum::HiHat, "Bassdrum klingt noch nach");
         assert_eq!(classify(&x, sr, 0.5, 1.0, None), Drum::Snare);
-        // mit weiteren Hi-Hats in der Aufnahme: Bassdrum + Hi-Hat bei 1,0 erkannt, bei 0 nur die Bassdrum
+        // with further hi-hats in the recording: bass drum + hi-hat detected at 1.0, only the bass drum at 0
         let more = beat(&[(drums::KICK, 0.0), (drums::HAT_CLOSED, 0.25), (drums::SNARE, 0.5), (drums::HAT_CLOSED, 0.75), (drums::KICK, 1.0), (drums::HAT_CLOSED, 1.0)], sr);
         let got = classify_hits(&more, sr, &[(0.0, 0.25, None), (0.25, 0.5, None), (0.5, 0.75, None), (0.75, 1.0, None), (1.0, 1.4, None)]);
         assert_eq!(got, vec![vec![Drum::Kick], vec![Drum::HiHat], vec![Drum::Snare], vec![Drum::HiHat], vec![Drum::Kick, Drum::HiHat]]);

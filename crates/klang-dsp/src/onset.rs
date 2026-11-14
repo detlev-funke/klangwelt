@@ -1,4 +1,4 @@
-//! Einsatzerkennung (Spectral Flux) und Tempo-Schätzung (Autokorrelation).
+//! Onset detection (spectral flux) and tempo estimation (autocorrelation).
 
 use crate::fft::{hann, Complex, Fft};
 use crate::util::median;
@@ -8,7 +8,7 @@ use serde::Serialize;
 pub struct OnsetConfig {
     pub frame_len: usize,
     pub hop: usize,
-    /// Abstand über dem lokalen Median, ab dem ein Peak ein Einsatz ist.
+    /// Distance above the local median from which a peak counts as an onset.
     pub delta: f32,
     pub median_radius: usize,
     pub min_interval_secs: f32,
@@ -30,9 +30,9 @@ impl Default for OnsetConfig {
 #[serde(rename_all = "camelCase")]
 pub struct OnsetAnalysis {
     pub hop_secs: f32,
-    /// Normierte Novelty-Kurve (0…1), ein Wert pro Hop.
+    /// Normalized novelty curve (0…1), one value per hop.
     pub envelope: Vec<f32>,
-    /// Einsatzzeiten in Sekunden.
+    /// Onset times in seconds.
     pub onsets: Vec<f32>,
 }
 
@@ -42,7 +42,7 @@ pub fn detect_onsets(samples: &[f32], sample_rate: f32, cfg: &OnsetConfig) -> On
     if samples.is_empty() || cfg.hop == 0 {
         return OnsetAnalysis { hop_secs, ..Default::default() };
     }
-    // Stille voranstellen: Ein Schlag ganz am Anfang braucht ein „Vorher“ zum Vergleich.
+    // Prepend silence: a beat right at the start needs a "before" to compare against.
     let lead = n;
     let mut padded = vec![0.0f32; lead + samples.len().max(n)];
     padded[lead..lead + samples.len()].copy_from_slice(samples);
@@ -102,7 +102,7 @@ pub fn detect_onsets(samples: &[f32], sample_rate: f32, cfg: &OnsetConfig) -> On
         if v <= threshold {
             continue;
         }
-        // Der Flux-Peak liegt etwa ein Viertel Frame nach dem Einsatz.
+        // The flux peak lies about a quarter frame after the onset.
         let t = (((i * cfg.hop) as f32 + n as f32 * 0.25) / sample_rate - lead_secs).max(0.0);
         if t - last < cfg.min_interval_secs {
             continue;
@@ -111,13 +111,13 @@ pub fn detect_onsets(samples: &[f32], sample_rate: f32, cfg: &OnsetConfig) -> On
         last = t;
     }
 
-    // Hüllkurve wieder auf den Originalbeginn ausrichten.
+    // Align the envelope back to the original start.
     let skip = (lead / cfg.hop).min(env.len());
     OnsetAnalysis { hop_secs, envelope: env.split_off(skip), onsets }
 }
 
-/// Schätzt das Tempo aus der Novelty-Kurve. Bevorzugt Werte um 120 BPM,
-/// um Oktavfehler (halbes/doppeltes Tempo) abzumildern.
+/// Estimates the tempo from the novelty curve. Prefers values around 120 BPM
+/// to mitigate octave errors (half/double tempo).
 pub fn estimate_tempo(envelope: &[f32], hop_secs: f32, min_bpm: f32, max_bpm: f32) -> Option<f32> {
     if envelope.len() < 16 || hop_secs <= 0.0 {
         return None;
@@ -205,7 +205,7 @@ mod tests {
     fn hit_at_the_very_start_is_found() {
         let sr = 44_100.0;
         let (mut x, _) = click_train(120.0, 4.0, sr);
-        // zusätzlicher Schlag genau bei 0 s
+        // additional beat exactly at 0 s
         for i in 0..(0.03 * sr) as usize {
             x[i] += (i as f32 * 0.37).sin() * (-(i as f32) / (0.006 * sr)).exp() * 0.8;
         }

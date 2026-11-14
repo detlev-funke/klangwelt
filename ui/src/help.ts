@@ -1,15 +1,15 @@
-// Kontexthilfe: ausführliche Texte zu den Bedienelementen. Zu einem Element
-// gilt der Eintrag, dessen Selektor auf das Element selbst oder den nächsten
-// Vorfahren passt (der tiefste gewinnt). Fehlt ein Eintrag, zeigt das
-// Hilfefenster wenigstens den Tooltip (title) und den Eintrag des Fensters.
+// Context help: detailed texts on the controls. For an element,
+// the entry whose selector matches the element itself or the nearest
+// ancestor applies (the deepest wins). If an entry is missing, the
+// help window at least shows the tooltip (title) and the window's entry.
 
 import { t } from "./i18n.js";
 
 export interface HelpTopic {
   title: string;
-  /** Absätze; einfache Hervorhebung mit **fett**. */
+  /** Paragraphs; simple emphasis with **bold**. */
   text: string[];
-  /** Tasten und Mausgesten: [Taste, Wirkung]. */
+  /** Keys and mouse gestures: [key, effect]. */
   keys?: [string, string][];
 }
 
@@ -136,7 +136,7 @@ const panelTopics: Record<string, HelpTopic> = {
 };
 
 const ENTRIES: Entry[] = [
-  // ------------------------------------------------ Leiste oben
+  // ------------------------------------------------ Top bar
   { sel: "kw-transport .brand", topic: { title: "Klangwelt", text: [t("Make music, record, detect and design sounds – all in one program. The **intro tour** on the page of an empty project shows all the windows.")] } },
   { sel: "[data-help=datei]", topic: { title: t("\"File\" menu"), text: [t("New project, Open, Save as, Export and the demo project. Projects are stored in Documents/Klangwelt/Projekte; a .klangwelt file contains everything, including the recordings.")], keys: [[t("Ctrl+N"), t("new")], [t("Ctrl+O"), t("open")], [t("Ctrl+Shift+S"), t("save as")]] } },
   { sel: ".save-btn", topic: { title: t("Save"), text: [t("Saves the project to its file; the first time, Klangwelt asks for a name. A dot on the button and \"•\" after the name indicate unsaved changes.")], keys: [[t("Ctrl+S"), t("save")]] } },
@@ -170,7 +170,7 @@ const ENTRIES: Entry[] = [
     t("The choice applies from the next recording on and also after a restart; it can't be changed during a recording."),
   ] } },
 
-  // ------------------------------------------------ Spuren
+  // ------------------------------------------------ Tracks
   { sel: ".harmony-toggle", topic: { title: t("Harmony in the timeline"), text: [t("Shows a band of chords in the ruler, colored by their mood (resolving, tense, surprising …). Red edges mark harmonic breaks – out-of-key chords without an explanation, or tritone leaps. The band also appears while you're working in the Harmony window.")] } },
   { sel: "[data-help=neue-audiospur]", topic: { title: t("Audio track"), text: [t("New track for recordings. Start recording with R or the red button at the top.")] } },
   { sel: "[data-help=neue-instrumentspur]", topic: { title: t("Instrument track"), text: [t("New track with an instrument and a short pattern: pluck, organ, harpsichord, bass, synth or drums. Shape the sound in the \"Sound\" window.")] } },
@@ -199,7 +199,7 @@ const ENTRIES: Entry[] = [
   { sel: "kw-panel[tab=clip] .mark", topic: { title: t("Expression marks"), text: [t("Crescendo/Decrescendo, Accent (+25), Staccato (half length), Legato (up to the next note), Vibrato, Brighter/Darker, Scoop and Neutral – for the selected notes or all of them.")] } },
   { sel: "kw-panel[tab=clip] input[type=range]", topic: { title: t("Expression sliders"), text: [t("Show the average of the selected notes; dragging sets all of them to that value (one undo step).")] } },
 
-  // ------------------------------------------------ Klang
+  // ------------------------------------------------ Sound
   { sel: "kw-panel[tab=klang] .snd-kinds", topic: { title: t("Instrument"), text: [t("Changes the track's instrument. The notes stay; the sound starts from the instrument's starting point.")] } },
   { sel: "kw-panel[tab=klang] .snd-mark", topic: { title: t("Starting point"), text: [t("Named point in the field – a click sets this field's controls; the other fields stay untouched.")] } },
   { sel: "kw-panel[tab=klang] .snd-field[data-field=charakter]", topic: { title: t("\"Character\" field"), text: [t("Each instrument has its own axes (for drums, e.g. crisp → powerful and simple → complex). A point here sets many of the instrument's controls at once.")] } },
@@ -211,7 +211,7 @@ const ENTRIES: Entry[] = [
   { sel: "kw-panel[tab=klang] .snd-fine", topic: { title: t("Fine-tuning"), text: [t("All of the instrument's controls individually. On the right, the sound's measurements (brightness, decay, fundamental …) – the same ones the agent reads.")] } },
   { sel: "kw-panel[tab=klang] .snd-lib", topic: { title: t("My sounds"), text: [t("Saves the current settings under a name – all controls, the position in the fields and, for the synth, the envelope. Saved sounds are available in every project; a click loads one into the track. ✎ renames, the trash can deletes on the second click.")] } },
 
-  // ------------------------------------------------ Rhythmus
+  // ------------------------------------------------ Rhythm
   { sel: ".rh-genre", topic: { title: t("Genre"), text: [t("Typical patterns of a style with tempo, recommended swing and a tip. A click shows the genre's patterns.")] } },
   { sel: ".rh-pattern", topic: { title: t("Pattern"), text: [t("Loads the pattern into the grid – as a draft or, if a drum clip is selected, as the clip's new content.")] } },
   { sel: ".rh-step", topic: { title: t("Step"), text: [t("A click sets or clears a hit. The bright columns are beats 1 2 3 4. Klangwelt adds the accents itself (loud backbeat, quiet ghost notes).")] } },
@@ -225,14 +225,14 @@ const ENTRIES: Entry[] = [
   { sel: ".song-chords", topic: { title: t("Chords"), text: [t("Chords in sequence – lower case is minor (a = A minor, C = C major; F♯ or F#, B♭ or Bb) – or scale degrees (i, IV, V …). Next to them, the bars per chord.")] } },
   { sel: ".song-write", topic: { title: t("Generate song"), text: [t("Writes one track per role (all drums together in \"Beat\") and one clip per section, sets the tempo and zooms to the whole song. Generating again replaces the most recently generated tracks – one undo step brings them back.")] } },
 
-  // ------------------------------------------------ Bibliothek
+  // ------------------------------------------------ Library
   { sel: ".lib-name", topic: { title: t("Libraries"), text: [t("Name of the active library. A click opens the manager: switch, create a new one (e.g. for experimenting), rename, delete (only the index, never scores).")] } },
   { sel: "[data-help=lib-herunterladen]", topic: { title: t("Download"), text: [t("Opens the catalog of music libraries: PDMX (over 250,000 scores), OpenScore, KernScores with Bach, Mozart and Beethoven, and DCML with harmonic analysis. Each package lists its size and license; a click downloads it and adds it to the active library – in the background, even across a restart."), t("If a download is already running, the button says \"Queue\": the package goes into the queue and starts by itself afterwards – so you can order several packages at once.")] } },
   { sel: "[data-help=lib-warteschlange]", topic: { title: t("Queue"), text: [t("Ordered packages that are downloaded and added after the current job – one after another, each into the library that was active when it was ordered."), t("The × removes a package; \"Remove all\" clears the list. \"Cancel\" only stops the current job; then the next one starts. The queue is lost when you close the app.")] } },
   { sel: "canvas.lib-ruler", topic: { title: t("Score timeline"), text: [t("Drag to move through time, a click sets the cursor, Shift/Ctrl+drag marks a section to listen to or import.")] } },
   { sel: "canvas.lib-roll", topic: { title: t("Score notes"), text: [t("All voices of the selected score.")], keys: [[t("Mouse wheel"), t("scroll")], [t("Ctrl + mouse wheel"), t("zoom")], [t("middle mouse button"), t("drag")]] } },
 
-  // ------------------------------------------------ Harmonie
+  // ------------------------------------------------ Harmony
   { sel: "kw-panel[tab=harmonie] .hc-mode", topic: { title: t("Insert or replace"), text: [t("**Insert** makes room: everything from that point on moves later in all tracks by the length of the new chords. **Replace** overwrites what follows in the target track.")] } },
   { sel: "kw-panel[tab=harmonie] .hc-follow", topic: { title: t("Follow"), text: [t("During playback and when you set the cursor, the progression picks up the chords at that point – your own new chords stay after them.")] } },
   { sel: "kw-panel[tab=harmonie] .hc-chip", topic: { title: t("Progression"), text: [t("The chords so far. A click plays one; \"Write to track\" writes the latest new chords into the target track.")] } },
@@ -240,14 +240,14 @@ const ENTRIES: Entry[] = [
   { sel: "kw-panel[tab=harmonie] .hc-legend", topic: { title: t("Moods"), text: [t("resolving (green), tense (orange), surprising (pink), bright and dark – hover over a mood to highlight only its transitions.")] } },
   { sel: "kw-panel[tab=harmonie] .hc-circle", topic: { title: t("Circle of fifths"), text: [t("Major outside, minor in the middle, diminished inside; the key's chords are colored. The best continuations show a rank and an arrow.")], keys: [[t("Click"), t("preview transition")], [t("Double-click"), t("add to progression")]] } },
 
-  // ------------------------------------------------ Kontextmenü
+  // ------------------------------------------------ Context menu
   { sel: ".ctx-menu [data-act^=raster]", topic: { title: t("Quantize"), text: [t("Moves the selected notes onto the grid: 1/4, 1/8, 1/16 or the view's grid (finer the further you zoom in). The grid follows the song's bars, even if the clip starts offset."), t("\"Quantize\" only moves the starts, \"Start and length\" also the ends – every note stays at least one grid step long.")] } },
   { sel: ".ctx-menu", topic: { title: t("Context menu"), text: [t("What you can do with the clicked item: quantize and transpose notes, convert a recording into a melody or rhythm track, delete the selected time range from all tracks. Esc or a click outside closes it.")] } },
 
   // ------------------------------------------------ Agent
   { sel: ".chat-input", topic: { title: t("Task"), text: [t("Write what the agent should do – e.g. \"Make the kick deeper\" or \"Write a bassline for the selected bars\". Audible tracks and the selected time range are sent along automatically.")], keys: [[t("Enter"), t("send")], [t("Shift + Enter"), t("new line")]] } },
 
-  // ------------------------------------------------ Fenster allgemein
+  // ------------------------------------------------ Windows in general
   { sel: ".dk-tab", topic: { title: t("Window tab"), text: [t("Dragging moves the window: onto another window's target cross to dock, onto a tab bar to group, anywhere else to float. The × or the middle mouse button closes it; \"Windows ▾\" brings it back.")], keys: [[t("Esc while dragging"), t("cancel")]] } },
   { sel: "kw-panel[tab=clip]", topic: panelTopics.clip },
   { sel: "kw-panel[tab=analyse]", topic: panelTopics.analyse },
@@ -264,9 +264,9 @@ const ENTRIES: Entry[] = [
 
 export interface HelpView {
   topic: HelpTopic;
-  /** Tooltip eines tieferen Elements ohne eigenen Eintrag („Hier: …“). */
+  /** Tooltip of a deeper element without an entry of its own ("Here: …"). */
   tip: string | null;
-  /** Element, für das die Hilfe gilt (zum Wiedererkennen beim Einfrieren). */
+  /** Element the help applies to (for recognizing it when freezing). */
   el: Element;
 }
 
@@ -274,7 +274,7 @@ function tooltipOf(el: Element): string {
   return (el.getAttribute("title") || el.getAttribute("aria-label") || "").trim();
 }
 
-/** Hilfe zu einem Element (mit Mausposition für Flächen wie die Zeitleiste). */
+/** Help for an element (with mouse position for areas like the timeline). */
 export function helpFor(target: Element | null, x = 0, y = 0): HelpView | null {
   let tip: string | null = null;
   for (let el: Element | null = target; el; el = el.parentElement) {
@@ -282,7 +282,7 @@ export function helpFor(target: Element | null, x = 0, y = 0): HelpView | null {
     if (entry) {
       const topic = typeof entry.topic === "function" ? entry.topic(el, x, y) : entry.topic;
       const own = tooltipOf(el);
-      // Tooltip eines tieferen Elements oder dynamischer Tooltip des Elements selbst
+      // tooltip of a deeper element or dynamic tooltip of the element itself
       const extra = tip ?? (own && !topic.text.some((p) => p.includes(own)) ? own : null);
       return { topic, tip: extra && extra !== topic.title ? extra : null, el };
     }

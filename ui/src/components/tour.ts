@@ -1,13 +1,13 @@
-// Intro-Tour: geht Schritt für Schritt durch alle Fenster. Das jeweilige
-// Fenster ist ausgeschnitten (der Rest abgedunkelt), ein großer Zettel
-// erklärt es, kleine Post-its kleben an einzelnen Funktionen. Weiter mit
-// → / Enter, zurück mit ←, Esc beendet. Am Ende sind die Fenster wieder so
-// aufgeschlagen wie vorher.
+// Intro tour: goes step by step through all windows. The window in question
+// is cut out (the rest dimmed), a large note explains it, small post-its
+// stick to individual functions. Continue with
+// → / Enter, back with ←, Esc ends. At the end the windows are open again
+// as they were before.
 //
-// Damit die Fenster etwas zeigen, lädt die Tour im leeren Projekt die Demo
-// (ein Rückgängig-Schritt) und füllt jedes Fenster: Clip gewählt, Analyse der
-// Arpeggio-Aufnahme, Klang der Melodie, Fugenthema, Harmonie an der
-// Abspielposition. Danach verschwindet die Demo wieder – außer mit „Demo behalten“.
+// So that the windows have something to show, in an empty project the tour loads the demo
+// (one undo step) and fills each window: clip selected, analysis of the
+// arpeggio recording, sound of the melody, fugue subject, harmony at the
+// playhead. Afterwards the demo disappears again – except with "Keep demo".
 
 import { seekBeats, stopToStart } from "../actions.js";
 import { backend } from "../bridge.js";
@@ -16,13 +16,13 @@ import { t } from "../i18n.js";
 import { act, analysis, type PanelId, panelEmphasis, selection, showPanel, snapshot, visiblePanels } from "../store.js";
 import { helpShow } from "./help.js";
 
-/** Was die Tour aus der Demo zeigt. */
+/** What the tour shows from the demo. */
 interface Demo {
   loaded: boolean;
   melody: { trackId: number; clipId: number } | null;
   audio: { trackId: number; clipId: number; assetId: string } | null;
   analysed: boolean;
-  /** Die Tour hat den Download-Katalog der Bibliothek aufgeklappt. */
+  /** The tour has expanded the library's download catalog. */
   catalogOpened: boolean;
 }
 
@@ -48,15 +48,15 @@ interface Note {
 
 interface Step {
   panel?: PanelId;
-  /** Vor dem Zeigen: Fenster mit Demo-Inhalt füllen (Auswahl, Analyse …). */
+  /** Before showing: fill the window with demo content (selection, analysis …). */
   prepare?: (d: Demo) => Promise<void> | void;
-  /** Wenn das Fenster zu sehen ist (z. B. Auswahllisten im Fenster setzen). */
+  /** When the window is visible (e.g. set selection lists in the window). */
   after?: (d: Demo) => void;
-  /** Beim Weiterblättern oder Beenden: Aufgeklapptes wieder schließen. */
+  /** On moving on or ending: close again whatever was expanded. */
   leave?: (d: Demo) => void;
-  /** Mindestbreite des Fensters in diesem Schritt (z. B. damit es zweispaltig wird). */
+  /** Minimum width of the window in this step (e.g. so that it becomes two-column). */
   minWidth?: number;
-  /** Hervorgehobene Fläche: Selektor; bei Fenstern deren Stapel samt Reiter. */
+  /** Highlighted area: selector; for windows, their stack including tab. */
   target?: string;
   title: string;
   text: string;
@@ -117,7 +117,7 @@ const STEPS: Step[] = [
         analysis.value = await backend.analyzeAsset(d.audio.assetId);
         d.analysed = true;
       } catch {
-        /* ohne Analyse zeigt das Fenster seinen Hinweis */
+        /* without analysis the window shows its hint */
       }
     },
     title: t("Analysis"),
@@ -159,7 +159,7 @@ const STEPS: Step[] = [
     panel: "bibliothek",
     target: panelArea("bibliothek"),
     after: (d) => {
-      // die Download-Übersicht aufklappen (danach wieder zu, falls sie zu war)
+      // expand the download overview (close it again afterwards if it was closed)
       const cat = document.querySelector<HTMLElement>("kw-panel[tab=bibliothek] .lib-catalog");
       const btn = document.querySelector<HTMLButtonElement>("kw-panel[tab=bibliothek] [data-help=lib-herunterladen]");
       if (cat?.hidden && btn) {
@@ -185,7 +185,7 @@ const STEPS: Step[] = [
     target: panelArea("fuge"),
     prepare: (d) => select(d.melody),
     after: (d) => {
-      // das Thema der Demo als Fugenthema wählen (nur, wenn noch keins gewählt ist)
+      // choose the demo's theme as the fugue subject (only if none is chosen yet)
       const sel = document.querySelector<HTMLSelectElement>("kw-panel[tab=fuge] .fg-subject");
       const v = d.melody ? `${d.melody.trackId}:${d.melody.clipId}` : "";
       if (sel && v && !sel.value && [...sel.options].some((o) => o.value === v)) {
@@ -203,7 +203,7 @@ const STEPS: Step[] = [
     prepare: () => seekBeats(4.5),
     minWidth: 780,
     after: () => {
-      // nach oben: links der Zirkel, rechts Verlauf und Wege zum Schluss
+      // upward: the circle on the left, history and paths to the ending on the right
       const body = document.querySelector<HTMLElement>("kw-panel[tab=harmonie] .tab-body");
       if (body) body.scrollTop = 0;
     },
@@ -243,12 +243,12 @@ export function tourRunning(): boolean {
   return !!running;
 }
 
-/** Tour beenden (nimmt die Demo zurück); fertig, wenn alles aufgeräumt ist. */
+/** Ends the tour (takes back the demo); done when everything is cleaned up. */
 export function endTour(): Promise<void> {
   return running?.stop() ?? Promise.resolve();
 }
 
-/** Startet die Tour (ein zweiter Aufruf während sie läuft, tut nichts). */
+/** Starts the tour (a second call while it is running does nothing). */
 export function startTour(): void {
   if (running) return;
   const before = [...visiblePanels.peek()] as PanelId[];
@@ -258,7 +258,7 @@ export function startTour(): void {
   const root = h("div", { class: "tour", role: "dialog", "aria-label": t("Intro tour") });
   document.body.append(root);
 
-  /** Ende der Tour; `keep`: die Demo bleibt geladen. */
+  /** End of the tour; `keep`: the demo stays loaded. */
   const stop = (keep = false): Promise<void> => {
     seq++;
     STEPS[index]?.leave?.(demo);
@@ -269,14 +269,14 @@ export function startTour(): void {
     panelEmphasis.value = null;
     return (async () => {
       if (demo.loaded && !keep) {
-        // nur die eigene Demo zurücknehmen – hat sich inzwischen etwas anderes getan, bleibt alles
+        // only take back our own demo – if something else has happened in the meantime, everything stays
         if (isDemoUndo()) await act(backend.undo());
         if (demo.analysed) analysis.value = null;
         selection.value = null;
         await stopToStart();
       }
-      // vorher aufgeschlagene Reiter wieder nach vorn (die Hilfe bleibt offen);
-      // Fensterwünsche werden gebündelt – also nacheinander
+      // bring previously opened tabs to the front again (the help stays open);
+      // window requests are bundled – so one after another
       for (const id of before) {
         if (id === "hilfe") continue;
         showPanel(id);
@@ -295,17 +295,17 @@ export function startTour(): void {
     index = i;
     const s = STEPS[i]!;
     await s.prepare?.(demo);
-    if (my !== seq) return; // inzwischen weitergeblättert oder beendet
+    if (my !== seq) return; // moved on or ended in the meantime
     if (s.panel) showPanel(s.panel);
-    // kleine Fenster (die unteren Werkzeuge, der Agent) bekommen solange mehr Platz
+    // small windows (the lower tools, the agent) get more room for the time being
     panelEmphasis.value = s.panel && s.panel !== "spuren" && s.panel !== "hilfe" ? { id: s.panel, minWidth: s.minWidth } : null;
-    // erst nach dem Umbau des Layouts messen
+    // measure only after the layout has been rebuilt
     await frames();
     if (my !== seq) return;
     s.after?.(demo);
     layout();
-    // Fenster ordnen sich nach dem Vergrößern teils noch um (z. B. die Harmonie
-    // auf zwei Spalten) – kurz danach noch einmal messen
+    // Windows partly rearrange themselves after being enlarged (e.g. the harmony
+    // into two columns) – measure once more shortly afterwards
     setTimeout(() => {
       if (my === seq && running) layout();
     }, 350);
@@ -320,7 +320,7 @@ const isDemoUndo = () => [t("Load demo"), "Load demo"].includes(snapshot.peek()?
       root.append(h("div", { class: "tour-shade" }));
       demo.loaded = await act(backend.createDemo());
       if (!running) {
-        // während des Ladens beendet: die Demo gleich wieder zurücknehmen
+        // ended while loading: take the demo back right away
         if (demo.loaded && isDemoUndo()) await act(backend.undo());
         return;
       }
@@ -330,7 +330,7 @@ const isDemoUndo = () => [t("Load demo"), "Load demo"].includes(snapshot.peek()?
   };
 
   function onKey(e: KeyboardEvent): void {
-    if (document.querySelector(".modal-back")) return; // ein Dialog hat Vorrang
+    if (document.querySelector(".modal-back")) return; // a dialog takes precedence
     e.stopPropagation();
     if (e.key === "Escape") {
       e.preventDefault();
@@ -350,7 +350,7 @@ const isDemoUndo = () => [t("Load demo"), "Load demo"].includes(snapshot.peek()?
     if (stackOf) el = el?.closest(".dk-stack") ?? el;
     if (!el) return null;
     let r = el.getBoundingClientRect();
-    // nur der Teil, der im eigenen Fenster zu sehen ist (weggescrollt = nicht da)
+    // only the part that is visible in the window itself (scrolled away = not there)
     const clip = stackOf ? null : el.closest(".tab-body")?.getBoundingClientRect();
     if (clip) {
       const top = Math.max(r.top, clip.top);
@@ -369,7 +369,7 @@ const isDemoUndo = () => [t("Load demo"), "Load demo"].includes(snapshot.peek()?
     const pad = 6;
     const target = rectOf(s.target, !!s.panel);
     root.replaceChildren();
-    // Abdunkeln: mit Ziel ein ausgeschnittenes Loch (Schatten), sonst alles
+    // Dimming: with a target a cut-out hole (shadow), otherwise everything
     if (target) {
       root.append(h("div", {
         class: "tour-hole",
@@ -382,10 +382,10 @@ const isDemoUndo = () => [t("Load demo"), "Load demo"].includes(snapshot.peek()?
     const placed: DOMRect[] = [];
     const overlap = (a: DOMRect) => placed.reduce((sum, o) => sum + Math.max(0, Math.min(a.right, o.right) - Math.max(a.left, o.left)) * Math.max(0, Math.min(a.bottom, o.bottom) - Math.max(a.top, o.top)), 0);
     const clampBox = (x: number, y: number, w: number, hh: number) => new DOMRect(Math.min(Math.max(12, x), W - w - 12), Math.min(Math.max(12, y), H - hh - 12), w, hh);
-    /** Erste Lage ohne Überdeckung – sonst die mit der kleinsten. */
+    /** First placement without overlap – otherwise the one with the least. */
     const best = (tries: DOMRect[]) => tries.reduce((m, t) => (overlap(t) < overlap(m) ? t : m), tries.find((t) => overlap(t) === 0) ?? tries[0]!);
 
-    // Post-its an einzelnen Funktionen (zuerst, damit der große Zettel ihnen ausweicht)
+    // Post-its on individual functions (first, so that the large note avoids them)
     let tilt = 0;
     for (const n of s.notes ?? []) {
       const r = rectOf(n.sel);
@@ -409,7 +409,7 @@ const isDemoUndo = () => [t("Load demo"), "Load demo"].includes(snapshot.peek()?
       placed.push(b);
     }
 
-    // Hauptzettel
+    // Main note
     const back = h("button", { class: "tour-btn ghost", onclick: () => void go(index - 1) }, `← ${t("Back")}`);
     back.disabled = index === 0;
     const last = index === STEPS.length - 1;
@@ -432,14 +432,14 @@ const isDemoUndo = () => [t("Load demo"), "Load demo"].includes(snapshot.peek()?
     if (target) {
       const gap = 18;
       const tries: DOMRect[] = [];
-      // daneben, wenn Platz ist; sonst darunter/darüber (mittig, notfalls tiefer)
+      // beside it if there is room; otherwise below/above (centered, lower if necessary)
       if (target.right + gap + cw <= W - 12) tries.push(clampBox(target.right + gap, target.top + 10, cw, ch));
       if (target.left - gap - cw >= 12) tries.push(clampBox(target.left - gap - cw, target.top + 10, cw, ch));
       for (const dy of [0, 120, 240]) {
         if (target.bottom + gap + dy + ch <= H - 12) tries.push(clampBox(target.left + target.width / 2 - cw / 2, target.bottom + gap + dy, cw, ch));
       }
       if (target.top - gap - ch >= 12) tries.push(clampBox(target.left + target.width / 2 - cw / 2, target.top - gap - ch, cw, ch));
-      // großes Ziel (z. B. die Spuren): in das Ziel, unten rechts
+      // large target (e.g. the tracks): inside the target, bottom right
       tries.push(clampBox(target.right - cw - 24, target.bottom - ch - 24, cw, ch), center);
       box = best(tries);
     }

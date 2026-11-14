@@ -1,11 +1,11 @@
-//! Melodielinien und ihre Merkmale.
+//! Melody lines and their features.
 //!
-//! Eine Melodie wird als Folge von Übergängen beschrieben:
-//! * Intervall in Halbtönen → unabhängig von der Tonart (Transposition)
-//! * Verhältnis aufeinanderfolgender Notenabstände (IOI) → unabhängig vom Tempo
+//! A melody is described as a sequence of transitions:
+//! * interval in semitones → independent of the key (transposition)
+//! * ratio of consecutive note spacings (IOI) → independent of the tempo
 //!
-//! Damit findet eine gesummte Melodie ihr Original, egal in welcher Lage
-//! und wie schnell sie gesummt wurde.
+//! This way a hummed melody finds its original, regardless of the register
+//! and how fast it was hummed.
 
 use crate::score::ScoreNote;
 use serde::{Deserialize, Serialize};
@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MelodyNote {
-    /// Einsatz in beliebiger Zeiteinheit (Viertel oder Sekunden – nur Verhältnisse zählen).
+    /// Onset in an arbitrary time unit (quarters or seconds – only ratios count).
     pub onset: f64,
     pub duration: f64,
     pub midi: u8,
@@ -21,14 +21,14 @@ pub struct MelodyNote {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Feature {
-    /// Intervall zum nächsten Ton, begrenzt auf ±24.
+    /// Interval to the next note, limited to ±24.
     pub interval: i8,
-    /// round(2·log2(IOI_neu / IOI_alt)), begrenzt auf ±4 (halbe Oktaven der Dauer).
+    /// round(2·log2(IOI_new / IOI_old)), limited to ±4 (half octaves of the duration).
     pub rhythm: i8,
 }
 
 impl Feature {
-    /// Grobe Kontur: großer/kleiner Schritt ab/auf oder Tonwiederholung.
+    /// Rough contour: large/small step down/up or repeated note.
     pub fn contour(self) -> i8 {
         match self.interval {
             i if i <= -3 => -2,
@@ -40,7 +40,7 @@ impl Feature {
     }
 }
 
-/// Oberstimme: pro Einsatzzeit die höchste Note (Noten nach Einsatz sortiert).
+/// Top voice: the highest note per onset time (notes sorted by onset).
 pub fn skyline(notes: &[ScoreNote]) -> Vec<MelodyNote> {
     let mut out: Vec<MelodyNote> = Vec::with_capacity(notes.len());
     for n in notes {

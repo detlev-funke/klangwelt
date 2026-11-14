@@ -1,10 +1,10 @@
-// Mini-Webserver für die Oberfläche im Browser – nur statische Dateien.
+// Mini web server for the UI in the browser – static files only.
 //
-//   npm run serve       → ui/dist mit der Attrappe (ohne Audio, für UI-Arbeit)
-//   npm run serve:web   → ui/dist-web, die Browser-Version mit echtem Kern
-//                          (vorher `npm run build:web`)
+//   npm run serve       → ui/dist with the mock (no audio, for UI work)
+//   npm run serve:web   → ui/dist-web, the browser version with the real core
+//                          (run `npm run build:web` first)
 //
-// Port: --port=… oder PORT (Standard 1420). Kein COOP/COEP nötig.
+// Port: --port=… or PORT (default 1420). No COOP/COEP needed.
 //
 // Score library: `--library=DIR` serves a package folder (built with
 // klang-libbuild, see docs/LIBRARY.md) under /library/ and answers

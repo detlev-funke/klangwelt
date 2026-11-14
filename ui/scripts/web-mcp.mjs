@@ -1,15 +1,15 @@
-// stdio-MCP-Brücke zur Browser-Version – das Gegenstück zu `klangwelt --mcp`
-// auf dem Desktop. Ein MCP-Client (z. B. Claude Code) startet dieses Skript;
-// es reicht jede JSON-RPC-Nachricht über das Chrome-DevTools-Protokoll an den
-// offenen Klangwelt-Tab weiter (`window.__klangweltWeb.mcp`). Dort beantworten
-// sie dieselben Werkzeuge wie auf dem Desktop (`klang_app::agent`).
+// stdio MCP bridge to the browser version – the counterpart to `klangwelt --mcp`
+// on the desktop. An MCP client (e.g. Claude Code) starts this script;
+// it forwards every JSON-RPC message via the Chrome DevTools Protocol to the
+// open Klangwelt tab (`window.__klangweltWeb.mcp`). There the same tools
+// answer as on the desktop (`klang_app::agent`).
 //
-// Vorher: Edge oder Chrome mit offenem Debug-Port starten und Klangwelt laden,
+// Beforehand: start Edge or Chrome with an open debug port and load Klangwelt,
 //   msedge --remote-debugging-port=9222 http://localhost:1420/
-// MCP-Konfiguration (Claude Code):
-//   { "command": "node", "args": ["<Pfad>/ui/scripts/web-mcp.mjs", "--port=9222"] }
+// MCP configuration (Claude Code):
+//   { "command": "node", "args": ["<path>/ui/scripts/web-mcp.mjs", "--port=9222"] }
 //
-// Nur Node-Bordmittel (WebSocket und fetch sind eingebaut).
+// Node built-ins only (WebSocket and fetch are built in).
 import { createInterface } from "node:readline";
 
 const portArg = process.argv.find((a) => a.startsWith("--port="));
@@ -19,7 +19,7 @@ let ws = null;
 let nextId = 0;
 const pending = new Map();
 
-/** Verbindung zum ersten Tab, in dem Klangwelt läuft. */
+/** Connection to the first tab in which Klangwelt is running. */
 async function connect() {
   const list = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
   const pages = list.filter((p) => p.type === "page" && p.webSocketDebuggerUrl);
@@ -84,7 +84,7 @@ async function handle(line) {
   }
 }
 
-// Nachrichten der Reihe nach (wie die stdio-Brücke des Desktops)
+// Messages in order (like the stdio bridge of the desktop)
 createInterface({ input: process.stdin }).on("line", (line) => {
   if (!line.trim()) return;
   queue.push(line);

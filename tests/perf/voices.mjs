@@ -1,15 +1,15 @@
-// Wie viele Clips (Spuren, Stimmen) mischt die Browser-Version in Echtzeit?
-// Gegenstück zu `stimmen_in_echtzeit` in crates/klang-engine (nativ).
+// How many clips (tracks, voices) does the browser version mix in real time?
+// Counterpart to `stimmen_in_echtzeit` in crates/klang-engine (native).
 //
-// Klangwelt rendert Noten vorab; in Echtzeit addiert der Mischer nur die
-// fertigen Clips (mit Panorama, Stereo-Breite, Hall-Anteil, Begrenzer).
+// Klangwelt pre-renders notes; in real time the mixer only adds up the
+// finished clips (with pan, stereo width, reverb amount, limiter).
 //
-// 1. Rechenzeit: derselbe Mischer wie im AudioWorklet (klang_worklet.wasm),
-//    hier auf einem Thread der Seite gemessen – N gleichzeitige Clips mit
-//    Seitensignal und Hall-Anteil, Blöcke zu 128 Frames, Budget 2,67 ms.
-// 2. Probe im echten AudioWorklet: K Spuren aus dem Kern abspielen und die
-//    Abspielrate messen (1,0 = der Takt wird gehalten); Aussetzer zählt der
-//    Browser nur, wenn er AudioContext.playoutStats kennt.
+// 1. Compute time: the same mixer as in the AudioWorklet (klang_worklet.wasm),
+//    measured here on a page thread – N simultaneous clips with a side
+//    signal and reverb amount, blocks of 128 frames, budget 2.67 ms.
+// 2. Test in the real AudioWorklet: play K tracks from the core and measure
+//    the playback rate (1.0 = the beat is held); the browser only counts
+//    dropouts if it knows AudioContext.playoutStats.
 //
 //   cd ui && npm run build:web && cd .. && node tests/perf/voices.mjs
 import { startWeb, sleep } from "../web/harness.mjs";
@@ -23,7 +23,7 @@ try {
     const BLOCK = 128;
     const budget = (BLOCK / 48000) * 1e6;
     w.kwl_init(48000);
-    // 16 Puffer zu 4 s (Mitte + Seite), Kennungen 1…32
+    // 16 buffers of 4 s (mid + side), identifiers 1…32
     for (let id = 1; id <= 32; id++) {
       const len = 48000 * 4;
       const ptr = w.kwl_buffer_alloc(id, len);
@@ -45,7 +45,7 @@ try {
         clips.push(b, b + 1, i % 97, 0.8, 0.7, 0.3);
       }
       msg(8, clips); // Arrangement
-      msg(3, [0]); // an den Anfang
+      msg(3, [0]); // to the start
       for (let i = 0; i < 50; i++) w.kwl_process(BLOCK);
       const blocks = 1000;
       const t0 = performance.now();
@@ -60,9 +60,9 @@ try {
   const ok = rows.filter((r) => r.anteil < 50).pop();
   console.log(`Bis ${ok?.n ?? 0} gleichzeitige Clips bleibt das Mischen unter der Hälfte des Echtzeit-Budgets.`);
 
-  // 2. Probe im echten Worklet: K Spuren aus dem Kern (sechs Klänge, je ein
-  //    4-taktiges Muster; alle in einem Schritt angelegt), abspielen und die
-  //    Abspielrate messen.
+  // 2. Test in the real worklet: K tracks from the core (six sounds, each a
+  //    4-bar pattern; all created in one step), play and measure the
+  //    playback rate.
   const stats = await app.eval(() => !!window.__klangweltAudio.ctx && "playoutStats" in window.__klangweltAudio.ctx);
   for (const k of [16, 64, 256, 1024]) {
     const r = await app.eval(async (k) => {

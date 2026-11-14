@@ -1,11 +1,11 @@
-//! Akkordfolgen-Statistik einer Bibliothek – Teil des Index (Format KWIX04).
+//! Chord progression statistics of a library – part of the index (format KWIX04).
 //!
-//! Beim Indizieren wird in jeder Partitur die Akkordfolge erkannt (alle
-//! Stimmen zusammen, Raster halber Takt) und relativ zur Tonart des Stücks
-//! festgehalten: Abstand des Grundtons zur Tonika, Klangart, Umkehrung. Gezählt
-//! wird, wie oft auf einen Akkord ein anderer folgt – getrennt nach Dur- und
-//! Mollstücken –, dazu je Übergang ein paar Beispielstellen (Partitur, Takt).
-//! Modulationen innerhalb eines Stücks zählen relativ zur Haupttonart.
+//! When indexing, the chord progression is detected in every score (all
+//! voices together, half-bar grid) and recorded relative to the piece's key:
+//! interval from the root to the tonic, chord quality, inversion. What is counted
+//! is how often one chord is followed by another – separately for major and
+//! minor pieces – plus a few example locations (score, bar) per transition.
+//! Modulations within a piece count relative to the main key.
 
 use crate::analysis::score_key;
 use crate::harmony::{detect_chords, Chord, Quality, TimedPitch};
@@ -17,7 +17,7 @@ use std::io;
 
 pub const MAX_EXAMPLES: usize = 5;
 
-/// Statistik-Gruppen im Index: alle Stücke, Barock, Bach.
+/// Statistics groups in the index: all pieces, Baroque, Bach.
 /// The labels are keys: translate them for display with `klang_i18n::translate`.
 pub const GROUPS: [(&str, &str); 3] = [("alle", klang_i18n::tk!("All pieces")), ("barock", klang_i18n::tk!("Baroque")), ("bach", "Bach")];
 
@@ -30,7 +30,7 @@ const BAROQUE: &[&str] = &[
     "bononcini", "platti", "porpora", "keiser", "mattheson", "pepusch", "greene", "croft", "scheidt", "schein", "kerll", "pachelbels",
 ];
 
-/// Gruppen eines Stücks nach Komponist: [alle, Barock, Bach].
+/// Groups of a piece by composer: [all, Baroque, Bach].
 pub fn composer_groups(composer: &str) -> [bool; 3] {
     let lower = composer.to_lowercase();
     let words: Vec<&str> = lower.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
@@ -38,12 +38,12 @@ pub fn composer_groups(composer: &str) -> [bool; 3] {
     let baroque = bach || words.iter().any(|w| BAROQUE.contains(w));
     [true, baroque, bach]
 }
-/// So viele Übergänge braucht ein Akkord in genau dieser Form (mit Septime,
-/// Umkehrung), sonst zählt der Grundakkord.
+/// A chord needs this many transitions in exactly this form (with seventh,
+/// inversion), otherwise the basic chord counts.
 const EXACT_MIN: u32 = 40;
 const SECTION_MAGIC: &[u8; 4] = b"KWH1";
 
-/// Akkord relativ zur Tonart (Abstand zur Tonika × Klangart × Umkehrung, < 480).
+/// Chord relative to the key (interval to the tonic × quality × inversion, < 480).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Rel(u16);
 
@@ -63,7 +63,7 @@ impl Rel {
         Chord::new((key.tonic + off) % 12, q).inverted((self.0 % 4) as usize)
     }
 
-    /// Grundakkord: gleicher Grundton und Dreiklang, ohne Septime und Umkehrung.
+    /// Basic chord: same root and triad, without seventh and inversion.
     pub fn loose(self) -> Rel {
         let q = Quality::ALL[((self.0 % 40) / 4) as usize].triad();
         Rel(self.0 / 40 * 40 + quality_index(q) * 4)
@@ -74,7 +74,7 @@ impl Rel {
     }
 }
 
-/// Eine Fundstelle: Stimme (doc) der Partitur, Takt, Bereich in Vierteln.
+/// A location: voice (doc) of the score, bar, range in quarter notes.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Example {
@@ -87,7 +87,7 @@ pub struct Example {
 #[derive(Clone, Debug, Default)]
 struct Entry {
     count: u32,
-    /// (Rang, Beispiel) – behalten werden die mit kleinstem Rang, je Partitur eines.
+    /// (rank, example) – those with the smallest rank are kept, one per score.
     examples: Vec<(u64, Example)>,
 }
 
@@ -117,7 +117,7 @@ impl Entry {
     }
 }
 
-/// Reproduzierbarer Streuwert – verteilt die Beispiele über die ganze Bibliothek.
+/// Reproducible scatter value – distributes the examples across the whole library.
 fn rank(doc: u32, bar: u32) -> u64 {
     let mut z = ((doc as u64) << 32 | bar as u64).wrapping_add(0x9E37_79B9_7F4A_7C15);
     z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
@@ -125,7 +125,7 @@ fn rank(doc: u32, bar: u32) -> u64 {
     z ^ (z >> 31)
 }
 
-/// Ein erkannter Akkord in einer Partitur.
+/// A detected chord in a score.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ProgItem {
     pub start: f64,
@@ -139,18 +139,18 @@ fn is_percussion(part_name: &str) -> bool {
     ["drum", "schlagzeug", "perc", "batterie", "drumset", "kit", "cymbal", "becken", "snare", "hi-hat"].iter().any(|w| n.contains(w))
 }
 
-/// Erkannte Akkordfolge einer Partitur.
+/// Detected chord progression of a score.
 #[derive(Clone, Debug)]
 pub struct Progression {
     pub minor: bool,
     pub items: Vec<ProgItem>,
-    /// Mit Titel und Komponist – solche Stücke werden als Beispiel bevorzugt.
+    /// With title and composer – such pieces are preferred as examples.
     pub notable: bool,
 }
 
-/// Akkordfolge einer Partitur relativ zu ihrer Tonart; None ohne Tonart oder Akkorde.
-/// Bringt die Partitur eine Analyse von Fachleuten mit ([`Score::harmony`]),
-/// zählt diese statt der automatischen Erkennung.
+/// Chord progression of a score relative to its key; None without a key or chords.
+/// If the score comes with an analysis by experts ([`Score::harmony`]),
+/// that is counted instead of the automatic detection.
 pub fn score_progression(score: &Score) -> Option<Progression> {
     let key = score_key(score)?;
     let (num, den) = score.time_signature.unwrap_or((4, 4));
@@ -161,7 +161,7 @@ pub fn score_progression(score: &Score) -> Option<Progression> {
             let rel = Rel::of(&h.chord, &key);
             let end = h.onset + h.duration.max(0.0);
             match items.last_mut() {
-                // gleicher Akkord weiter (z. B. nach einer Phrasenmarke): verlängern
+                // same chord continues (e.g. after a phrase mark): extend it
                 Some(last) if last.rel == rel => last.end = last.end.max(end),
                 _ => items.push(ProgItem { start: h.onset, end, bar: (h.onset / bar).floor().max(0.0) as u32 + 1, rel }),
             }
@@ -187,20 +187,20 @@ pub fn score_progression(score: &Score) -> Option<Progression> {
         .iter()
         .map(|d| ProgItem { start: d.start, end: d.start + d.length, bar: (d.start / bar).floor().max(0.0) as u32 + 1, rel: Rel::of(&d.chord, &key) })
         .collect();
-    // Platzhalter aus Notensatzprogrammen zählen nicht als Angabe
+    // Placeholders from notation programs do not count as a value
     const PLACEHOLDER: [&str; 9] = ["title", "composer", "untitled", "score", "me", "unknown", "?", "-", "titel"];
     let named = |s: &Option<String>| s.as_deref().map(str::trim).is_some_and(|t| !t.is_empty() && !PLACEHOLDER.contains(&t.to_lowercase().as_str()));
     Some(Progression { minor: key.minor, items, notable: named(&score.title) && named(&score.composer) })
 }
 
-/// Wie oft folgt `next` auf `prev` – Anteil an allen Fortsetzungen von `prev`.
+/// How often `next` follows `prev` – share of all continuations of `prev`.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Follow {
     pub share: f32,
     pub count: u32,
     pub total: u32,
-    /// true: genau diese Formen (Septime, Umkehrung); false: Grundakkorde.
+    /// true: exactly these forms (seventh, inversion); false: basic chords.
     pub exact: bool,
     pub examples: Vec<Example>,
 }
@@ -209,7 +209,7 @@ type TransKey = (bool, Rel, Rel);
 
 #[derive(Clone, Debug, Default)]
 pub struct ChordStats {
-    /// Partituren mit erkannter Akkordfolge: [Dur, Moll].
+    /// Scores with a detected chord progression: [major, minor].
     pub scores: [u32; 2],
     trans: HashMap<TransKey, Entry>,
     totals: HashMap<(bool, Rel), u32>,
@@ -218,7 +218,7 @@ pub struct ChordStats {
 }
 
 impl ChordStats {
-    /// Akkordfolge einer Partitur aufnehmen (doc = ihre erste Stimme im Index).
+    /// Records the chord progression of a score (doc = its first voice in the index).
     pub fn add(&mut self, doc: u32, p: &Progression) {
         let items = &p.items;
         if items.len() < 2 {
@@ -229,17 +229,17 @@ impl ChordStats {
         for w in items.windows(2) {
             let (a, b) = (w[0], w[1]);
             if b.start - a.end > 1e-6 || a.rel == b.rel {
-                continue; // Lücke (Pause, einstimmig) oder kein Wechsel
+                continue; // gap (rest, single voice) or no change
             }
             let e = self.trans.entry((minor, a.rel, b.rel)).or_default();
             e.count += 1;
-            // Stücke mit Titel und Komponist zuerst (oberstes Bit frei)
+            // Pieces with title and composer first (top bit free)
             let r = (rank(doc, a.bar) >> 1) | if p.notable { 0 } else { 1 << 63 };
             e.offer(r, Example { doc, bar: a.bar, start: a.start as f32, end: b.end as f32 });
         }
     }
 
-    /// Summen und Grundakkord-Tabellen ableiten (nach dem Aufnehmen bzw. Laden).
+    /// Derives the totals and basic-chord tables (after recording or loading).
     pub fn finalize(&mut self) {
         self.totals.clear();
         self.loose.clear();
@@ -248,7 +248,7 @@ impl ChordStats {
             *self.totals.entry((m, a)).or_default() += e.count;
             *self.loose_totals.entry((m, a.loose())).or_default() += e.count;
             if a.loose() == b.loose() {
-                continue; // nur Septime/Umkehrung gewechselt: kein neuer Grundakkord
+                continue; // only seventh/inversion changed: no new basic chord
             }
             let l = self.loose.entry((m, a.loose(), b.loose())).or_default();
             l.count += e.count;
@@ -256,7 +256,7 @@ impl ChordStats {
                 l.offer(r, ex);
             }
         }
-        // Grundakkord-Summen ohne Wechsel innerhalb desselben Grundakkords
+        // Basic-chord totals without changes within the same basic chord
         for (&(m, a, b), e) in &self.trans {
             if a.loose() == b.loose() {
                 if let Some(t) = self.loose_totals.get_mut(&(m, a.loose())) {
@@ -266,12 +266,12 @@ impl ChordStats {
         }
     }
 
-    /// Statistik eines anderen Index dazunehmen (beim Verschmelzen): Zählungen
-    /// addieren, Beispiele so auswählen, als kämen sie aus beiden zusammen
-    /// (Rang = Platz ÷ Häufigkeit – große Sammlungen behalten ihren Anteil).
-    /// `doc` bildet die Stimmnummern ab (None = Stimme entfällt). Gedacht für
-    /// eine leere Statistik, die nacheinander alle Quellen aufnimmt; danach
-    /// [`finalize`](Self::finalize) aufrufen.
+    /// Adds the statistics of another index (when merging): adds up the
+    /// counts, selects examples as if they came from both together
+    /// (rank = position ÷ frequency – large collections keep their share).
+    /// `doc` maps the voice numbers (None = voice dropped). Intended for
+    /// an empty statistic that takes in all sources one after another; then call
+    /// [`finalize`](Self::finalize).
     pub fn absorb(&mut self, other: &ChordStats, doc: impl Fn(u32) -> Option<u32>) {
         self.scores[0] += other.scores[0];
         self.scores[1] += other.scores[1];
@@ -294,7 +294,7 @@ impl ChordStats {
         self.trans.is_empty()
     }
 
-    /// Häufigkeit von `next` nach `prev` (genaue Form, bei zu wenig Daten Grundakkorde).
+    /// Frequency of `next` after `prev` (exact form, basic chords if there is too little data).
     pub fn follow(&self, minor: bool, prev: Rel, next: Rel) -> Option<Follow> {
         let total = self.totals.get(&(minor, prev)).copied().unwrap_or(0);
         if total >= EXACT_MIN {
@@ -311,7 +311,7 @@ impl ChordStats {
         Some(Follow { share: count as f32 / total as f32, count, total, exact: false, examples: e.map(Entry::sorted_examples).unwrap_or_default() })
     }
 
-    /// Nur der Anteil von `next` an den Fortsetzungen nach `prev` (wie `follow`, ohne Beispiele).
+    /// Only the share of `next` among the continuations after `prev` (like `follow`, without examples).
     pub fn share(&self, minor: bool, prev: Rel, next: Rel) -> Option<f32> {
         let total = self.totals.get(&(minor, prev)).copied().unwrap_or(0);
         if total >= EXACT_MIN {
@@ -326,7 +326,7 @@ impl ChordStats {
         Some(count as f32 / total as f32)
     }
 
-    /// Häufigste Fortsetzungen nach `prev`, beste zuerst.
+    /// Most frequent continuations after `prev`, best first.
     pub fn top_after(&self, minor: bool, prev: Rel, limit: usize) -> Vec<(Rel, Follow)> {
         let exact_total = self.totals.get(&(minor, prev)).copied().unwrap_or(0);
         let (map, from, total, exact) = if exact_total >= EXACT_MIN {
@@ -345,7 +345,7 @@ impl ChordStats {
             .collect()
     }
 
-    // ------------------------------------------------------------ Datei
+    // ------------------------------------------------------------ File
 
     pub fn encode(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(16 + self.trans.len() * 40);
@@ -373,7 +373,7 @@ impl ChordStats {
         out
     }
 
-    /// Mehrere Gruppen hintereinander (Abschnitt „KWH2“).
+    /// Several groups one after another (section "KWH2").
     pub fn encode_groups(groups: &[ChordStats]) -> Vec<u8> {
         let mut out = b"KWH2".to_vec();
         out.push(groups.len() as u8);
@@ -385,7 +385,7 @@ impl ChordStats {
         out
     }
 
-    /// Gruppen lesen; ein älterer Abschnitt „KWH1“ ergibt nur die Gruppe „alle“.
+    /// Reads the groups; an older section "KWH1" yields only the group "all".
     pub fn decode_groups(buf: &[u8]) -> io::Result<Vec<ChordStats>> {
         if buf.starts_with(SECTION_MAGIC) {
             return Ok(vec![Self::decode(buf)?]);
@@ -421,7 +421,7 @@ impl ChordStats {
             for r in 0..n_ex {
                 let (doc, bar) = (c.u32()?, c.u32()?);
                 let (start, end) = (f32::from_bits(c.u32()?), f32::from_bits(c.u32()?));
-                // Reihenfolge der Datei bleibt erhalten (Rang = Position)
+                // File order is preserved (rank = position)
                 examples.push((r as u64, Example { doc, bar, start, end }));
             }
             me.trans.insert((minor, a, b), Entry { count, examples });
@@ -488,7 +488,7 @@ mod tests {
     #[test]
     fn counts_shares_examples_and_survives_encoding() {
         let mut st = ChordStats::default();
-        // 50 Stücke: V7 → I, 30 davon zusätzlich V7 → vi
+        // 50 pieces: V7 → I, 30 of them additionally V7 → vi
         for doc in 0..50u32 {
             let mut prog = vec![item(0, "I"), item(1, "IV"), item(2, "V7"), item(3, "I")];
             if doc < 30 {
@@ -506,7 +506,7 @@ mod tests {
         let docs: std::collections::HashSet<u32> = f.examples.iter().map(|e| e.doc).collect();
         assert_eq!(docs.len(), MAX_EXAMPLES, "Beispiele aus verschiedenen Stücken");
         assert_eq!(st.top_after(false, r("V7"), 3)[0].0, r("I"));
-        // seltene Form (V) → Grundakkord-Statistik
+        // rare form (V) → basic-chord statistics
         let f = st.follow(false, r("V"), r("vi")).unwrap();
         assert!(!f.exact);
         assert_eq!((f.count, f.total), (30, 80));
@@ -516,7 +516,7 @@ mod tests {
         assert_eq!(back.follow(false, r("V7"), r("I")).map(|f| (f.count, f.total, f.examples.len())), Some((50, 80, MAX_EXAMPLES)));
         assert_eq!(back.scores, st.scores);
         assert!(ChordStats::decode(&st.encode()[..20]).is_err());
-        // Gruppen: neues und altes Format
+        // Groups: new and old format
         let groups = ChordStats::decode_groups(&ChordStats::encode_groups(&[st.clone(), ChordStats::default(), st.clone()])).unwrap();
         assert_eq!(groups.len(), 3);
         assert!(groups[1].is_empty() && groups[2].follow(false, r("V7"), r("I")).is_some());
@@ -543,7 +543,7 @@ mod tests {
             b.add(doc, &prog(true));
             all.add(1000 + doc, &prog(true));
         }
-        // wie aus der Datei gelesen
+        // as read from the file
         let (a, b) = (ChordStats::decode(&a.encode()).unwrap(), ChordStats::decode(&b.encode()).unwrap());
         let mut merged = ChordStats::default();
         merged.absorb(&a, Some);
@@ -574,7 +574,7 @@ mod tests {
 
     #[test]
     fn progression_of_a_chorale() {
-        // vierstimmig in Halben: C – F – G7 – C
+        // four voices in half notes: C – F – G7 – C
         let s: &[(u8, u32)] = &[(72, 4), (72, 4), (74, 4), (72, 4)];
         let a: &[(u8, u32)] = &[(67, 4), (69, 4), (71, 4), (67, 4)];
         let t: &[(u8, u32)] = &[(64, 4), (65, 4), (65, 4), (64, 4)];

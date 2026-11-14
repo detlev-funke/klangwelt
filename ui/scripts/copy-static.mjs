@@ -1,4 +1,4 @@
-// Kopiert statische Dateien (HTML, CSS) nach dist/. Nur Node-Bordmittel.
+// Copies static files (HTML, CSS) to dist/. Node built-ins only.
 import { cpSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

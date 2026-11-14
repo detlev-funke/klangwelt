@@ -8,7 +8,7 @@ struct Entry {
     merge_key: Option<String>,
 }
 
-/// Ein geöffnetes Projekt samt Undo/Redo-Historie.
+/// An open project together with its undo/redo history.
 #[derive(Clone, Debug)]
 pub struct Session {
     pub project: Project,
@@ -28,8 +28,8 @@ impl Session {
         Self { project, undo: Vec::new(), redo: Vec::new(), limit: 500 }
     }
 
-    /// Führt einen Befehl aus. Mit `merge = true` verschmilzt er mit dem
-    /// vorherigen Schritt, wenn beide dasselbe Feld betreffen (Regler-Gesten).
+    /// Runs a command. With `merge = true` it merges with the previous
+    /// step if both affect the same field (control gestures).
     pub fn execute(&mut self, cmd: Command, merge: bool) -> Result<(), CoreError> {
         if cmd.is_view_only() {
             apply(&mut self.project, cmd)?;
@@ -141,7 +141,7 @@ mod tests {
         s.undo().unwrap();
         assert_eq!(s.project.tracks[0].gain_db, 0.0);
         assert_eq!(s.undo_label(), Some("Add track"));
-        // dasselbe mit eigener Beschriftung (Stapel aus einem Befehl)
+        // the same with its own label (batch of one command)
         for (i, db) in [-1.0, -4.0].into_iter().enumerate() {
             let patch = TrackPatch { gain_db: Some(db), ..Default::default() };
             let one = Command::Batch { label: "Pegel ziehen".into(), commands: vec![Command::SetTrack { track_id: tid, patch }] };
@@ -182,7 +182,7 @@ mod tests {
         let tid = s.project.tracks[0].id;
         s.execute(Command::AddClip { track_id: tid, clip: audio_clip(0.0) }, false).unwrap();
         let cid = s.project.tracks[0].clips[0].id;
-        // 2,4 s bei 100 BPM = 4 Schläge – unabhängig vom Projekttempo.
+        // 2.4 s at 100 BPM = 4 beats – independent of the project tempo.
         assert!((s.project.tracks[0].clips[0].length_beats(140.0) - 4.0).abs() < 1e-9);
         s.execute(Command::SetClip { track_id: tid, clip_id: cid, patch: ClipPatch { warp: Some(false), ..Default::default() } }, false).unwrap();
         assert!((s.project.tracks[0].clips[0].length_beats(120.0) - 4.8).abs() < 1e-9);
@@ -208,7 +208,7 @@ mod tests {
 
     #[test]
     fn note_expression_is_compact_and_validated() {
-        // neutrale Ausdruckswerte fehlen im JSON, gesetzte sind da
+        // neutral expression values are missing from the JSON, set ones are there
         let plain = serde_json::to_value(note(60, 0.0, 1.0)).unwrap();
         assert!(plain.get("vibrato").is_none() && plain.get("bend").is_none());
         let expressive = Note { vibrato: 0.3, bend: -2.0, ..note(60, 0.0, 1.0) };
@@ -216,7 +216,7 @@ mod tests {
         assert_eq!(v["bend"], -2.0);
         let back: Note = serde_json::from_value(serde_json::json!({ "pitch": 60, "startBeats": 0, "lengthBeats": 1, "velocity": 90 })).unwrap();
         assert_eq!(back.vibrato, 0.0);
-        // außerhalb der Grenzen → abgelehnt
+        // outside the limits → rejected
         assert!(validate_test(&[Note { vibrato: 1.5, ..note(60, 0.0, 1.0) }]).is_err());
         assert!(validate_test(&[Note { bend: -13.0, ..note(60, 0.0, 1.0) }]).is_err());
         assert!(validate_test(&[Note { brightness: 0.5, ..note(60, 0.0, 1.0) }]).is_ok());
@@ -263,14 +263,14 @@ mod tests {
         s.execute(view(TrackView::Compact), false).unwrap();
         assert_eq!(s.project.tracks[0].view, TrackView::Compact);
         assert_eq!(s.undo_label().map(str::to_string), before);
-        // Ansicht mit anderer Änderung zusammen ist dagegen ein normaler Schritt.
+        // A view together with another change, on the other hand, is a normal step.
         let mixed = Command::SetTrack { track_id: tid, patch: TrackPatch { view: Some(TrackView::Notes), gain_db: Some(-3.0), ..Default::default() } };
         s.execute(mixed, false).unwrap();
         assert_eq!(s.undo_label(), Some("Change volume"));
         let json: Command = serde_json::from_str(r#"{"type":"setTrack","trackId":1,"patch":{"view":"notes"}}"#).unwrap();
         assert!(json.is_view_only());
 
-        // Zeilenhöhe ziehen: ebenfalls kein Undo-Schritt, Grenzen werden geprüft.
+        // Dragging the row height: likewise no undo step, limits are checked.
         let height = Command::SetTrack { track_id: tid, patch: TrackPatch { notes_height: Some(420.0), ..Default::default() } };
         assert!(height.is_view_only());
         s.execute(height, false).unwrap();

@@ -1,5 +1,5 @@
-// Chat mit dem Agenten: Aufträge eingeben, Antworten lesen.
-// Der Agent holt Aufträge per MCP-Werkzeug `chat_poll` ab und antwortet mit `chat_reply`.
+// Chat with the agent: enter tasks, read replies.
+// The agent picks up tasks with the MCP tool `chat_poll` and replies with `chat_reply`.
 
 import { backend } from "../bridge.js";
 import { h, icon } from "../dom.js";
@@ -30,9 +30,9 @@ function bubble(m: ChatMessage): HTMLElement {
 }
 
 /**
- * Der eine Prompt zum Verbinden: Eine Claude-Code-Session bedient damit den
- * HTTP-Endpunkt der App direkt (curl) – ohne ihn als MCP-Server einzurichten –
- * und startet einen Subagenten, der im Chat zuhört.
+ * The one prompt for connecting: with it a Claude Code session drives the
+ * app's HTTP endpoint directly (curl) – without setting it up as an MCP server –
+ * and starts a subagent that listens in the chat.
  */
 export function agentPrompt(url: string): string {
   const init = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"claude","version":"1"}}}`;
@@ -56,7 +56,7 @@ export function agentPrompt(url: string): string {
   ].join("\n");
 }
 
-/** Ersatzweg, falls die Zwischenablage-API ablehnt (z. B. Fenster noch ohne Fokus). */
+/** Fallback in case the clipboard API refuses (e.g. window still without focus). */
 function copyFallback(text: string): boolean {
   const ta = h("textarea", { style: "position:fixed;left:-9999px;top:0;opacity:0" });
   ta.value = text;
@@ -72,7 +72,7 @@ function copyFallback(text: string): boolean {
   return ok;
 }
 
-/** Blauer Knopf, der `text` (oder den aktuellen Wert von `text()`) kopiert und kurz „Kopiert“ zeigt. */
+/** Blue button that copies `text` (or the current value of `text()`) and briefly shows "Copied". */
 function copyButton(source: string | (() => string)): HTMLButtonElement {
   const get = typeof source === "string" ? () => source : source;
   const btn = h("button", { class: "btn small blue", title: t("Copy to clipboard") }, icon("copy"), t("Copy"));
@@ -94,7 +94,7 @@ function copyButton(source: string | (() => string)): HTMLButtonElement {
   return btn;
 }
 
-/** Verbinden-Kasten: der eine Prompt mit Kopieren-Knopf. */
+/** Connect box: the one prompt with a copy button. */
 function connectBox(url: string): HTMLElement {
   const text = agentPrompt(url);
   return h(
@@ -106,8 +106,8 @@ function connectBox(url: string): HTMLElement {
   );
 }
 
-/** Browser: derselbe Kasten mit dem Prompt für einen Agenten mit
- *  Browser-Werkzeug (Text in `web/agent-prompt.ts`). */
+/** Browser: the same box with the prompt for an agent with a
+ *  browser tool (text in `web/agent-prompt.ts`). */
 function webConnectBox(): HTMLElement {
   const text = webAgentPrompt(location.href);
   return h(
@@ -147,7 +147,7 @@ export function chatPanel(): { el: HTMLElement; update(): void } {
     }
   };
   input.addEventListener("keydown", (e) => {
-    e.stopPropagation(); // Tastenkürzel (Leertaste, R …) nicht auslösen
+    e.stopPropagation(); // do not trigger keyboard shortcuts (Space, R …)
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       void send();
@@ -182,13 +182,13 @@ export function chatPanel(): { el: HTMLElement; update(): void } {
           ? t("An agent is connected but not listening. Tasks wait until it listens – the prompt below starts listening.")
           : t("No agent connected. Tasks wait until one picks them up.");
         const parts: Node[] = [h("span", { class: "dot" }), h("span", { class: "status-text" }, text)];
-        // Desktop: Prompt für den HTTP-Endpunkt; Browser (kein Port): Prompt für einen Agenten mit Browser-Werkzeug
+        // Desktop: prompt for the HTTP endpoint; browser (no port): prompt for an agent with a browser tool
         if (url) parts.push(connectBox(url));
         else if (backend.platform === "web") parts.push(webConnectBox());
         status.replaceChildren(...parts);
       }
-      // Nachrichten nur neu zeichnen, wenn sich etwas geändert hat.
-      // (auch Statuswechsel neu → in Arbeit → erledigt)
+      // Redraw messages only when something has changed.
+      // (also status changes new → in progress → done)
       const sig = c.messages.map((m) => `${m.id}:${m.status ?? ""}`).join(",");
       if (sig !== rendered) {
         rendered = sig;

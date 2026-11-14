@@ -1,5 +1,5 @@
-// Gemeinsamer Zustand der Oberfläche. Die Wahrheit über das Projekt liegt im
-// Rust-Kern – hier liegt nur der zuletzt empfangene Schnappschuss.
+// Shared state of the UI. The truth about the project lives in the
+// Rust core – only the most recently received snapshot lives here.
 
 import { backend } from "./bridge.js";
 import { effect, signal } from "./signals.js";
@@ -7,10 +7,10 @@ import type {
   Analysis, ChatView, Clip, Command, EngineStatus, Instrument, InstrumentSpec, Project, SavedSound, Selection, Snapshot, Track,
 } from "./types.js";
 
-/** Beschreibung der Instrumente (Regler, Presets, Tastenbelegung) – vom Kern geladen. */
+/** Description of the instruments (sliders, presets, key mapping) – loaded from the core. */
 export const instrumentSpecs = signal<InstrumentSpec[]>([]);
 
-/** Klang-Bibliothek (eigene Klänge über alle Projekte); null = noch nicht geladen. */
+/** Sound library (own sounds across all projects); null = not loaded yet. */
 export const savedSounds = signal<SavedSound[] | null>(null);
 
 export function specFor(inst: Instrument | null | undefined): InstrumentSpec | undefined {
@@ -24,8 +24,8 @@ export const snapshot = signal<Snapshot | null>(null);
 export const status = signal<EngineStatus>({ playing: false, recording: false, positionSecs: 0, peakOut: 0, peakIn: 0 });
 export const selection = signal<Selection | null>(null);
 /**
- * Zuletzt markiert wurde der Zeitbereich im Lineal (true) – dann löscht Entf
- * ihn aus allen Spuren. Jede neue Auswahl von Clip, Spur oder Noten setzt das zurück.
+ * The time range in the ruler was marked last (true) – then Delete removes
+ * it from all tracks. Every new selection of clip, track or notes resets this.
  */
 export const rangeFocus = signal(false);
 effect(() => {
@@ -33,30 +33,30 @@ effect(() => {
   rangeFocus.value = false;
 });
 export const analysis = signal<Analysis | null>(null);
-/** Fenster im Docksystem. */
+/** Windows in the docking system. */
 export type PanelId = "spuren" | "clip" | "analyse" | "klang" | "rhythmus" | "song" | "agent" | "bibliothek" | "harmonie" | "fuge" | "hilfe";
-/** Anfrage, ein Fenster zu zeigen (jede Anfrage ist ein neues Objekt, auch für dasselbe Fenster). */
+/** Request to show a window (each request is a new object, even for the same window). */
 export const panelRequest = signal<{ id: PanelId; seq: number } | null>(null);
 let panelSeq = 0;
 export function showPanel(id: PanelId): void {
   panelRequest.value = { id, seq: ++panelSeq };
 }
-/** Fenster, das vorübergehend mehr Platz bekommt (Intro-Tour); null = normale Größen. */
+/** Window that temporarily gets more space (intro tour); null = normal sizes. */
 export const panelEmphasis = signal<{ id: PanelId; minWidth?: number } | null>(null);
-/** Fenster, die gerade zu sehen sind (aktiver Reiter ihrer Gruppe). */
+/** Windows that are currently visible (active tab of their group). */
 export const visiblePanels = signal<ReadonlySet<string>>(new Set());
-/** Chat mit dem Agenten. */
+/** Chat with the agent. */
 export const chat = signal<ChatView>({ messages: [], agentListening: false, agentConnected: false });
-/** Anzahl ungelesener Agent-Antworten (Punkt am Tab). */
+/** Number of unread agent replies (dot on the tab). */
 export const chatUnread = signal(0);
-/** Bibliothek wird heruntergeladen oder indiziert (Punkt am Reiter). */
+/** Library is being downloaded or indexed (dot on the tab). */
 export const libraryBusy = signal(false);
-/** Stellen, die der Kontrapunkt-Prüfer markiert (Schläge, beteiligte Spuren). */
+/** Spots that the counterpoint checker marks (beats, tracks involved). */
 export const counterpointMarks = signal<Array<{ start: number; end: number; severity: "fehler" | "warnung" | "hinweis"; trackIds: number[]; message: string }>>([]);
 export const viewport = signal({ pxPerBeat: 44, scrollX: 0, scrollY: 0 });
 export type MessageKind = "info" | "error" | "agent";
 export const message = signal<{ text: string; kind: MessageKind; id: number } | null>(null);
-/** Zählt Projektänderungen durch den Agenten (für kurze Hervorhebungen). */
+/** Counts project changes made by the agent (for brief highlights). */
 export const agentPulse = signal(0);
 
 let msgId = 0;
@@ -73,7 +73,7 @@ export function errorText(e: unknown): string {
   return JSON.stringify(e);
 }
 
-/** Wartet auf einen neuen Schnappschuss und übernimmt ihn; Fehler werden angezeigt. */
+/** Waits for a new snapshot and adopts it; errors are displayed. */
 export async function act(p: Promise<Snapshot>): Promise<boolean> {
   try {
     snapshot.value = await p;

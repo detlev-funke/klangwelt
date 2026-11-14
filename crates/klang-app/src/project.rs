@@ -1,13 +1,13 @@
-//! Projekte speichern und öffnen.
+//! Saving and opening projects.
 //!
-//! Eine `.klangwelt`-Datei ist ein ZIP-Container:
-//! * `projekt.json` – Projekt (Spuren, Clips, Noten mit Ausdruck, Klänge)
-//!   und eine Liste der Audioaufnahmen,
-//! * `audio/<id>.wav` – jede benutzte Aufnahme als WAV (32-Bit-Float, mono,
-//!   verlustfrei).
+//! A `.klangwelt` file is a ZIP container:
+//! * `projekt.json` – project (tracks, clips, notes with expression, sounds)
+//!   and a list of the audio recordings,
+//! * `audio/<id>.wav` – each recording used, as WAV (32-bit float, mono,
+//!   lossless).
 //!
-//! Geschrieben wird erst in eine Nebendatei, die dann die alte ersetzt: ein
-//! Absturz beim Speichern zerstört nie das letzte gute Projekt.
+//! It is written to a temporary file first, which then replaces the old one: a
+//! crash while saving never destroys the last good project.
 
 use klang_core::{ClipSource, Project};
 use klang_i18n::tr;
@@ -38,7 +38,7 @@ struct AssetEntry {
     file: String,
 }
 
-/// Eine Audioaufnahme zum Speichern bzw. aus einer Datei.
+/// An audio recording for saving or from a file.
 pub struct AudioData {
     pub id: String,
     pub name: String,
@@ -46,7 +46,7 @@ pub struct AudioData {
     pub sample_rate: u32,
 }
 
-/// IDs der Aufnahmen, auf die das Projekt verweist.
+/// IDs of the recordings the project refers to.
 pub fn used_assets(p: &Project) -> Vec<String> {
     let mut ids: Vec<String> = p
         .tracks
@@ -64,14 +64,14 @@ pub fn used_assets(p: &Project) -> Vec<String> {
 
 // ---------------------------------------------------------------- WAV
 
-/// WAV, 32-Bit-Float (Formatkennung 3), mono.
+/// WAV, 32-bit float (format tag 3), mono.
 pub fn write_wav(w: &mut impl Write, samples: &[f32], sample_rate: u32) -> io::Result<()> {
     let data = (samples.len() * 4) as u32;
     w.write_all(b"RIFF")?;
     w.write_all(&(36 + data).to_le_bytes())?;
     w.write_all(b"WAVEfmt ")?;
     w.write_all(&16u32.to_le_bytes())?;
-    w.write_all(&3u16.to_le_bytes())?; // IEEE-Float
+    w.write_all(&3u16.to_le_bytes())?; // IEEE float
     w.write_all(&1u16.to_le_bytes())?; // mono
     w.write_all(&sample_rate.to_le_bytes())?;
     w.write_all(&(sample_rate * 4).to_le_bytes())?;
@@ -86,7 +86,7 @@ pub fn write_wav(w: &mut impl Write, samples: &[f32], sample_rate: u32) -> io::R
     w.write_all(&buf)
 }
 
-/// Liest WAV: 32-Bit-Float oder 16-Bit-PCM, mehrkanalig wird zu mono gemittelt.
+/// Reads WAV: 32-bit float or 16-bit PCM, multi-channel is averaged to mono.
 pub fn read_wav(bytes: &[u8]) -> io::Result<(Vec<f32>, u32)> {
     let bad = |m: String| io::Error::new(io::ErrorKind::InvalidData, format!("WAV: {m}"));
     if bytes.len() < 12 || &bytes[..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
@@ -119,9 +119,9 @@ pub fn read_wav(bytes: &[u8]) -> io::Result<(Vec<f32>, u32)> {
     Ok((mono, rate))
 }
 
-// ---------------------------------------------------------------- Datei
+// ---------------------------------------------------------------- File
 
-/// Schreibt den ZIP-Container in `w` und gibt den Schreiber danach zurück.
+/// Writes the ZIP container to `w` and returns the writer afterwards.
 fn write_zip<W: Write + io::Seek>(w: W, project: &Project, audio: &[AudioData]) -> io::Result<W> {
     let mut zip = zip::ZipWriter::new(w);
     let json_opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
@@ -141,7 +141,7 @@ fn write_zip<W: Write + io::Seek>(w: W, project: &Project, audio: &[AudioData]) 
     zip.finish().map_err(io::Error::other)
 }
 
-/// Schreibt das Projekt samt Aufnahmen nach `path` (atomar über eine Nebendatei).
+/// Writes the project with its recordings to `path` (atomically via a temporary file).
 #[cfg(not(target_arch = "wasm32"))]
 pub fn save(path: &Path, project: &Project, audio: &[AudioData]) -> io::Result<()> {
     if let Some(dir) = path.parent() {
@@ -163,15 +163,15 @@ pub fn save(path: &Path, project: &Project, audio: &[AudioData]) -> io::Result<(
     }
 }
 
-/// Im Browser: der Container entsteht im Speicher und landet im Dateibaum des
-/// Kerns (der Web-Kern sichert ihn in OPFS).
+/// In the browser: the container is built in memory and ends up in the core's
+/// file tree (the web core backs it up in OPFS).
 #[cfg(target_arch = "wasm32")]
 pub fn save(path: &Path, project: &Project, audio: &[AudioData]) -> io::Result<()> {
     let bytes = write_zip(io::Cursor::new(Vec::new()), project, audio)?.into_inner();
     crate::vfs::write_atomic(path, &bytes, &format!("{EXT}.teil"))
 }
 
-/// Liest ein Projekt samt Aufnahmen.
+/// Reads a project with its recordings.
 pub fn load(path: &Path) -> io::Result<(Project, Vec<AudioData>)> {
     #[cfg(not(target_arch = "wasm32"))]
     let source = io::BufReader::new(std::fs::File::open(path)?);
@@ -180,7 +180,7 @@ pub fn load(path: &Path) -> io::Result<(Project, Vec<AudioData>)> {
     read_zip(source)
 }
 
-/// Liest den ZIP-Container (Projektdatei als Bytes, z. B. beim Import).
+/// Reads the ZIP container (project file as bytes, e.g. on import).
 pub fn read_zip<R: Read + io::Seek>(source: R) -> io::Result<(Project, Vec<AudioData>)> {
     let bad = |m: String| io::Error::new(io::ErrorKind::InvalidData, m);
     let mut zip = zip::ZipArchive::new(source).map_err(|e| bad(tr!("not a Klangwelt project file ({error})", error = e)))?;
@@ -211,7 +211,7 @@ fn sanitize(s: &str) -> String {
     s.chars().map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).collect()
 }
 
-/// Dateiname aus einem Projektnamen (ohne verbotene Zeichen).
+/// File name from a project name (without forbidden characters).
 pub fn file_name_for(name: &str) -> String {
     let clean: String = name
         .trim()
@@ -222,8 +222,8 @@ pub fn file_name_for(name: &str) -> String {
     format!("{}.{EXT}", if clean.is_empty() { "Projekt" } else { clean })
 }
 
-/// Eingabe → Pfad: ein bloßer Name landet in `dir`, sonst wird der Pfad genommen
-/// (Endung wird ergänzt).
+/// Input → path: a bare name ends up in `dir`, otherwise the path is used
+/// (extension is added).
 pub fn resolve(input: &str, dir: &Path) -> PathBuf {
     let s = input.trim().trim_matches('"');
     let looks_like_path = s.contains('/') || s.contains('\\') || s.contains(':');
@@ -237,18 +237,18 @@ pub fn resolve(input: &str, dir: &Path) -> PathBuf {
     }
 }
 
-/// Eine Projektdatei im Projektordner.
+/// A project file in the project folder.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectFile {
     pub name: String,
     pub path: String,
-    /// Unix-Zeit in Millisekunden
+    /// Unix time in milliseconds
     pub modified: u64,
     pub bytes: u64,
 }
 
-/// Projekte im Ordner `dir`, zuletzt geänderte zuerst.
+/// Projects in the folder `dir`, most recently modified first.
 pub fn list(dir: &Path) -> Vec<ProjectFile> {
     let mut out: Vec<ProjectFile> = crate::vfs::list(dir)
         .unwrap_or_default()
@@ -277,7 +277,7 @@ mod tests {
         write_wav(&mut buf, &s, 48_000).unwrap();
         let (back, rate) = read_wav(&buf).unwrap();
         assert_eq!((back, rate), (s, 48_000));
-        // 16-Bit-PCM stereo wird zu mono
+        // 16-bit PCM stereo becomes mono
         let mut pcm = Vec::new();
         pcm.extend_from_slice(b"RIFF\0\0\0\0WAVEfmt ");
         pcm.extend_from_slice(&16u32.to_le_bytes());
@@ -331,11 +331,11 @@ mod tests {
         assert_eq!(a.len(), 1);
         assert_eq!((a[0].id.as_str(), a[0].name.as_str(), a[0].sample_rate), ("asset-3", "Aufnahme 1", 48_000));
         assert_eq!(a[0].samples, samples);
-        // Überschreiben ersetzt die alte Datei
+        // Overwriting replaces the old file
         p.name = "Test 2".into();
         save(&path, &p, &audio).unwrap();
         assert_eq!(load(&path).unwrap().0.name, "Test 2");
-        // Fremde Dateien werden abgelehnt
+        // Foreign files are rejected
         std::fs::write(dir.join("kaputt.klangwelt"), b"kein zip").unwrap();
         assert!(load(&dir.join("kaputt.klangwelt")).is_err());
         let _ = std::fs::remove_dir_all(dir);

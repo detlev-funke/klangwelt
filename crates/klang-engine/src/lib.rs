@@ -1,25 +1,25 @@
-//! Echtzeit-Audio-Engine.
+//! Real-time audio engine.
 //!
-//! Aufbau (gleich auf dem Desktop und im Browser):
-//! * Die App spricht mit einer [`Engine`]: Wiedergabe, Arrangement, Vorhören,
-//!   Aufnahme, Status. Die Methoden sind auf beiden Plattformen dieselben.
-//! * Gemischt wird im [`Renderer`] (Clips, Hall, Metronom, Schleife). Er
-//!   bekommt Nachrichten ([`RtMsg`]) über einen sperrfreien Ringpuffer. Im
-//!   Mischer wird **nichts allokiert, nichts gesperrt und nichts freigegeben**:
-//!   Ein ersetztes Arrangement geht über einen zweiten Ringpuffer zurück und
-//!   wird außerhalb freigegeben.
-//! * Sprünge während der Wiedergabe (neues Arrangement, Tempo, Springen)
-//!   werden kurz übergeblendet ([`FADE_SECS`]): Das Alte klingt an seiner
-//!   Position weiter und blendet aus, das Neue blendet ein – kein Knacken.
-//! * Desktop (`device.rs`): ein Engine-Thread besitzt die cpal-Streams, der
-//!   Renderer läuft im Audio-Callback.
-//! * Browser (`web.rs`): die Engine schickt dieselben Nachrichten an ein
-//!   AudioWorklet; dort läuft derselbe Renderer als [`Mixer`] (WebAssembly).
-//! * Position, Pegel und Status stehen in Atomics für die Oberfläche bereit.
-//! * Geräte wählen: Ausgabe- und Aufnahmegerät lassen sich im laufenden
-//!   Betrieb wechseln ([`Engine::set_output_device`]). Der Engine-Thread baut
-//!   den Ausgabe-Stream dann neu auf und bringt den neuen Callback auf den
-//!   Stand des alten (Tempo, Metronom, Schleife, Arrangement, Position).
+//! Structure (the same on desktop and in the browser):
+//! * The app talks to an [`Engine`]: playback, arrangement, preview,
+//!   recording, status. The methods are the same on both platforms.
+//! * Mixing happens in the [`Renderer`] (clips, reverb, metronome, loop). It
+//!   receives messages ([`RtMsg`]) through a lock-free ring buffer. In the
+//!   mixer **nothing is allocated, nothing is locked and nothing is freed**:
+//!   a replaced arrangement goes back through a second ring buffer and
+//!   is freed outside.
+//! * Jumps during playback (new arrangement, tempo, seeking)
+//!   are crossfaded briefly ([`FADE_SECS`]): the old one keeps sounding at its
+//!   position and fades out, the new one fades in – no clicks.
+//! * Desktop (`device.rs`): an engine thread owns the cpal streams, the
+//!   renderer runs in the audio callback.
+//! * Browser (`web.rs`): the engine sends the same messages to an
+//!   AudioWorklet; there the same renderer runs as a [`Mixer`] (WebAssembly).
+//! * Position, level and status are available in atomics for the UI.
+//! * Choosing devices: the output and recording device can be switched
+//!   while running ([`Engine::set_output_device`]). The engine thread then
+//!   rebuilds the output stream and brings the new callback up to the
+//!   state of the old one (tempo, metronome, loop, arrangement, position).
 
 mod reverb;
 pub mod wire;
@@ -50,16 +50,16 @@ impl fmt::Display for EngineError {
 
 impl std::error::Error for EngineError {}
 
-/// Ein fertig gerenderter Clip an einer festen Position (Ausgaberate): Mitte
-/// (`data`) und optional Seite (`side`, Stereo-Breite) – links = Mitte + Seite,
-/// rechts = Mitte − Seite. In Mono fällt die Seite weg, nichts löscht sich aus.
+/// A fully rendered clip at a fixed position (output rate): mid
+/// (`data`) and optionally side (`side`, stereo width) – left = mid + side,
+/// right = mid − side. In mono the side drops out, nothing cancels.
 pub struct PlacedClip {
     pub start_frame: u64,
     pub data: Arc<[f32]>,
     pub side: Option<Arc<[f32]>>,
     pub gain_l: f32,
     pub gain_r: f32,
-    /// Anteil, der in den Hall (Raum) geht, 0…1.
+    /// Share that goes into the reverb (room), 0…1.
     pub send: f32,
 }
 
@@ -68,24 +68,24 @@ pub struct Arrangement {
     pub clips: Vec<PlacedClip>,
 }
 
-/// Liefert ein Vorhören stückweise nach (z. B. eine lange Partitur), damit es
-/// beliebig lang laufen kann, ohne vorher alles zu rendern.
+/// Supplies a preview piece by piece (e.g. a long score) so that it can
+/// run for any length without rendering everything beforehand.
 pub trait PreviewSource: Send {
-    /// Das nächste Stück: der Clip (Position ab Beginn des Vorhörens) und bis
-    /// zu welchem Frame das Vorhören damit abgedeckt ist. `None` = zu Ende.
+    /// The next piece: the clip (position from the start of the preview) and up
+    /// to which frame the preview is covered by it. `None` = finished.
     fn next(&mut self) -> Option<(PlacedClip, u64)>;
 }
 
-/// So weit (Sekunden) rendert der Engine-Thread einem gestreamten Vorhören voraus.
+/// This far ahead (seconds) the engine thread renders a streamed preview.
 const STREAM_AHEAD_SECS: f64 = 3.0;
 
-/// Ein laufendes, gestreamtes Vorhören im Engine-Thread.
+/// A running, streamed preview in the engine thread.
 struct PreviewStream {
     source: Box<dyn PreviewSource>,
     clips: Vec<PlacedClip>,
-    /// Bis hierhin (Frames ab Beginn) ist schon gerendert.
+    /// Rendered up to here (frames from the start).
     covered: u64,
-    /// Beginn (Sekunden auf der Uhr der Engine).
+    /// Start (seconds on the engine's clock).
     started: f64,
     done: bool,
 }
@@ -95,8 +95,8 @@ impl PreviewStream {
         Self { source, clips: Vec::new(), covered: 0, started: 0.0, done: false }
     }
 
-    /// Holt Stücke, bis `ahead` Frames über `now` hinaus gerendert sind; gibt an,
-    /// ob neue dazukamen. Abgespielte Clips fallen dabei weg.
+    /// Fetches pieces until `ahead` frames beyond `now` are rendered; reports
+    /// whether new ones were added. Clips that have been played are dropped.
     fn fill(&mut self, now: u64, ahead: u64) -> bool {
         let mut added = false;
         while !self.done && self.covered < now + ahead {
@@ -131,22 +131,22 @@ impl PreviewStream {
 #[derive(Default)]
 struct Shared {
     playing: AtomicBool,
-    /// Ein Vorhören (Bibliothek, Akkorde, Note) klingt gerade.
+    /// A preview (library, chords, note) is currently sounding.
     previewing: AtomicBool,
     recording: AtomicBool,
     position: AtomicU64,
     peak_out: AtomicU32,
     peak_in: AtomicU32,
-    /// Ausgabe stumm (alles läuft und wird gemessen, zu hören ist nichts) – für Tests.
+    /// Output muted (everything runs and is measured, nothing is audible) – for tests.
     muted: AtomicBool,
-    /// Abtastrate des Ausgabegeräts, zu der `position` gehört (nur Desktop,
-    /// im Browser kennt die Web-Engine sie selbst).
+    /// Sample rate of the output device that `position` belongs to (desktop only,
+    /// in the browser the web engine knows it itself).
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     sample_rate: AtomicU32,
 }
 
 impl Shared {
-    /// Status lesen; Spitzenpegel werden dabei zurückgesetzt.
+    /// Reads the status; peak levels are reset in the process.
     fn status(&self, sample_rate: u32) -> EngineStatus {
         EngineStatus {
             playing: self.playing.load(Ordering::Relaxed),
@@ -162,22 +162,22 @@ impl Shared {
 
 #[derive(Clone, Debug, Default)]
 pub struct EngineInfo {
-    /// Ausgabegerät, das gerade spielt.
+    /// Output device that is currently playing.
     pub output_device: String,
     pub sample_rate: u32,
     pub channels: u16,
-    /// Gewähltes Ausgabegerät; `None` = Systemstandard.
+    /// Selected output device; `None` = system default.
     pub output_choice: Option<String>,
-    /// Gewähltes Aufnahmegerät; `None` = Systemstandard.
+    /// Selected recording device; `None` = system default.
     pub input_choice: Option<String>,
 }
 
-/// Audiogeräte des Systems (Namen, wie das Betriebssystem sie nennt).
+/// Audio devices of the system (names as the operating system calls them).
 #[derive(Clone, Debug, Default)]
 pub struct AudioDevices {
     pub outputs: Vec<String>,
     pub inputs: Vec<String>,
-    /// Aktuelle Standardgeräte des Systems.
+    /// Current default devices of the system.
     pub default_output: Option<String>,
     pub default_input: Option<String>,
 }
@@ -194,34 +194,34 @@ pub struct EngineStatus {
 }
 
 pub struct Recording {
-    /// Mono, Abtastrate des Eingabegeräts.
+    /// Mono, sample rate of the input device.
     pub samples: Vec<f32>,
     pub sample_rate: u32,
-    /// Wiedergabeposition (Ausgabe-Frames) beim Start der Aufnahme.
+    /// Playback position (output frames) at the start of the recording.
     pub start_frame: u64,
     pub device: String,
 }
 
-/// Nachricht an den Mischer (über den Ringpuffer bzw. im Browser per
-/// `postMessage` an das Worklet, siehe [`wire`]).
+/// Message to the mixer (through the ring buffer or, in the browser, via
+/// `postMessage` to the worklet, see [`wire`]).
 pub enum RtMsg {
     Play,
     Stop,
     Seek(u64),
     Tempo { bpm: f64, beats_per_bar: u32 },
     Metronome(bool),
-    /// Schleife [Start, Ende) in Schlägen; None = aus.
+    /// Loop [start, end) in beats; None = off.
     Loop(Option<(f64, f64)>),
-    /// Ohne Schleife: an Schlag `.0` anhalten und auf Schlag `.1` springen; None = durchspielen.
+    /// Without a loop: stop at beat `.0` and jump to beat `.1`; None = play through.
     StopAt(Option<(f64, f64)>),
-    /// Neues Arrangement, optional mit neuem Tempo (BPM, Schläge je Takt) –
-    /// beides in einem Schritt, damit kein Block mit neuem Tempo, aber altem
-    /// Arrangement (oder umgekehrt) erklingt. Während der Wiedergabe wird
-    /// übergeblendet.
+    /// New arrangement, optionally with a new tempo (BPM, beats per bar) –
+    /// both in one step, so that no block sounds with the new tempo but the old
+    /// arrangement (or vice versa). During playback it is
+    /// crossfaded.
     Arrangement { arrangement: Arc<Arrangement>, tempo: Option<(f64, u32)> },
-    /// Einmalig abspielen, unabhängig vom Transport (Vorhören).
+    /// Play once, independent of the transport (preview).
     Preview(Arc<Arrangement>),
-    /// Laufendes Vorhören ersetzen, ohne von vorn zu beginnen (gestreamt).
+    /// Replace a running preview without restarting from the beginning (streamed).
     PreviewMore(Arc<Arrangement>),
 }
 
@@ -232,8 +232,8 @@ fn update_peak(a: &AtomicU32, v: f32) {
     }
 }
 
-/// Ausgabe-Sample des Mischers. Desktop: alle Formate, die cpal liefert (mit
-/// dessen Umrechnung); Browser: `f32` (Web Audio).
+/// Output sample of the mixer. Desktop: all formats cpal delivers (with
+/// its conversion); browser: `f32` (Web Audio).
 pub trait OutSample: Copy {
     fn from_f32(v: f32) -> Self;
 }
@@ -254,25 +254,25 @@ impl OutSample for f32 {
     }
 }
 
-// ------------------------------------------------------------------ Audio-Callback
+// ------------------------------------------------------------------ Audio callback
 
 const MAX_BLOCK: usize = 1024;
 
-/// Überblendzeit bei einem Sprung während der Wiedergabe (neues Arrangement,
-/// neues Tempo, Springen). Linear: Bleibt der Inhalt gleich (z. B. nur eine
-/// Spur geändert), bleibt die Summe unverändert.
+/// Crossfade time for a jump during playback (new arrangement,
+/// new tempo, seeking). Linear: if the content stays the same (e.g. only one
+/// track changed), the sum stays unchanged.
 pub const FADE_SECS: f32 = 0.015;
 
-/// So viele Übergänge dürfen sich überlagern (schnelle Folge von Änderungen);
-/// je Audio-Block beginnt höchstens einer.
+/// This many transitions may overlap (rapid succession of changes);
+/// at most one begins per audio block.
 const MAX_FADES: usize = 8;
 
-/// Ein ausklingender Stand: Arrangement und Position laufen weiter, der Pegel
-/// fällt linear auf 0.
+/// A fading state: arrangement and position keep running, the level
+/// falls linearly to 0.
 struct Fade {
     arrangement: Arc<Arrangement>,
     pos: u64,
-    /// Pegel beim nächsten Sample.
+    /// Level at the next sample.
     gain: f32,
 }
 
@@ -295,26 +295,26 @@ struct Renderer {
     arrangement: Arc<Arrangement>,
     preview: Arc<Arrangement>,
     preview_pos: u64,
-    /// Ende des Vorhörens (Frames ab dessen Beginn).
+    /// End of the preview (frames from its start).
     preview_len: u64,
-    /// Schleife in Schlägen.
+    /// Loop in beats.
     loop_beats: Option<(f64, f64)>,
-    /// Anhalten (Schlag) und Rücksprung (Schlag), wenn keine Schleife läuft.
+    /// Stop (beat) and return jump (beat) when no loop is running.
     stop_at: Option<(f64, f64)>,
     mix_l: [f32; MAX_BLOCK],
     mix_r: [f32; MAX_BLOCK],
-    /// Summe der Hall-Sends im Block.
+    /// Sum of the reverb sends in the block.
     mix_send: [f32; MAX_BLOCK],
     reverb: reverb::Reverb,
-    /// Ausklingende Stände nach Sprüngen (siehe [`FADE_SECS`]).
+    /// Fading states after jumps (see [`FADE_SECS`]).
     fades: [Option<Fade>; MAX_FADES],
-    /// Pegelabnahme je Sample beim Ausblenden.
+    /// Level decrease per sample while fading out.
     fade_step: f32,
-    /// Zwischenpuffer, um einen Stand mit eigenem Pegelverlauf zu mischen.
+    /// Intermediate buffer for mixing a state with its own level curve.
     tmp_l: [f32; MAX_BLOCK],
     tmp_r: [f32; MAX_BLOCK],
     tmp_send: [f32; MAX_BLOCK],
-    /// Summe der Pegel aller ausklingenden Stände je Sample.
+    /// Sum of the levels of all fading states per sample.
     fade_sum: [f32; MAX_BLOCK],
 }
 
@@ -355,24 +355,24 @@ impl Renderer {
         }
     }
 
-    /// Pegel des aktuellen Stands: was die ausklingenden übrig lassen.
+    /// Level of the current state: what the fading ones leave over.
     fn main_gain(&self) -> f32 {
         1.0 - self.fades.iter().flatten().map(|f| f.gain).sum::<f32>()
     }
 
-    /// Vor einem Sprung während der Wiedergabe: Der bisherige Stand
-    /// (Arrangement, Position) klingt an seiner Stelle weiter und blendet aus;
-    /// der neue beginnt bei Pegel 0. Danach dürfen sich `arrangement`, `pos`
-    /// und `bpm` ändern. Ohne Wiedergabe – oder wenn der aktuelle Stand gerade
-    /// erst begonnen hat (Pegel 0) – gibt es nichts auszublenden.
-    /// Allokiert nichts: das Arrangement wird nur geteilt (`Arc`).
+    /// Before a jump during playback: the previous state
+    /// (arrangement, position) keeps sounding in place and fades out;
+    /// the new one starts at level 0. Afterwards `arrangement`, `pos`
+    /// and `bpm` may change. Without playback – or if the current state has only
+    /// just begun (level 0) – there is nothing to fade out.
+    /// Allocates nothing: the arrangement is only shared (`Arc`).
     fn begin_fade(&mut self) {
         if !self.playing || self.main_gain() <= 1e-4 {
             return;
         }
         let slot = match self.fades.iter().position(Option::is_none) {
             Some(i) => i,
-            // alle belegt: den leisesten (fast ausgeklungenen) ersetzen
+            // all occupied: replace the quietest (almost faded out) one
             None => {
                 let i = (0..MAX_FADES)
                     .min_by(|&a, &b| {
@@ -386,12 +386,12 @@ impl Renderer {
                 i
             }
         };
-        // (nach dem Ersetzen inklusive dessen Anteil – die Summe bleibt 1)
+        // (after the replacement including its share – the sum stays 1)
         let gain = self.main_gain();
         self.fades[slot] = Some(Fade { arrangement: self.arrangement.clone(), pos: self.pos, gain });
     }
 
-    /// Ausklingende Stände sofort beenden (Stopp).
+    /// End fading states immediately (stop).
     fn drop_fades(&mut self) {
         for slot in self.fades.iter_mut() {
             if let Some(f) = slot.take() {
@@ -400,8 +400,8 @@ impl Renderer {
         }
     }
 
-    /// Neues Tempo; bei laufender Wiedergabe bleibt die Position in Schlägen
-    /// erhalten (der Sprung im Signal wird übergeblendet).
+    /// New tempo; during playback the position in beats is
+    /// preserved (the jump in the signal is crossfaded).
     fn set_tempo(&mut self, bpm: f64, beats_per_bar: u32) {
         if bpm > 0.0 && (bpm - self.bpm).abs() > 1e-9 {
             self.begin_fade();
@@ -421,7 +421,7 @@ impl Renderer {
         self.next_click = (self.pos as f64 / spb).ceil() * spb;
     }
 
-    /// Schleife in Frames beim aktuellen Tempo.
+    /// Loop in frames at the current tempo.
     fn loop_frames(&self) -> Option<(u64, u64)> {
         let (a, b) = self.loop_beats?;
         let spb = self.samples_per_beat();
@@ -455,13 +455,13 @@ impl Renderer {
                 RtMsg::Loop(region) => self.loop_beats = region,
                 RtMsg::StopAt(at) => self.stop_at = at,
                 RtMsg::Arrangement { arrangement, tempo } => {
-                    // ein Übergang für beides (set_tempo beginnt danach keinen zweiten)
+                    // one transition for both (set_tempo does not start a second one afterwards)
                     self.begin_fade();
                     if let Some((bpm, beats_per_bar)) = tempo {
                         self.set_tempo(bpm, beats_per_bar);
                     }
                     let old = std::mem::replace(&mut self.arrangement, arrangement);
-                    // Freigabe außerhalb des Callbacks; nur wenn der Rückkanal voll ist, hier.
+                    // Freed outside the callback; only if the return channel is full, here.
                     let _ = self.garbage.push(old);
                 }
                 RtMsg::Preview(p) => {
@@ -479,7 +479,7 @@ impl Renderer {
         }
     }
 
-    /// Mischt alle Clips von `arr`, die in [pos, pos+n) klingen, in die Puffer.
+    /// Mixes all clips of `arr` that sound in [pos, pos+n) into the buffers.
     fn mix_clips(arr: &Arrangement, pos: u64, n: usize, mix_l: &mut [f32], mix_r: &mut [f32], send: &mut [f32]) {
         let block_end = pos + n as u64;
         for clip in arr.clips.iter() {
@@ -488,7 +488,7 @@ impl Renderer {
             if ce <= pos || cs >= block_end {
                 continue;
             }
-            // Hall-Anteil mit der mittleren Lautstärke der Spur
+            // reverb share with the track's average volume
             let to_send = clip.send * 0.5 * (clip.gain_l + clip.gain_r);
             for f in pos.max(cs)..block_end.min(ce) {
                 let j = (f - cs) as usize;
@@ -502,8 +502,8 @@ impl Renderer {
         }
     }
 
-    /// Mischt einen Stand in die Zwischenpuffer und von dort mit Pegel `gain(i)`
-    /// in die Summe.
+    /// Mixes a state into the intermediate buffers and from there with level `gain(i)`
+    /// into the sum.
     fn mix_weighted(
         arr: &Arrangement,
         pos: u64,
@@ -526,8 +526,8 @@ impl Renderer {
         }
     }
 
-    /// Wiedergabe während eines Übergangs: ausklingende Stände mit fallendem
-    /// Pegel, der aktuelle mit dem Rest bis 1.
+    /// Playback during a transition: fading states with falling
+    /// level, the current one with the remainder up to 1.
     fn mix_fading(&mut self, n: usize) {
         let step = self.fade_step;
         self.fade_sum[..n].fill(0.0);
@@ -548,7 +548,7 @@ impl Renderer {
             f.gain = (g0 - n as f32 * step).max(0.0);
             f.pos += n as u64;
             if f.gain <= 0.0 {
-                // ausgeklungen: Freigabe außerhalb des Callbacks
+                // faded out: freed outside the callback
                 if let Some(done) = slot.take() {
                     let _ = self.garbage.push(done.arrangement);
                 }
@@ -581,7 +581,7 @@ impl Renderer {
             Self::mix_clips(&self.preview, self.preview_pos, n, &mut self.mix_l[..n], &mut self.mix_r[..n], &mut self.mix_send[..n]);
             self.preview_pos += n as u64;
         }
-        // Raum: der Hall klingt auch nach dem Stoppen noch aus
+        // room: the reverb keeps ringing out even after stopping
         for i in 0..n {
             let (l, r) = self.reverb.process(self.mix_send[i]);
             self.mix_l[i] += l;
@@ -622,14 +622,14 @@ impl Renderer {
         let muted = self.shared.muted.load(Ordering::Relaxed);
         while done < frames {
             let mut n = (frames - done).min(MAX_BLOCK);
-            // Schleife: Block am Schleifenende teilen und dort an den Anfang springen
+            // loop: split the block at the loop end and jump to the start there
             let lp = if self.playing { self.loop_frames() } else { None };
             if let Some((_, e)) = lp {
                 if self.pos < e {
                     n = n.min((e - self.pos) as usize);
                 }
             }
-            // ohne Schleife: am Haltepunkt anhalten (Ende des Bereichs bzw. ein Takt nach dem Stück)
+            // without a loop: stop at the stop point (end of the range or one bar after the piece)
             let spb = self.samples_per_beat();
             let halt = if self.playing && lp.is_none() {
                 self.stop_at.map(|(s, b)| ((s * spb).round() as u64, (b.max(0.0) * spb).round() as u64))
@@ -682,9 +682,9 @@ impl Renderer {
     }
 }
 
-/// Offline mischen (Export): genau wie die Wiedergabe – Clips mit Pegel und
-/// Panorama, Seitensignal, Hall-Bus, sanfter Begrenzer –, aber ohne Gerät und
-/// ohne Metronom. Liefert `frames` Frames links/rechts bei `sample_rate`.
+/// Mix offline (export): exactly like playback – clips with level and
+/// pan, side signal, reverb bus, soft limiter –, but without a device and
+/// without metronome. Returns `frames` frames left/right at `sample_rate`.
 pub fn render_offline(arrangement: Arrangement, sample_rate: u32, frames: u64) -> (Vec<f32>, Vec<f32>) {
     let (_tx, rx) = RingBuffer::new(1);
     let (gtx, _grx) = RingBuffer::new(1);
@@ -706,9 +706,9 @@ pub fn render_offline(arrangement: Arrangement, sample_rate: u32, frames: u64) -
     (left, right)
 }
 
-/// Der Mischer der Engine ohne eigenes Gerät: für eine Ausgabe, die selbst
-/// Blöcke anfordert – im Browser das AudioWorklet. Derselbe [`Renderer`] wie
-/// im Audio-Callback des Desktops, mit denselben Nachrichten ([`RtMsg`]).
+/// The engine's mixer without a device of its own: for an output that itself
+/// requests blocks – in the browser the AudioWorklet. The same [`Renderer`] as
+/// in the desktop's audio callback, with the same messages ([`RtMsg`]).
 pub struct Mixer {
     renderer: Renderer,
     tx: Producer<RtMsg>,
@@ -722,7 +722,7 @@ impl Mixer {
         Self { renderer: Renderer::new(sample_rate, channels, rx, gtx, Arc::new(Shared::default())), tx, garbage }
     }
 
-    /// Nachricht einreihen; sie wirkt ab dem nächsten Block.
+    /// Queues a message; it takes effect from the next block.
     pub fn send(&mut self, msg: RtMsg) {
         let mut m = msg;
         while let Err(rtrb::PushError::Full(back)) = self.tx.push(m) {
@@ -732,25 +732,25 @@ impl Mixer {
         }
     }
 
-    /// Ausgabe stumm schalten (Status und Pegel laufen weiter).
+    /// Mutes the output (status and level keep running).
     pub fn set_muted(&mut self, on: bool) {
         self.renderer.shared.muted.store(on, Ordering::Relaxed);
     }
 
-    /// Füllt `out` (verschränkt, `channels` Kanäle je Frame).
+    /// Fills `out` (interleaved, `channels` channels per frame).
     pub fn process(&mut self, out: &mut [f32]) {
         self.renderer.process(out);
         self.collect();
     }
 
-    /// Ersetzte Arrangements freigeben (außerhalb des Mischens).
+    /// Frees replaced arrangements (outside of mixing).
     fn collect(&mut self) {
         while let Ok(old) = self.garbage.pop() {
             drop(old);
         }
     }
 
-    /// Status wie [`Engine::status`]; Spitzenpegel werden dabei zurückgesetzt.
+    /// Status like [`Engine::status`]; peak levels are reset in the process.
     pub fn status(&self) -> EngineStatus {
         self.renderer.shared.status(self.renderer.sr as u32)
     }
@@ -787,9 +787,9 @@ mod tests {
         RtMsg::Arrangement { arrangement: Arc::new(arr), tempo: None }
     }
 
-    // ------------------------------------------------ Überblenden bei Sprüngen
+    // ------------------------------------------------ Crossfading at jumps
 
-    /// Zählt Allokationen und Freigaben je Thread (Tests laufen parallel).
+    /// Counts allocations and frees per thread (tests run in parallel).
     mod counting {
         use std::alloc::{GlobalAlloc, Layout, System};
         use std::cell::Cell;
@@ -804,7 +804,7 @@ mod tests {
             let _ = OPS.try_with(|c| c.set(c.get() + 1));
         }
 
-        /// Allokationen + Freigaben dieses Threads bisher.
+        /// Allocations + frees of this thread so far.
         pub fn ops() -> usize {
             OPS.with(Cell::get)
         }
@@ -835,18 +835,18 @@ mod tests {
     const SR: f32 = 48_000.0;
     const BLOCK: usize = 128;
 
-    /// Ein Sinus (Frequenz, Phase, Amplitude) als Clip ab Frame 0.
+    /// A sine (frequency, phase, amplitude) as a clip from frame 0.
     fn sine(len: usize, freq: f32, phase: f32, amp: f32) -> Arrangement {
         let data: Arc<[f32]> = (0..len).map(|i| amp * (std::f32::consts::TAU * freq * i as f32 / SR + phase).sin()).collect::<Vec<f32>>().into();
         Arrangement { clips: vec![PlacedClip { start_frame: 0, data, side: None, gain_l: 1.0, gain_r: 1.0, send: 0.0 }] }
     }
 
-    /// Wert des Sinus an Frame `f` (wie in [`sine`]).
+    /// Value of the sine at frame `f` (as in [`sine`]).
     fn sine_at(f: u64, freq: f32, phase: f32, amp: f32) -> f32 {
         amp * (std::f32::consts::TAU * freq * f as f32 / SR + phase).sin()
     }
 
-    /// Spielt `blocks` Blöcke und hängt den linken Kanal an.
+    /// Plays `blocks` blocks and appends the left channel.
     fn play(r: &mut Renderer, blocks: usize, left: &mut Vec<f32>) {
         let mut out = [0f32; 2 * BLOCK];
         for _ in 0..blocks {
@@ -855,13 +855,13 @@ mod tests {
         }
     }
 
-    /// Größte Differenz aufeinanderfolgender Samples.
+    /// Largest difference between consecutive samples.
     fn max_step(x: &[f32]) -> f32 {
         x.windows(2).map(|w| (w[1] - w[0]).abs()).fold(0.0, f32::max)
     }
 
-    /// Steilster Anstieg eines Sinus mit 220 Hz und Amplitude 0,5 je Sample
-    /// (≈ 0,0144) – so viel darf sich das Signal ohnehin von Sample zu Sample ändern.
+    /// Steepest rise of a sine at 220 Hz and amplitude 0.5 per sample
+    /// (≈ 0.0144) – the signal may change this much from sample to sample anyway.
     fn sine_slope() -> f32 {
         0.5 * std::f32::consts::TAU * 220.0 / SR
     }
@@ -874,7 +874,7 @@ mod tests {
         let mut left = Vec::new();
         play(&mut r, 10, &mut left);
         let s = r.pos;
-        // gleicher Ton, Phase gedreht: hart umgeschaltet wäre das ein Sprung
+        // same note, phase rotated: switched hard, that would be a jump
         let hard = (sine_at(s, 220.0, 0.0, 0.5) - sine_at(s, 220.0, std::f32::consts::PI, 0.5)).abs();
         assert!(hard > 0.5, "Testaufbau: harter Wechsel springt um {hard}");
         while grx.pop().is_ok() {}
@@ -883,7 +883,7 @@ mod tests {
         let fade_len = (FADE_SECS * SR) as f32;
         let bound = sine_slope() + 1.0 / fade_len + 1e-3;
         assert!(max_step(&left) < bound, "größter Schritt {} (erlaubt {bound}, hart wären {hard})", max_step(&left));
-        // nach der Überblendung: nur noch das neue Arrangement, das alte zur Freigabe zurück
+        // after the crossfade: only the new arrangement, the old one back for freeing
         assert!(r.fades.iter().all(Option::is_none));
         let last = *left.last().unwrap();
         assert!((last - sine_at(r.pos - 1, 220.0, std::f32::consts::PI, 0.5)).abs() < 1e-5);
@@ -899,7 +899,7 @@ mod tests {
         let mut left = Vec::new();
         play(&mut r, 100, &mut left);
         assert_eq!(r.pos, 12_800);
-        // schneller: dieselbe Stelle in Schlägen liegt früher – der Lesekopf springt
+        // faster: the same spot in beats lies earlier – the read head jumps
         let new_pos = 12_800 * 120 / 150;
         let hard = (sine_at(12_800, 220.0, 0.0, 0.5) - sine_at(new_pos, 220.0, 0.0, 0.5)).abs();
         assert!(hard > 0.1, "Testaufbau: harter Wechsel springt um {hard}");
@@ -919,15 +919,15 @@ mod tests {
         let _ = tx.push(RtMsg::Play);
         let mut left = Vec::new();
         play(&mut r, 50, &mut left);
-        // Tempo allein (alte Engine-Folge: Tempo, ein Block später das Arrangement)
+        // tempo alone (old engine sequence: tempo, the arrangement one block later)
         let _ = tx.push(RtMsg::Tempo { bpm: 133.0, beats_per_bar: 4 });
         play(&mut r, 1, &mut left);
         let _ = tx.push(arrangement_msg(sine(4 * 48_000, 220.0, 1.0, 0.5)));
         play(&mut r, 10, &mut left);
-        // Springen während der Wiedergabe
+        // seeking during playback
         let _ = tx.push(RtMsg::Seek(70_001));
         play(&mut r, 10, &mut left);
-        // jede Menge Änderungen, je Block eine (mehr, als sich überblenden lassen)
+        // lots of changes, one per block (more than can be crossfaded)
         for k in 0..40 {
             while grx.pop().is_ok() {}
             let msg = if k % 3 == 0 {
@@ -939,7 +939,7 @@ mod tests {
             play(&mut r, 1, &mut left);
         }
         play(&mut r, 20, &mut left);
-        // Je laufender Überblendung kommt höchstens deren Neigung (Δ/Länge) dazu.
+        // Each running crossfade adds at most its slope (Δ/length).
         let fades_at_once = ((FADE_SECS * SR) / BLOCK as f32).ceil();
         let bound = sine_slope() + fades_at_once / (FADE_SECS * SR) + 1e-3;
         assert!(max_step(&left) < bound, "größter Schritt {} (erlaubt {bound})", max_step(&left));
@@ -961,7 +961,7 @@ mod tests {
         play(&mut r, 1, &mut left);
         assert!(r.fades.iter().all(Option::is_none));
         assert_eq!(std::iter::from_fn(|| grx.pop().ok()).count(), 1, "ausklingendes Arrangement zur Freigabe zurück");
-        // gestoppt: ein neues Arrangement wird ohne Übergang übernommen
+        // stopped: a new arrangement is adopted without a transition
         let _ = tx.push(arrangement_msg(sine(48_000, 220.0, 1.0, 0.5)));
         play(&mut r, 1, &mut left);
         assert!(r.fades.iter().all(Option::is_none));
@@ -973,8 +973,8 @@ mod tests {
         let (gtx, mut grx) = RingBuffer::new(64);
         let mut r = Renderer::new(SR, 2, rx, gtx, Arc::new(Shared::default()));
         let mut tx = tx_rt;
-        // Arrangements nur in den Nachrichten (keine Kopie hier): würde der
-        // Mischer eines freigeben, zählte das als Freigabe.
+        // Arrangements only in the messages (no copy here): if the
+        // mixer freed one, that would count as a free.
         let _ = tx.push(RtMsg::Tempo { bpm: 120.0, beats_per_bar: 4 });
         let _ = tx.push(arrangement_msg(sine(4 * 48_000, 220.0, 0.0, 0.5)));
         let _ = tx.push(RtMsg::Play);
@@ -982,7 +982,7 @@ mod tests {
         let mut ops = 0;
         let mut returned = 0;
         for k in 0..120 {
-            // Nachrichten werden außerhalb gebaut (wie in der App)
+            // messages are built outside (as in the app)
             match k % 9 {
                 0 => drop(tx.push(arrangement_msg(sine(4 * 48_000, 220.0, k as f32, 0.5)))),
                 3 => drop(tx.push(RtMsg::Arrangement { arrangement: Arc::new(sine(4 * 48_000, 220.0, 1.0, 0.5)), tempo: Some((90.0 + k as f64, 4)) })),
@@ -999,7 +999,7 @@ mod tests {
             }
         }
         assert_eq!(ops, 0, "Allokationen/Freigaben im Mischer");
-        // 27 Arrangement-Nachrichten: jedes ersetzte kommt zurück (dazu die ausgeklungenen Übergänge)
+        // 27 arrangement messages: each replaced one comes back (plus the faded-out transitions)
         assert!(returned >= 27, "ersetzte Arrangements und Übergänge zurückgegeben: {returned}");
     }
 
@@ -1016,7 +1016,7 @@ mod tests {
         assert_eq!(out[2 * 10], 0.5);
         assert_eq!(out[2 * 10 + 1], 0.25);
         assert_eq!(r.pos, 64);
-        // Das alte (leere) Arrangement liegt zur Freigabe bereit.
+        // The old (empty) arrangement is ready for freeing.
         assert!(grx.pop().is_ok());
     }
 
@@ -1030,7 +1030,7 @@ mod tests {
         let _ = tx.push(RtMsg::Play);
         let mut out = vec![0f32; 2 * 32];
         r.process(&mut out);
-        // (der weiche Begrenzer am Ausgang staucht 0,75 minimal)
+        // (the soft limiter at the output squashes 0.75 slightly)
         assert!((out[4] - 0.75).abs() < 0.002 && (out[5] - 0.25).abs() < 1e-6, "links Mitte + Seite, rechts Mitte − Seite: {:?}", &out[4..6]);
         assert!((out[4] + out[5] - 1.0).abs() < 0.002, "Mono-Summe unverändert");
     }
@@ -1044,7 +1044,7 @@ mod tests {
         let mut out = vec![0f32; 2 * 1024];
         r.process(&mut out);
         assert!(out.iter().any(|v| v.abs() > 0.01), "Klick auf Schlag 1 fehlt");
-        // 24000 Frames = 1 Schlag bei 120 BPM. Halbes Tempo → Position verdoppelt.
+        // 24000 frames = 1 beat at 120 BPM. Half tempo → position doubled.
         r.pos = 24_000;
         let _ = tx.push(RtMsg::Tempo { bpm: 60.0, beats_per_bar: 4 });
         r.process(&mut out);
@@ -1068,20 +1068,20 @@ mod tests {
     #[test]
     fn loop_jumps_back_at_its_end_and_not_when_started_behind_it() {
         let (mut r, mut tx, _g) = renderer();
-        // 120 BPM bei 48 kHz: 1 Schlag = 24 000 Frames; Schleife Schlag 1–2
+        // 120 BPM at 48 kHz: 1 beat = 24,000 frames; loop beat 1–2
         let _ = tx.push(RtMsg::Tempo { bpm: 120.0, beats_per_bar: 4 });
         let _ = tx.push(RtMsg::Loop(Some((1.0, 2.0))));
         let _ = tx.push(RtMsg::Seek(47_900));
         let _ = tx.push(RtMsg::Play);
         let mut out = vec![0f32; 2 * 256];
         r.process(&mut out);
-        // 100 Frames bis zum Ende, dann ab 24 000 weiter: 156 Frames
+        // 100 frames to the end, then on from 24,000: 156 frames
         assert_eq!(r.pos, 24_000 + 156);
-        // hinter dem Ende gestartet: keine Schleife
+        // started past the end: no loop
         r.pos = 60_000;
         r.process(&mut out);
         assert_eq!(r.pos, 60_256);
-        // aus: kein Sprung
+        // off: no jump
         let _ = tx.push(RtMsg::Loop(None));
         r.pos = 47_900;
         r.process(&mut out);
@@ -1103,7 +1103,7 @@ mod tests {
     #[test]
     fn stops_at_the_halt_point_and_jumps_back() {
         let (mut r, mut tx, _g) = renderer();
-        // 1 Schlag = 24 000 Frames: an Schlag 2 anhalten, zurück auf Schlag 1
+        // 1 beat = 24,000 frames: stop at beat 2, back to beat 1
         let _ = tx.push(RtMsg::Tempo { bpm: 120.0, beats_per_bar: 4 });
         let _ = tx.push(RtMsg::StopAt(Some((2.0, 1.0))));
         let _ = tx.push(RtMsg::Seek(47_900));
@@ -1112,7 +1112,7 @@ mod tests {
         r.process(&mut out);
         assert!(!r.playing, "angehalten");
         assert_eq!(r.pos, 24_000, "zurück auf den Anfang des Bereichs");
-        // eine Schleife hat Vorrang
+        // a loop takes precedence
         let _ = tx.push(RtMsg::Loop(Some((1.0, 2.0))));
         let _ = tx.push(RtMsg::Seek(47_900));
         let _ = tx.push(RtMsg::Play);
@@ -1131,7 +1131,7 @@ mod tests {
         assert!(r.shared.previewing.load(Ordering::Relaxed));
         r.process(&mut out);
         assert!(!r.shared.previewing.load(Ordering::Relaxed), "nach 512 von 300 Frames vorbei");
-        // Stopp = leeres Vorhören
+        // stop = empty preview
         let data: Arc<[f32]> = vec![0.1f32; 3000].into();
         let _ = tx.push(RtMsg::Preview(Arc::new(Arrangement { clips: vec![PlacedClip { start_frame: 0, data, side: None, gain_l: 1.0, gain_r: 1.0, send: 0.0 }] })));
         r.process(&mut out);
@@ -1148,7 +1148,7 @@ mod tests {
         let _ = tx.push(RtMsg::Preview(Arc::new(Arrangement { clips: vec![PlacedClip { start_frame: 0, data: a, side: None, gain_l: 1.0, gain_r: 1.0, send: 0.0 }] })));
         let mut out = vec![0f32; 2 * 256];
         r.process(&mut out);
-        // zweites Stück direkt dahinter: läuft weiter, ohne von vorn zu beginnen
+        // second piece right behind it: keeps running without restarting from the beginning
         let b: Arc<[f32]> = vec![0.3f32; 256].into();
         let _ = tx.push(RtMsg::PreviewMore(Arc::new(Arrangement { clips: vec![PlacedClip { start_frame: 256, data: b, side: None, gain_l: 1.0, gain_r: 1.0, send: 0.0 }] })));
         r.process(&mut out);
@@ -1185,7 +1185,7 @@ mod tests {
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
     fn mirror_brings_a_fresh_callback_to_the_same_state() {
-        // Gerätewechsel (Desktop): der neue Callback kennt Tempo, Metronom, Schleife und Arrangement
+        // device change (desktop): the new callback knows tempo, metronome, loop and arrangement
         let mut m = crate::device::Mirror::default();
         let data: Arc<[f32]> = vec![0.5f32; 100].into();
         let arr = Arc::new(Arrangement { clips: vec![PlacedClip { start_frame: 0, data, side: None, gain_l: 1.0, gain_r: 1.0, send: 0.0 }] });
@@ -1203,7 +1203,7 @@ mod tests {
         assert_eq!(r.loop_beats, Some((1.0, 2.0)));
         assert_eq!(r.arrangement.clips.len(), 1);
         assert!(!r.playing, "Abspielen entscheidet der Wechsel selbst");
-        // andere Abtastrate: das Arrangement passt nicht mehr, die App rendert neu
+        // different sample rate: the arrangement no longer fits, the app renders again
         assert!(!m.replay(44_100).iter().any(|x| matches!(x, RtMsg::Arrangement { .. })));
     }
 
@@ -1217,12 +1217,12 @@ mod tests {
         assert_eq!(r.pos, 500);
     }
 
-    /// Wie viele Clips (Spuren, Stimmen) mischt der Renderer in Echtzeit? Alle
-    /// klingen gleichzeitig, mit Seitensignal (Stereo-Breite) und Hall-Anteil –
-    /// der teuerste Fall. 16 verschiedene Puffer, versetzt auf alle Clips verteilt
-    /// (Speicher bleibt klein, gerechnet wird trotzdem jeder Clip). Gerechnet in Blöcken zu 128 Frames bei 48 kHz (wie im
-    /// AudioWorklet), Budget je Block 2,67 ms. Gegenstück im Browser:
-    /// `tests/perf/voices.mjs`. Nur Messung:
+    /// How many clips (tracks, voices) does the renderer mix in real time? All
+    /// sound at once, with side signal (stereo width) and reverb share –
+    /// the most expensive case. 16 different buffers, distributed across all clips
+    /// with offsets (memory stays small, but every clip is still computed). Computed in blocks of 128 frames at 48 kHz (as in the
+    /// AudioWorklet), budget per block 2.67 ms. Counterpart in the browser:
+    /// `tests/perf/voices.mjs`. Measurement only:
     /// `cargo test --release -p klang-engine -- --ignored --nocapture stimmen`
     #[test]
     #[ignore = "Messung"]

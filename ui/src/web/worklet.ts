@@ -1,8 +1,8 @@
-// Web-Hülle, AudioWorklet: hier mischt der Renderer der Engine
-// (`klang_worklet.wasm`) – das Gegenstück zum Audio-Callback des Desktops.
-// Nachrichten und Klangpuffer kommen vom Web-Kern (Worker) über einen
-// MessageChannel; Status und Mikrofon-Samples gehen dorthin zurück. Kein
-// SharedArrayBuffer nötig (ein einfacher Server setzt kein COOP/COEP).
+// Web shell, AudioWorklet: this is where the engine's renderer mixes
+// (`klang_worklet.wasm`) – the counterpart to the desktop's audio callback.
+// Messages and sound buffers come from the web core (worker) via a
+// MessageChannel; status and microphone samples go back there. No
+// SharedArrayBuffer needed (a simple server does not set COOP/COEP).
 
 declare abstract class AudioWorkletProcessor {
   readonly port: MessagePort;
@@ -24,17 +24,17 @@ interface WorkletExports {
 
 type FromWorker = { k: number; d: Float64Array } | { b: number; n: number; off: number; d: Float32Array } | { flush: number };
 
-/** `klang_engine::wire::Kind::Record` – die Aufnahme sammelt dieses Skript. */
+/** `klang_engine::wire::Kind::Record` – this script collects the recording. */
 const RECORD = 13;
-/** Status alle so viele Blöcke (128 Frames: rund 24 ms bei 48 kHz). */
+/** Status every this many blocks (128 frames: about 24 ms at 48 kHz). */
 const STATUS_EVERY = 9;
-/** Mikrofon-Samples je Nachricht an den Worker. */
+/** Microphone samples per message to the worker. */
 const REC_CHUNK = 4096;
 
 class KlangweltProcessor extends AudioWorkletProcessor {
   private wasm: WorkletExports;
   private worker: MessagePort | null = null;
-  /** Puffer im Aufbau: Kennung → Zeiger. */
+  /** Buffers under construction: id → pointer. */
   private filling = new Map<number, number>();
   private recording = false;
   private rec = new Float32Array(REC_CHUNK);
@@ -66,7 +66,7 @@ class KlangweltProcessor extends AudioWorkletProcessor {
       new Float64Array(this.wasm.memory.buffer, ptr, m.d.length).set(m.d);
       this.wasm.kwl_msg(m.k, m.d.length);
     } else if ("b" in m) {
-      // Ein Puffer kommt in Stücken; erst vollständig ist er benutzbar.
+      // A buffer arrives in pieces; only when complete is it usable.
       if (m.off === 0) this.filling.set(m.b, this.wasm.kwl_buffer_alloc(m.b, m.n));
       const ptr = this.filling.get(m.b);
       if (ptr == null) return;
@@ -81,7 +81,7 @@ class KlangweltProcessor extends AudioWorkletProcessor {
     }
   }
 
-  /** Gesammelte Mikrofon-Samples an den Worker. */
+  /** Sends collected microphone samples to the worker. */
   private sendRecording(): void {
     if (!this.recPos || !this.worker) return;
     const chunk = this.rec.slice(0, this.recPos);
@@ -100,7 +100,7 @@ class KlangweltProcessor extends AudioWorkletProcessor {
       left[i] = mix[2 * i]!;
       right[i] = mix[2 * i + 1]!;
     }
-    // Mikrofon (mono): Pegel immer, Samples nur während der Aufnahme
+    // Microphone (mono): level always, samples only during recording
     const input = inputs[0];
     if (input && input.length) {
       const n = input[0]!.length;
@@ -129,5 +129,5 @@ class KlangweltProcessor extends AudioWorkletProcessor {
 
 registerProcessor("klangwelt", KlangweltProcessor);
 
-// Modul (eigener Gültigkeitsbereich), geladen als ES-Modul.
+// Module (own scope), loaded as an ES module.
 export {};

@@ -1,7 +1,7 @@
-// Projekte speichern, öffnen, neu anlegen – Knopf „Speichern“ (mit Punkt bei
-// ungespeicherten Änderungen) und Menü „Datei“. Die Dialoge sind eigene
-// (keine Systemdialoge): Projekte liegen in Dokumente/Klangwelt/Projekte,
-// andere Orte gehen über einen Pfad.
+// Save, open and create projects – "Save" button (with a dot for
+// unsaved changes) and "File" menu. The dialogs are our own
+// (not system dialogs): projects live in Dokumente/Klangwelt/Projekte,
+// other locations go via a path.
 
 import { backend } from "../bridge.js";
 import { loadDemo } from "../actions.js";
@@ -30,7 +30,7 @@ function stopKeys(input: HTMLInputElement): HTMLInputElement {
   return input;
 }
 
-/** Speichern; ohne Datei geht es zu „Speichern unter“. Liefert true bei Erfolg. */
+/** Save; without a file it goes to "Save as". Returns true on success. */
 export async function saveProject(): Promise<boolean> {
   if (!snapshot.peek()?.file) return saveAs();
   try {
@@ -43,7 +43,7 @@ export async function saveProject(): Promise<boolean> {
   }
 }
 
-/** „Speichern unter“: Name (oder voller Pfad) im eigenen Dialog. */
+/** "Save as": name (or full path) in the own dialog. */
 export async function saveAs(): Promise<boolean> {
   const snap = snapshot.peek();
   let dir = "";
@@ -51,7 +51,7 @@ export async function saveAs(): Promise<boolean> {
   try {
     [dir, existing] = await backend.projectList();
   } catch {
-    /* Liste ist nur ein Hinweis */
+    /* list is only a hint */
   }
   const name = stopKeys(h("input", {
     class: "lib-input modal-input",
@@ -102,8 +102,8 @@ const DISCARD_QUESTION = {
 };
 
 /**
- * Bei ungespeicherten Änderungen nachfragen. Liefert true, wenn es weitergehen
- * darf (gespeichert oder verworfen).
+ * Ask on unsaved changes. Returns true if it may continue
+ * (saved or discarded).
  */
 export async function confirmDiscard(action: keyof typeof DISCARD_QUESTION): Promise<boolean> {
   const snap = snapshot.peek();
@@ -129,7 +129,7 @@ export async function newProject(): Promise<void> {
   }
 }
 
-/** Neues Projekt mit den Demo-Spuren (Beat, Arpeggio, Melodie). */
+/** New project with the demo tracks (beat, arpeggio, melody). */
 async function demoProject(): Promise<void> {
   if (!(await confirmDiscard("demo"))) return;
   try {
@@ -141,7 +141,7 @@ async function demoProject(): Promise<void> {
   await loadDemo();
 }
 
-/** Projekt öffnen – fragt bei ungespeicherten Änderungen (auch für Doppelklick auf eine Datei). */
+/** Open project – asks on unsaved changes (also for double-clicking a file). */
 export async function openPath(path: string): Promise<void> {
   if (!(await confirmDiscard("open"))) return;
   try {
@@ -152,7 +152,7 @@ export async function openPath(path: string): Promise<void> {
   }
 }
 
-/** Projekt öffnen: Liste aus dem Projektordner, oder ein Pfad. */
+/** Open project: list from the project folder, or a path. */
 export async function openDialog(): Promise<void> {
   let dir = "";
   let files: ProjectFile[] = [];
@@ -195,14 +195,14 @@ export async function openDialog(): Promise<void> {
   await openPath(target);
 }
 
-/** Browser: gespeichertes Projekt als .klangwelt-Datei herunterladen (vorher speichern). */
+/** Browser: download the saved project as a .klangwelt file (save first). */
 async function downloadProject(): Promise<void> {
   if (!(await saveProject())) return;
   const file = snapshot.peek()?.file;
   if (file) await backend.exportReveal(file).catch((e) => notify(errorText(e), "error"));
 }
 
-/** Browser: .klangwelt-Datei auswählen, in den Speicher des Browsers legen und öffnen. */
+/** Browser: pick a .klangwelt file, put it into the browser's storage and open it. */
 function uploadProject(): void {
   const input = h("input", { type: "file", accept: ".klangwelt" }) as HTMLInputElement;
   input.addEventListener("change", () => {
@@ -213,7 +213,7 @@ function uploadProject(): void {
   input.click();
 }
 
-/** Knopf „Speichern“ + Menü „Datei“ für die Transportleiste. */
+/** "Save" button + "File" menu for the transport bar. */
 export function fileControls(): HTMLElement {
   const saveBtn = h("button", { class: "btn save-btn", onclick: () => void saveProject() }, icon("save"), t("Save"), h("i", { class: "dirty-dot" }));
   const menuBtn = h("button", { class: "btn", "data-help": "datei", title: t("New, Open, Save as, Export") }, icon("folder"), `${t("File")} ▾`);
@@ -227,7 +227,7 @@ export function fileControls(): HTMLElement {
       item(t("Save"), t("Ctrl+S"), () => void saveProject()),
       item(t("Save as…"), t("Ctrl+Shift+S"), () => void saveAs()),
       item(t("Export…"), t("Ctrl+E"), () => void exportDialog()),
-      // Browser: Projekte liegen im Speicher des Browsers – als Datei mitnehmen bzw. hereinholen
+      // Browser: projects live in the browser's storage – take them along as a file or bring them in
       ...(backend.platform === "web"
         ? [
             h("div", { class: "menu-sep" }),
@@ -253,7 +253,7 @@ export function fileControls(): HTMLElement {
   return h("div", { class: "file-controls" }, menu, saveBtn, exportBtn);
 }
 
-/** Tastenkürzel; gibt true zurück, wenn die Taste verarbeitet wurde. */
+/** Keyboard shortcuts; returns true if the key was handled. */
 export function fileShortcut(e: KeyboardEvent): boolean {
   if (!(e.ctrlKey || e.metaKey)) return false;
   const k = e.key.toLowerCase();
@@ -280,11 +280,11 @@ export function fileShortcut(e: KeyboardEvent): boolean {
   return false;
 }
 
-/** Fenster schließen mit ungespeicherten Änderungen. */
+/** Close window with unsaved changes. */
 export function handleCloseRequests(): void {
   backend.onCloseRequested(async (info) => {
-    // Intro-Tour läuft: erst beenden – sie nimmt die Demo zurück, danach ist das
-    // Projekt meist wieder unverändert, und ein Dialog läge nicht unter der Tour
+    // Intro tour is running: end it first – it undoes the demo, afterwards the
+    // project is usually unchanged again, and a dialog would not lie beneath the tour
     if (tourRunning()) {
       await endTour();
       info = { ...info, dirty: !!snapshot.peek()?.dirty };

@@ -1,12 +1,11 @@
-//! Rhythmus: Schlagzeug-Muster typischer Genres als Schnelleinstieg und ein
-//! Schritt-Raster (16 Schritte je Takt) als Eingabehilfe für Schlagzeug-Clips.
+//! Rhythm: drum patterns of typical genres as a quick start and a step grid (16 steps per
+//! bar) as an input aid for drum clips.
 //!
-//! Die Muster folgen dem frei verfügbaren Heft „Pocket Operations“ (Schritte
-//! 1–16 je Trommel). Das Raster ist ein Blick auf die Noten eines Clips: eine
-//! Zeile je Trommel, ein Schritt = eine Sechzehntel. Aus dem Raster werden Noten
-//! mit Betonungen (Backbeat laut, Zwischen-Snares leise) und optional Swing
-//! (jede zweite Sechzehntel später); aus einem Clip wird das Raster gelesen.
-//! Schalten einzelner Schritte ändert nur die Noten auf diesem Schritt.
+//! The patterns follow the freely available booklet "Pocket Operations" (steps
+//! 1–16 per drum). The grid is a view onto the notes of a clip: one row per drum, one step =
+//! one sixteenth. The grid is turned into notes with accents (backbeat loud, in-between snares
+//! soft) and optionally swing (every second sixteenth later); the grid is read from a clip.
+//! Toggling individual steps only changes the notes on that step.
 
 use crate::sound;
 use crate::state::{lock, AppState, CmdResult, Snapshot};
@@ -17,7 +16,7 @@ use klang_i18n::{tid, tk, tr};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// Sechzehntel je Takt (4/4).
+/// Sixteenths per bar (4/4).
 pub const STEPS_PER_BAR: usize = 16;
 const STEP_BEATS: f64 = 0.25;
 pub const MAX_BARS: usize = 4;
@@ -53,7 +52,7 @@ fn row(key: &str) -> Option<&'static Row> {
     ROWS.iter().find(|r| r.key == key)
 }
 
-/// Zeile zu einer Taste (auch verwandte Tasten: Toms 43/47/50, Crash 57, Ride 59, Maracas/Shaker 82).
+/// Row for a key (also related keys: toms 43/47/50, crash 57, ride 59, maracas/shaker 82).
 fn row_of(midi: u8) -> Option<&'static Row> {
     let m = match midi {
         43 => drums::TOM_LOW,
@@ -70,17 +69,17 @@ fn row_of(midi: u8) -> Option<&'static Row> {
     ROWS.iter().find(|r| r.midi == m)
 }
 
-// ---------------------------------------------------------------- Muster
+// ---------------------------------------------------------------- Patterns
 
 struct PatternDef {
     /// Proper name (stays untranslated)
     name: &'static str,
     bpm: u16,
-    /// empfohlener Swing in Prozent
+    /// recommended swing in percent
     swing: u8,
     /// Key, translated on output
     tip: &'static str,
-    /// Kürzel wie im Heft (BD, SN, CL, RS, CH, OH, CY, CB, HT, MT, LT, SH), Schritte 1–16
+    /// Abbreviations as in the booklet (BD, SN, CL, RS, CH, OH, CY, CB, HT, MT, LT, SH), steps 1–16
     rows: &'static [(&'static str, &'static [u8])],
 }
 
@@ -231,7 +230,7 @@ const GENRES: &[GenreDef] = &[
     },
 ];
 
-/// Kürzel aus dem Heft → Zeile; ein Becken auf höchstens zwei Schritten ist ein Crash, sonst eine Ride.
+/// Abbreviation from the booklet → row; a cymbal on at most two steps is a crash, otherwise a ride.
 fn code_row(code: &str, steps: &[u8]) -> &'static str {
     match code {
         "BD" => "kick",
@@ -250,7 +249,7 @@ fn code_row(code: &str, steps: &[u8]) -> &'static str {
     }
 }
 
-/// Raster: Länge in Schritten und je Zeile die gesetzten Schritte (ab 0).
+/// Grid: length in steps and, per row, the steps that are set (from 0).
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Grid {
@@ -259,7 +258,7 @@ pub struct Grid {
 }
 
 impl Grid {
-    /// Prüft Zeilen und Länge (1–4 Takte); Schritte sortiert, doppelte entfernt.
+    /// Checks rows and length (1–4 bars); steps sorted, duplicates removed.
     pub fn checked(mut self) -> Result<Grid, String> {
         if self.steps == 0 || self.steps % STEPS_PER_BAR != 0 || self.steps > MAX_BARS * STEPS_PER_BAR {
             return Err(tr!("Length of {steps} steps – allowed: 16, 32, 48 or 64", steps = self.steps));
@@ -276,7 +275,7 @@ impl Grid {
         Ok(self)
     }
 
-    /// Wiederholt bzw. kürzt auf `steps`.
+    /// Repeats or truncates to `steps`.
     pub fn resized(&self, steps: usize) -> Grid {
         let src = self.steps.max(1);
         let rows = self
@@ -296,7 +295,7 @@ pub struct PatternView {
     pub bpm: u16,
     pub swing: u8,
     pub tip: String,
-    /// ein Takt (16 Schritte)
+    /// one bar (16 steps)
     pub grid: Grid,
 }
 
@@ -355,7 +354,7 @@ pub fn find_pattern(genre: Option<&str>, name: &str) -> Result<(GenreView, Patte
             return Ok(((*g).clone(), p.clone()));
         }
     }
-    // nur ein Genre und Name leer bzw. gleich dem Genre: dessen erstes Muster
+    // only a genre and name empty or equal to the genre: its first pattern
     if let [g] = genres.as_slice() {
         if name.trim().is_empty() || eq(&g.name, name) {
             return Ok(((*g).clone(), g.patterns[0].clone()));
@@ -365,16 +364,16 @@ pub fn find_pattern(genre: Option<&str>, name: &str) -> Result<(GenreView, Patte
     Err(tr!("No pattern \"{name}\". Available: {list}", name = name, list = names.join(", ")))
 }
 
-// ---------------------------------------------------------------- Raster ↔ Noten
+// ---------------------------------------------------------------- Grid ↔ notes
 
-/// Verzögerung eines Schritts durch Swing (jede zweite Sechzehntel, bis 2/3 eines Schritts).
+/// Delay of a step due to swing (every second sixteenth, up to 2/3 of a step).
 fn swing_offset(step: usize, swing: f64) -> f64 {
     if step % 2 == 1 { STEP_BEATS * (swing.clamp(0.0, 100.0) / 100.0) * 0.66 } else { 0.0 }
 }
 
-/// Anschlag eines Schritts: Backbeat und Viertel betont, Zwischen-Snares leise
-/// (nur wenn der Takt eine Snare auf einer Viertel hat – sonst ist das Muster
-/// selbst synkopiert, wie der Dembow).
+/// Velocity of a step: backbeat and quarters accented, in-between snares soft
+/// (only if the bar has a snare on a quarter - otherwise the pattern itself
+/// is syncopated, like the dembow).
 fn velocity(row: &str, step: usize, snare_on_quarter: bool) -> u8 {
     let quarter = step % 4 == 0;
     let eighth = step % 2 == 0;
@@ -409,7 +408,7 @@ fn step_note(row: &Row, step: usize, swing: f64, vel: u8) -> Note {
     }
 }
 
-/// Noten eines Rasters (ab Beat 0).
+/// Notes of a grid (from beat 0).
 pub fn grid_notes(grid: &Grid, swing: f64) -> Vec<Note> {
     let sq = snare_quarters(grid);
     let mut out: Vec<Note> = grid
@@ -422,8 +421,8 @@ pub fn grid_notes(grid: &Grid, swing: f64) -> Vec<Note> {
     out
 }
 
-/// Schritt einer Note. Swing verschiebt nur nach hinten (bis 2/3 eines Schritts):
-/// bis dahin gehört eine Note hinter einer ungeraden Sechzehntel zu dieser, sonst zum nächsten Schritt.
+/// Step of a note. Swing only shifts backwards (up to 2/3 of a step):
+/// up to that point a note after an odd sixteenth belongs to it, otherwise to the next step.
 fn step_of(start_beats: f64) -> Option<usize> {
     let x = start_beats / STEP_BEATS;
     if x < -0.5 {
@@ -434,7 +433,7 @@ fn step_of(start_beats: f64) -> Option<usize> {
     Some(s.max(0.0) as usize)
 }
 
-/// Raster aus Noten; zählt Noten, die keiner Trommel zugeordnet sind oder hinter dem Raster liegen.
+/// Grid from notes; counts notes that are not assigned to a drum or lie beyond the grid.
 pub fn grid_from_notes(notes: &[Note], steps: usize) -> (Grid, usize) {
     let mut rows: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     let mut skipped = 0;
@@ -451,7 +450,7 @@ pub fn grid_from_notes(notes: &[Note], steps: usize) -> (Grid, usize) {
     (Grid { steps, rows }, skipped)
 }
 
-/// Setzt oder löscht einen Schritt; andere Noten bleiben, wie sie sind.
+/// Sets or clears a step; other notes stay as they are.
 pub fn toggle(notes: &[Note], row_key: &str, step: usize, on: bool, swing: f64, steps: usize) -> Result<Vec<Note>, String> {
     let r = row(row_key).ok_or_else(|| tr!("Unknown drum \"{key}\"", key = row_key))?;
     let here = |n: &Note| row_of(n.pitch).map(|x| x.key) == Some(r.key) && step_of(n.start_beats) == Some(step);
@@ -465,7 +464,7 @@ pub fn toggle(notes: &[Note], row_key: &str, step: usize, on: bool, swing: f64, 
     Ok(out)
 }
 
-/// Neuer Swing: Noten der Trommeln rücken auf ihren Schritt plus Swing; Anschlag und Ausdruck bleiben.
+/// New swing: the drums' notes move to their step plus swing; velocity and expression stay.
 pub fn apply_swing(notes: &[Note], swing: f64) -> Vec<Note> {
     notes
         .iter()
@@ -476,7 +475,7 @@ pub fn apply_swing(notes: &[Note], swing: f64) -> Vec<Note> {
         .collect()
 }
 
-/// Swing eines Clips, geschätzt aus seinen Noten auf ungeraden Schritten.
+/// Swing of a clip, estimated from its notes on odd steps.
 pub fn swing_of(notes: &[Note]) -> f64 {
     let offs: Vec<f64> = notes
         .iter()
@@ -491,14 +490,14 @@ pub fn swing_of(notes: &[Note]) -> f64 {
     ((avg / (STEP_BEATS * 0.66)) * 100.0).round().clamp(0.0, 100.0)
 }
 
-// ---------------------------------------------------------------- im Projekt
+// ---------------------------------------------------------------- In the project
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ClipGrid {
     pub grid: Grid,
     pub swing: f64,
-    /// Noten, die nicht im Raster erscheinen (andere Tasten, hinter dem Raster)
+    /// Notes that do not appear in the grid (other keys, beyond the grid)
     pub skipped: usize,
     pub name: String,
 }
@@ -523,7 +522,7 @@ fn drum_clip(st: &AppState, track_id: Id, clip_id: Id) -> CmdResult<(Track, Clip
 }
 
 impl AppState {
-    /// Raster eines Schlagzeug-Clips (höchstens vier Takte).
+    /// Grid of a drum clip (at most four bars).
     pub fn rhythm_read(&self, track_id: Id, clip_id: Id) -> CmdResult<ClipGrid> {
         let (_, clip, notes, len) = drum_clip(self, track_id, clip_id)?;
         let bars = ((len / (STEPS_PER_BAR as f64 * STEP_BEATS)).ceil() as usize).clamp(1, MAX_BARS);
@@ -531,7 +530,7 @@ impl AppState {
         Ok(ClipGrid { grid, swing: swing_of(&notes), skipped, name: clip.name })
     }
 
-    /// Einen Schritt in einem Schlagzeug-Clip setzen oder löschen (ein Rückgängig-Schritt).
+    /// Set or clear a step in a drum clip (one undo step).
     pub fn rhythm_toggle(&self, track_id: Id, clip_id: Id, row_key: &str, step: usize, on: bool, swing: f64) -> CmdResult<Snapshot> {
         let (track, _, notes, len) = drum_clip(self, track_id, clip_id)?;
         let steps = ((len / STEP_BEATS).round() as usize).max(STEPS_PER_BAR);
@@ -548,7 +547,7 @@ impl AppState {
         self.execute(Command::Batch { label, commands: vec![Command::SetClipNotes { track_id, clip_id, notes, length_beats: None }] }, false)
     }
 
-    /// Swing eines Schlagzeug-Clips ändern (`merge`: Teil einer Reglerbewegung).
+    /// Change the swing of a drum clip (`merge`: part of a slider movement).
     pub fn rhythm_swing(&self, track_id: Id, clip_id: Id, swing: f64, merge: bool) -> CmdResult<Snapshot> {
         let (track, _, notes, _) = drum_clip(self, track_id, clip_id)?;
         let label = tr!("Rhythm \"{track}\": swing {swing}%", track = track.name, swing = swing.round());
@@ -558,9 +557,9 @@ impl AppState {
         )
     }
 
-    /// Schreibt ein Raster: in einen bestimmten Clip (ersetzt seine Noten und Länge),
-    /// sonst als neuen Clip ab `start_beats` in die Spur – ohne Spur in eine neue
-    /// Schlagzeug-Spur mit dem Klang `sound` (Startpunkt im Charakter-Feld).
+    /// Writes a grid: into a given clip (replaces its notes and length),
+    /// otherwise as a new clip from `start_beats` into the track - without a track into a new
+    /// drum track with the sound `sound` (starting point in the character field).
     #[allow(clippy::too_many_arguments)]
     pub fn rhythm_write(
         &self,
@@ -636,8 +635,8 @@ impl AppState {
         Ok(Written { snapshot, track_id: tid, clip_id: cid })
     }
 
-    /// Spielt ein Raster (oder einen Schlagzeug-Clip) im Projekttempo vor – mit dem
-    /// Klang der Spur, sonst mit dem Standard-Schlagzeug bzw. dem Startpunkt `sound`.
+    /// Previews a grid (or a drum clip) at the project tempo - with the
+    /// track's sound, otherwise with the default drums or the starting point `sound`.
     pub fn rhythm_preview(&self, track_id: Option<Id>, clip_id: Option<Id>, grid: Option<Grid>, swing: f64, sound_preset: Option<&str>) -> CmdResult<f32> {
         let engine = self.engine()?;
         let sr = engine.info().sample_rate as f32;
@@ -663,7 +662,7 @@ impl AppState {
             }
             _ => return Err(tr!("Specify a grid or a clip")),
         };
-        // kurze Muster zweimal, damit man den Kreis hört
+        // play short patterns twice so that the loop is audible
         let reps = if len <= 4.0 + 1e-9 { 2 } else { 1 };
         let spb = 60.0 / self.tempo();
         let specs: Vec<_> = (0..reps)
@@ -681,7 +680,7 @@ impl AppState {
     }
 }
 
-/// Erster freier Taktanfang hinter dem letzten Clip einer Spur (ohne Spur: 0).
+/// First free bar start after the last clip of a track (without a track: 0).
 pub fn free_start(st: &AppState, track_id: Option<Id>) -> f64 {
     let Ok(s) = lock(&st.session) else { return 0.0 };
     let bpb = s.project.beats_per_bar.max(1) as f64;
@@ -700,12 +699,12 @@ pub fn free_start(st: &AppState, track_id: Option<Id>) -> f64 {
     (end / bpb - 1e-9).ceil().max(0.0) * bpb
 }
 
-/// Zeile als Text („x...x...“) – kompakt für den Agenten.
+/// Row as text ("x...x...") - compact for the agent.
 pub fn row_text(steps: &[usize], len: usize) -> String {
     (0..len).map(|s| if steps.contains(&s) { 'x' } else { '.' }).collect()
 }
 
-/// Zeilen als Text oder Schrittlisten (1–16 …) einlesen.
+/// Parses rows given as text or step lists (1–16 …).
 pub fn grid_from_json(rows: &serde_json::Value, steps: usize) -> Result<Grid, String> {
     let obj = rows.as_object().ok_or("rows: { kick: \"x...x...\", snare: [5, 13], … }")?;
     let mut out = BTreeMap::new();
@@ -739,7 +738,7 @@ mod tests {
                 assert!(!p.grid.rows.is_empty() && p.bpm >= 60, "{}", p.name);
             }
         }
-        // Becken: einmal = Crash (Rock), durchgehend = Ride (Bossa Nova)
+        // cymbal: once = crash (rock), throughout = ride (bossa nova)
         let (_, rock) = find_pattern(Some("Rock"), "Rock").unwrap();
         assert_eq!(rock.grid.rows["crash"], vec![0]);
         let (_, bossa) = find_pattern(None, "bossa nova").unwrap();
@@ -757,10 +756,10 @@ mod tests {
         let (back, skipped) = grid_from_notes(&notes, 32);
         assert_eq!(back, grid);
         assert_eq!(skipped, 0);
-        // Backbeat laut, Zwischen-Snares leise
+        // backbeat loud, in-between snares soft
         let snare = |s: usize| notes.iter().find(|n| n.pitch == drums::SNARE && step_of(n.start_beats) == Some(s)).unwrap().velocity;
         assert!(snare(4) > 100 && snare(7) < 80);
-        // Dembow: keine Snare auf einer Viertel – dann sind alle laut
+        // dembow: no snare on a quarter - then all are loud
         let (_, dembow) = find_pattern(None, "Reggaeton (Dembow)").unwrap();
         assert!(grid_notes(&dembow.grid, 0.0).iter().filter(|n| n.pitch == drums::SNARE).all(|n| n.velocity > 100));
     }
@@ -773,19 +772,19 @@ mod tests {
         let on: Vec<&Note> = notes.iter().filter(|n| step_of(n.start_beats).map(|s| s % 2 == 0).unwrap_or(false)).collect();
         assert!(on.iter().all(|n| (n.start_beats / STEP_BEATS).fract().abs() < 1e-9));
         assert!(!off.is_empty() && off.iter().all(|n| (n.start_beats / STEP_BEATS).fract() > 0.2));
-        // gelesen wie geschrieben, Swing erkannt, neu geswingt ohne Verlust
+        // read as written, swing detected, re-swung without loss
         assert_eq!(grid_from_notes(&notes, 16).0, p.grid);
         assert_eq!(swing_of(&notes), 40.0);
         let straight = apply_swing(&notes, 0.0);
         assert_eq!(straight, grid_notes(&p.grid, 0.0));
-        // auch maximaler Swing bleibt näher am eigenen Schritt
+        // even maximum swing stays closer to its own step
         assert_eq!(grid_from_notes(&grid_notes(&p.grid, 100.0), 16).0, p.grid);
     }
 
     #[test]
     fn toggling_touches_only_that_step() {
         let mut notes = grid_notes(&find_pattern(None, "Boots ’n’ Cats").unwrap().1.grid, 0.0);
-        // fremde Taste und Ausdruck bleiben erhalten
+        // foreign key and expression are preserved
         notes.push(Note { pitch: 60, start_beats: 1.0, length_beats: 0.5, velocity: 50, ..Default::default() });
         notes[0].brightness = 0.5;
         let on = toggle(&notes, "rim", 3, true, 0.0, 16).unwrap();

@@ -1,14 +1,13 @@
-//! Klang-Bibliothek: eigene Klänge – ein Instrument mit allen Reglern, der
-//! Stellung in den Feldern und (beim Synth) den gezeichneten Kurven – unter
-//! einem Namen sichern und in jede Instrumentspur laden, über alle Projekte
-//! hinweg. Alles steht in einer Datei `klaenge.json` im Ordner `Klänge` neben
-//! dem Bibliotheksordner (Musik/Klangwelt/Klänge); mit `KLANGWELT_BIBLIOTHEK`
-//! liegt sie in diesem Ordner, damit Tests nie die echten Klänge berühren.
+//! Sound library: your own sounds – an instrument with all its controls, its
+//! position in the fields and (for the synth) the drawn curves – saved under
+//! a name and loaded into any instrument track, across all projects. Everything
+//! lives in one file `klaenge.json` in the folder `Klänge` next to the library
+//! folder (Musik/Klangwelt/Klänge); with `KLANGWELT_BIBLIOTHEK` it lives in
+//! that folder, so tests never touch the real sounds.
 //!
-//! Namen sind je Instrument eindeutig: Sichern unter einem vorhandenen Namen
-//! ersetzt diesen Klang. Gesichert wird immer das vollständige Instrument
-//! (fehlende Regler mit Standardwert), damit spätere neue Standardwerte einen
-//! gesicherten Klang nicht verändern.
+//! Names are unique per instrument: saving under an existing name replaces
+//! that sound. Always the complete instrument is saved (missing controls with
+//! their default value), so later new defaults do not change a saved sound.
 
 use crate::sound;
 use crate::state::{AppState, CmdResult, Snapshot};
@@ -23,7 +22,7 @@ const FILE: &str = "klaenge.json";
 const DIR: &str = "Klänge";
 const MAX_NAME: usize = 60;
 
-/// Lesen–Ändern–Schreiben der Datei nur nacheinander (Oberfläche und Agent).
+/// Read–modify–write of the file only one at a time (UI and agent).
 static LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -32,7 +31,7 @@ pub struct SavedSound {
     pub id: String,
     pub name: String,
     pub instrument: Instrument,
-    /// Unix-Zeit in Millisekunden
+    /// Unix time in milliseconds
     #[serde(default)]
     pub created: u64,
     #[serde(default)]
@@ -52,7 +51,7 @@ impl Default for Store {
     }
 }
 
-/// Eintrag für Oberfläche und Agent: mit Instrumentname und kurzer Beschreibung.
+/// Entry for the UI and the agent: with instrument name and a short description.
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SoundEntry {
@@ -61,7 +60,7 @@ pub struct SoundEntry {
     pub kind: InstrumentKind,
     /// Instrument name in the chosen language
     pub kind_name: String,
-    /// Stellung in den Feldern in Worten, z. B. „Trap · dunkel, rau · breit, fern“
+    /// Position in the fields in words, e.g. "Trap · dunkel, rau · breit, fern"
     pub summary: String,
     pub created: u64,
     pub modified: u64,
@@ -73,12 +72,12 @@ pub struct SoundEntry {
 pub struct SaveResult {
     pub id: String,
     pub name: String,
-    /// Es gab den Namen beim Instrument schon – der Klang wurde ersetzt.
+    /// The name already existed for the instrument – the sound was replaced.
     pub replaced: bool,
     pub sounds: Vec<SoundEntry>,
 }
 
-/// Datei der Klang-Bibliothek (neben dem Bibliotheksordner).
+/// File of the sound library (next to the library folder).
 pub fn file(st: &AppState) -> PathBuf {
     crate::host::beside_library(st.host(), DIR).join(FILE)
 }
@@ -119,13 +118,13 @@ fn same_name(a: &str, b: &str) -> bool {
     a.to_lowercase() == b.to_lowercase()
 }
 
-/// Reihenfolge wie in der Instrumentwahl.
+/// Order as in the instrument picker.
 fn kind_order(kind: InstrumentKind) -> usize {
     sound::specs().iter().position(|s| s.kind == kind).unwrap_or(usize::MAX)
 }
 
-/// Vollständiges, gültiges Instrument: alle Regler (fehlende mit Standardwert,
-/// unbekannte entfernt, Werte begrenzt), beim Synth beide Kurven geprüft.
+/// Complete, valid instrument: all controls (missing ones with the default
+/// value, unknown ones removed, values clamped), for the synth both curves checked.
 pub fn normalize(inst: &Instrument) -> Instrument {
     let spec = sound::spec(inst.kind);
     let params = spec
@@ -151,8 +150,8 @@ pub fn normalize(inst: &Instrument) -> Instrument {
     Instrument { kind: inst.kind, preset: inst.preset.clone(), params, curves }
 }
 
-/// Stellung in den drei Feldern in Worten – beim Charakter der Startpunkt,
-/// wenn er gewählt ist; beim Synth dazu die Verlaufsvorlage, wenn sie passt.
+/// Position in the three fields in words – for the character the starting point
+/// if one is chosen; for the synth also the envelope template if it fits.
 /// For display only, so in the chosen language (starting point and words
 /// are keys from the description of the instruments).
 pub fn summary(inst: &Instrument) -> String {
@@ -199,14 +198,14 @@ fn guard() -> std::sync::MutexGuard<'static, ()> {
     LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Alle Klänge, nach Instrument (wie in der Auswahl) und Name geordnet.
+/// All sounds, ordered by instrument (as in the picker) and name.
 pub fn list(path: &Path) -> Result<Vec<SoundEntry>, String> {
     let _g = guard();
     Ok(entries(&read(path)?))
 }
 
-/// Sichert einen Klang. Gibt es den Namen beim selben Instrument schon, wird
-/// dieser Klang ersetzt.
+/// Saves a sound. If the name already exists for the same instrument, that
+/// sound is replaced.
 pub fn save(path: &Path, name: &str, inst: &Instrument) -> Result<SaveResult, String> {
     let name = clean_name(name)?;
     let inst = normalize(inst);
@@ -214,7 +213,7 @@ pub fn save(path: &Path, name: &str, inst: &Instrument) -> Result<SaveResult, St
     let mut store = read(path)?;
     let now = now_ms();
     let (id, replaced) = match store.sounds.iter_mut().find(|s| s.instrument.kind == inst.kind && same_name(&s.name, &name)) {
-        // Ersetzen ändert nur den Klang, der Name bleibt wie er war
+        // Replacing changes only the sound, the name stays as it was
         Some(s) => {
             s.instrument = inst;
             s.modified = now;
@@ -262,8 +261,8 @@ pub fn delete(path: &Path, id: &str) -> Result<Vec<SoundEntry>, String> {
     Ok(entries(&store))
 }
 
-/// Klang nach Kennung oder Name (ohne Groß-/Kleinschreibung). Gibt es den
-/// Namen bei mehreren Instrumenten, entscheidet `prefer` (z. B. das der Spur).
+/// Sound by id or name (case-insensitive). If the name exists for several
+/// instruments, `prefer` decides (e.g. the track's).
 pub fn find(path: &Path, key: &str, prefer: Option<InstrumentKind>) -> Result<SavedSound, String> {
     let _g = guard();
     let store = read(path)?;
@@ -293,8 +292,8 @@ pub fn find(path: &Path, key: &str, prefer: Option<InstrumentKind>) -> Result<Sa
 }
 
 impl AppState {
-    /// Lädt einen gesicherten Klang in eine Instrumentspur (ein Rückgängig-Schritt);
-    /// ein Klang eines anderen Instruments wechselt dabei das Instrument.
+    /// Loads a saved sound into an instrument track (one undo step);
+    /// a sound of another instrument switches the instrument in the process.
     pub fn load_sound(&self, track_id: Id, saved: &SavedSound, label_prefix: &str) -> CmdResult<Snapshot> {
         let track = self.instrument_track(track_id)?;
         let label = tr!("{prefix}Sound \"{track}\": load \"{sound}\"", prefix = label_prefix, track = track.name, sound = saved.name);
@@ -307,14 +306,14 @@ impl AppState {
         )
     }
 
-    /// Instrument der Spur, so wie es gesichert würde.
+    /// Instrument of the track, as it would be saved.
     pub fn track_sound(&self, track_id: Id) -> CmdResult<Instrument> {
         let track = self.instrument_track(track_id)?;
         Ok(track.instrument.unwrap_or_else(|| sound::default_instrument(InstrumentKind::Pluck)))
     }
 }
 
-/// Meldet die neue Liste an die Oberfläche (auch wenn der Agent etwas geändert hat).
+/// Reports the new list to the UI (also when the agent changed something).
 pub fn announce(st: &AppState, sounds: &[SoundEntry]) {
     st.host().emit("sounds-changed", sounds);
 }
@@ -344,32 +343,32 @@ mod tests {
         let a = save(&f, "  Mein   Beat ", &drums("Trap")).unwrap();
         assert_eq!(a.name, "Mein Beat");
         assert!(!a.replaced);
-        // derselbe Name bei einem anderen Instrument ist ein eigener Klang
+        // the same name for a different instrument is a separate sound
         let b = save(&f, "mein beat", &sound::default_instrument(InstrumentKind::Bass)).unwrap();
         assert!(!b.replaced);
         assert_ne!(a.id, b.id);
-        // beim selben Instrument ersetzt er (Kennung bleibt)
+        // for the same instrument it replaces (id stays)
         let c = save(&f, "MEIN BEAT", &drums("House")).unwrap();
         assert!(c.replaced);
         assert_eq!(c.id, a.id);
         assert_eq!(c.name, "Mein Beat", "Ersetzen behält den Namen");
         let l = list(&f).unwrap();
         assert_eq!(l.len(), 2);
-        // Reihenfolge wie in der Instrumentwahl: Bass vor Schlagzeug
+        // order as in the instrument picker: bass before drums
         assert_eq!(l[0].kind, InstrumentKind::Bass);
         assert_eq!(l[1].instrument.preset, "House");
         assert!(l[1].summary.starts_with("House"), "{}", l[1].summary);
-        // umbenennen; ein Name, den das Instrument schon hat, geht nicht
+        // rename; a name the instrument already has is not allowed
         save(&f, "Zweiter", &drums("Rock")).unwrap();
         assert!(rename(&f, &a.id, "zweiter").unwrap_err().contains("already"));
         let l = rename(&f, &a.id, "Disco-Groove").unwrap();
         assert!(l.iter().any(|e| e.name == "Disco-Groove"));
-        // finden nach Name (mehrdeutig → Instrument der Spur entscheidet)
+        // find by name (ambiguous → the track's instrument decides)
         save(&f, "Disco-Groove", &sound::default_instrument(InstrumentKind::Bass)).unwrap();
         assert!(find(&f, "disco-groove", None).unwrap_err().contains("several"));
         assert_eq!(find(&f, "disco-groove", Some(InstrumentKind::Drums)).unwrap().id, a.id);
         assert!(find(&f, "Nichts", None).unwrap_err().contains("Available"));
-        // löschen
+        // delete
         let l = delete(&f, &a.id).unwrap();
         assert!(l.iter().all(|e| e.id != a.id));
         assert!(delete(&f, &a.id).is_err());
@@ -383,7 +382,7 @@ mod tests {
         i.params.remove("filter");
         i.params.insert("gibt-es-nicht".into(), 3.0);
         i.params.insert("farbe".into(), 7.0);
-        i.curves.insert("laut".into(), vec![[0.0, 0.5]]); // zu wenige Punkte
+        i.curves.insert("laut".into(), vec![[0.0, 0.5]]); // too few points
         let n = normalize(&i);
         let spec = sound::spec(InstrumentKind::Synth);
         assert_eq!(n.params.len(), spec.params.len());
@@ -391,7 +390,7 @@ mod tests {
         assert_eq!(n.params["farbe"], 1.0, "begrenzt");
         assert_eq!(n.params["filter"], spec.params.iter().find(|p| p.key == "filter").unwrap().default);
         assert!(n.curves["laut"].len() >= 2, "ungültige Kurve → Standardverlauf");
-        // andere Instrumente haben keine Kurven
+        // other instruments have no curves
         let mut d = drums("Trap");
         d.curves.insert("laut".into(), vec![[0.0, 1.0], [1.0, 0.0]]);
         assert!(normalize(&d).curves.is_empty());
@@ -403,7 +402,7 @@ mod tests {
         sound::apply_field(&mut i, "klangfarbe", 0.1, 0.9).unwrap();
         sound::apply_field(&mut i, "raum", 0.6, 0.95).unwrap();
         assert_eq!(summary(&i), "Trap · dark, rough · wide, far");
-        // ohne Startpunkt die Wörter der Achsen (Trap liegt bei x 0,95, y 0,55)
+        // without a starting point the words of the axes (Trap is at x 0.95, y 0.55)
         i.preset = "eigen".into();
         let f = &sound::fields(InstrumentKind::Drums)[0];
         assert_eq!(summary(&i), format!("{}, {} · dark, rough · wide, far", f.x.words[3], f.y.words[2]));

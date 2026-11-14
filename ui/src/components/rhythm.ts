@@ -1,10 +1,10 @@
-// Rhythmus-Fenster: Schlagzeug-Muster typischer Genres als Schnelleinstieg und
-// ein Schritt-Raster (16 Sechzehntel je Takt) als Eingabehilfe.
+// Rhythm window: drum patterns of typical genres as a quick start and
+// a step grid (16 sixteenths per bar) as an input aid.
 //
-// Ist ein Schlagzeug-Clip ausgewählt, zeigt und bearbeitet das Raster diesen
-// Clip – jeder Klick ein Rückgängig-Schritt, ein Muster ersetzt den Inhalt.
-// Sonst ist das Raster ein Entwurf, den „In Spur schreiben“ als Clip anlegt
-// (ohne Schlagzeug-Spur in einer neuen, mit dem Klang des Genres).
+// If a drum clip is selected, the grid shows and edits this
+// clip – every click is one undo step, a pattern replaces the content.
+// Otherwise the grid is a draft that "Write to track" creates as a clip
+// (without a drum track in a new one, with the sound of the genre).
 
 import { backend } from "../bridge.js";
 import { h, icon, setRange } from "../dom.js";
@@ -28,7 +28,7 @@ function setPref<K extends keyof Prefs>(k: K, v: Prefs[K]): void {
   try {
     localStorage.setItem(PREF_KEY, JSON.stringify({ ...prefs(), [k]: v }));
   } catch {
-    /* ohne Speicher */
+    /* without storage */
   }
 }
 
@@ -41,7 +41,7 @@ function loadInfo(): Promise<RhythmInfo> {
   return infoPromise;
 }
 
-/** Wiederholt bzw. kürzt ein Raster auf `steps`. */
+/** Repeats or truncates a grid to `steps`. */
 export function resizeGrid(g: RhythmGrid, steps: number): RhythmGrid {
   const rows: Record<string, number[]> = {};
   for (const [k, v] of Object.entries(g.rows)) {
@@ -65,9 +65,9 @@ function sameGrid(a: RhythmGrid, b: RhythmGrid): boolean {
 const isDrums = (t: Track | undefined): t is Track => t?.kind === "instrument" && t.instrument?.kind === "drums";
 
 /**
- * Schnelleinstieg „Mit Beat starten“: legt eine Schlagzeug-Spur mit vier Takten
- * der Vorlage an (Klang des Genres), übernimmt das Tempo – ein Rückgängig-Schritt –
- * und öffnet den Clip im Fenster „Rhythmus“.
+ * Quick start "Start with a beat": creates a drum track with four bars
+ * of the template (sound of the genre), takes over the tempo – one undo step –
+ * and opens the clip in the "Rhythm" window.
  */
 export async function startWithBeat(g: RhythmGenre, p: RhythmPattern, bars = 4): Promise<void> {
   try {
@@ -81,9 +81,9 @@ export async function startWithBeat(g: RhythmGenre, p: RhythmPattern, bars = 4):
   }
 }
 
-/** Inhalt des Menüs „Mit Beat starten“: je Genre eine Zeile mit seinen Vorlagen. */
+/** Content of the "Start with a beat" menu: one row per genre with its templates. */
 export function fillBeatMenu(menu: HTMLElement, close: () => void): void {
-  // fest über allem, damit kein Fensterrand das Menü abschneidet: unter dem Knopf, sonst darüber
+  // fixed above everything so that no window edge cuts off the menu: below the button, otherwise above
   const btn = menu.parentElement?.querySelector("button");
   if (btn) {
     const r = btn.getBoundingClientRect();
@@ -126,7 +126,7 @@ export function fillBeatMenu(menu: HTMLElement, close: () => void): void {
     .catch((e) => menu.append(h("div", { class: "muted" }, errorText(e))));
 }
 
-/** Entwurf – bleibt erhalten, wenn das Fenster neu aufgebaut wird. */
+/** Draft – is kept when the window is rebuilt. */
 const draft: { grid: RhythmGrid | null; swing: number; pattern: string | null; sound: string | null; bpm: number | null } = {
   grid: null,
   swing: 0,
@@ -145,7 +145,7 @@ export function rhythmPanel(): { el: HTMLElement; update(): void } {
   let targetChoice: string | null = null;
   let tipPattern: RhythmPattern | null = null;
 
-  // gebunden an einen Schlagzeug-Clip?
+  // bound to a drum clip?
   let bound: { trackId: number; clipId: number; track: Track; clip: Clip } | null = null;
   let boundKey = "";
   let clipGrid: RhythmGrid | null = null;
@@ -155,11 +155,11 @@ export function rhythmPanel(): { el: HTMLElement; update(): void } {
   let swingDragging = false;
   let swingMerge = false;
 
-  // Vorhören mit mitlaufender Spalte
+  // audition with a moving column
   let playing: { t0: number; secs: number; stepSecs: number; steps: number } | null = null;
   let raf = 0;
 
-  // ------------------------------------------------------------ Elemente
+  // ------------------------------------------------------------ Elements
   const genreBar = h("div", { class: "rh-genres" });
   const patternBar = h("div", { class: "rh-patterns" });
   const about = h("div", { class: "rh-about" });
@@ -183,7 +183,7 @@ export function rhythmPanel(): { el: HTMLElement; update(): void } {
   const genre = (): RhythmGenre | null => info?.genres[genreIx] ?? null;
   const tempo = () => project()?.tempoBpm ?? 120;
 
-  /** Muster, dem das Raster gerade entspricht (in irgendeinem Genre). */
+  /** Pattern that the grid currently matches (in any genre). */
   const matching = (): { g: number; p: RhythmPattern } | null => {
     if (!info) return null;
     const cur = current();
@@ -195,7 +195,7 @@ export function rhythmPanel(): { el: HTMLElement; update(): void } {
     return null;
   };
 
-  // ------------------------------------------------------------ Aktionen
+  // ------------------------------------------------------------ Actions
   const loadPattern = (g: RhythmGenre, p: RhythmPattern) => {
     tipPattern = p;
     const n = bars() * STEPS;
@@ -221,7 +221,7 @@ export function rhythmPanel(): { el: HTMLElement; update(): void } {
     const next: RhythmGrid = { steps: g.steps, rows: { ...g.rows, [row]: on ? [...list, step].sort((a, b) => a - b) : list.filter((s) => s !== step) } };
     if (!next.rows[row]!.length) delete next.rows[row];
     if (bound) {
-      clipGrid = next; // gleich zeigen, der Kern bestätigt
+      clipGrid = next; // show right away, the core confirms
       render();
       void act(backend.rhythmToggle(bound.trackId, bound.clipId, row, step, on, clipSwing));
     } else {
@@ -242,7 +242,7 @@ export function rhythmPanel(): { el: HTMLElement; update(): void } {
     }
   };
 
-  /** Spuren, in die geschrieben werden kann. */
+  /** Tracks that can be written to. */
   const drumTracks = () => (project()?.tracks ?? []).filter(isDrums);
   const targetTrack = (): Track | null => {
     const v = targetSel.value;
@@ -303,7 +303,7 @@ export function rhythmPanel(): { el: HTMLElement; update(): void } {
     }
   };
 
-  // ------------------------------------------------------------ Darstellung
+  // ------------------------------------------------------------ Rendering
   let gridKey = "";
   let cells: Array<{ row: string; step: number; el: HTMLElement }> = [];
 
@@ -428,7 +428,7 @@ export function rhythmPanel(): { el: HTMLElement; update(): void } {
       el.classList.toggle("on", !!m && m.g === genreIx && m.p.name === el.dataset.name);
     }
     renderAbout();
-    // Modus
+    // Mode
     if (bound) {
       mode.replaceChildren(
         h("span", { class: "rh-badge" }, t("Clip")),
@@ -443,7 +443,7 @@ export function rhythmPanel(): { el: HTMLElement; update(): void } {
         h("span", {}, t("choose a pattern or tap in steps – \"Write to track\" creates a clip (or select a drum clip to edit it)")),
       );
     }
-    // Takte
+    // Bars
     const n = bars();
     for (const b of barsSeg.children) (b as HTMLElement).classList.toggle("on", Number((b as HTMLElement).dataset.bars) === n);
     // Swing
@@ -458,7 +458,7 @@ export function rhythmPanel(): { el: HTMLElement; update(): void } {
       tempoBtn.dataset.bpm = String(bpm);
       tempoBtn.title = t("Set the project tempo to {bpm} BPM – typical for this pattern", { bpm });
     }
-    // Ziel (nur im Entwurf)
+    // Target (draft only)
     const tracks = drumTracks();
     const opts = [...tracks.map((tr) => [String(tr.id), t("New clip in \"{track}\"", { track: tr.name })] as const), ["neu", t("New drum track")] as const];
     const sig = opts.map((o) => o.join(":")).join("|");
@@ -477,7 +477,7 @@ export function rhythmPanel(): { el: HTMLElement; update(): void } {
     renderGrid();
   };
 
-  // ------------------------------------------------------------ Aufbau nach dem Laden
+  // ------------------------------------------------------------ Setup after loading
   const build = () => {
     [1, 2, 4].forEach((n) => {
       const b = h(
@@ -562,7 +562,7 @@ export function rhythmPanel(): { el: HTMLElement; update(): void } {
     build();
   }).catch(() => el.replaceChildren(h("div", { class: "placeholder" }, t("Rhythm is only available in the desktop app."))));
 
-  // ------------------------------------------------------------ Auswahl verfolgen
+  // ------------------------------------------------------------ Following the selection
   const update = () => {
     if (!info) return;
     const p = project();

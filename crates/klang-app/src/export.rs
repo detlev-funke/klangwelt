@@ -1,10 +1,10 @@
-//! Export: das Projekt – oder der markierte Bereich – als Datei. Gerendert
-//! wird offline mit derselben Mischung wie bei der Wiedergabe (48 kHz, stumm
-//! geschaltete Spuren fehlen, Solo gilt). WAV, FLAC, der Ogg-Container und
-//! MIDI sind eigener Code; die Opus-Kodierung macht libopus (klang-opus).
+//! Export: the project – or the selected range – as a file. Rendering is
+//! offline with the same mix as playback (48 kHz, muted tracks are left
+//! out, solo applies). WAV, FLAC, the Ogg container and MIDI are our own
+//! code; Opus encoding is done by libopus (klang-opus).
 //!
-//! Ablage: Musik/Klangwelt/Exporte (mit `KLANGWELT_BIBLIOTHEK=<Ordner>`:
-//! `<Ordner>/Exporte`); ein Name mit Pfad landet genau dort.
+//! Location: Musik/Klangwelt/Exporte (with `KLANGWELT_BIBLIOTHEK=<Ordner>`:
+//! `<Ordner>/Exporte`); a name with a path ends up exactly there.
 
 use crate::flac;
 use crate::state::{AppState, CmdResult};
@@ -13,9 +13,9 @@ use klang_i18n::tr;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-/// Opus über libopus (C, Feature „opus“) – auf dem Desktop und im Browser
-/// (dort mit clang nach WebAssembly gebaut). Ohne das Feature bleibt die
-/// Liste der Bitraten leer und der Dialog bietet Opus nicht an.
+/// Opus via libopus (C, feature "opus") – on the desktop and in the browser
+/// (built there with clang for WebAssembly). Without the feature the list
+/// of bitrates stays empty and the dialog does not offer Opus.
 #[cfg(feature = "opus")]
 mod opus {
     pub use klang_opus::{encode_ogg_opus as encode, BITRATES, DEFAULT_BITRATE};
@@ -30,26 +30,26 @@ mod opus {
 }
 
 pub const SAMPLE_RATE: u32 = 48_000;
-/// Nachklang (Hall, Ausschwingen) höchstens so lange nach dem letzten Takt.
+/// Tail (reverb, decay) lasts at most this long after the last bar.
 const TAIL_SECS: f64 = 6.0;
-/// Unter −80 dB gilt der Nachklang als verklungen.
+/// Below −80 dB the tail counts as decayed.
 const SILENT: f32 = 1e-4;
 
 #[derive(Deserialize, Default, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportOptions {
-    /// wav, flac, opus, stems oder midi
+    /// wav, flac, opus, stems or midi
     pub format: String,
-    /// Dateiname (ohne Endung) oder vollständiger Pfad; leer = Name des Projekts
+    /// File name (without extension) or full path; empty = project name
     #[serde(default)]
     pub name: Option<String>,
-    /// Opus: kbit/s (Standard 160)
+    /// Opus: kbit/s (default 160)
     #[serde(default)]
     pub bitrate: Option<u32>,
-    /// WAV, FLAC, Stems: 16 oder 24 Bit (Standard 24)
+    /// WAV, FLAC, stems: 16 or 24 bit (default 24)
     #[serde(default)]
     pub bits: Option<u32>,
-    /// Nur den markierten Bereich
+    /// Only the selected range
     #[serde(default)]
     pub range: Option<bool>,
 }
@@ -58,7 +58,7 @@ pub struct ExportOptions {
 #[serde(rename_all = "camelCase")]
 pub struct ExportResult {
     pub format: String,
-    /// Datei – bei Stems der Ordner
+    /// File – for stems, the folder
     pub path: String,
     pub files: Vec<String>,
     pub bytes: u64,
@@ -69,17 +69,17 @@ pub struct ExportResult {
 #[serde(rename_all = "camelCase")]
 pub struct ExportInfo {
     pub dir: String,
-    /// Vorschlag für den Dateinamen
+    /// Suggestion for the file name
     pub name: String,
-    /// Markierter Bereich in Schlägen
+    /// Selected range in beats
     pub range: Option<[f64; 2]>,
     pub range_label: Option<String>,
-    /// Länge des Stücks in Sekunden (0 = leer)
+    /// Length of the piece in seconds (0 = empty)
     pub seconds: f64,
     pub has_notes: bool,
     pub bitrates: Vec<u32>,
     pub default_bitrate: u32,
-    /// Dateien und Ordner, die es im Ordner schon gibt
+    /// Files and folders that already exist in the folder
     pub existing: Vec<String>,
 }
 
@@ -125,12 +125,12 @@ impl Format {
     }
 }
 
-/// Standardordner für Exporte.
+/// Default folder for exports.
 pub fn export_dir(st: &AppState) -> PathBuf {
     crate::host::beside_library(st.host(), "Exporte")
 }
 
-/// Zeichen, die Windows in Dateinamen nicht erlaubt, werden zu „_“.
+/// Characters that Windows does not allow in file names become "_".
 fn clean(name: &str) -> String {
     let s: String = name.chars().map(|c| if "<>:\"/\\|?*".contains(c) || c.is_control() { '_' } else { c }).collect();
     let s = s.trim().trim_end_matches(['.', ' ']).to_string();
@@ -199,8 +199,8 @@ pub fn info(dir: &Path, st: &AppState) -> CmdResult<ExportInfo> {
     })
 }
 
-/// Zu rendernder Zeitraum in Frames: (Anfang, kürzestes Ende, Renderlänge).
-/// Ohne Bereich darf der Nachklang über das Ende hinausgehen.
+/// Time span to render in frames: (start, shortest end, render length).
+/// Without a range the tail may extend past the end.
 fn span(project: &Project, range: Option<(f64, f64)>) -> CmdResult<(usize, usize, usize)> {
     let spb = 60.0 / project.tempo_bpm;
     let frames = |beats: f64| (beats.max(0.0) * spb * SAMPLE_RATE as f64).round() as usize;
@@ -217,13 +217,13 @@ fn span(project: &Project, range: Option<(f64, f64)>) -> CmdResult<(usize, usize
     }
 }
 
-/// Länge nach dem Kürzen des verklungenen Nachklangs.
+/// Length after trimming the decayed tail.
 fn trimmed_len(left: &[f32], right: &[f32], min: usize) -> usize {
     let last = (0..left.len()).rev().find(|&i| left[i].abs() > SILENT || right[i].abs() > SILENT).map_or(0, |i| i + 1);
     (last + SAMPLE_RATE as usize / 20).max(min).min(left.len())
 }
 
-/// Float → Ganzzahl mit `bits` Bit (16 Bit mit Dreiecks-Dither), verschachtelt.
+/// Float → integer with `bits` bits (16 bit with triangular dither), interleaved.
 fn quantize(left: &[f32], right: &[f32], bits: u32) -> Vec<i32> {
     let max = ((1i64 << (bits - 1)) - 1) as f32;
     let mut seed = 0x9E37_79B9u32;
@@ -244,7 +244,7 @@ fn quantize(left: &[f32], right: &[f32], bits: u32) -> Vec<i32> {
     out
 }
 
-/// PCM-WAV (Stereo, 16 oder 24 Bit).
+/// PCM WAV (stereo, 16 or 24 bit).
 pub fn wav(left: &[f32], right: &[f32], bits: u32, sample_rate: u32) -> Vec<u8> {
     let pcm = quantize(left, right, bits);
     let bytes = (bits / 8) as usize;
@@ -286,7 +286,7 @@ fn chunk(out: &mut Vec<u8>, id: &[u8; 4], body: &[u8]) {
     out.extend_from_slice(body);
 }
 
-/// Ereignisse (Tick, Reihenfolge, Bytes) → Spur-Daten mit Delta-Zeiten.
+/// Events (tick, order, bytes) → track data with delta times.
 fn track_body(mut events: Vec<(u64, u8, Vec<u8>)>, end: u64) -> Vec<u8> {
     events.sort_by_key(|e| (e.0, e.1));
     let mut body = Vec::new();
@@ -308,7 +308,7 @@ fn meta(kind: u8, data: &[u8]) -> Vec<u8> {
     v
 }
 
-/// General-MIDI-Programm passend zum Instrument (Schlagzeug: Kanal 10).
+/// General MIDI program matching the instrument (drums: channel 10).
 fn gm_program(kind: InstrumentKind) -> Option<u8> {
     match kind {
         InstrumentKind::Pluck => Some(25),       // Steel Guitar
@@ -320,11 +320,11 @@ fn gm_program(kind: InstrumentKind) -> Option<u8> {
     }
 }
 
-/// Standard-MIDI-Datei (Typ 1, 480 Ticks je Viertel): eine Spur je
-/// Instrumentspur mit Noten, Tempo und Takt in der ersten.
+/// Standard MIDI file (type 1, 480 ticks per quarter): one track per
+/// instrument track with notes, plus tempo and time signature in the first.
 pub fn midi(project: &Project, range: Option<(f64, f64)>) -> CmdResult<Vec<u8>> {
     const PPQ: f64 = 480.0;
-    // Schläge zählen in der Einheit des Takts (4 = Viertel, 8 = Achtel)
+    // Beats count in the unit of the time signature (4 = quarter, 8 = eighth)
     let quarter_per_beat = 4.0 / project.beat_unit.max(1) as f64;
     let tick = |beats: f64| (beats * quarter_per_beat * PPQ).round().max(0.0) as u64;
     let (from, to) = range.unwrap_or((0.0, f64::INFINITY));
@@ -395,7 +395,7 @@ pub fn midi(project: &Project, range: Option<(f64, f64)>) -> CmdResult<Vec<u8>> 
     Ok(out)
 }
 
-// ---------------------------------------------------------------- Ablauf
+// ---------------------------------------------------------------- Flow
 
 fn write(path: &Path, data: &[u8]) -> CmdResult<()> {
     if let Some(parent) = path.parent() {
@@ -404,7 +404,7 @@ fn write(path: &Path, data: &[u8]) -> CmdResult<()> {
     crate::vfs::write(path, data).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-/// Führt den Export aus.
+/// Runs the export.
 pub fn run(dir: &Path, st: &AppState, opts: &ExportOptions) -> CmdResult<ExportResult> {
     let fmt = Format::parse(&opts.format)?;
     let mut src = st.export_source()?;
@@ -531,7 +531,7 @@ mod tests {
         assert_eq!(&w[8..16], b"WAVEfmt ");
         assert_eq!(u16::from_le_bytes([w[34], w[35]]), 24);
         assert_eq!(w.len(), 44 + 1000 * 2 * 3);
-        // 0,5 → halbe Aussteuerung
+        // 0.5 → half level
         let s = i32::from_le_bytes([0, w[44], w[45], w[46]]) >> 8;
         assert_eq!(s, (0.5f32 * 8_388_607.0).round() as i32);
         let w16 = wav(&l, &l, 16, 48_000);
@@ -555,9 +555,9 @@ mod tests {
         let mut l = vec![0.0f32; 48_000];
         l[1000] = 0.5;
         let r = vec![0.0f32; 48_000];
-        // kürzestes Ende gewinnt, wenn früher schon still
+        // shortest end wins if it is already silent earlier
         assert_eq!(trimmed_len(&l, &r, 10_000), 10_000);
-        // sonst bis kurz nach dem letzten hörbaren Sample
+        // otherwise until shortly after the last audible sample
         assert_eq!(trimmed_len(&l, &r, 0), 1001 + 2400);
     }
 
@@ -569,14 +569,14 @@ mod tests {
         assert_eq!(u16::from_be_bytes([m[8], m[9]]), 1, "Typ 1");
         assert_eq!(u16::from_be_bytes([m[10], m[11]]), 3, "Dirigent + 2 Spuren");
         assert_eq!(u16::from_be_bytes([m[12], m[13]]), 480);
-        // Tempo 120 = 500 000 µs je Viertel
+        // Tempo 120 = 500 000 µs per quarter
         let tempo = m.windows(3).position(|w| w == [0xFF, 0x51, 0x03]).unwrap();
         assert_eq!(&m[tempo + 3..tempo + 6], &[0x07, 0xA1, 0x20]);
-        // Schlagzeug auf Kanal 10, die Melodie mit Programm
+        // Drums on channel 10, the melody with a program
         assert!(m.windows(3).any(|w| w == [0x99, 36, 110]));
         assert!(m.windows(2).any(|w| w == [0xC0, 25]));
         assert!(m.windows(3).any(|w| w == [0x90, 60, 100]));
-        // Note über das Clipende hinaus wird gekürzt: G endet bei Schlag 8
+        // A note extending past the clip end is trimmed: G ends at beat 8
         assert_eq!(m.windows(3).filter(|w| w[0] == 0x90).count(), 3);
     }
 
@@ -584,10 +584,10 @@ mod tests {
     fn midi_range_shifts_and_filters() {
         let p = project();
         let m = midi(&p, Some((4.0, 6.0))).unwrap();
-        // nur die zwei Melodienoten im Bereich, das Schlagzeug fehlt ganz
+        // only the two melody notes in the range, the drums are missing entirely
         assert_eq!(u16::from_be_bytes([m[10], m[11]]), 2);
         assert_eq!(m.windows(3).filter(|w| w[0] == 0x90).count(), 2);
-        // erste Note beginnt bei Tick 0: Delta 0 direkt vor dem Note-on
+        // first note starts at tick 0: delta 0 right before the note-on
         let on = m.windows(3).position(|w| w == [0x90, 60, 100]).unwrap();
         assert_eq!(m[on - 1], 0);
         assert!(midi(&Project::default(), None).is_err());

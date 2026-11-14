@@ -1,22 +1,22 @@
-//! Was der Kern von der Plattform braucht: Ereignisse an die Oberfläche und
-//! die Ablageorte. Desktop: Tauri (`app/src/lib.rs`), Browser: der Web-Kern
+//! What the core needs from the platform: events to the UI and the storage
+//! locations. Desktop: Tauri (`app/src/lib.rs`), browser: the web core
 //! (`crates/klang-web`).
 
 use serde::Serialize;
 use std::path::PathBuf;
 
 pub trait Host: Send + Sync {
-    /// Ereignis an die Oberfläche (Desktop: Tauri-Event, Browser: `postMessage`);
-    /// `json` ist der fertig serialisierte Inhalt (siehe [`Host::emit`]).
+    /// Event to the UI (desktop: Tauri event, browser: `postMessage`);
+    /// `json` is the fully serialized payload (see [`Host::emit`]).
     fn emit_json(&self, event: &str, json: String);
-    /// Ordner für Projekte (Desktop: Dokumente/Klangwelt/Projekte).
+    /// Folder for projects (desktop: Documents/Klangwelt/Projekte).
     fn projects_dir(&self) -> PathBuf;
-    /// Wurzel der Bibliothek (Desktop: Musik/Klangwelt/Bibliothek). Exporte und
-    /// Klänge liegen daneben (siehe [`crate::export::export_dir`]).
+    /// Root of the library (desktop: Music/Klangwelt/Bibliothek). Exports and
+    /// sounds live next to it (see [`crate::export::export_dir`]).
     fn library_root(&self) -> PathBuf;
 }
 
-/// Platzhalter, bis die Plattform ihren Host setzt: meldet nichts.
+/// Placeholder until the platform sets its host: reports nothing.
 pub struct NoHost;
 
 impl Host for NoHost {
@@ -30,15 +30,15 @@ impl Host for NoHost {
 }
 
 impl<'a> dyn Host + 'a {
-    /// Ereignis mit Inhalt an die Oberfläche. Einmal direkt serialisiert – wie
-    /// eine Antwort auf einen Befehl (Zahlen erscheinen gleich, z. B. `f32`).
+    /// Event with payload to the UI. Serialized once, directly – like a reply
+    /// to a command (numbers look the same, e.g. `f32`).
     pub fn emit<T: Serialize + ?Sized>(&self, event: &str, payload: &T) {
         self.emit_json(event, serde_json::to_string(payload).unwrap_or_else(|_| "null".into()));
     }
 }
 
-/// Ordner neben der Bibliothek (Exporte, Klänge). Mit `KLANGWELT_BIBLIOTHEK`
-/// (Tests, eigene Ablage) im Bibliotheksordner selbst.
+/// Folder next to the library (exports, sounds). With `KLANGWELT_BIBLIOTHEK`
+/// (tests, custom location) inside the library folder itself.
 pub fn beside_library(host: &dyn Host, name: &str) -> PathBuf {
     let root = host.library_root();
     let base = if std::env::var_os("KLANGWELT_BIBLIOTHEK").is_some_and(|r| !r.is_empty()) {

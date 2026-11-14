@@ -1,25 +1,25 @@
-//! Dateien des Kerns (Projekte, Einstellungen, Klänge, Exporte).
+//! Files of the core (projects, settings, sounds, exports).
 //!
-//! * Desktop: das Dateisystem – dünne Hüllen um `std::fs`.
-//! * Browser: ein Dateibaum im Speicher mit denselben Pfaden wie auf dem
-//!   Desktop (`/Klangwelt/Projekte/…`). Der Web-Kern lädt ihn beim Start aus
-//!   dem Speicher des Browsers (OPFS, [`put`]) und sichert Änderungen danach
-//!   wieder dorthin ([`take_changes`]).
+//! * Desktop: the file system - thin wrappers around `std::fs`.
+//! * Browser: an in-memory file tree with the same paths as on the
+//!   desktop (`/Klangwelt/Projekte/…`). The web core loads it at startup from
+//!   the browser's storage (OPFS, [`put`]) and afterwards saves changes
+//!   back there ([`take_changes`]).
 //!
-//! Der Kern benutzt für seine Dateien nur diese Funktionen; so verhalten sich
-//! beide Plattformen gleich.
+//! The core uses only these functions for its files; this way
+//! both platforms behave the same.
 
 use std::io;
 use std::path::{Path, PathBuf};
 
-/// Eintrag eines Ordners.
+/// Entry of a folder.
 #[derive(Clone, Debug)]
 pub struct Entry {
     pub name: String,
     pub path: PathBuf,
     pub is_dir: bool,
     pub len: u64,
-    /// Unix-Zeit in Millisekunden (0 = unbekannt).
+    /// Unix time in milliseconds (0 = unknown).
     pub modified_ms: u64,
 }
 
@@ -62,8 +62,8 @@ mod imp {
         path.is_dir()
     }
 
-    /// Umbenennen; Windows gibt eine eben geschlossene Datei manchmal erst kurz
-    /// danach frei (Virenscanner) – dann mehrmals versuchen.
+    /// Rename; Windows sometimes releases a just-closed file only a moment
+    /// later (virus scanner) - then retry several times.
     pub fn rename_retry(from: &Path, to: &Path) -> io::Result<()> {
         let mut tries = 0;
         loop {
@@ -118,7 +118,7 @@ mod imp {
     struct Tree {
         files: BTreeMap<PathBuf, File>,
         dirs: BTreeSet<PathBuf>,
-        /// Seit dem letzten [`take_changes`] geschrieben oder gelöscht.
+        /// Written or deleted since the last [`take_changes`].
         changed: BTreeSet<PathBuf>,
     }
 
@@ -222,8 +222,8 @@ mod imp {
         })
     }
 
-    /// Datei aus dem Speicher des Browsers übernehmen (beim Start), ohne sie als
-    /// geändert zu markieren.
+    /// Takes over a file from the browser's storage (at startup) without marking it
+    /// as changed.
     pub fn put(path: &Path, data: Vec<u8>, modified_ms: u64) {
         with(|t| {
             add_parents(t, path);
@@ -231,8 +231,8 @@ mod imp {
         });
     }
 
-    /// Geänderte Pfade seit dem letzten Aufruf: mit Inhalt (geschrieben) oder
-    /// ohne (gelöscht). Der Web-Kern sichert sie in OPFS.
+    /// Changed paths since the last call: with content (written) or
+    /// without (deleted). The web core saves them to OPFS.
     pub fn take_changes() -> Vec<(PathBuf, Option<Arc<Vec<u8>>>)> {
         with(|t| {
             let changed = std::mem::take(&mut t.changed);
@@ -244,12 +244,12 @@ mod imp {
 #[cfg(target_arch = "wasm32")]
 pub use imp::{put, take_changes};
 
-/// Ganze Datei lesen.
+/// Reads a whole file.
 pub fn read(path: &Path) -> io::Result<Vec<u8>> {
     imp::read(path)
 }
 
-/// Ganze Datei schreiben (ersetzt sie).
+/// Writes a whole file (replaces it).
 pub fn write(path: &Path, data: &[u8]) -> io::Result<()> {
     imp::write(path, data)
 }
@@ -270,18 +270,18 @@ pub fn is_dir(path: &Path) -> bool {
     imp::is_dir(path)
 }
 
-/// Umbenennen (Desktop: mit Wiederholung, falls Windows die Datei noch hält).
+/// Renames (desktop: with retry in case Windows still holds the file).
 pub fn rename_retry(from: &Path, to: &Path) -> io::Result<()> {
     imp::rename_retry(from, to)
 }
 
-/// Einträge eines Ordners (Reihenfolge unbestimmt).
+/// Entries of a folder (order unspecified).
 pub fn list(dir: &Path) -> io::Result<Vec<Entry>> {
     imp::list(dir)
 }
 
-/// Schreibt über eine Nebendatei und benennt sie dann um – ein Absturz
-/// mittendrin zerstört nie die alte Datei.
+/// Writes via a side file and then renames it - a crash
+/// midway never destroys the old file.
 pub fn write_atomic(path: &Path, data: &[u8], tmp_ext: &str) -> io::Result<()> {
     if let Some(dir) = path.parent() {
         create_dir_all(dir)?;

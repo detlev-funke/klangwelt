@@ -1,4 +1,4 @@
-//! Eigene komplexe Radix-2-FFT (in-place, iterativ).
+//! Own complex radix-2 FFT (in-place, iterative).
 
 use std::f64::consts::PI;
 use std::ops::{Add, Mul, Sub};
@@ -48,7 +48,7 @@ impl Mul for Complex {
     }
 }
 
-/// Vorberechnete FFT fester Größe (Zweierpotenz).
+/// Precomputed FFT of a fixed size (power of two).
 pub struct Fft {
     n: usize,
     twiddles: Vec<Complex>,
@@ -80,7 +80,7 @@ impl Fft {
         self.transform(buf, false);
     }
 
-    /// Inverse Transformation inklusive 1/N-Skalierung.
+    /// Inverse transform including 1/N scaling.
     pub fn inverse(&self, buf: &mut [Complex]) {
         self.transform(buf, true);
         let s = 1.0 / self.n as f32;
@@ -119,7 +119,7 @@ impl Fft {
     }
 }
 
-/// Periodisches Hann-Fenster (summiert sich bei 50 % Überlappung zu 1).
+/// Periodic Hann window (sums to 1 at 50 % overlap).
 pub fn hann(n: usize) -> Vec<f32> {
     (0..n)
         .map(|i| (0.5 - 0.5 * (2.0 * PI * i as f64 / n as f64).cos()) as f32)

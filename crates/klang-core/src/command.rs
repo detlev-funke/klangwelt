@@ -60,10 +60,10 @@ pub struct TrackPatch {
     pub instrument: Option<Instrument>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub view: Option<TrackView>,
-    /// Zeilenhöhe kompakt (Pixel, 0 = Standard).
+    /// Row height compact (pixels, 0 = default).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub compact_height: Option<f32>,
-    /// Zeilenhöhe Notenansicht (Pixel, 0 = Standard).
+    /// Row height score view (pixels, 0 = default).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notes_height: Option<f32>,
 }
@@ -81,7 +81,7 @@ pub struct ClipPatch {
     pub warp: Option<bool>,
 }
 
-/// Alle Änderungen am Projekt. JSON-Form z. B.
+/// All changes to the project. JSON form e.g.
 /// `{"type":"setTrack","trackId":3,"patch":{"gainDb":-6}}`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
@@ -98,7 +98,7 @@ pub enum Command {
     AddClip { track_id: Id, clip: Clip },
     RemoveClip { track_id: Id, clip_id: Id },
     SetClip { track_id: Id, clip_id: Id, patch: ClipPatch },
-    /// Ersetzt die Noten eines Instrument-Clips (optional auch seine Länge).
+    /// Replaces the notes of an instrument clip (optionally its length too).
     SetClipNotes {
         track_id: Id,
         clip_id: Id,
@@ -161,7 +161,7 @@ impl TrackPatch {
         f.join(",")
     }
 
-    /// Ändert nur die Darstellung – Ansicht und/oder Zeilenhöhen (kein Undo-Schritt).
+    /// Changes only the presentation - view and/or row heights (no undo step).
     pub fn is_view_only(&self) -> bool {
         let display = TrackPatch {
             view: self.view,
@@ -244,7 +244,7 @@ impl ClipPatch {
 }
 
 impl Command {
-    /// Beschriftung für die Undo-Historie.
+    /// Label for the undo history.
     pub fn label(&self) -> String {
         match self {
             Command::SetProject { patch } if patch.tempo_bpm.is_some() => tr!("Change tempo"),
@@ -275,8 +275,8 @@ impl Command {
         }
     }
 
-    /// Gleiche Schlüssel dürfen zu einem Undo-Schritt verschmelzen
-    /// (z. B. viele Zwischenwerte beim Ziehen eines Reglers).
+    /// Equal keys may merge into one undo step
+    /// (e.g. many intermediate values while dragging a slider).
     pub fn merge_key(&self) -> Option<String> {
         match self {
             Command::SetProject { patch } => Some(format!("project:{}", patch.fields())),
@@ -285,13 +285,13 @@ impl Command {
                 Some(format!("clip:{track_id}:{clip_id}:{}", patch.fields()))
             }
             Command::SetClipNotes { track_id, clip_id, .. } => Some(format!("notes:{track_id}:{clip_id}")),
-            // ein Stapel aus genau einem Befehl (nur für eine eigene Beschriftung) verschmilzt wie dieser
+            // a batch of exactly one command (only for its own label) merges like that command
             Command::Batch { commands, .. } if commands.len() == 1 => commands[0].merge_key(),
             _ => None,
         }
     }
 
-    /// Reine Ansichtsänderung – wird ausgeführt, aber nicht in die Undo-Historie aufgenommen.
+    /// Pure view change - is executed but not recorded in the undo history.
     pub fn is_view_only(&self) -> bool {
         matches!(self, Command::SetTrack { patch, .. } if patch.is_view_only())
     }
@@ -335,8 +335,8 @@ macro_rules! swap_fields {
     };
 }
 
-/// Wendet `cmd` an und liefert den Befehl, der die Änderung rückgängig macht.
-/// Bei einem Fehler bleibt das Projekt unverändert.
+/// Applies `cmd` and returns the command that undoes the change.
+/// On an error the project remains unchanged.
 pub fn apply(project: &mut Project, cmd: Command) -> Result<Command, CoreError> {
     match cmd {
         Command::SetProject { patch } => {

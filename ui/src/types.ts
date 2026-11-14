@@ -1,4 +1,4 @@
-// Spiegel der Rust-Typen (serde, camelCase).
+// Mirror of the Rust types (serde, camelCase).
 
 export type Id = number;
 
@@ -6,13 +6,13 @@ export interface Note {
   pitch: number;
   startBeats: number;
   lengthBeats: number;
-  /** Anschlag 1–127. */
+  /** Velocity 1–127. */
   velocity: number;
-  /** Vibrato-Tiefe in Halbtönen 0–1 (fehlt = 0). */
+  /** Vibrato depth in semitones 0–1 (missing = 0). */
   vibrato?: number;
-  /** Helligkeit −1…+1 (fehlt = 0). */
+  /** Brightness −1…+1 (missing = 0). */
   brightness?: number;
-  /** Anschleifen in Halbtönen −12…+12 (fehlt = 0). */
+  /** Glide-in in semitones −12…+12 (missing = 0). */
   bend?: number;
 }
 
@@ -31,14 +31,14 @@ export type TrackKind = "audio" | "instrument";
 
 export type InstrumentKind = "pluck" | "drums" | "bass" | "organ" | "harpsichord" | "synth";
 
-/** Kurvenpunkt: [Sekunden ab Tonbeginn, Wert 0…1]. */
+/** Curve point: [seconds from note start, value 0…1]. */
 export type CurvePoint = [number, number];
 
 export interface Instrument {
   kind: InstrumentKind;
   preset: string;
   params: Record<string, number>;
-  /** Gezeichnete Verläufe (Synth: „laut“, „hell“). */
+  /** Drawn curves (synth: "loud", "bright"). */
   curves?: Record<string, CurvePoint[]>;
 }
 
@@ -51,14 +51,14 @@ export interface ParamSpec {
   default: number;
   left: string;
   right: string;
-  /** Wert ist ein MIDI-Ton */
+  /** Value is a MIDI note */
   note: boolean;
   meaning: string;
-  /** Kein eigener Regler (Feld-Stellung, Verlauf). */
+  /** No control of its own (field position, curve). */
   hidden?: boolean;
 }
 
-/** Feld im Klang-Fenster: zwei Achsen, Startpunkte, gesetzte Regler. */
+/** Field in the Sound window: two axes, starting points, controls that have been set. */
 export interface FieldSpec {
   key: "charakter" | "klangfarbe" | "raum";
   name: string;
@@ -68,7 +68,7 @@ export interface FieldSpec {
   sets: string[];
 }
 
-/** Vorlage für den Verlauf des Synths. */
+/** Template for the synth's curve. */
 export interface VerlaufSpec {
   name: string;
   beschreibung: string;
@@ -79,7 +79,7 @@ export interface VerlaufSpec {
   pulstiefe: number;
 }
 
-/** Song-Aufbau: Rolle einer Zeile. */
+/** Song structure: role of a row. */
 export type SongRole = "pad" | "arp" | "bass" | "lead" | "kick" | "hats" | "clap" | "perc" | "fx";
 export type SongSectionKind = "intro" | "teil" | "aufbau" | "break" | "hoehepunkt" | "outro";
 
@@ -98,7 +98,7 @@ export interface SongSection {
   name: string;
   bars: number;
   kind: SongSectionKind;
-  /** Stufe je Rolle: 0 aus, 1 sparsam, 2 voll */
+  /** Level per role: 0 off, 1 sparse, 2 full */
   levels: Record<string, number>;
 }
 
@@ -124,16 +124,16 @@ export interface SongWritten {
   seconds: number;
 }
 
-/** Rhythmus: Zeile des Schritt-Rasters (eine Trommel). */
+/** Rhythm: row of the step grid (one drum). */
 export interface RhythmRow {
   key: string;
   label: string;
   midi: number;
-  /** immer sichtbar (sonst unter „weitere Trommeln“) */
+  /** always visible (otherwise under "more drums") */
   main: boolean;
 }
 
-/** Schritt-Raster: Länge in Sechzehnteln, je Zeile die gesetzten Schritte (ab 0). */
+/** Step grid: length in sixteenths, per row the steps that are set (from 0). */
 export interface RhythmGrid {
   steps: number;
   rows: Record<string, number[]>;
@@ -144,14 +144,14 @@ export interface RhythmPattern {
   bpm: number;
   swing: number;
   tip: string;
-  /** ein Takt */
+  /** one bar */
   grid: RhythmGrid;
 }
 
 export interface RhythmGenre {
   name: string;
   blurb: string;
-  /** Startpunkt im Charakter-Feld für eine neue Schlagzeug-Spur */
+  /** Starting point in the character field for a new drum track */
   sound: string;
   patterns: RhythmPattern[];
 }
@@ -164,7 +164,7 @@ export interface RhythmInfo {
 export interface ClipGrid {
   grid: RhythmGrid;
   swing: number;
-  /** Noten, die nicht im Raster erscheinen */
+  /** Notes that do not appear in the grid */
   skipped: number;
   name: string;
 }
@@ -175,13 +175,13 @@ export interface RhythmWritten {
   clipId: number;
 }
 
-/** Klang aus der Klang-Bibliothek (über alle Projekte). */
+/** Sound from the sound library (across all projects). */
 export interface SavedSound {
   id: string;
   name: string;
   kind: InstrumentKind;
   kindName: string;
-  /** Stellung in den Feldern in Worten, z. B. „Trap · dunkel, rau · breit, fern“ */
+  /** Position in the fields in words, e.g. "Trap · dunkel, rau · breit, fern" */
   summary: string;
   created: number;
   modified: number;
@@ -191,12 +191,12 @@ export interface SavedSound {
 export interface SoundSaveResult {
   id: string;
   name: string;
-  /** Den Namen gab es beim Instrument schon – ersetzt. */
+  /** The name already existed for the instrument – replaced. */
   replaced: boolean;
   sounds: SavedSound[];
 }
 
-/** Wellenform des Testklangs (je Spalte Minimum, Maximum). */
+/** Waveform of the test sound (per column minimum, maximum). */
 export interface WaveView {
   secs: number;
   peaks: Array<[number, number]>;
@@ -223,9 +223,9 @@ export interface Track {
   name: string;
   kind: TrackKind;
   view: TrackView;
-  /** Zeilenhöhe kompakt (0 = Standard). */
+  /** Row height compact (0 = default). */
   compactHeight: number;
-  /** Zeilenhöhe Notenansicht (0 = Standard). */
+  /** Row height note view (0 = default). */
   notesHeight: number;
   color: string;
   gainDb: number;
@@ -250,21 +250,21 @@ export interface EngineInfo {
   available: boolean;
   error: string | null;
   outputDevice: string | null;
-  /** Gewähltes Ausgabe-/Aufnahmegerät (null = Systemstandard). */
+  /** Selected output/recording device (null = system default). */
   outputChoice: string | null;
   inputChoice: string | null;
-  /** Gemerktes Gerät fehlte beim Start – es spielt/nimmt der Systemstandard. */
+  /** The remembered device was missing at start – the system default plays/records. */
   outputNotice: string | null;
   inputNotice: string | null;
   sampleRate: number;
   metronome: boolean;
-  /** Wiedergabe wiederholen (am Ende von vorn). */
+  /** Repeat playback (from the start again at the end). */
   loopOn: boolean;
-  /** Markierter Zeitbereich in Schlägen: mit `loopOn` die Schleife. */
+  /** Marked time range in beats: with `loopOn` the loop. */
   loopRange: [number, number] | null;
 }
 
-/** Audiogeräte des Systems samt Wahl (null = Systemstandard). */
+/** Audio devices of the system including the choice (null = system default). */
 export interface AudioDevices {
   outputs: string[];
   inputs: string[];
@@ -272,7 +272,7 @@ export interface AudioDevices {
   defaultInput: string | null;
   output: string | null;
   input: string | null;
-  /** Ausgabegerät, das gerade spielt, und seine Abtastrate. */
+  /** Output device that is currently playing, and its sample rate. */
   outputDevice: string;
   sampleRate: number;
 }
@@ -287,9 +287,9 @@ export interface AgentInfo {
 }
 
 export interface Snapshot {
-  /** Projektdatei (null = noch nicht gespeichert). */
+  /** Project file (null = not saved yet). */
   file: string | null;
-  /** Ungespeicherte Änderungen. */
+  /** Unsaved changes. */
   dirty: boolean;
   project: Project;
   canUndo: boolean;
@@ -301,7 +301,7 @@ export interface Snapshot {
 }
 
 export interface LibraryInfo {
-  /** Aktive Bibliothek (null, solange sie beim Start geladen wird). */
+  /** Active library (null while it is being loaded at start). */
   id: string | null;
   name: string | null;
   voices: number;
@@ -309,21 +309,21 @@ export interface LibraryInfo {
   building: [number, number] | null;
   download: DownloadProgress | null;
   message: string | null;
-  /** Partituren mit Merkmalen (0 = neu indizieren für die Baumansicht). */
+  /** Scores with features (0 = re-index for the tree view). */
   treeScores: number;
-  /** Genre/Komponist liegen für alle enthaltenen PDMX-Pakete vor. */
+  /** Genre/composer are available for all contained PDMX packages. */
   hasMeta: boolean;
-  /** Partituren mit Akkordfolge [Dur, Moll]; null = Index ohne Akkordstatistik. */
+  /** Scores with chord progression [major, minor]; null = index without chord statistics. */
   chordScores: [number, number] | null;
-  /** Gerade werden Dateien hinzugefügt. */
+  /** Files are currently being added. */
   adding: boolean;
-  /** Gerade wird in die Bibliothek übernommen (Anteil 0…1). */
+  /** Currently being imported into the library (fraction 0…1). */
   merging: number | null;
-  /** Die Bibliothek wird beim Start geladen (bzw. eingerichtet). */
+  /** The library is being loaded (or set up) at start. */
   loading: boolean;
-  /** Paket, das gerade geladen bzw. übernommen wird. */
+  /** Package that is currently being loaded or imported. */
   currentPack?: string | null;
-  /** Wartende Pakete, in der Reihenfolge, in der sie drankommen. */
+  /** Waiting packages, in the order in which they come up. */
   queue?: QueuedDownload[];
   /** Browser: the package on the server and the own scores. */
   web?: WebLibInfo;
@@ -360,42 +360,42 @@ export interface AddResult {
   message: string;
 }
 
-/** Ein beauftragtes Paket in der Download-Warteschlange. */
+/** A requested package in the download queue. */
 export interface QueuedDownload {
   id: string;
   name: string;
-  /** Zielbibliothek: die beim Beauftragen aktive */
+  /** Target library: the one that was active when it was requested */
   library: string;
   libraryName: string;
 }
 
-/** Eine Bibliothek (genau ein Index) in der Verwaltung. */
+/** A library (exactly one index) in the management view. */
 export interface LibEntry {
   id: string;
   name: string;
   scores: number;
   voices: number;
-  /** Namen der enthaltenen Pakete */
+  /** Names of the contained packages */
   packs: string[];
-  /** hinzugefügte Ordner und Dateien */
+  /** added folders and files */
   paths: string[];
   active: boolean;
-  /** „Standard“ (lässt sich nicht löschen) */
+  /** "default" (cannot be deleted) */
   standard: boolean;
-  /** Größe der Indexdatei */
+  /** Size of the index file */
   bytes: number;
 }
 
-/** Projektdatei im Projektordner. */
+/** Project file in the project folder. */
 export interface ProjectFile {
   name: string;
   path: string;
-  /** Unix-Zeit in ms */
+  /** Unix time in ms */
   modified: number;
   bytes: number;
 }
 
-/** Ebene der Baumansicht. */
+/** Level of the tree view. */
 export interface Dimension {
   key: string;
   label: string;
@@ -427,7 +427,7 @@ export interface TreeLevel {
 
 export interface DownloadProgress {
   name: string;
-  /** „Partituren“ oder „Kategorien“ */
+  /** "Scores" or "Categories" */
   phase: string;
   folder: string;
   files: number;
@@ -436,7 +436,7 @@ export interface DownloadProgress {
   totalBytes: number;
 }
 
-/** Herunterladbare Musikbibliothek. */
+/** Downloadable music library. */
 export interface CatalogEntry {
   id: string;
   name: string;
@@ -446,18 +446,18 @@ export interface CatalogEntry {
   diskMb: number;
   license: string;
   sourceUrl: string;
-  /** Sammlung (Panel): pdmx, openscore, kernscores, dcml */
+  /** Collection (panel): pdmx, openscore, kernscores, dcml */
   group?: string;
   groupName?: string;
   groupDescription?: string;
-  /** Dateiformat, z. B. MusicXML, **kern */
+  /** File format, e.g. MusicXML, **kern */
   format: string;
-  /** bringt eine Akkordanalyse von Fachleuten mit */
+  /** comes with a chord analysis by experts */
   expertHarmony?: boolean;
   folder: string;
-  /** Die Partituren liegen schon im Ordner (Übernehmen ohne Download). */
+  /** The scores are already in the folder (import without download). */
   installed: boolean;
-  /** Name der aktiven Bibliothek, wenn sie das Paket schon enthält. */
+  /** Name of the active library if it already contains the package. */
   inLibrary: string | null;
 }
 
@@ -479,9 +479,9 @@ export interface LibHit {
   origin?: "own" | "remote";
 }
 
-/** Ergebnis von „Vorsingen“: erkannte Töne und Treffer. */
+/** Result of "Sing it": recognized notes and matches. */
 export interface ListenResult {
-  /** Töne im Format des Melodiefelds („A5:1 Fis5:0,5 …“) */
+  /** Notes in the format of the melody field ("A5:1 Fis5:0,5 …") */
   melody: string;
   notes: number;
   key: string | null;
@@ -493,7 +493,7 @@ export interface VoiceView {
   part: string;
   label: string;
   role: string | null;
-  /** [Einsatz, Dauer, MIDI] in Vierteln */
+  /** [onset, duration, MIDI] in quarters */
   notes: Array<[number, number, number]>;
   isHit: boolean;
   highlight: [number, number] | null;
@@ -511,14 +511,14 @@ export interface ScoreView {
   durationQuarters: number;
   voices: VoiceView[];
   cadences: Array<[number, string]>;
-  /** Hervorgehobene Stelle über alle Stimmen (Viertel), z. B. ein Akkordwechsel. */
+  /** Highlighted location across all parts (quarters), e.g. a chord change. */
   range: [number, number] | null;
   collection?: string;
   license?: string;
   origin?: "own" | "remote";
 }
 
-/** Laufendes Vorspielen einer Partitur (Viertel; Tempo in Vierteln je Minute). */
+/** Running preview of a score (quarters; tempo in quarters per minute). */
 export interface PlayInfo {
   tempo: number;
   start: number;
@@ -527,15 +527,15 @@ export interface PlayInfo {
   looping: boolean;
 }
 
-// ---------------------------------------------------------------- Harmonik
+// ---------------------------------------------------------------- Harmony
 
 export type Quality = "major" | "minor" | "dim" | "aug" | "dom7" | "maj7" | "min7" | "halfDim7" | "dim7" | "sus4";
 
 export interface Chord {
-  /** Grundton als Tonhöhenklasse (0 = C). */
+  /** Root as pitch class (0 = C). */
   root: number;
   quality: Quality;
-  /** Basston, wenn nicht der Grundton (Umkehrung). */
+  /** Bass note if not the root (inversion). */
   bass?: number;
 }
 
@@ -552,23 +552,23 @@ export interface HarmonyKey extends KeySpec {
 
 export interface ChordInfo {
   chord: Chord;
-  /** Akkordsymbol mit deutschen Tonnamen („G7“, „fis°“, „C/E“). */
+  /** Chord symbol with German note names ("G7", "fis°", "C/E"). */
   name: string;
-  /** Stufe („V⁷“, „ii⁶“, „V⁷/vi“). */
+  /** Scale degree ("V⁷", "ii⁶", "V⁷/vi"). */
   roman: string;
-  /** Funktion nach Riemann („D⁷“, „Sp“, „DD“). */
+  /** Function according to Riemann ("D⁷", "Sp", "DD"). */
   function: string;
   role: string;
   diatonic: boolean;
 }
 
 export interface CircleCell extends ChordInfo {
-  /** 0 = Dur außen, 1 = Moll, 2 = vermindert innen */
+  /** 0 = major outside, 1 = minor, 2 = diminished inside */
   ring: 0 | 1 | 2;
   pos: number;
 }
 
-/** Stimmung eines Übergangs (Farbe im Quintenzirkel). */
+/** Mood of a transition (color in the circle of fifths). */
 export type Mood = "loesend" | "spannend" | "ueberraschend" | "hell" | "dunkel";
 
 export interface CadenceTemplate {
@@ -576,21 +576,21 @@ export interface CadenceTemplate {
   name: string;
   description: string;
   steps: ChordInfo[];
-  /** Stimmung je Übergang (steps[i] → steps[i+1]). */
+  /** Mood per transition (steps[i] → steps[i+1]). */
   moods: Mood[];
 }
 
-/** Mehrschrittiger Weg vom letzten Akkord zu einem Schluss. */
+/** Multi-step path from the last chord to a closing. */
 export interface CadencePath {
   goal: "ganzschluss" | "plagalschluss" | "halbschluss" | "trugschluss" | "phrygisch";
   label: string;
   steps: ChordInfo[];
-  /** Stimmung je Übergang (in steps[i] hinein, der erste vom aktuellen Akkord). */
+  /** Mood per transition (into steps[i], the first from the current chord). */
   moods: Mood[];
   score: number;
-  /** Längere Variante desselben Schlusses. */
+  /** Longer variant of the same closing. */
   longer: boolean;
-  /** Anteil jedes Schritts an den Fortsetzungen in der Bibliothek; null = keine Bibliothek. */
+  /** Share of each step among the continuations in the library; null = no library. */
   shares: Array<number | null> | null;
 }
 
@@ -607,7 +607,7 @@ export interface HarmonyExample {
   title: string;
   composer: string;
   bar: number;
-  /** Bereich in Vierteln */
+  /** Range in quarters */
   start: number;
   end: number;
 }
@@ -616,7 +616,7 @@ export interface LibFollow {
   share: number;
   count: number;
   total: number;
-  /** false = als Grundakkord gezählt */
+  /** false = counted as a root chord */
   exact: boolean;
   examples: HarmonyExample[];
 }
@@ -626,7 +626,7 @@ export interface ChordSuggestion extends ChordInfo {
   category: SuggestCategory;
   reason: string;
   toKey?: string;
-  /** Stimmung des Übergangs vom letzten Akkord hierher. */
+  /** Mood of the transition from the last chord to here. */
   mood: Mood;
   library: LibFollow | null;
 }
@@ -636,20 +636,20 @@ export interface SuggestResult {
   library: {
     name: string;
     scores: number;
-    /** 0 = alle, 1 = Barock, 2 = Bach */
+    /** 0 = all, 1 = Baroque, 2 = Bach */
     group: number;
     groups: Array<{ id: number; key: string; label: string; scores: number }>;
   } | null;
   hint: string | null;
   /** The hint suggests re-indexing the library (button "Re-index"). */
   reindex: boolean;
-  /** Wege zum Schluss: je Schlussart der beste, ggf. dahinter eine längere Variante. */
+  /** Paths to the closing: the best per closing type, optionally followed by a longer variant. */
   paths: CadencePath[];
 }
 
-// ---------------------------------------------------------------- Fuge
+// ---------------------------------------------------------------- Fugue
 
-/** Note einer Stimme (Schläge). */
+/** Note of a voice (beats). */
 export interface VNote {
   pitch: number;
   start: number;
@@ -663,7 +663,7 @@ export type TransformSpec =
 export interface FugueAnswer {
   kind: "real" | "tonal";
   notes: VNote[];
-  /** Indizes der gegenüber der realen Antwort veränderten Töne */
+  /** Indices of the notes changed relative to the real answer */
   mutated: number[];
   reason: string;
 }
@@ -752,10 +752,10 @@ export interface PlacedChord extends ChordInfo {
   lengthBeats: number;
 }
 
-/** Akkord der Harmonie-Spur: mit Stimmung des Übergangs und ggf. Bruch. */
+/** Chord of the harmony track: with the mood of the transition and possibly a break. */
 export interface LineChord extends PlacedChord {
   mood: Mood;
-  /** harmonischer Bruch: „tonartfremd“ oder „Tritonus-Sprung“ */
+  /** harmonic break: "tonartfremd" or "Tritonus-Sprung" */
   bruch: string | null;
 }
 
@@ -798,18 +798,18 @@ export interface ChatMessage {
   id: number;
   from: "user" | "agent";
   text: string;
-  /** Unix-Zeit in ms */
+  /** Unix time in ms */
   time: number;
   status: "neu" | "inArbeit" | "erledigt" | null;
   replyTo: number | null;
-  /** Lage im Projekt beim Absenden (geht mit an den Agenten) */
+  /** Position in the project when sending (goes along to the agent) */
   kontext?: string;
 }
 
 export interface ChatView {
   messages: ChatMessage[];
   agentListening: boolean;
-  /** Ein Agent ist über MCP verbunden (aktive Sitzung) oder hört zu. */
+  /** An agent is connected via MCP (active session) or is listening. */
   agentConnected: boolean;
 }
 
@@ -830,7 +830,7 @@ export interface SoundReport {
 
 export interface EngineStatus {
   playing: boolean;
-  /** Ein Vorhören klingt gerade (Bibliothek, Akkorde …). */
+  /** A preview is currently sounding (library, chords …). */
   previewing?: boolean;
   recording: boolean;
   positionSecs: number;
@@ -850,7 +850,7 @@ export interface AnalyzedNote {
 export interface HitPitch {
   time: number;
   end: number;
-  /** Grundton (gebrochen) oder null = tonlos (Hi-Hat, Shaker …). */
+  /** Root (fractional) or null = unpitched (hi-hat, shaker …). */
   midi: number | null;
   clarity: number;
   strength: number;
@@ -869,7 +869,7 @@ export interface Analysis {
   sampleRate: number;
   pitch: Array<[number, number | null]>;
   notes: AnalyzedNote[];
-  /** Anschläge mit Grundton (Schlagzeug, Bass); tonlose landen in der Rhythmus-Leiste. */
+  /** Hits with a root (drums, bass); unpitched ones end up in the rhythm strip. */
   hits: HitPitch[];
   onsets: number[];
   tempoEstimate: number | null;
@@ -883,38 +883,38 @@ export interface RecordResult {
   clipId: Id;
 }
 
-/** Eingefügte Audiodatei (Drag & Drop). */
+/** Inserted audio file (drag & drop). */
 export interface ImportedAudio {
   trackId: Id;
   clipId: Id;
   name: string;
-  /** Format in Worten, z. B. „WAV 24 Bit“. */
+  /** Format in words, e.g. "WAV 24 Bit". */
   format: string;
   seconds: number;
-  /** Kanäle der Datei (Klangwelt mittelt zu mono). */
+  /** Channels of the file (Klangwelt averages to mono). */
   channels: number;
 }
 
 export interface ImportResult {
   snapshot: Snapshot;
   imported: ImportedAudio[];
-  /** Dateien, die sich nicht lesen ließen (mit Grund). */
+  /** Files that could not be read (with reason). */
   errors: string[];
 }
 
-/** Aufnahme umwandeln: erkannte Töne oder erkannte Anschläge. */
+/** Convert a recording: recognized notes or recognized hits. */
 export type ConvertTarget = "melodie" | "rhythmus";
 
 export interface ConvertResult {
   snapshot: Snapshot;
   trackId: Id;
-  /** Anzahl erzeugter Noten. */
+  /** Number of notes generated. */
   notes: number;
 }
 
 export interface QuantizeResult {
   snapshot: Snapshot;
-  /** Neue Indizes der ausgerichteten Noten (für die Auswahl). */
+  /** New indices of the aligned notes (for the selection). */
   selected: number[];
 }
 

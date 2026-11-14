@@ -1,8 +1,8 @@
-//! Kleine Einstellungen, die über Neustarts gelten (z. B. Metronom an/aus) –
-//! vom Kern sofort in `einstellungen.json` geschrieben, damit nichts verloren
-//! geht, auch wenn die App hart beendet wird. Wo die Datei liegt, bestimmt die
-//! Plattform (Desktop: lokaler App-Datenordner, mit `KLANGWELT_BIBLIOTHEK` in
-//! jenem Ordner; Browser: im Speicher des Browsers).
+//! Small settings that persist across restarts (e.g. metronome on/off) -
+//! written by the core to `einstellungen.json` immediately so that nothing is lost
+//! even if the app is killed. Where the file lives is decided by the
+//! platform (desktop: local app data folder, with `KLANGWELT_BIBLIOTHEK` in
+//! that folder; browser: in the browser's storage).
 
 use serde_json::{Map, Value};
 use std::path::Path;
@@ -15,7 +15,7 @@ pub fn read(path: &Path) -> Map<String, Value> {
     crate::vfs::read(path).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok()).and_then(|v| v.as_object().cloned()).unwrap_or_default()
 }
 
-/// Einen Wert setzen (Lesen–Ändern–Schreiben, atomar über eine Zwischendatei).
+/// Sets a value (read-modify-write, atomic via an intermediate file).
 pub fn set(path: &Path, key: &str, value: Value) -> Result<(), String> {
     let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut map = read(path);
@@ -43,7 +43,7 @@ mod tests {
         let m = read(&f);
         assert_eq!(m.get("metronom"), Some(&Value::Bool(true)));
         assert_eq!(m.get("anderes"), Some(&Value::from(3)));
-        // kaputte Datei: gilt als leer, wird beim nächsten Setzen ersetzt
+        // broken file: treated as empty, replaced on the next set
         std::fs::write(&f, b"{ kaputt").unwrap();
         assert!(read(&f).is_empty());
         set(&f, "metronom", Value::Bool(false)).unwrap();

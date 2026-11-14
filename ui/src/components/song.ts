@@ -1,8 +1,8 @@
-// Song-Fenster: Mini-Editor für den Aufbau eines Stücks. Spalten sind die
-// Abschnitte (so breit wie ihre Takte), Zeilen die Rollen; jede Zelle hat eine
-// Stufe – aus, sparsam, voll (Klick schaltet weiter, Umschalt+Klick zurück).
-// „Song erzeugen“ schreibt daraus die Spuren und ersetzt dabei die zuletzt
-// erzeugten. Vorlagen (Trance, Ambient …) sind Startpunkte.
+// Song window: mini editor for building a piece. Columns are the
+// sections (as wide as their bars), rows the roles; each cell has a
+// level – off, sparse, full (click advances, Shift+click goes back).
+// "Generate song" writes the tracks from it and replaces the most recently
+// generated ones. Templates (trance, ambient …) are starting points.
 
 import { backend } from "../bridge.js";
 import { chordsInput, chordsText, keyInput, keyText } from "../spelling.js";
@@ -37,7 +37,7 @@ export function loadTemplates(): Promise<SongPlan[]> {
 
 const clone = (p: SongPlan): SongPlan => JSON.parse(JSON.stringify(p)) as SongPlan;
 
-/** Der Plan im Editor – gemerkt über Neustarts. */
+/** The plan in the editor – remembered across restarts. */
 let plan: SongPlan | null = (() => {
   try {
     const raw = localStorage.getItem(PLAN_KEY);
@@ -50,7 +50,7 @@ function savePlan(): void {
   try {
     if (plan) localStorage.setItem(PLAN_KEY, JSON.stringify(plan));
   } catch {
-    /* ohne Speicher */
+    /* without storage */
   }
 }
 
@@ -60,12 +60,12 @@ const duration = (p: SongPlan) => {
   return `${Math.floor(secs / 60)}:${String(Math.round(secs % 60)).padStart(2, "0")} min`;
 };
 
-/** Song in die Spuren schreiben (ersetzt die zuletzt erzeugten Song-Spuren). */
+/** Write the song into the tracks (replaces the most recently generated song tracks). */
 export async function writeSong(p: SongPlan): Promise<boolean> {
   try {
     const w = await backend.songWrite(p, true);
     snapshot.value = w.snapshot;
-    // Zeitleiste auf den ganzen Song zoomen
+    // Zoom the timeline to the whole song
     const tl = document.querySelector("kw-timeline") as HTMLElement | null;
     const width = (tl?.clientWidth ?? 900) - 40;
     viewport.value = { ...viewport.peek(), pxPerBeat: Math.min(400, Math.max(1.5, width / (w.bars * 4))), scrollX: 0 };
@@ -82,7 +82,7 @@ export async function writeSong(p: SongPlan): Promise<boolean> {
   }
 }
 
-/** Menü „Mit Song starten“ (leeres Projekt): Vorlage wählen → Song erzeugen, Fenster „Song“ öffnen. */
+/** "Start with a song" menu (empty project): choose a template → generate song, open the "Song" window. */
 export function fillSongMenu(menu: HTMLElement, close: () => void): void {
   const btn = menu.parentElement?.querySelector("button");
   if (btn) {
@@ -134,7 +134,7 @@ export function songPanel(): { el: HTMLElement; update(): void } {
     render();
   };
 
-  // ------------------------------------------------------------ Darstellung
+  // ------------------------------------------------------------ Display
   const renderTop = () => {
     if (!plan) return;
     for (const b of tplBar.children) (b as HTMLElement).classList.toggle("on", (b as HTMLElement).dataset.template === plan.template);
@@ -255,7 +255,7 @@ export function songPanel(): { el: HTMLElement; update(): void } {
     markPlaying();
   };
 
-  /** Abschnitt unter der Abspielposition hervorheben. */
+  /** Highlight the section under the playhead. */
   let lastNow = -2;
   const markPlaying = () => {
     if (!plan) return;
@@ -278,7 +278,7 @@ export function songPanel(): { el: HTMLElement; update(): void } {
     markPlaying();
   });
 
-  // ------------------------------------------------------------ Aufbau
+  // ------------------------------------------------------------ Structure
   const build = () => {
     tplBar.replaceChildren(
       ...templates.map((tpl) => {
@@ -314,7 +314,7 @@ export function songPanel(): { el: HTMLElement; update(): void } {
       changed();
     });
     chordsIn.addEventListener("change", () => {
-      // getrennt durch Leerzeichen, Komma, Strich („a – F – C – G“)
+      // separated by space, comma, dash ("a – F – C – G")
       const list = chordsIn.value.split(/[\s,;|]+/).map((c) => c.trim()).filter((c) => c && !/^[-–—]+$/.test(c)).map(chordsInput);
       if (list.length) plan!.chords = list;
       changed();
@@ -365,7 +365,7 @@ export function songPanel(): { el: HTMLElement; update(): void } {
   return {
     el,
     update() {
-      // Vorlagen-Menü im leeren Projekt kann den Plan ersetzt haben
+      // the templates menu in the empty project may have replaced the plan
       if (templates.length && plan && el.isConnected) {
         const key = JSON.stringify(plan);
         if (key !== lastRendered) {

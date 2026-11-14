@@ -1,4 +1,4 @@
-// Fenster der Klangwelt und ihr Standardlayout im Docksystem.
+// Windows of Klangwelt and their default layout in the docking system.
 
 import "./components/tracks.js";
 import "./components/timeline.js";
@@ -49,7 +49,7 @@ const PANELS: PanelDef[] = [
   },
 ];
 
-/** Spuren oben, Werkzeuge darunter als Reiter; rechts Quintenzirkel und Agent-Chat. */
+/** Tracks on top, tools below as tabs; on the right circle of fifths and agent chat. */
 function defaults(): Layout {
   return {
     root: split("row", [
@@ -71,12 +71,12 @@ export function initLayout(host: HTMLElement): void {
     storageKey: "klangwelt.dock.v1",
     onVisible: (ids) => (visiblePanels.value = ids),
   });
-  // Außerhalb des Effekts ausführen, damit er nur von der Anfrage abhängt.
+  // Run outside the effect so that it depends only on the request.
   effect(() => {
     const r = panelRequest.value;
     if (r) queueMicrotask(() => dock?.show(r.id));
   });
-  // nach dem Zeigen (gleiche Reihenfolge der Mikrotasks): erst öffnen, dann vergrößern
+  // after showing (same microtask order): first open, then enlarge
   effect(() => {
     const e = panelEmphasis.value;
     queueMicrotask(() => dock?.emphasize(e?.id ?? null, { minWidth: e?.minWidth }));
@@ -88,7 +88,7 @@ export function initLayout(host: HTMLElement): void {
   });
 }
 
-/** Knopf „Fenster ▾“: Fenster ein-/ausblenden, Layout zurücksetzen. */
+/** "Windows ▾" button: show/hide windows, reset the layout. */
 export function windowMenu(): HTMLElement {
   const btn = h("button", { class: "btn", "data-help": "fenster", title: t("Show/hide windows, reset layout") }, icon("layout"), `${t("Windows")} ▾`);
   return dropdown(btn, "win-menu", (menu, close) => {

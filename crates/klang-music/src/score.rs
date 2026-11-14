@@ -1,10 +1,10 @@
-//! Partiturmodell und MusicXML-Leser (score-partwise, .musicxml/.xml/.mxl).
-//! Dazu [`load_score`] für alle Formate der Bibliothek: Humdrum `**kern`
-//! (.krn, [`crate::kern`]) und DCML-Notentabellen (.notes.tsv, [`crate::dcml`]).
+//! Score model and MusicXML reader (score-partwise, .musicxml/.xml/.mxl).
+//! Plus [`load_score`] for all formats of the library: Humdrum `**kern`
+//! (.krn, [`crate::kern`]) and DCML note tables (.notes.tsv, [`crate::dcml`]).
 //!
-//! Gelesen wird nur, was für Melodie- und Stimmenanalyse gebraucht wird:
-//! Stimmen, Tonhöhen, Dauern, Akkorde, Haltebögen, backup/forward, Tonart,
-//! Taktart, Tempo. Zeiten werden in Viertelnoten ab Stückbeginn gerechnet.
+//! Only what is needed for melody and voice analysis is read:
+//! voices, pitches, durations, chords, ties, backup/forward, key,
+//! time signature, tempo. Times are counted in quarter notes from the start of the piece.
 
 use crate::MusicError;
 use quick_xml::events::{BytesStart, Event};
@@ -24,22 +24,22 @@ pub struct Score {
     pub time_signature: Option<(u32, u32)>,
     pub tempo_bpm: Option<f64>,
     pub parts: Vec<Part>,
-    /// Akkordanalyse von Fachleuten (DCML), sortiert nach Einsatz – leer, wenn
-    /// die Quelle keine mitbringt. Grundlage für die Akkordstatistik statt der
-    /// automatischen Erkennung.
+    /// Chord analysis by experts (DCML), sorted by onset – empty if
+    /// the source provides none. Basis for the chord statistics instead of
+    /// automatic detection.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub harmony: Vec<LabeledChord>,
 }
 
-/// Ein Akkord aus einer Analyse von Fachleuten.
+/// A chord from an analysis by experts.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LabeledChord {
-    /// Einsatz und Dauer in Viertelnoten.
+    /// Onset and duration in quarter notes.
     pub onset: f64,
     pub duration: f64,
     pub chord: crate::harmony::Chord,
-    /// Bezeichnung wie in der Quelle (z. B. „V65/V“).
+    /// Label as in the source (e.g. "V65/V").
     pub label: String,
 }
 
@@ -56,16 +56,16 @@ pub struct Part {
 pub struct Voice {
     pub staff: u32,
     pub voice: u32,
-    /// Sortiert nach Einsatz, bei Akkorden höchste Note zuerst.
+    /// Sorted by onset, for chords highest note first.
     pub notes: Vec<ScoreNote>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScoreNote {
-    /// Einsatz in Viertelnoten.
+    /// Onset in quarter notes.
     pub onset: f64,
-    /// Dauer in Viertelnoten (Haltebögen bereits zusammengefasst).
+    /// Duration in quarter notes (ties already merged).
     pub duration: f64,
     pub midi: u8,
 }
@@ -85,15 +85,15 @@ impl Score {
     }
 }
 
-/// Kann [`load_score`] diese Datei lesen? (.mxl, .musicxml, .xml, .krn, .notes.tsv)
+/// Can [`load_score`] read this file? (.mxl, .musicxml, .xml, .krn, .notes.tsv)
 pub fn is_score_file(path: &Path) -> bool {
     let Some(name) = path.file_name().and_then(|n| n.to_str()) else { return false };
     let lower = name.to_ascii_lowercase();
     [".mxl", ".musicxml", ".xml", ".krn", ".notes.tsv"].iter().any(|e| lower.ends_with(e))
 }
 
-/// Lädt .musicxml, .xml, komprimiertes .mxl, Humdrum .krn oder eine
-/// DCML-Notentabelle (.notes.tsv, mit Harmonien und Metadaten daneben).
+/// Loads .musicxml, .xml, compressed .mxl, Humdrum .krn or a
+/// DCML note table (.notes.tsv, with harmonies and metadata alongside).
 pub fn load_score(path: &Path) -> Result<Score, MusicError> {
     let mut score = load_any(path)?;
     if score.composer.as_deref().is_none_or(|c| c.trim().is_empty()) {
@@ -102,9 +102,9 @@ pub fn load_score(path: &Path) -> Result<Score, MusicError> {
     Ok(score)
 }
 
-/// Name der Datei mit dem Komponisten einer Sammlung, deren Quelle ihn nicht
-/// in jeder Partitur nennt (z. B. die DCML-Bach-Choräle). Liegt im Ordner
-/// der Partitur oder bis zu zwei Ebenen darüber.
+/// Name of the file holding the composer of a collection whose source does not
+/// name him in every score (e.g. the DCML Bach chorales). Lies in the folder
+/// of the score or up to two levels above it.
 pub const COMPOSER_FILE: &str = "komponist.txt";
 
 fn composer_hint(path: &Path) -> Option<String> {
@@ -186,7 +186,7 @@ fn read_mxl_from<R: std::io::Read + std::io::Seek>(reader: R) -> Result<String, 
     Ok(decode_text(&bytes))
 }
 
-/// UTF-8 oder UTF-16 (mit BOM) → String.
+/// UTF-8 or UTF-16 (with BOM) → String.
 pub(crate) fn decode_text(bytes: &[u8]) -> String {
     let utf16 = |le: bool| {
         let units: Vec<u16> = bytes[2..]
@@ -424,7 +424,7 @@ pub fn parse_musicxml(xml: &str) -> Result<Score, MusicError> {
         }
     }
 
-    // Teilnamen aus der part-list übernehmen, Reihenfolge wie dort.
+    // Take part names from the part-list, in the same order.
     for p in &mut score.parts {
         if let Some(n) = part_names.get(&p.id) {
             p.name = n.clone();
@@ -492,8 +492,8 @@ fn end_element(name: &[u8], part: &mut Option<PartBuild>, note: &mut Option<Note
 pub(crate) mod tests {
     use super::*;
 
-    /// Baut eine einfache MusicXML-Datei: je Teil eine Stimme aus (midi, Achtel).
-    /// midi = 0 steht für eine Pause. divisions = 2 (Achtel = 1).
+    /// Builds a simple MusicXML file: one voice per part from (midi, eighth).
+    /// midi = 0 stands for a rest. divisions = 2 (eighth = 1).
     pub fn make_xml(title: &str, parts: &[(&str, &[(u8, u32)])]) -> String {
         let names = ["C", "C", "D", "D", "E", "F", "F", "G", "G", "A", "A", "B"];
         let alters = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0];

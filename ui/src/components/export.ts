@@ -1,7 +1,7 @@
-// Export-Dialog: Format (WAV, FLAC, Opus, Stems, MIDI), Bittiefe bzw.
-// Opus-Bitrate, ganzes Stück oder markierter Bereich, Dateiname. Der Dialog
-// bleibt beim Exportieren offen und zeigt danach Datei, Größe und Länge – mit
-// „Im Ordner zeigen“. Die letzte Wahl merkt sich der Browser-Speicher.
+// Export dialog: format (WAV, FLAC, Opus, stems, MIDI), bit depth or
+// Opus bitrate, whole piece or selected range, file name. The dialog
+// stays open while exporting and afterwards shows file, size and length – with
+// "Show in folder". The last choice is remembered by the browser storage.
 
 import { backend } from "../bridge.js";
 import { formatTime, h, icon } from "../dom.js";
@@ -43,7 +43,7 @@ function loadPrefs(def: number): Prefs {
     if (raw.bits === 16 || raw.bits === 24) p.bits = raw.bits;
     if (typeof raw.bitrate === "number" && raw.bitrate >= 32) p.bitrate = raw.bitrate;
   } catch {
-    /* ohne Speicher: Standardwerte */
+    /* without storage: defaults */
   }
   return p;
 }
@@ -52,7 +52,7 @@ function savePrefs(p: Prefs): void {
   try {
     localStorage.setItem(STORE, JSON.stringify(p));
   } catch {
-    /* egal */
+    /* don't care */
   }
 }
 
@@ -64,7 +64,7 @@ export function formatBytes(b: number): string {
 
 let open = false;
 
-/** Öffnet den Export-Dialog. */
+/** Opens the export dialog. */
 export async function exportDialog(): Promise<void> {
   if (open) return;
   let info: ExportInfo;
@@ -77,7 +77,7 @@ export async function exportDialog(): Promise<void> {
   open = true;
   const prefs = loadPrefs(info.defaultBitrate);
   if (prefs.format === "midi" && !info.hasNotes) prefs.format = "wav";
-  // Ohne Bitraten gibt es kein Opus (Kern ohne libopus gebaut)
+  // Without bitrates there is no Opus (core built without libopus)
   const noOpus = !info.bitrates.length;
   if (prefs.format === "opus" && noOpus) prefs.format = "wav";
   let useRange = false;
@@ -101,7 +101,7 @@ export async function exportDialog(): Promise<void> {
       e.stopPropagation();
       void run();
     } else {
-      e.stopPropagation(); // solange der Dialog offen ist: keine Tastenkürzel (Leertaste, Entf …)
+      e.stopPropagation(); // while the dialog is open: no keyboard shortcuts (space, Delete …)
     }
   };
 
@@ -122,7 +122,7 @@ export async function exportDialog(): Promise<void> {
     return b;
   });
 
-  // --- Bittiefe
+  // --- Bit depth
   const bitsSeg = h("div", { class: "seg mini ex-bits" });
   const bitButtons = ([16, 24] as const).map((b) => {
     const btn = h("button", { class: "seg-btn", "data-bits": String(b), onclick: () => { prefs.bits = b; update(); } }, t("{bits}-bit", { bits: b }));
@@ -140,7 +140,7 @@ export async function exportDialog(): Promise<void> {
   rate.addEventListener("change", () => { prefs.bitrate = Number(rate.value); update(); });
   const rateRow = h("label", { class: "ex-row" }, h("span", { class: "ex-label" }, t("Bitrate")), rate);
 
-  // --- Bereich
+  // --- Range
   const rangeBox = h("input", { type: "checkbox", class: "ex-range" });
   rangeBox.disabled = !info.range;
   rangeBox.addEventListener("change", () => { useRange = rangeBox.checked; update(); });
@@ -160,7 +160,7 @@ export async function exportDialog(): Promise<void> {
   const actions = h("div", { class: "modal-actions" }, cancel, go);
   box.append(h("div", { class: "modal-title" }, t("Export")), body, actions);
 
-  // Für die Größenschätzung: Tempo und hörbare Spuren
+  // For the size estimate: tempo and audible tracks
   const proj = snapshot.peek()?.project;
   const bpm = proj?.tempoBpm ?? 120;
   const anySolo = !!proj?.tracks.some((t) => t.solo);
@@ -244,7 +244,7 @@ export async function exportDialog(): Promise<void> {
       h("div", { class: "ex-text" }, `${what} · ${formatBytes(r.bytes)} · ${formatTime(r.seconds)}`),
       h("div", { class: "modal-hint mono ex-path" }, r.path),
     );
-    // Browser: die Datei wurde schon heruntergeladen – der Knopf lädt sie nochmal
+    // Browser: the file has already been downloaded – the button downloads it again
     const web = backend.platform === "web";
     const reveal = h("button", { class: "btn blue ex-reveal", onclick: () => { void backend.exportReveal(r.path).catch((e) => notify(errorText(e), "error")); } }, icon(web ? "download" : "folder"), web ? t("Download again") : t("Show in folder"));
     const done = h("button", { class: "btn ghost ex-close", onclick: () => close() }, t("Done"));

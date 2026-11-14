@@ -1,14 +1,14 @@
-// Docksystem für die Fenster der Oberfläche – ohne Bibliotheken.
+// Docking system for the UI's windows – without libraries.
 //
-// Das Layout ist ein Baum aus Teilungen (Zeile/Spalte mit Größenanteilen) und
-// Stapeln (Reitergruppen), dazu frei schwebende Fenster. Einen Reiter zieht man
-//  · auf eine Reiterleiste           → dort als Reiter einfügen,
-//  · auf das Ziel-Kreuz eines Stapels → daneben / darüber / darunter andocken,
-//  · auf die Marken am Rand           → über die ganze Breite/Höhe andocken,
-//  · irgendwohin sonst                → schwebendes Fenster.
-// Die leere Fläche einer Reiterleiste zieht die ganze Gruppe (bei schwebenden
-// Fenstern: das Fenster). Die Inhalte werden nur einmal erzeugt und beim Umbau
-// verschoben, sie behalten also ihren Zustand. Das Layout landet im localStorage.
+// The layout is a tree of splits (row/column with size shares) and
+// stacks (tab groups), plus free-floating windows. A tab is dragged
+//  · onto a tab bar            → inserted there as a tab,
+//  · onto the target cross of a stack → docked beside / above / below it,
+//  · onto the markers at the edge → docked across the full width/height,
+//  · anywhere else             → floating window.
+// The empty area of a tab bar drags the whole group (for floating
+// windows: the window). The contents are created only once and moved
+// on rebuild, so they keep their state. The layout ends up in localStorage.
 
 import { h, icon } from "./dom.js";
 import { t } from "./i18n.js";
@@ -17,16 +17,16 @@ export interface PanelDef {
   id: string;
   title: string;
   icon: string;
-  /** false: lässt sich nicht schließen (z. B. die Spuren). */
+  /** false: cannot be closed (e.g. the tracks). */
   closable: boolean;
-  /** Mindestgröße in px (Standard 180 × 110). */
+  /** Minimum size in px (default 180 × 110). */
   minWidth?: number;
   minHeight?: number;
-  /** Platz, wenn das Fenster in einem gespeicherten Layout noch fehlt (z. B. neu hinzugekommen). */
+  /** Place if the window is still missing from a saved layout (e.g. newly added). */
   place?: { near: string; zone: Zone };
-  /** In einem gespeicherten Layout, in dem es noch fehlt, geschlossen lassen (öffnet erst auf Wunsch). */
+  /** Keep closed in a saved layout where it is still missing (opens only on request). */
   startClosed?: boolean;
-  /** Ohne gemerkten Platz als schwebendes Fenster öffnen – Lage aus der Größe des Arbeitsbereichs. */
+  /** Without a remembered place, open as a floating window – position from the size of the workspace. */
   float?: (w: number, h: number) => Box;
   create(): HTMLElement;
 }
@@ -39,9 +39,9 @@ export type DockNode = StackNode | SplitNode;
 export interface Box { x: number; y: number; w: number; h: number }
 export interface FloatWin extends Box { stack: StackNode }
 /**
- * Wohin ein geschlossenes Fenster zurückkehrt: zu seinen Reiter-Nachbarn
- * (`with`), neben ein anderes Fenster (`near` + `zone`), an einen Rand des
- * Arbeitsbereichs (`edge`) oder als schwebendes Fenster (`float`).
+ * Where a closed window returns to: to its tab neighbors
+ * (`with`), beside another window (`near` + `zone`), at an edge of the
+ * workspace (`edge`) or as a floating window (`float`).
  */
 export interface Home { with: string[]; near?: string; zone?: Zone; edge?: Zone; float?: Box }
 export interface Layout {
@@ -69,9 +69,9 @@ interface Payload {
   panels: string[];
   active: string;
   source: StackNode;
-  /** Ein ganzes schwebendes Fenster wird verschoben. */
+  /** A whole floating window is moved. */
   win: FloatWin | null;
-  /** Die ganze Gruppe (alle Reiter des Stapels) wird gezogen. */
+  /** The whole group (all tabs of the stack) is dragged. */
   whole: boolean;
 }
 
@@ -93,7 +93,7 @@ const inside = (r: DOMRect, x: number, y: number) => x >= r.left && x < r.right 
 const num = (v: unknown, fallback: number) => (typeof v === "number" && Number.isFinite(v) ? v : fallback);
 const isZone = (v: unknown): v is Zone => typeof v === "string" && (ZONES as string[]).includes(v);
 
-/** Zieh-Geste über Fenster-Listener; Esc bricht ab (`up(null)`). */
+/** Drag gesture via window listeners; Esc cancels (`up(null)`). */
 function track(move: (e: PointerEvent) => void, up: (e: PointerEvent | null) => void): void {
   const done = (e: PointerEvent | null) => {
     window.removeEventListener("pointermove", move);
@@ -120,7 +120,7 @@ export interface DockOptions {
   panels: PanelDef[];
   defaults: () => Layout;
   storageKey: string;
-  /** Wird nach jeder Änderung mit den sichtbaren (aktiven) Fenstern aufgerufen. */
+  /** Called after every change with the visible (active) windows. */
   onVisible?: (ids: Set<string>) => void;
 }
 
@@ -132,7 +132,7 @@ export class Dock {
   readonly #defaults: () => Layout;
   readonly #key: string;
   readonly #onVisible: (ids: Set<string>) => void;
-  /** Nachbarn im Standardlayout – Rückkehrort, wenn sonst nichts bekannt ist. */
+  /** Neighbors in the default layout – return place if nothing else is known. */
   readonly #companions = new Map<string, string[]>();
   readonly #area = h("div", { class: "dk-area" });
   readonly #floatLayer = h("div", { class: "dk-floats" });
@@ -140,13 +140,13 @@ export class Dock {
   readonly #preview = h("div", { class: "dk-preview" });
   readonly #insertMark = h("div", { class: "dk-insert" });
   readonly #compass = new Map<Zone, HTMLElement>();
-  /** Stapel unter dem Ziel-Kreuz: sein Inhalt verblasst, damit das Kreuz heraussticht. */
+  /** Stack under the target cross: its content fades so that the cross stands out. */
   #under: HTMLElement | null = null;
   readonly #rootMarks = new Map<Zone, HTMLElement>();
   #layout: Layout;
   #views: StackView[] = [];
   #floatEls = new Map<FloatWin, HTMLElement>();
-  /** Vorübergehend vergrößerte Teilungen und ihre eigentlichen Größen. */
+  /** Temporarily enlarged splits and their actual sizes. */
   #emph: { split: SplitNode; sizes: number[] }[] = [];
   #badges = new Set<string>();
   #ghost: HTMLElement | null = null;
@@ -190,9 +190,9 @@ export class Dock {
     });
   }
 
-  // ------------------------------------------------------------ öffentlich
+  // ------------------------------------------------------------ public
 
-  /** Fenster zeigen: öffnen (falls geschlossen), Reiter aktivieren, nach vorn holen. */
+  /** Show window: open (if closed), activate tab, bring to front. */
   show(id: string): void {
     if (!this.#defs.has(id)) return;
     if (!this.#where(id)) {
@@ -252,12 +252,12 @@ export class Dock {
   }
 
   /**
-   * Fenster vorübergehend größer zeigen (z. B. in der Intro-Tour). Höhe: sein
-   * Platz in der nächsten senkrechten Teilung wächst auf mindestens `share` –
-   * bei kleinem Fenster mehr, damit es etwa `minHeight` px hoch wird (höchstens
-   * 80 %). Breite (nur mit `minWidth`): ebenso in der nächsten waagrechten
-   * Teilung (höchstens 65 %). null stellt die alten Größen wieder her.
-   * Gespeichert werden immer die eigentlichen Größen.
+   * Temporarily show a window larger (e.g. in the intro tour). Height: its
+   * space in the nearest vertical split grows to at least `share` –
+   * for a small window more, so that it becomes about `minHeight` px tall (at most
+   * 80 %). Width (only with `minWidth`): likewise in the nearest horizontal
+   * split (at most 65 %). null restores the old sizes.
+   * The actual sizes are always what gets saved.
    */
   emphasize(id: string | null, o: { share?: number; minHeight?: number; minWidth?: number } = {}): void {
     const old = this.#emph;
@@ -265,8 +265,8 @@ export class Dock {
     for (const e of [...old].reverse()) if (this.#contains(e.split)) e.split.sizes = e.sizes;
     const w = id ? this.#where(id) : null;
     const grow = (dir: Dir, share: number) => {
-      // nächste Teilung dieser Richtung über dem Stapel – er kann auch in einer
-      // Teilung der anderen Richtung liegen (dann wächst diese als Ganzes)
+      // nearest split of this direction above the stack – it may also sit in a
+      // split of the other direction (then that one grows as a whole)
       for (let node: DockNode | null = w && !w.win ? w.stack : null; node; ) {
         const up = this.#parentOf(node);
         if (!up) return;
@@ -297,14 +297,14 @@ export class Dock {
     return walk(this.#layout.root);
   }
 
-  /** Markierung (Punkt) am Reiter, z. B. ungelesene Agent-Antworten. */
+  /** Marker (dot) on the tab, e.g. unread agent replies. */
   setBadge(id: string, on: boolean): void {
     if (on) this.#badges.add(id);
     else this.#badges.delete(id);
     for (const t of this.#tabEls(id)) t.classList.toggle("unread", on);
   }
 
-  // ------------------------------------------------------------ Baum
+  // ------------------------------------------------------------ Tree
 
   #stacks(): Array<{ stack: StackNode; win: FloatWin | null }> {
     const out: Array<{ stack: StackNode; win: FloatWin | null }> = [];
@@ -380,7 +380,7 @@ export class Dock {
       }
       return;
     }
-    // Neben einem Stapel andocken.
+    // Dock beside a stack.
     const p = this.#parentOf(t.stack);
     if (p && p.parent.dir === dir) {
       const s = p.parent.sizes[p.index] ?? 0.5;
@@ -393,7 +393,7 @@ export class Dock {
       if (p) p.parent.children[p.index] = sp;
       else if (L.root === t.stack) L.root = sp;
       else {
-        // schwebender Stapel: dort gibt es keine Teilung – als Reiter einfügen
+        // floating stack: there is no split there – insert as a tab
         t.stack.panels.push(...panels);
         t.stack.active = active;
       }
@@ -481,14 +481,14 @@ export class Dock {
       L.floats.push({ stack: stack([id]), ...float(this.#host.clientWidth || 1200, this.#host.clientHeight || 800) });
       return;
     }
-    // Neues Fenster in einem gespeicherten Layout: an seinen vorgesehenen Platz
+    // New window in a saved layout: to its intended place
     const place = this.#defs.get(id)?.place;
     const anchor = place ? this.#where(place.near) : null;
     if (place && anchor && !anchor.win) return this.#insert([id], id, { kind: "stack", stack: anchor.stack, zone: place.zone }, size);
     this.#insert([id], id, { kind: "root", zone: "bottom" }, size);
   }
 
-  /** Platz eines einzeln angedockten Stapels: Rand des Arbeitsbereichs oder Seite neben einem Nachbarn. */
+  /** Place of a singly docked stack: edge of the workspace or side beside a neighbor. */
   #placeOf(s: StackNode): Pick<Home, "near" | "zone" | "edge"> {
     const p = this.#parentOf(s);
     if (!p) return {};
@@ -498,7 +498,7 @@ export class Dock {
     if (parent === this.#layout.root) {
       return { edge: parent.dir === "row" ? (after ? "right" : "left") : after ? "bottom" : "top" };
     }
-    // Nachbar auf der zugewandten Seite; dessen nächstliegender Stapel dient als Anker.
+    // Neighbor on the facing side; its nearest stack serves as the anchor.
     const sib = parent.children[after ? index - 1 : index + 1];
     if (!sib) return {};
     const edgeStack = (n: DockNode): StackNode => (n.kind === "stack" ? n : edgeStack(after ? n.children[n.children.length - 1]! : n.children[0]!));
@@ -507,7 +507,7 @@ export class Dock {
     return { near: anchor.active || anchor.panels[0], zone };
   }
 
-  // ------------------------------------------------------------ Laden/Speichern
+  // ------------------------------------------------------------ Load/Save
 
   #load(): Layout | null {
     let raw: unknown;
@@ -572,19 +572,19 @@ export class Dock {
   }
 
   #save(): void {
-    // vorübergehend vergrößert (emphasize): die eigentlichen Größen speichern
+    // temporarily enlarged (emphasize): save the actual sizes
     const shown = this.#emph.map((e) => e.split.sizes);
     for (const e of [...this.#emph].reverse()) e.split.sizes = e.sizes;
     try {
       localStorage.setItem(this.#key, JSON.stringify(this.#layout));
     } catch {
-      /* ohne Speicher */
+      /* without storage */
     } finally {
       this.#emph.forEach((e, i) => (e.split.sizes = shown[i]!));
     }
   }
 
-  // ------------------------------------------------------------ Darstellung
+  // ------------------------------------------------------------ Rendering
 
   #render(): void {
     this.#views = [];
@@ -688,7 +688,7 @@ export class Dock {
     this.#save();
   }
 
-  // ------------------------------------------------------------ Teiler
+  // ------------------------------------------------------------ Dividers
 
   #stackMin(s: StackNode, horiz: boolean): number {
     let m = horiz ? MIN_W : MIN_H;
@@ -749,7 +749,7 @@ export class Dock {
     return g;
   }
 
-  // ------------------------------------------------------------ schwebende Fenster
+  // ------------------------------------------------------------ floating windows
 
   #float(w: FloatWin, z: number): HTMLElement {
     const el = h("div", { class: "dk-float" }, this.#stack(w.stack, w));
@@ -823,12 +823,12 @@ export class Dock {
     return g;
   }
 
-  // ------------------------------------------------------------ Ziehen
+  // ------------------------------------------------------------ Dragging
 
   #pressTab(e: PointerEvent, s: StackNode, id: string, win: FloatWin | null): void {
     if (e.button !== 0) return;
     e.preventDefault();
-    // Einziger Reiter eines schwebenden Fensters: zieht das Fenster.
+    // Only tab of a floating window: drags the window.
     const whole = !!win && s.panels.length === 1;
     this.#press(e, { panels: whole ? [...s.panels] : [id], active: id, source: s, win: whole ? win : null, whole }, () => this.#activate(s, id));
   }
@@ -935,7 +935,7 @@ export class Dock {
     let box: Box | null = null;
     let mark: Box | null = null;
 
-    // Marken an den Rändern des Arbeitsbereichs (bzw. Mitte, wenn nichts angedockt ist)
+    // Markers at the edges of the workspace (or the center if nothing is docked)
     const cx = host.left + host.width / 2;
     const cy = host.top + host.height / 2;
     const rootAt: Record<Zone, [number, number]> = {
@@ -943,7 +943,7 @@ export class Dock {
     };
     for (const z of ZONES) this.#placeMark(this.#rootMarks.get(z)!, hasRoot ? z !== "center" : z === "center", rootAt[z]);
 
-    // Ziel-Kreuz im Stapel unter dem Zeiger
+    // Target cross in the stack under the pointer
     const v = this.#viewAt(x, y, p);
     const self = !!v && v.stack === p.source && (p.whole || p.source.panels.length === 1);
     const r = v ? v.el.getBoundingClientRect() : null;
@@ -970,7 +970,7 @@ export class Dock {
     if (!target && v && r) {
       const tr = v.tabs.getBoundingClientRect();
       if (self) {
-        // über der eigenen Reiterleiste loslassen = nichts tun
+        // releasing over its own tab bar = do nothing
         if (inside(tr, x, y)) return this.#showPreview(null, null, false);
       } else {
         for (const z of ZONES) {

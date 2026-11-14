@@ -28,7 +28,7 @@ button, input, select { font: inherit; color: inherit; }
   height: 100vh;
   display: grid;
   grid-template-rows: 64px minmax(0, 1fr);
-  /* Breite nie über das Fenster hinaus (lange Pfade, viele Knöpfe) */
+  /* Never wider than the window (long paths, many buttons) */
   grid-template-columns: minmax(0, 1fr);
 }
 #app > * { min-width: 0; }
@@ -92,7 +92,7 @@ kw-transport {
 .chip.warn .dot { background: var(--accent); }
 canvas.meter { width: 120px; height: 22px; border-radius: 4px; background: #0a0c10; border: 1px solid var(--line); }
 
-/* ---------- Arbeitsbereich ---------- */
+/* ---------- Workspace ---------- */
 .workspace { display: grid; grid-template-columns: 290px minmax(0, 1fr); min-height: 0; }
 
 kw-tracks { position: relative; overflow: hidden; background: var(--panel); border-right: 1px solid var(--line); }
@@ -109,7 +109,7 @@ kw-tracks { position: relative; overflow: hidden; background: var(--panel); bord
 .track-row.notes .keys { display: block; }
 .track-row .rhythm-label { display: none; position: absolute; left: 5px; right: 0; align-items: center; justify-content: flex-end; padding-right: 8px; font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); border-top: 1px solid var(--line); background: #0f1218; }
 .track-row.notes .rhythm-label { display: flex; }
-/* Ausdrucksspur (Anschlag, Vibrato, Helligkeit, Biegung) unter der Rhythmus-Leiste */
+/* Expression lane (velocity, vibrato, brightness, bend) below the rhythm bar */
 .track-row .expr-head { display: none; position: absolute; left: 5px; right: 0; flex-direction: column; align-items: flex-end; justify-content: center; gap: 1px; padding-right: 8px; border-top: 1px solid var(--line); background: #0c0f15; }
 .track-row.notes.expr .expr-head { display: flex; }
 .expr-select { height: 20px; padding: 0 4px; border-radius: 5px; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--accent); font-size: 11px; font-weight: 600; cursor: pointer; }
@@ -118,7 +118,7 @@ kw-tracks { position: relative; overflow: hidden; background: var(--panel); bord
 .toggle.v.x.on { color: var(--accent); border-color: rgba(255, 180, 84, .45); }
 .toggle[hidden], .btn[hidden], .slider[hidden] { display: none; }
 
-/* Ausdruck im Clip-Fenster: Vortragszeichen + Regler */
+/* Expression in the clip window: performance markings + slider */
 .expr-section { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 420px); gap: 14px 26px; margin: 4px 0 16px; padding: 12px 14px; border-radius: 10px; background: #10141b; border: 1px solid var(--line); }
 .marks-wrap { display: flex; flex-direction: column; gap: 6px; }
 .marks { display: flex; flex-wrap: wrap; gap: 5px; }
@@ -127,7 +127,7 @@ kw-tracks { position: relative; overflow: hidden; background: var(--panel); bord
 .btn.mark.sym { font-size: 15px; font-weight: 700; min-width: 30px; }
 .expr-sliders { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 18px; align-content: start; }
 @container (max-width: 720px) { .expr-section { grid-template-columns: minmax(0, 1fr); } }
-/* Splitter an der Unterkante jeder Spur: Höhe einzeln ziehen */
+/* Splitter at the bottom edge of each track: drag the height individually */
 .track-row .splitter { position: absolute; left: 0; right: 0; bottom: 0; height: 6px; cursor: row-resize; z-index: 3; }
 .track-row .splitter::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: transparent; transition: background .12s; }
 .track-row .splitter:hover::after, body[style*="row-resize"] .track-row .splitter::after { background: rgba(255, 180, 84, .55); }
@@ -135,13 +135,13 @@ kw-tracks { position: relative; overflow: hidden; background: var(--panel); bord
 .toggle.v { display: inline-flex; align-items: center; justify-content: center; padding: 0; }
 .toggle.v svg { width: 13px; height: 13px; }
 .toggle.v.on { color: var(--accent-2); border-color: rgba(110, 231, 216, .45); }
-/* Spurkopf einer Audiospur in der Tonhöhen-Ansicht: erkannte Töne in Noten umwandeln */
+/* Track header of an audio track in the pitch view: convert detected tones into notes */
 .toggle.convert { width: auto; padding: 0 6px; display: inline-flex; align-items: center; gap: 3px; color: var(--accent-2); border-color: rgba(110, 231, 216, .45); font-weight: 600; white-space: nowrap; }
 .toggle.convert svg { width: 12px; height: 12px; }
 .toggle.convert:hover { background: rgba(110, 231, 216, .12); }
-/* .toggle.v und .toggle.convert setzen display selbst – das hidden-Attribut muss trotzdem greifen */
+/* .toggle.v and .toggle.convert set display themselves – the hidden attribute must still take effect */
 .toggle.v[hidden], .toggle.convert[hidden] { display: none; }
-/* Audiodateien über einer Spur (Drag & Drop) */
+/* Audio files over a track (drag & drop) */
 .track-row.drop-target { outline: 2px dashed rgba(110, 231, 216, .85); outline-offset: -2px; }
 .track-row .inner { padding: 8px 10px 8px 12px; display: grid; grid-template-rows: 24px 1fr; gap: 6px; min-width: 0; }
 .track-top { display: flex; align-items: center; gap: 4px; min-width: 0; }
@@ -177,7 +177,7 @@ kw-timeline canvas { position: absolute; inset: 0; width: 100%; height: 100%; di
 .empty-hint { padding: 0 16px; }
 .empty-hint kbd { font-family: var(--mono); font-size: 11px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line-2); background: var(--panel-2); }
 
-/* ---------- Werkzeug-Fenster ---------- */
+/* ---------- Tool windows ---------- */
 kw-panel { display: block; min-height: 0; container-type: inline-size; }
 kw-panel > .tab-body { height: 100%; }
 .tabs { display: flex; align-items: stretch; gap: 2px; padding: 0 12px; border-bottom: 1px solid var(--line); }
@@ -211,7 +211,7 @@ kw-panel > .tab-body { height: 100%; }
 .slider .scale { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--faint); }
 .presets { display: flex; flex-wrap: wrap; gap: 6px; }
 .agent-note { padding: 10px 12px; border-radius: 8px; background: rgba(110, 231, 216, .07); border: 1px solid rgba(110, 231, 216, .2); font-size: 12px; color: #b9f3ea; user-select: text; }
-/* rechts (Meine Klänge, Vorhören, Messwerte) schmal halten – die Felder links brauchen den Platz */
+/* keep the right side (My sounds, Preview, measurements) narrow – the fields on the left need the space */
 .sound { grid-template-columns: minmax(0, 1fr) clamp(250px, 30%, 380px); align-items: start; }
 @container (max-width: 640px) { .sound { grid-template-columns: minmax(0, 1fr); } }
 .sound-main { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
@@ -224,13 +224,13 @@ kw-panel > .tab-body { height: 100%; }
 .seg-btn:hover { color: var(--text); }
 .seg-btn.on { background: rgba(255, 180, 84, .16); color: var(--accent); }
 
-/* Reiter-Markierung, Agent hört zu */
+/* Tab marker, agent is listening */
 .tab .badge { display: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent-2); margin-left: 2px; }
 .tab.unread .badge { display: inline-block; }
 .chip.agent.listening .dot { box-shadow: 0 0 0 3px rgba(110, 231, 216, .25); animation: listen 1.6s infinite; }
 @keyframes listen { 50% { box-shadow: 0 0 0 6px rgba(110, 231, 216, 0); } }
 
-/* Agent-Chat */
+/* Agent chat */
 .tab-body:has(> .chat), .tab-body:has(> .library) { overflow: hidden; padding-bottom: 10px; }
 .chat { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 8px; height: 100%; }
 .chat-status { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
@@ -238,11 +238,11 @@ kw-panel > .tab-body { height: 100%; }
 .chat-status.on { color: #b9f3ea; }
 .chat-status.on .dot { background: var(--accent-2); animation: listen 1.6s infinite; }
 .chat-status code { font-family: var(--mono); font-size: 11px; padding: 2px 6px; border-radius: 5px; background: #0a0c10; border: 1px solid var(--line); user-select: text; }
-/* Verbinden-Kasten: Befehl in eigener Zeile, Kopieren-Knopf rechts daneben */
+/* Connect box: command on its own line, copy button to its right */
 .chat-status .connect { flex: 1 1 100%; display: flex; flex-direction: column; gap: 7px; margin-top: 2px; padding: 10px 12px; border-radius: 9px; background: #10141b; border: 1px solid var(--line); }
 .connect-label { flex: 1; min-width: 0; font-size: 11.5px; color: var(--text); font-weight: 600; }
 .chat-status code.connect-cmd.prose { font-family: var(--font); font-size: 12px; }
-/* der Prompt ist lang: Absätze behalten, höchstens ein paar Zeilen hoch, Rest scrollt */
+/* the prompt is long: keep paragraphs, at most a few lines high, the rest scrolls */
 .chat-status code.connect-cmd.prompt { white-space: pre-wrap; max-height: 8em; overflow-y: auto; }
 .seg.mini { align-self: flex-start; border-radius: 7px; }
 .seg.mini .seg-btn { padding: 3px 10px; font-size: 11px; }
@@ -272,7 +272,7 @@ kw-panel > .tab-body { height: 100%; }
 .chat-input { flex: 1; resize: none; padding: 8px 10px; border-radius: 9px; background: #0a0c10; border: 1px solid var(--line-2); font: inherit; color: var(--text); }
 .chat-input:focus { outline: none; border-color: var(--accent-2); }
 
-/* Bibliothek */
+/* Library */
 .library { display: flex; flex-direction: column; gap: 8px; height: 100%; min-height: 0; }
 .library > .lib-body { flex: 1 1 auto; }
 .lib-name b { font-size: 12.5px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -289,7 +289,7 @@ kw-panel > .tab-body { height: 100%; }
 .lib-progress i { display: block; height: 100%; background: var(--accent); transition: width .2s; }
 .lib-body { display: grid; grid-template-columns: minmax(240px, 34%) minmax(0, 1fr); gap: 12px; min-height: 0; }
 .lib-results { overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding-right: 4px; }
-/* flex: none – mit overflow: hidden dürften die Zeilen sonst in der Liste bis auf null schrumpfen */
+/* flex: none – with overflow: hidden the rows could otherwise shrink down to zero in the list */
 .lib-hit { position: relative; flex: none; text-align: left; padding: 6px 9px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer; overflow: hidden; }
 .lib-hit:hover { border-color: var(--line-2); background: var(--panel-3); }
 .lib-hit .t { font-weight: 600; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -315,20 +315,20 @@ kw-panel > .tab-body { height: 100%; }
 .lib-voice.on { border-color: var(--vc); background: var(--panel-3); }
 .lib-selbar .ico { display: contents; }
 .lib-selbar .btn.playing { border-color: var(--accent); color: var(--accent); background: rgba(255, 180, 84, .1); }
-/* „Alle Stimmen“ als Kästchen: gewählt = gefüllt mit Haken */
+/* "All voices" as a checkbox: selected = filled with a check mark */
 .lib-allvoices { gap: 6px; }
 .lib-allvoices i { position: relative; width: 12px; height: 12px; border-radius: 3px; border: 1.5px solid var(--muted); }
 .lib-allvoices.on { border-color: var(--accent-2); }
 .lib-allvoices.on i { background: var(--accent-2); border-color: var(--accent-2); }
 .lib-allvoices.on i::after { content: ""; position: absolute; left: 3px; top: 0; width: 3px; height: 7px; border: solid #0d1016; border-width: 0 2px 2px 0; transform: rotate(45deg); }
 .lib-roll-wrap { position: relative; overflow-x: auto; overflow-y: hidden; border-radius: 8px; background: #0a0c10; border: 1px solid var(--line); min-height: 112px; }
-/* Cursor (ab hier wird vorgespielt) und mitlaufende Abspielposition */
+/* Cursor (playback starts here) and the moving playhead */
 .lib-cursor, .lib-playhead { position: absolute; top: 0; bottom: 0; width: 0; pointer-events: none; }
 .lib-cursor { border-left: 2px solid #a9c4ff; }
 .lib-cursor::before { content: ""; position: absolute; top: 0; left: -6px; border: 5px solid transparent; border-top: 6px solid #a9c4ff; }
 .lib-playhead { border-left: 2px solid var(--accent); box-shadow: 0 0 6px rgba(255, 180, 84, .6); }
 .lib-cursor[hidden], .lib-playhead[hidden] { display: none; }
-/* Tempo fürs Anhören und Übernehmen */
+/* Tempo for listening and importing */
 .lib-tempo { display: inline-flex; align-items: center; gap: 2px; padding: 0 4px; border-radius: 6px; border: 1px solid var(--line-2); }
 .lib-tempo .lbl { color: var(--muted); margin-right: 2px; }
 .lib-tempo .btn { min-width: 22px; padding: 0 5px; }
@@ -340,10 +340,10 @@ kw-panel > .tab-body { height: 100%; }
 .lib-ruler { position: sticky; left: 0; display: block; height: 22px; cursor: grab; touch-action: none; }
 .lib-roll { position: sticky; left: 0; display: block; height: calc(100% - 22px); }
 .lib-empty { color: var(--faint); font-size: 12px; padding: 8px 2px; }
-/* Herunterladen: Katalog */
-/* Offener Katalog bekommt das ganze Fenster (Suche und Treffer treten zurück,
-   bis er geschlossen wird) und rollt in sich – auch im kleinen Fenster bis
-   zur letzten Karte, statt unten abgeschnitten zu werden */
+/* Download: catalog */
+/* An open catalog gets the whole window (search and results step back
+   until it is closed) and scrolls within itself – even in a small window down
+   to the last card, instead of being cut off at the bottom */
 .library:has(> .lib-catalog:not([hidden])) > .lib-catalog ~ * { display: none; }
 .library:has(> .lib-manage:not([hidden])) > .lib-manage ~ * { display: none; }
 .lib-catalog, .lib-manage { flex: 1 1 auto; padding: 10px 12px 12px; border-radius: 10px; background: #10141b; border: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
@@ -388,7 +388,7 @@ kw-panel > .tab-body { height: 100%; }
 .lib-card-foot { display: flex; flex-direction: column; align-items: stretch; gap: 7px; }
 .lib-card-foot .btn { align-self: flex-end; }
 .lib-card-foot .btn.queued { border-color: rgba(255, 180, 84, .45); color: var(--accent); background: rgba(255, 180, 84, .1); }
-/* Download-Warteschlange unter der Leiste */
+/* Download queue below the bar */
 .lib-queue { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 11.5px; }
 .lib-queue[hidden] { display: none; }
 .lib-queue-label { color: var(--muted); font-weight: 600; }
@@ -405,7 +405,7 @@ kw-panel > .tab-body { height: 100%; }
 .lib-meta { font-size: 11.5px; color: var(--muted); }
 .lib-meta input { width: 14px; height: 14px; }
 
-/* Suchen | Stöbern */
+/* Search | Browse */
 .lib-mode { flex: none; }
 .lib-search, .tree-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1; min-width: 0; }
 .lib-search > svg { width: 16px; height: 16px; color: var(--muted); }
@@ -422,7 +422,7 @@ kw-panel > .tab-body { height: 100%; }
 .lib-search[hidden], .tree-bar[hidden], .lib-results[hidden], .tree[hidden], .tree-banner[hidden] { display: none; }
 .lib-left { display: grid; grid-template-rows: minmax(0, 1fr); min-height: 0; min-width: 0; }
 
-/* Ebenen-Leiste */
+/* Tree level bar (one chip per level) */
 .tree-bar-label { font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: .07em; }
 .tree-chips { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .tree-chip { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 4px 0 7px; border-radius: 999px; border: 1px solid rgba(61, 130, 240, .5); background: rgba(61, 130, 240, .12); color: #cfe0ff; font-size: 11.5px; font-weight: 600; cursor: grab; }
@@ -434,7 +434,7 @@ kw-panel > .tab-body { height: 100%; }
 .tree-sep { color: var(--faint); font-size: 12px; }
 .menu.tree-menu { top: 30px; left: 0; right: auto; min-width: 210px; max-height: 340px; overflow-y: auto; z-index: 60; }
 
-/* Baum */
+/* Tree */
 .tree { display: flex; flex-direction: column; gap: 6px; min-height: 0; overflow: hidden; }
 .tree-banner { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 7px 10px; border-radius: 8px; background: rgba(61, 130, 240, .08); border: 1px solid rgba(61, 130, 240, .3); font-size: 12px; color: #cfe0ff; }
 .tree-list { flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; }
@@ -455,7 +455,7 @@ kw-panel > .tab-body { height: 100%; }
 .tree-more { display: block; width: 100%; text-align: left; padding: 5px 8px; border: 0; background: transparent; color: #8db8ff; font-size: 11.5px; cursor: pointer; border-radius: 6px; }
 .tree-more:hover { background: var(--panel-3); }
 
-/* Menü „+ Instrument“ */
+/* "+ Instrument" menu */
 .menu { display: none; position: absolute; top: 30px; right: 8px; z-index: 30; min-width: 190px; padding: 5px; border-radius: 10px; background: #1d232f; border: 1px solid var(--line-2); box-shadow: 0 12px 30px rgba(0,0,0,.45); }
 .menu.open { display: flex; flex-direction: column; gap: 2px; }
 .menu-item { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 7px 10px; border: 0; border-radius: 7px; background: transparent; cursor: pointer; text-align: left; }
@@ -472,7 +472,7 @@ kw-panel > .tab-body { height: 100%; }
 .measure .bar { height: 6px; border-radius: 3px; background: var(--line-2); overflow: hidden; }
 .measure .bar i { display: block; height: 100%; width: 3%; border-radius: 3px; background: var(--c, var(--accent-2)); transition: width .35s ease; }
 .measure .detail { font-family: var(--mono); font-size: 11px; color: var(--faint); text-align: right; }
-/* Klang-Fenster: Felder (Charakter, Klangfarbe, Raum), Zeitverlauf, Feinschliff */
+/* Sound window: fields (character, timbre, room), over time, fine-tuning */
 .snd-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .snd-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; }
 .snd-head-right { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; }
@@ -491,7 +491,7 @@ kw-panel > .tab-body { height: 100%; }
   background: linear-gradient(to right, var(--line) 1px, transparent 1px) -1px 0 / 25% 100%, linear-gradient(to bottom, var(--line) 1px, transparent 1px) 0 -1px / 100% 25%, #0b0e14; }
 .snd-xwords { grid-column: 2; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); font-size: 10.5px; color: var(--muted); text-align: center; }
 .snd-xwords span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* Marke = nur der Punkt ist anklickbar; die Schrift lässt Klicks und Ziehen zum Feld durch */
+/* Marker = only the dot is clickable; the label lets clicks and drags through to the field */
 .snd-mark { position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--muted); font-size: 10.5px; cursor: pointer; z-index: 1; }
 .snd-mark i { position: absolute; left: 50%; top: 50%; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%; background: var(--faint); }
 .snd-mark span { position: absolute; left: 50%; bottom: calc(50% + 4px); transform: translateX(-50%); white-space: nowrap; pointer-events: none; }
@@ -516,7 +516,7 @@ kw-panel > .tab-body { height: 100%; }
 .snd-vctl input[type=range] { width: 120px; }
 .snd-vctl b { color: var(--text); font-weight: 600; min-width: 44px; }
 .snd-verlauf .hint { font-size: 11.5px; color: var(--faint); }
-/* Meine Klänge (Klang-Bibliothek) */
+/* My sounds (sound library) */
 .snd-lib-box > summary { cursor: pointer; user-select: none; font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); margin-bottom: 4px; }
 .snd-lib-box:not([open]) > summary { margin-bottom: 0; }
 .snd-lib-box > summary:hover { color: var(--muted); }
@@ -549,8 +549,8 @@ kw-panel > .tab-body { height: 100%; }
 .chip.agent { cursor: pointer; font: inherit; font-size: 11.5px; color: #b9f3ea; border-color: rgba(110, 231, 216, .35); flex: none; }
 kw-transport > .btn, kw-transport > .menu-wrap { flex: none; }
 kw-transport canvas.meter { flex: none; }
-/* Audiogeräte: Lautsprecher-Chip (Ausgabe) und Mikrofon-Knopf, je mit Gerätemenü */
-/* der Rahmen schrumpft bei voller Leiste – und der Chip mit ihm (Name mit „…“) */
+/* Audio devices: speaker chip (output) and microphone button, each with a device menu */
+/* the frame shrinks when the bar is full – and the chip with it (name with "…") */
 kw-transport > .menu-wrap.dev-out { display: flex; flex: 0 1 auto; min-width: 36px; }
 .chip.audio-out { display: flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0; max-width: 220px; cursor: pointer; font: inherit; font-size: 11.5px; }
 .chip.audio-out svg { width: 14px; height: 14px; flex: none; }
@@ -571,7 +571,7 @@ kw-transport > .menu-wrap.dev-out { display: flex; flex: 0 1 auto; min-width: 36
 .menu-hint.dev-notice { color: var(--accent); }
 @media (max-width: 1700px) {
   .brand span { display: none; } .brand { min-width: 0; }
-  /* Platz für Agent-Status und Gerätewahl: Pegel schmaler, Lautsprecher nur als Symbol (Gerät im Tooltip) */
+  /* Room for the agent status and device selection: narrower level meter, speaker only as an icon (device in the tooltip) */
   kw-transport canvas.meter { width: 72px; }
   .chip.audio-out .dev-label { display: none; }
 }
@@ -583,10 +583,10 @@ kw-transport > .menu-wrap.dev-out { display: flex; flex: 0 1 auto; min-width: 36
 @keyframes agentpulse { 0% { box-shadow: 0 0 0 0 rgba(110, 231, 216, .6); } 100% { box-shadow: 0 0 0 10px rgba(110, 231, 216, 0); } }
 .toast.agent { border-color: rgba(110, 231, 216, .55); color: #c9faf2; }
 
-/* ---------- Meldungen ---------- */
+/* ---------- Messages ---------- */
 kw-toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); pointer-events: none; z-index: 900; }
 
-/* ---------- Docksystem ---------- */
+/* ---------- Dock system ---------- */
 .dk-host { position: relative; min-height: 0; background: var(--bg); }
 .dk-area { position: absolute; inset: 5px; display: flex; }
 .dk-area > * { flex: 1 1 0; }
@@ -619,7 +619,7 @@ body.dk-dragging, body.dk-dragging * { cursor: grabbing !important; user-select:
 @keyframes dkflash { 0%, 30% { background: rgba(255, 180, 84, .28); color: var(--text); } 100% { background: transparent; } }
 .dk-fill { flex: 1; min-width: 24px; cursor: grab; }
 .dk-body { position: relative; flex: 1; min-height: 0; transition: opacity .12s, filter .12s; }
-/* beim Ziehen: Inhalt der Zielfläche verblasst, das Ziel-Kreuz sticht heraus */
+/* while dragging: the target area's content fades, the target cross stands out */
 .dk-stack.dk-under > .dk-body { opacity: .28; filter: saturate(.4) blur(.6px); }
 .dk-panel { position: absolute; inset: 0; display: flex; flex-direction: column; }
 .dk-panel[hidden] { display: none !important; }
@@ -627,7 +627,7 @@ body.dk-dragging, body.dk-dragging * { cursor: grabbing !important; user-select:
 .dk-panel > .workspace { border-radius: 0 0 8px 8px; overflow: hidden; }
 .dk-empty { display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; color: var(--faint); border: 1px dashed var(--line-2); border-radius: 9px; }
 
-/* schwebende Fenster */
+/* floating windows */
 .dk-floats { position: absolute; inset: 0; pointer-events: none; z-index: 40; }
 .dk-float { position: absolute; display: flex; pointer-events: auto; border-radius: 10px; box-shadow: 0 22px 60px rgba(0, 0, 0, .6), 0 0 0 1px rgba(255, 255, 255, .04); }
 .dk-float > .dk-stack { flex: 1; min-width: 0; min-height: 0; border-color: var(--line-2); border-radius: 10px; }
@@ -639,7 +639,7 @@ body.dk-dragging, body.dk-dragging * { cursor: grabbing !important; user-select:
 .dk-grip.lb { left: -5px; bottom: -5px; width: 16px; height: 16px; cursor: nesw-resize; }
 .dk-grip.rb { right: -5px; bottom: -5px; width: 16px; height: 16px; cursor: nwse-resize; }
 
-/* Ziehen: Vorschau, Ziel-Kreuze, Randmarken */
+/* Dragging: preview, target crosses, edge markers */
 .dk-overlay { position: fixed; inset: 0; pointer-events: none; z-index: 1000; display: none; }
 .dk-overlay.on { display: block; }
 .dk-preview { position: fixed; display: none; border-radius: 9px; background: rgba(255, 180, 84, .13); border: 2px solid rgba(255, 180, 84, .8); transition: left .07s, top .07s, width .07s, height .07s; }
@@ -661,7 +661,7 @@ body.dk-dragging, body.dk-dragging * { cursor: grabbing !important; user-select:
 .dk-ghost { position: fixed; z-index: 1001; pointer-events: none; display: flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 8px; background: #232a38; border: 1px solid rgba(255, 180, 84, .7); font-weight: 600; font-size: 12px; box-shadow: 0 10px 26px rgba(0, 0, 0, .5); white-space: nowrap; }
 .dk-ghost svg { width: 13px; height: 13px; }
 
-/* Datei: Speichern-Knopf, Menü, Projektname */
+/* File: save button, menu, project name */
 .file-controls { display: flex; align-items: center; gap: 6px; flex: none; }
 .save-btn { position: relative; }
 .save-btn .dirty-dot { position: absolute; top: 4px; right: 4px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); display: none; box-shadow: 0 0 0 2px var(--panel-2); }
@@ -671,7 +671,7 @@ body.dk-dragging, body.dk-dragging * { cursor: grabbing !important; user-select:
 .menu.file-menu { top: 38px; left: 0; right: auto; min-width: 250px; z-index: 950; }
 .file-menu .menu-item { align-items: center; }
 
-/* Dialoge */
+/* Dialogs */
 .modal-back { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; background: rgba(5, 7, 10, .55); }
 .modal { width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 80px); display: flex; flex-direction: column; gap: 12px; padding: 18px 20px 16px; border-radius: 14px; background: #171c26; border: 1px solid var(--line-2); box-shadow: 0 30px 80px rgba(0, 0, 0, .6); }
 .modal-title { font-size: 15px; font-weight: 650; }
@@ -681,7 +681,7 @@ body.dk-dragging, body.dk-dragging * { cursor: grabbing !important; user-select:
 .modal-hint { font-size: 11.5px; color: var(--faint); overflow-wrap: anywhere; }
 .modal-hint.warn { color: var(--accent); }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
-/* Export-Dialog */
+/* Export dialog */
 .export-modal .modal-body { gap: 10px; }
 .ex-format { align-self: flex-start; }
 .ex-format .seg-btn:disabled { opacity: .35; cursor: default; }
@@ -710,7 +710,7 @@ body.dk-dragging, body.dk-dragging * { cursor: grabbing !important; user-select:
 .proj-row .name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
 .proj-row .meta { font-size: 11px; color: var(--faint); white-space: nowrap; }
 
-/* Menü „Fenster“ */
+/* "Windows" menu */
 .menu-wrap { position: relative; }
 .menu.win-menu { top: 38px; right: 0; min-width: 230px; z-index: 950; }
 .menu-item.win, .win-menu .menu-item { justify-content: flex-start; align-items: center; gap: 8px; }
@@ -730,7 +730,7 @@ body.dk-dragging, body.dk-dragging * { cursor: grabbing !important; user-select:
 .menu-hint { padding: 4px 10px 6px; font-size: 11px; color: var(--faint); max-width: 230px; }
 .lang-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
 .lang-option { padding: 4px 10px 4px 6px; }
-/* Kontextmenü (Rechtsklick in der Zeitleiste) */
+/* Context menu (right-click in the timeline) */
 .menu.ctx-menu { position: fixed; top: 0; right: auto; z-index: 1000; min-width: 240px; max-width: 360px; }
 .ctx-menu .menu-item b { font-weight: 600; }
 .menu-item:disabled { opacity: .45; cursor: default; }
@@ -740,7 +740,7 @@ body.dk-dragging, body.dk-dragging * { cursor: grabbing !important; user-select:
 .ctx-chip { min-width: 30px; padding: 3px 7px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--panel-2); color: var(--muted); font-size: 11.5px; cursor: pointer; }
 .ctx-chip:hover, .ctx-chip:focus-visible { background: rgba(255, 180, 84, .14); border-color: rgba(255, 180, 84, .55); color: var(--text); }
 
-/* Schmale Fenster (z. B. seitlich angedockt): einspaltig */
+/* Narrow windows (e.g. docked at the side): single column */
 @container (max-width: 720px) {
   .sound { grid-template-columns: minmax(0, 1fr); }
   .analysis { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(200px, 1fr); }
@@ -763,10 +763,10 @@ body.dk-dragging, body.dk-dragging * { cursor: grabbing !important; user-select:
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 5px; border: 2px solid var(--panel); }
 
-/* ---------- Harmonie (Quintenzirkel) ---------- */
+/* ---------- Harmony (circle of fifths) ---------- */
 .harmony {
   display: flex; flex-direction: column; gap: 10px; container-type: inline-size;
-  /* Stimmungen der Übergänge */
+  /* Moods of the transitions */
   --mood-loesend: #5ee08f; --mood-spannend: #ffb454; --mood-ueberraschend: #ff7ac6; --mood-hell: #ffe066; --mood-dunkel: #6f9bff;
 }
 .harmony .m-loesend { --mood: var(--mood-loesend); }
@@ -786,10 +786,10 @@ body.dk-dragging, body.dk-dragging * { cursor: grabbing !important; user-select:
   .hc-left { width: 100%; max-width: 420px; justify-self: center; }
 }
 .hc-left { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-/* breit: links nur Zirkel und Legende – sie bleiben beim Scrollen stehen */
+/* wide: only the circle and legend on the left – they stay in place while scrolling */
 .harmony.hc-wide .hc-left { position: sticky; top: 0; }
 .hc-pathsec { display: flex; flex-direction: column; gap: 8px; min-width: 0; container-type: inline-size; }
-/* wenig Platz: Bezeichnung und Knöpfe oben, die Akkordfolge in voller Breite darunter */
+/* little space: label and buttons at the top, the chord progression in full width below */
 @container (max-width: 400px) {
   .hc-path { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "label btns" "seq seq"; row-gap: 3px; }
   .hc-path .hc-plabel { grid-area: label; }
@@ -917,7 +917,7 @@ body.dk-dragging, body.dk-dragging * { cursor: grabbing !important; user-select:
 .hc-cadcard .btn svg { width: 12px; height: 12px; }
 .hc-groups { margin-left: 8px; vertical-align: middle; text-transform: none; letter-spacing: 0; }
 
-/* ---------- Fuge ---------- */
+/* ---------- Fugue ---------- */
 .fugue { display: flex; flex-direction: column; gap: 10px; container-type: inline-size; }
 .fg-subject { max-width: 280px; color: var(--accent-2); }
 .fg-body { display: flex; flex-direction: column; gap: 10px; }
@@ -964,7 +964,7 @@ body.dk-dragging, body.dk-dragging * { cursor: grabbing !important; user-select:
   .fg-row .fg-roll { grid-column: 1 / -1; order: 5; }
 }
 
-/* Rhythmus-Fenster: Genre-Muster und Schritt-Raster */
+/* Rhythm window: genre patterns and step grid */
 .rh { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .rh-top { display: flex; flex-direction: column; gap: 8px; }
 .rh-genres { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -1016,7 +1016,7 @@ body.dk-dragging, body.dk-dragging * { cursor: grabbing !important; user-select:
 .rh-foot .hint { font-size: 11.5px; color: var(--faint); }
 .snd-insert { display: flex; flex-wrap: wrap; gap: 6px; }
 
-/* Menü „Mit Beat starten“ (leeres Projekt) */
+/* "Start with a beat" menu (empty project) */
 .menu.beat-menu { position: fixed; right: auto; overflow-y: auto; z-index: 950; gap: 1px; text-align: left; }
 .beat-row { display: grid; grid-template-columns: 150px minmax(0, 1fr); align-items: center; gap: 8px; padding: 4px 8px; border-radius: 7px; }
 .beat-row:hover { background: var(--panel-3); }
@@ -1026,7 +1026,7 @@ body.dk-dragging, body.dk-dragging * { cursor: grabbing !important; user-select:
 .beat-chip small { font-size: 10.5px; color: var(--faint); }
 .beat-chip:hover { border-color: rgba(255, 180, 84, .6); background: rgba(255, 180, 84, .12); }
 
-/* Song-Fenster: Mini-Editor für den Aufbau */
+/* Song window: mini editor for the structure */
 .song { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .song-top { display: flex; flex-direction: column; gap: 6px; }
 .song-tpl-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12px; }
@@ -1095,7 +1095,7 @@ body.dk-dragging, body.dk-dragging * { cursor: grabbing !important; user-select:
 .hc-follow input { width: 13px; height: 13px; }
 .hc-mode.seg.mini { align-self: center; }
 
-/* Hilfefenster (Kontexthilfe, F1 hält fest) */
+/* Help window (context help, F1 pins it) */
 kw-help { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 10px 12px 8px; gap: 6px; font-size: 12.5px; }
 .help-head { display: flex; align-items: center; gap: 7px; flex: none; }
 .help-head > svg { width: 15px; height: 15px; color: var(--accent); flex: none; }
@@ -1115,8 +1115,8 @@ kw-help.frozen { box-shadow: inset 0 0 0 1px rgba(255, 180, 84, .25); border-rad
 .help-foot { flex: none; font-size: 11px; color: var(--faint); }
 kw-help.frozen .help-foot { color: var(--accent); }
 
-/* Intro-Tour */
-.tour { position: fixed; inset: 0; z-index: 1990; } /* unter Dialogen (2000) */
+/* Intro tour */
+.tour { position: fixed; inset: 0; z-index: 1990; } /* below dialogs (2000) */
 .tour-shade { position: absolute; inset: 0; background: rgba(5, 7, 10, .62); }
 .tour-hole { position: absolute; border-radius: 10px; box-shadow: 0 0 0 9999px rgba(5, 7, 10, .62), 0 0 0 2px rgba(255, 180, 84, .9), 0 0 24px rgba(255, 180, 84, .35); transition: left .25s, top .25s, width .25s, height .25s; }
 .tour-mark { position: absolute; border: 2px dashed rgba(255, 230, 128, .85); border-radius: 7px; pointer-events: none; }

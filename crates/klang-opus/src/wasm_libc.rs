@@ -1,11 +1,11 @@
-//! Speicher für libopus im Browser (wasm32-unknown-unknown hat keine libc):
-//! `malloc` & Co. über Rusts Allokator. Mathe-Funktionen und `memcpy` & Co.
-//! bringt Rusts compiler_builtins schon mit; mehr braucht libopus nicht
-//! (build-web prüft, dass klang_web.wasm nichts von außen importiert).
+//! Memory for libopus in the browser (wasm32-unknown-unknown has no libc):
+//! `malloc` & co. via Rust's allocator. Math functions and `memcpy` & co.
+//! are already provided by Rust's compiler_builtins; libopus needs nothing more
+//! (build-web checks that klang_web.wasm imports nothing from outside).
 
 use std::alloc::{alloc, alloc_zeroed, dealloc, realloc as grow, Layout};
 
-/// Vor jedem Block steht seine Größe; 16 Byte halten die Ausrichtung für alles.
+/// Each block is preceded by its size; 16 bytes keep the alignment right for everything.
 const HEAD: usize = 16;
 
 fn layout(size: usize) -> Option<Layout> {

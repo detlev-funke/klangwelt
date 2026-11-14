@@ -1,12 +1,12 @@
-//! Klangwelt-Musikbibliothek (symbolische Musik).
+//! Klangwelt music library (symbolic music).
 //!
-//! * [`score`]    – eigenes Partiturmodell + MusicXML/MXL-Leser
-//! * [`kern`]     – Humdrum-**kern-Leser (KernScores)
-//! * [`dcml`]     – DCML-Notentabellen mit Akkordanalyse von Fachleuten
-//! * [`melody`]   – Melodielinien und transpositions-/tempo-invariante Merkmale
-//! * [`index`]    – n-Gramm-Index für die Melodiesuche („Summ mal was“)
-//! * [`theory`]   – Tonarten, Bereinigung aufgenommener Noten
-//! * [`analysis`] – Stimmfunktionen, Kadenzen, Stimmung (Heuristik, Stufe 1)
+//! * [`score`]    – own score model + MusicXML/MXL reader
+//! * [`kern`]     – Humdrum **kern reader (KernScores)
+//! * [`dcml`]     – DCML note tables with chord analysis by experts
+//! * [`melody`]   – melody lines and transposition-/tempo-invariant features
+//! * [`index`]    – n-gram index for melody search ("hum something")
+//! * [`theory`]   – keys, cleanup of recorded notes
+//! * [`analysis`] – voice functions, cadences, mood (heuristic, stage 1)
 //! * [`source`]   – byte sources: file, memory, ranges of a file on a web server
 //! * [`webpack`]  – the library package for the web (text index, facet table, chord statistics)
 //! * [`scorezip`] – the ZIP with the scores of a package (written and read entry by entry)

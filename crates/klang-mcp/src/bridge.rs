@@ -1,7 +1,7 @@
-//! stdio-Brücke zur laufenden Klangwelt-App – für MCP-Clients, die ihren
-//! Server als Prozess starten (z. B. Claude Desktop). Liest JSON-RPC-Nachrichten
-//! zeilenweise, reicht sie per HTTP an die App weiter und schreibt die
-//! Antworten zeilenweise zurück. Aufgerufen von `klangwelt --mcp`.
+//! stdio bridge to the running Klangwelt app – for MCP clients that start their
+//! server as a process (e.g. Claude Desktop). Reads JSON-RPC messages line by
+//! line, forwards them to the app over HTTP and writes the replies back line
+//! by line. Called by `klangwelt --mcp`.
 
 use crate::client::post;
 use serde_json::{json, Value};
@@ -10,12 +10,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-/// Startet die App, wenn sie nicht erreichbar ist, und wartet, bis sie antwortet.
+/// Starts the app if it is not reachable, and waits until it answers.
 pub type StartApp<'a> = &'a mut dyn FnMut() -> Result<(), String>;
 
-/// Hält den Ereignisstrom der Sitzung offen, solange die Brücke läuft – so sieht
-/// die App den Client als verbunden, bis er aufhört. Bricht der Strom ab (etwa
-/// weil die App neu startet), wird er neu geöffnet.
+/// Keeps the session's event stream open as long as the bridge runs – so the
+/// app sees the client as connected until it stops. If the stream breaks (for
+/// example because the app restarts), it is reopened.
 fn hold_while_running(url: &str, auth: Option<&str>, session: &Mutex<Option<String>>, running: &AtomicBool) {
     let current = || session.lock().map(|s| s.clone()).unwrap_or(None);
     while running.load(Ordering::SeqCst) {
@@ -27,7 +27,7 @@ fn hold_while_running(url: &str, auth: Option<&str>, session: &Mutex<Option<Stri
             let keep = || running.load(Ordering::SeqCst) && current().as_deref() == Some(s.as_str());
             let _ = crate::client::hold_stream(url, &headers, &keep);
         }
-        // Sitzung noch unbekannt oder Strom zu Ende: kurz warten
+        // session still unknown or stream ended: wait briefly
         for _ in 0..10 {
             if !running.load(Ordering::SeqCst) {
                 return;
@@ -37,8 +37,8 @@ fn hold_while_running(url: &str, auth: Option<&str>, session: &Mutex<Option<Stri
     }
 }
 
-/// Läuft, bis `input` endet. `start_app` wird höchstens einmal versucht – beim
-/// ersten Mal, dass die App nicht erreichbar ist.
+/// Runs until `input` ends. `start_app` is tried at most once – the first
+/// time the app is not reachable.
 pub fn run(url: &str, token: Option<&str>, input: impl BufRead, mut out: impl Write, mut start_app: Option<StartApp>) {
     let auth = token.map(|t| format!("Bearer {t}"));
     let mut session: Option<String> = None;
@@ -55,7 +55,7 @@ pub fn run(url: &str, token: Option<&str>, input: impl BufRead, mut out: impl Wr
 
     for line in input.lines() {
         let Ok(line) = line else { break };
-        // Manche Shells (Windows PowerShell) stellen ein BOM voran.
+        // Some shells (Windows PowerShell) prepend a BOM.
         let line = line.trim_start_matches('\u{feff}').trim();
         if line.is_empty() {
             continue;
@@ -63,7 +63,7 @@ pub fn run(url: &str, token: Option<&str>, input: impl BufRead, mut out: impl Wr
         let id = match serde_json::from_str::<Value>(line) {
             Ok(v) => v.get("id").cloned(),
             Err(e) => {
-                let msg = json!({ "jsonrpc": "2.0", "id": null, "error": { "code": -32700, "message": format!("Ungültiges JSON: {e}") } });
+                let msg = json!({ "jsonrpc": "2.0", "id": null, "error": { "code": -32700, "message": format!("Invalid JSON: {e}") } });
                 let _ = writeln!(out, "{msg}");
                 let _ = out.flush();
                 continue;
@@ -92,7 +92,7 @@ pub fn run(url: &str, token: Option<&str>, input: impl BufRead, mut out: impl Wr
         }
 
         let reply = match result {
-            // Benachrichtigungen ohne id bekommen auch im Fehlerfall keine Antwort (JSON-RPC).
+            // Notifications without an id get no reply even on failure (JSON-RPC).
             Ok(r) => {
                 if let Some(s) = r.header("mcp-session-id") {
                     session = Some(s.to_string());
@@ -106,15 +106,15 @@ pub fn run(url: &str, token: Option<&str>, input: impl BufRead, mut out: impl Wr
                     code => Some(error(id.unwrap_or(Value::Null), &format!("Klangwelt antwortet mit HTTP {code}"))),
                 }
             }
-            Err(e) => id.map(|id| error(id, &format!("Klangwelt ist nicht erreichbar ({url}): {e}. Läuft die App?"))),
+            Err(e) => id.map(|id| error(id, &format!("Klangwelt cannot be reached ({url}): {e}. Is the app running?"))),
         };
         if let Some(r) = reply {
             let _ = writeln!(out, "{}", r.trim());
             let _ = out.flush();
         }
     }
-    // Client hat aufgehört: Strom schließen und Sitzung beenden – die App zeigt
-    // dann „Kein Agent verbunden“.
+    // Client has stopped: close the stream and end the session – the app then
+    // shows "No agent connected".
     running.store(false, Ordering::SeqCst);
     if let Some(h) = holder {
         let _ = h.join();
@@ -172,7 +172,7 @@ mod tests {
 
     #[test]
     fn starts_the_app_once_when_unreachable() {
-        // freier Port ohne Server
+        // free port without a server
         let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
         let url = format!("http://127.0.0.1:{port}/mcp");
         let mut started = 0;
@@ -193,7 +193,7 @@ mod tests {
         }
     }
 
-    /// Eingabe, die Zeilen aus einem Kanal liefert und wartet, bis der Sender fällt (wie stdin).
+    /// Input that delivers lines from a channel and waits until the sender drops (like stdin).
     struct ChannelInput {
         rx: std::sync::mpsc::Receiver<String>,
         buf: Vec<u8>,
@@ -234,7 +234,7 @@ mod tests {
         };
         assert!(wait(&|| server.presence().open_connections() == 1), "Brücke hält einen Strom offen");
         assert_eq!(server.presence().connected(Duration::ZERO), 1);
-        drop(tx); // Client hört auf
+        drop(tx); // client stops
         bridge.join().unwrap();
         assert!(wait(&|| server.presence().open_connections() == 0), "Strom geschlossen");
         assert_eq!(server.presence().connected(Duration::from_secs(600)), 0, "Sitzung beendet");
@@ -248,6 +248,6 @@ mod tests {
         run(&format!("http://127.0.0.1:{port}/mcp"), None, Cursor::new("{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"ping\"}\n"), &mut out, None);
         let got = lines(out);
         assert_eq!(got[0]["id"], 7);
-        assert!(got[0]["error"]["message"].as_str().unwrap().contains("nicht erreichbar"));
+        assert!(got[0]["error"]["message"].as_str().unwrap().contains("cannot be reached"));
     }
 }

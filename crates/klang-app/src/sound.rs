@@ -1,9 +1,9 @@
-//! Soundwerkstatt: Instrumente (Zupfer, Orgel, Cembalo, Bass, Synth, Schlagzeug) mit ihren
-//! Reglern, Feldern (Charakter, Klangfarbe, Raum), Verläufen, Klangerzeugung,
-//! Vorhör-Mustern und Messwerten.
+//! Sound workshop: instruments (pluck, organ, harpsichord, bass, synth, drums) with their
+//! controls, fields (character, timbre, room), progressions, sound generation,
+//! preview patterns and measurements.
 //!
-//! Die Beschreibung der Instrumente ([`specs`]) ist die gemeinsame Quelle für
-//! Oberfläche (Regler, Presets) und Agent (MCP-Werkzeuge).
+//! The description of the instruments ([`specs`]) is the shared source for the
+//! UI (controls, presets) and the agent (MCP tools).
 
 use klang_core::{Instrument, InstrumentKind, Note};
 use klang_dsp::bass::{render_bass, BassParams};
@@ -34,7 +34,7 @@ fn ser_tr_words<S: Serializer>(words: &[&str; 4], s: S) -> Result<S::Ok, S::Erro
     s.collect_seq(words.iter().map(|w| klang_i18n::translate(w)))
 }
 
-// ---------------------------------------------------------------- Beschreibung
+// ---------------------------------------------------------------- Description
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -51,11 +51,11 @@ pub struct ParamSpec {
     pub left: &'static str,
     #[serde(serialize_with = "ser_tr")]
     pub right: &'static str,
-    /// Wert ist ein MIDI-Ton (Anzeige als Notenname).
+    /// Value is a MIDI pitch (shown as a note name).
     pub note: bool,
     #[serde(serialize_with = "ser_tr")]
     pub meaning: &'static str,
-    /// Kein eigener Regler (Feld-Stellung, Verlauf).
+    /// No control of its own (field position, progression).
     pub hidden: bool,
 }
 
@@ -93,11 +93,11 @@ pub struct InstrumentSpec {
     pub params: Vec<ParamSpec>,
     pub presets: Vec<PresetSpec>,
     pub previews: Vec<PreviewSpec>,
-    /// Tastenbelegung (nur Schlagzeug).
+    /// Key mapping (drums only).
     pub keys: Vec<KeySpec>,
-    /// Felder zum Gestalten: Charakter, Klangfarbe, Raum.
+    /// Fields for shaping: character, timbre, room.
     pub fields: Vec<FieldSpec>,
-    /// Vorlagen für den zeitlichen Verlauf (nur Synth).
+    /// Templates for the progression over time (synth only).
     pub verlauf: Vec<VerlaufSpec>,
 }
 
@@ -111,7 +111,7 @@ fn pn(key: &'static str, label: &'static str, group: &'static str, min: f32, max
     ParamSpec { key, label, group, min, max, default, left: tk!("low"), right: tk!("high"), note: true, meaning, hidden: false }
 }
 
-/// Standardwert eines Parameters laut Beschreibung des Instruments.
+/// Default value of a parameter according to the instrument's description.
 fn spec_default(kind: InstrumentKind, key: &str) -> f32 {
     spec(kind).params.iter().find(|p| p.key == key).map(|p| p.default).unwrap_or(0.0)
 }
@@ -120,24 +120,24 @@ fn pv(key: &'static str, label: &'static str) -> PreviewSpec {
     PreviewSpec { key, label }
 }
 
-// ---------------------------------------------------------------- Felder
+// ---------------------------------------------------------------- Fields
 //
-// Drei Felder zum Gestalten, jedes mit zwei Achsen und eigenen Startpunkten:
-// * **Charakter** (je Instrument, z. B. Gewicht × Komplexität) – setzt die
-//   Regler des Instruments nach einer festen Zuordnung ([`charakter_params`]).
-// * **Klangfarbe** (dunkel ↔ hell × glatt ↔ rau) = Regler `farbe`, `rauheit`.
-// * **Raum** (schmal ↔ breit × nah ↔ fern) = Regler `breite`, `raum`.
-// Jedes Feld setzt nur seine eigenen Regler – ein Startpunkt in einem Feld
-// ändert nichts an den anderen.
+// Three fields for shaping, each with two axes and its own starting points:
+// * **Character** (per instrument, e.g. weight × complexity) – sets the
+//   instrument's controls by a fixed mapping ([`charakter_params`]).
+// * **Timbre** (dark ↔ bright × smooth ↔ rough) = controls `farbe`, `rauheit`.
+// * **Room** (narrow ↔ wide × near ↔ far) = controls `breite`, `raum`.
+// Each field sets only its own controls – a starting point in one field
+// changes nothing in the others.
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AxisSpec {
-    /// Regler, den die Achse setzt (beim Charakter `charakter.x`/`charakter.y`).
+    /// Control that the axis sets (for character `charakter.x`/`charakter.y`).
     pub param: &'static str,
     #[serde(serialize_with = "ser_tr")]
     pub label: &'static str,
-    /// Vier Wörter von links nach rechts bzw. unten nach oben.
+    /// Four words, left to right and bottom to top respectively.
     #[serde(serialize_with = "ser_tr_words")]
     pub words: [&'static str; 4],
 }
@@ -153,18 +153,18 @@ pub struct FieldPreset {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FieldSpec {
-    /// „charakter“, „klangfarbe“ oder „raum“
+    /// "charakter", "klangfarbe" or "raum"
     pub key: &'static str,
     #[serde(serialize_with = "ser_tr")]
     pub name: &'static str,
     pub x: AxisSpec,
     pub y: AxisSpec,
     pub presets: Vec<FieldPreset>,
-    /// Regler, die das Feld setzt (zur Erklärung für Mensch und Agent).
+    /// Controls that the field sets (as an explanation for human and agent).
     pub sets: Vec<&'static str>,
 }
 
-/// Vorlage für den zeitlichen Verlauf (Synth).
+/// Template for the progression over time (synth).
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VerlaufSpec {
@@ -229,7 +229,7 @@ fn charakter_field(kind: InstrumentKind) -> (AxisSpec, AxisSpec, Vec<FieldPreset
     }
 }
 
-/// Grundstellung des Charakter-Punkts je Instrument (daraus die Standardwerte).
+/// Home position of the character point per instrument (the defaults derive from it).
 fn charakter_default(kind: InstrumentKind) -> (f32, f32) {
     match kind {
         InstrumentKind::Drums => (0.45, 0.4),
@@ -245,7 +245,7 @@ fn c01(v: f32) -> f32 {
     v.clamp(0.0, 1.0)
 }
 
-/// Regler des Instruments für einen Punkt im Charakter-Feld (x, y je 0…1).
+/// Controls of the instrument for a point in the character field (x, y each 0…1).
 pub fn charakter_params(kind: InstrumentKind, x: f32, y: f32) -> Vec<(&'static str, f32)> {
     let (x, y) = (c01(x), c01(y));
     match kind {
@@ -312,7 +312,7 @@ pub fn charakter_params(kind: InstrumentKind, x: f32, y: f32) -> Vec<(&'static s
     }
 }
 
-/// Die drei Felder eines Instruments.
+/// The three fields of an instrument.
 pub fn fields(kind: InstrumentKind) -> Vec<FieldSpec> {
     let (cx, cy, cp) = charakter_field(kind);
     let sets = charakter_params(kind, 0.5, 0.5).into_iter().map(|(k, _)| k).collect();
@@ -337,7 +337,7 @@ pub fn fields(kind: InstrumentKind) -> Vec<FieldSpec> {
     ]
 }
 
-/// Setzt einen Punkt in einem Feld: nur die Regler dieses Felds ändern sich.
+/// Sets a point in a field: only the controls of that field change.
 pub fn apply_field(inst: &mut Instrument, field: &str, x: f32, y: f32) -> Result<(), String> {
     let (x, y) = (c01(x), c01(y));
     match field {
@@ -361,7 +361,7 @@ pub fn apply_field(inst: &mut Instrument, field: &str, x: f32, y: f32) -> Result
     Ok(())
 }
 
-/// Startpunkt eines Felds nach Namen (ohne Groß-/Kleinschreibung).
+/// Starting point of a field by name (case-insensitive).
 pub fn field_preset(kind: InstrumentKind, field: &str, name: &str) -> Result<(f32, f32), String> {
     let f = fields(kind).into_iter().find(|f| f.key == field).ok_or_else(|| tr!("Unknown field \"{field}\"", field = field))?;
     f.presets.iter().find(|p| p.name.eq_ignore_ascii_case(name.trim())).map(|p| (p.x, p.y)).ok_or_else(|| {
@@ -380,7 +380,7 @@ fn verlauf_specs() -> Vec<VerlaufSpec> {
         .collect()
 }
 
-/// Setzt eine Verlaufsvorlage (nur Synth): Kurven und Verlaufs-Regler.
+/// Sets a progression template (synth only): curves and progression controls.
 pub fn apply_verlauf(inst: &mut Instrument, name: &str) -> Result<(), String> {
     if inst.kind != InstrumentKind::Synth {
         return Err(tr!("Envelopes are only available for the synth."));
@@ -396,7 +396,7 @@ pub fn apply_verlauf(inst: &mut Instrument, name: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Prüft gezeichnete Kurven: „laut“/„hell“, 2–24 Punkte, Zeit 0–12 s aufsteigend, Werte 0…1.
+/// Validates drawn curves: "laut"/"hell", 2–24 points, time 0–12 s ascending, values 0…1.
 pub fn validate_curves(given: &BTreeMap<String, Vec<[f32; 2]>>) -> Result<BTreeMap<String, Vec<[f32; 2]>>, String> {
     let mut out = BTreeMap::new();
     for (k, pts) in given {
@@ -421,10 +421,10 @@ pub fn validate_curves(given: &BTreeMap<String, Vec<[f32; 2]>>) -> Result<BTreeM
     Ok(out)
 }
 
-// ---------------------------------------------------------------- Instrumente
+// ---------------------------------------------------------------- Instruments
 
-/// Wärme und Schwebung (Klangformung), Farbe und Rauheit (Klangfarbe), Breite
-/// und Entfernung (Raum) – dieselben Regler überall, damit man sie sich merkt.
+/// Warmth and detuning (sound shaping), color and roughness (timbre), width
+/// and distance (room) – the same controls everywhere, so they are easy to remember.
 fn shaping(waerme: f32, schwebung: f32, raum: f32, breite: f32) -> Vec<ParamSpec> {
     let mut v = vec![
         p("waerme", tk!("Warmth"), tid!("Klangformung"), waerme, tk!("clear"), tk!("warm"), tk!("Fullness in the low mids, softer highs and gentle tube saturation")),
@@ -434,7 +434,7 @@ fn shaping(waerme: f32, schwebung: f32, raum: f32, breite: f32) -> Vec<ParamSpec
     v
 }
 
-/// Klangfarbe und Raum (auch beim Schlagzeug).
+/// Timbre and room (for drums too).
 fn colour_and_space(raum: f32, breite: f32) -> Vec<ParamSpec> {
     vec![
         p("farbe", tk!("Color"), tid!("Klangfarbe"), 0.5, tk!("dark"), tk!("bright"), tk!("Tilt filter: dark lowers the highs, bright raises them (center = neutral)")),
@@ -444,7 +444,7 @@ fn colour_and_space(raum: f32, breite: f32) -> Vec<ParamSpec> {
     ]
 }
 
-/// Unsichtbare Regler: Punkt im Charakter-Feld.
+/// Invisible controls: point in the character field.
 fn karte(kind: InstrumentKind) -> Vec<ParamSpec> {
     let (x, y) = charakter_default(kind);
     let mut a = p(CHARAKTER_X, tk!("Character (horizontal)"), tid!("Karte"), x, "", "", tk!("Horizontal position in the Character field"));
@@ -458,7 +458,7 @@ fn hidden(key: &'static str, label: &'static str, min: f32, max: f32, default: f
     ParamSpec { key, label, group: tid!("Verlauf"), min, max, default, left: "", right: "", note: false, meaning, hidden: true }
 }
 
-/// Instrument-Beschreibung ohne Felder (Regler, Vorhören, Tasten).
+/// Instrument description without fields (controls, preview, keys).
 fn base_spec(kind: InstrumentKind) -> InstrumentSpec {
     let keyboard_previews = || vec![pv("akkord", tk!("Chord")), pv("tonleiter", tk!("Scale")), pv("einzelton", tk!("Single note"))];
     let (name, description, params, previews, keys): (&'static str, &'static str, Vec<ParamSpec>, Vec<PreviewSpec>, Vec<KeySpec>) = match kind {
@@ -598,7 +598,7 @@ fn base_spec(kind: InstrumentKind) -> InstrumentSpec {
 pub fn spec(kind: InstrumentKind) -> InstrumentSpec {
     let mut s = base_spec(kind);
     s.params.extend(karte(kind));
-    // Standardwerte der Charakter-Regler = Zuordnung an der Grundstellung
+    // Defaults of the character controls = mapping at the home position
     let (dx, dy) = charakter_default(kind);
     for (k, v) in charakter_params(kind, dx, dy) {
         if let Some(ps) = s.params.iter_mut().find(|p| p.key == k) {
@@ -606,7 +606,7 @@ pub fn spec(kind: InstrumentKind) -> InstrumentSpec {
         }
     }
     s.fields = fields(kind);
-    // Voreinstellungen = Startpunkte des Charakter-Felds (mit den Werten, die sie setzen)
+    // Presets = starting points of the character field (with the values they set)
     s.presets = s.fields[0]
         .presets
         .iter()
@@ -633,7 +633,7 @@ pub fn kind_name(kind: InstrumentKind) -> String {
     klang_i18n::translate(base_spec(kind).name)
 }
 
-/// Instrument mit Standardwerten.
+/// Instrument with default values.
 pub fn default_instrument(kind: InstrumentKind) -> Instrument {
     let s = spec(kind);
     let mut inst = Instrument { kind, preset: "standard".into(), params: s.params.iter().map(|p| (p.key.to_string(), p.default)).collect(), curves: BTreeMap::new() };
@@ -645,7 +645,7 @@ pub fn default_instrument(kind: InstrumentKind) -> Instrument {
     inst
 }
 
-/// Prüft und begrenzt Werte für ein Instrument; unbekannte Namen sind ein Fehler.
+/// Validates and clamps values for an instrument; unknown names are an error.
 pub fn validate_params(kind: InstrumentKind, given: &BTreeMap<String, f32>) -> Result<BTreeMap<String, f32>, String> {
     let s = spec(kind);
     let mut out = BTreeMap::new();
@@ -761,7 +761,7 @@ pub fn synth_params(inst: Option<&Instrument>) -> SynthParams {
     }
 }
 
-/// Gezeichneter Verlauf des Synths (fehlt etwas, gilt „Anschwellen“).
+/// Drawn progression of the synth (if anything is missing, "swell" applies).
 pub fn verlauf(inst: Option<&Instrument>) -> Verlauf {
     let d = Verlauf::default();
     let curve = |k: &str, def: Vec<[f32; 2]>| inst.and_then(|i| i.curves.get(k)).filter(|c| !c.is_empty()).cloned().unwrap_or(def);
@@ -778,32 +778,32 @@ pub fn kind_of(inst: Option<&Instrument>) -> InstrumentKind {
     inst.map(|i| i.kind).unwrap_or_default()
 }
 
-/// Ob die Spur-Transposition die Tonhöhe ändert (beim Schlagzeug wählt die Taste die Trommel).
+/// Whether the track transposition changes the pitch (for drums the key selects the drum).
 pub fn transposes(inst: Option<&Instrument>) -> bool {
     kind_of(inst) != InstrumentKind::Drums
 }
 
-/// Wert eines Reglers der Klangformung (fehlt er, gilt der Standard des Instruments).
+/// Value of a sound-shaping control (if missing, the instrument's default applies).
 fn shaping_value(inst: Option<&Instrument>, key: &str) -> f32 {
     let kind = kind_of(inst);
     let has = spec(kind).params.iter().any(|p| p.key == key);
     if has { param(inst, key, spec_default(kind, key)).clamp(0.0, 1.0) } else { 0.0 }
 }
 
-/// Anteil, den die Engine in den Hall schickt (Regler „Raum“).
+/// Share that the engine sends into the reverb (control "Room").
 pub fn reverb_send(inst: Option<&Instrument>) -> f32 {
     shaping_value(inst, "raum") * 0.6
 }
 
-/// Gerenderte Spur: Mitte und – bei Breite – Seite (Stereo, siehe `PlacedClip`).
+/// Rendered track: mid and – with width – side (stereo, see `PlacedClip`).
 pub struct Rendered {
     pub mid: Vec<f32>,
     pub side: Option<Vec<f32>>,
 }
 
-/// Rendert Noten mit dem Klangerzeuger der Spur – samt Wärme, Schwebung,
-/// Rauheit, Farbe, Entfernung und Breite (den Hall fügt die Engine hinzu, siehe
-/// [`reverb_send`]). `spb` = Sekunden je Schlag (Puls des Synths).
+/// Renders notes with the track's sound generator – including warmth, detuning,
+/// roughness, color, distance and width (the reverb is added by the engine, see
+/// [`reverb_send`]). `spb` = seconds per beat (pulse of the synth).
 pub fn render_track(inst: Option<&Instrument>, notes: &[NoteSpec], total_secs: f32, sr: f32, spb: f32) -> Rendered {
     let mut out = match kind_of(inst) {
         InstrumentKind::Pluck => render_notes(notes, total_secs, sr, &pluck_params(inst)),
@@ -822,18 +822,18 @@ pub fn render_track(inst: Option<&Instrument>, notes: &[NoteSpec], total_secs: f
     Rendered { mid: out, side }
 }
 
-/// Wie [`render_track`], nur die Mitte (Mono) – für Vorhören ohne Stereo.
+/// Like [`render_track`], but only the mid (mono) – for previews without stereo.
 pub fn render_instrument(inst: Option<&Instrument>, notes: &[NoteSpec], total_secs: f32, sr: f32) -> Vec<f32> {
     render_track(inst, notes, total_secs, sr, 0.5).mid
 }
 
-/// Übersicht der Wellenform für die Oberfläche: Testklang des Instruments,
-/// je Spalte (Minimum, Maximum).
+/// Waveform overview for the UI: test sound of the instrument,
+/// per column (minimum, maximum).
 #[derive(Clone, Debug, Serialize)]
 pub struct WaveView {
     pub secs: f32,
     pub peaks: Vec<[f32; 2]>,
-    /// Ende des gehaltenen Tons (danach Ausklang), Sekunden
+    /// End of the held note (decay follows), seconds
     pub held: f32,
     pub testton: String,
 }
@@ -852,7 +852,7 @@ pub fn wave_view(inst: &Instrument, spb: f32, columns: usize) -> WaveView {
         InstrumentKind::Organ => (vec![NoteSpec::new(0.0, 1.5, 60.0, 0.85)], 2.0, 1.5, tr!("Note {note}", note = "c′")),
         _ => (vec![NoteSpec::new(0.0, 2.0, 57.0, 0.9)], 2.6, 2.0, tr!("Note {note}", note = "A3")),
     };
-    // Übersicht: halbe Abtastrate genügt (alle Filter liegen darunter)
+    // Overview: half the sample rate is enough (all filters lie below it)
     let sr = 24_000.0;
     let r = render_track(Some(inst), &notes, secs, sr, spb);
     let x = &r.mid;
@@ -865,9 +865,9 @@ pub fn wave_view(inst: &Instrument, spb: f32, columns: usize) -> WaveView {
     WaveView { secs: total, peaks, held, testton }
 }
 
-// ---------------------------------------------------------------- Muster
+// ---------------------------------------------------------------- Patterns
 
-/// Ein Takt zum Ausprobieren (Schläge relativ zum Taktanfang).
+/// One bar to try out (beats relative to the start of the bar).
 pub fn pattern(kind: InstrumentKind) -> Vec<Note> {
     let n = |pitch: u8, start: f64, len: f64, vel: u8| Note::new(pitch, start, len, vel);
     match kind {
@@ -892,14 +892,14 @@ pub fn pattern(kind: InstrumentKind) -> Vec<Note> {
             n(60, 0.0, 0.5, 100), n(64, 0.5, 0.5, 90), n(67, 1.0, 0.5, 95), n(72, 1.5, 0.5, 90),
             n(67, 2.0, 0.5, 95), n(64, 2.5, 0.5, 90), n(60, 3.0, 1.0, 100),
         ],
-        // Choralartige Kadenz in Halben (Bass, Tenor, Alt, Sopran): C – G/H
+        // Chorale-like cadence in half notes (bass, tenor, alto, soprano): C – G/H
         InstrumentKind::Organ => vec![
             n(48, 0.0, 2.0, 90), n(55, 0.0, 2.0, 85), n(64, 0.0, 2.0, 85), n(72, 0.0, 2.0, 90),
             n(47, 2.0, 2.0, 90), n(55, 2.0, 2.0, 85), n(62, 2.0, 2.0, 85), n(67, 2.0, 2.0, 90),
         ],
-        // Liegender Akkord (a-Moll)
+        // Sustained chord (A minor)
         InstrumentKind::Synth => vec![n(57, 0.0, 3.8, 85), n(60, 0.0, 3.8, 80), n(64, 0.0, 3.8, 80)],
-        // Gebrochene Akkorde wie in einem Präludium
+        // Broken chords as in a prelude
         InstrumentKind::Harpsichord => vec![
             n(48, 0.0, 2.0, 90), n(52, 0.25, 1.75, 85), n(55, 0.5, 0.25, 85), n(60, 0.75, 0.25, 85), n(64, 1.0, 0.25, 90),
             n(55, 1.25, 0.25, 85), n(60, 1.5, 0.25, 85), n(64, 1.75, 0.25, 85),
@@ -909,8 +909,8 @@ pub fn pattern(kind: InstrumentKind) -> Vec<Note> {
     }
 }
 
-/// Muster über mehrere Takte wiederholt (für neue Spuren). Der Synth spielt
-/// eine Akkordfolge (a – F – C – G), je Takt ein Akkord.
+/// Pattern repeated over several bars (for new tracks). The synth plays
+/// a chord progression (Am – F – C – G), one chord per bar.
 pub fn pattern_bars(kind: InstrumentKind, bars: usize, beats_per_bar: f64) -> Vec<Note> {
     if kind == InstrumentKind::Synth {
         const FOLGE: [[u8; 3]; 4] = [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62]];
@@ -924,7 +924,7 @@ pub fn pattern_bars(kind: InstrumentKind, bars: usize, beats_per_bar: f64) -> Ve
         .collect()
 }
 
-/// Note (Schläge) → zu spielender Ton (Sekunden) mit Ausdruck.
+/// Note (beats) → note to play (seconds) with expression.
 pub fn note_spec(n: &Note, spb: f32, shift: f32) -> NoteSpec {
     NoteSpec {
         start_secs: n.start_beats as f32 * spb,
@@ -941,7 +941,7 @@ fn notes_to_specs(notes: &[Note], spb: f32, shift: f32) -> Vec<NoteSpec> {
     notes.iter().map(|n| note_spec(n, spb, shift)).collect()
 }
 
-/// Vorhör-Muster: Noten in Sekunden und Gesamtlänge.
+/// Preview pattern: notes in seconds and total length.
 pub fn preview_notes(inst: Option<&Instrument>, key: &str, bpm: f64, shift: f32) -> (Vec<NoteSpec>, f32) {
     let spb = (60.0 / bpm) as f32;
     let one = |midi: u8, secs: f32| (vec![NoteSpec::new(0.0, secs * 0.8, midi as f32, 0.95)], secs);
@@ -993,7 +993,7 @@ pub fn preview_notes(inst: Option<&Instrument>, key: &str, bpm: f64, shift: f32)
     }
 }
 
-/// Alle Vorhör-Muster aller Instrumente (für das MCP-Schema).
+/// All preview patterns of all instruments (for the MCP schema).
 pub fn all_preview_keys() -> Vec<&'static str> {
     let mut v: Vec<&'static str> = Vec::new();
     for k in specs().iter().flat_map(|s| s.previews.iter().map(|p| p.key)) {
@@ -1004,7 +1004,7 @@ pub fn all_preview_keys() -> Vec<&'static str> {
     v
 }
 
-// ---------------------------------------------------------------- Messwerte
+// ---------------------------------------------------------------- Measurements
 
 const NOTE_NAMES: [&str; 12] = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "H"];
 
@@ -1017,7 +1017,7 @@ pub fn note_name(midi: u8) -> String {
 pub struct Messung {
     pub label: String,
     pub wort: String,
-    /// 0…1 für die Balkenanzeige
+    /// 0…1 for the bar display
     pub wert: f32,
     pub detail: String,
 }
@@ -1028,9 +1028,9 @@ pub struct SoundReport {
     #[serde(serialize_with = "ser_tr")]
     pub instrument: &'static str,
     pub params: BTreeMap<String, f32>,
-    /// Messwerte für Oberfläche und Agent (Wort + Zahl).
+    /// Measurements for UI and agent (word + number).
     pub anzeige: Vec<Messung>,
-    /// Kurzbeschreibung: Eigenschaft → Wort.
+    /// Short description: property → word.
     pub beschreibung: BTreeMap<String, String>,
     pub testton: String,
 }
@@ -1061,7 +1061,7 @@ fn hz(midi: f32) -> f32 {
 
 const SR: f32 = 48_000.0;
 
-/// Misst den Klang des Instruments an Testtönen.
+/// Measures the sound of the instrument on test notes.
 pub fn report(inst: &Instrument) -> SoundReport {
     let kind = inst.kind;
     let s = spec(kind);
@@ -1088,7 +1088,7 @@ fn report_pluck(p: &PluckParams) -> (Vec<Messung>, String) {
     let f = analyze_sound(&x, SR);
     let rel = f.centroid_hz / TEST_HZ;
     let onset_rel = f.onset_centroid_hz / TEST_HZ;
-    // Schwellen kalibriert mit `cargo test -p klang-dsp print_calibration_grid -- --ignored --nocapture`.
+    // Thresholds calibrated with `cargo test -p klang-dsp print_calibration_grid -- --ignored --nocapture`.
     (
         vec![
             messung(tk!("Brightness"), bucket(rel, [2.4, 3.6], [tk!("dark"), tk!("balanced"), tk!("bright")]), (rel - 1.8) / 5.0, format!("{:.0} Hz", f.centroid_hz)),
@@ -1197,7 +1197,7 @@ fn report_synth(p: &SynthParams, v: &Verlauf) -> (Vec<Messung>, String) {
     let x = render_synth(&notes, 3.0, SR, p, v, 0.5);
     let f = analyze_sound(&x[(1.0 * SR) as usize..(2.8 * SR) as usize], SR);
     let rel = f.centroid_hz / 220.0;
-    // Einschwingen: bis die Lautstärke-Kurve 90 % ihres Höchstwerts (in 6 s) erreicht
+    // Attack: until the volume curve reaches 90 % of its maximum (within 6 s)
     let peak = (0..600).map(|i| klang_dsp::pad::curve_at(&v.laut, i as f32 * 0.01)).fold(0.0f32, f32::max).max(1e-3);
     let rise = (0..600).map(|i| i as f32 * 0.01).find(|&t| klang_dsp::pad::curve_at(&v.laut, t) >= 0.9 * peak).unwrap_or(6.0);
     let fuelle = (p.stimmen + p.sub) / 2.0;
@@ -1224,7 +1224,7 @@ fn report_bass(p: &BassParams) -> (Vec<Messung>, String) {
     let note = NoteSpec::new(0.0, 1.5, 33.0, 0.95);
     let x = render_bass(&[note], 1.8, SR, p);
     let f = analyze_sound(&x, SR);
-    // Tonhöhe ohne Sub messen: der Sub-Oszillator verdoppelt sonst die Periode (eine Oktave tiefer).
+    // Measure pitch without sub: the sub oscillator otherwise doubles the period (an octave lower).
     let no_sub = render_bass(&[note], 1.8, SR, &BassParams { sub: 0.0, ..*p });
     let mut pitches: Vec<f32> = detect_pitch(&no_sub[..(1.4 * SR) as usize], SR, &YinConfig::default()).iter().filter_map(|f| f.freq).collect();
     let measured = if pitches.is_empty() { None } else { Some(median(&mut pitches)) };
@@ -1319,7 +1319,7 @@ mod tests {
     fn each_field_sets_only_its_own_controls() {
         for s in specs() {
             assert_eq!(s.fields.iter().map(|f| f.key).collect::<Vec<_>>(), ["charakter", "klangfarbe", "raum"], "{}", s.name);
-            // die Regler der Felder überschneiden sich nicht und gibt es alle
+            // the controls of the fields do not overlap and all of them exist
             let mut all: Vec<&str> = s.fields.iter().flat_map(|f| f.sets.iter().copied()).collect();
             let n = all.len();
             all.sort_unstable();
@@ -1349,7 +1349,7 @@ mod tests {
 
     #[test]
     fn character_axes_move_the_sound_the_named_way() {
-        // Schlagzeug: mächtig = längere, tiefere Bassdrum, weniger Klick
+        // Drums: powerful = longer, deeper bass drum, less click
         let kit = |x: f32| {
             let mut i = default_instrument(InstrumentKind::Drums);
             apply_field(&mut i, "charakter", x, 0.4).unwrap();
@@ -1359,7 +1359,7 @@ mod tests {
         assert!(maechtig.kick.laenge > knackig.kick.laenge + 0.5);
         assert!(maechtig.kick.grundton < knackig.kick.grundton - 5.0);
         assert!(maechtig.kick.klick < knackig.kick.klick);
-        // Standardwerte = Zuordnung an der Grundstellung
+        // Defaults = mapping at the home position
         let d = default_instrument(InstrumentKind::Synth);
         let (x, y) = (d.params["charakter.x"], d.params["charakter.y"]);
         for (k, v) in charakter_params(InstrumentKind::Synth, x, y) {
@@ -1382,7 +1382,7 @@ mod tests {
         assert!(render_track(Some(&narrow), &notes, 1.5, SR, 0.5).side.is_none());
         let w = wave_view(&inst, 0.5, 200);
         assert!(w.peaks.len() >= 190 && w.peaks.iter().any(|p| p[1] > 0.01), "Wellenform: {} Spalten", w.peaks.len());
-        // Kurven prüfen
+        // Check curves
         let ok = validate_curves(&[("laut".to_string(), vec![[0.0, 0.0], [1.0, 2.0], [0.5, 0.3]])].into_iter().collect()).unwrap();
         assert_eq!(ok["laut"], vec![[0.0, 0.0], [1.0, 1.0], [1.0, 0.3]], "Werte begrenzt, Zeit nie rückwärts");
         assert!(validate_curves(&[("tief".to_string(), vec![[0.0, 0.0], [1.0, 1.0]])].into_iter().collect()).is_err());

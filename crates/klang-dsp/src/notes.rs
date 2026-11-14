@@ -1,8 +1,8 @@
-//! Aus einer Tonhöhenkurve werden einzelne Noten (Segmentierung).
+//! Individual notes are derived from a pitch curve (segmentation).
 //!
-//! Vorgehen: Median-Glättung der MIDI-Kurve, dann neue Note bei
-//! Stille, bei einem Tonhöhensprung oder bei einem erkannten Einsatz
-//! (wiederholte gleiche Töne). Zu kurze Fragmente werden verworfen.
+//! Approach: median smoothing of the MIDI curve, then a new note at
+//! silence, at a pitch jump or at a detected onset
+//! (repeated identical notes). Fragments that are too short are discarded.
 
 use crate::pitch::PitchFrame;
 use crate::util::median;
@@ -14,9 +14,9 @@ pub struct NoteEvent {
     pub start: f32,
     pub end: f32,
     pub midi: u8,
-    /// Abweichung der gemessenen Tonhöhe vom gerundeten MIDI-Ton.
+    /// Deviation of the measured pitch from the rounded MIDI note.
     pub cents: f32,
-    /// 0…1, relativ zur lautesten Stelle der Aufnahme.
+    /// 0…1, relative to the loudest point of the recording.
     pub velocity: f32,
 }
 
@@ -47,7 +47,7 @@ pub fn midi_to_hz(midi: f32) -> f32 {
     440.0 * 2f32.powf((midi - 69.0) / 12.0)
 }
 
-/// `onsets` müssen aufsteigend sortiert sein (Sekunden).
+/// `onsets` must be sorted in ascending order (seconds).
 pub fn segment_notes(frames: &[PitchFrame], onsets: &[f32], cfg: &SegmentConfig) -> Vec<NoteEvent> {
     if frames.len() < 2 {
         return Vec::new();
@@ -119,9 +119,9 @@ struct Ctx<'a> {
 }
 
 impl Ctx<'_> {
-    /// Echtes Neu-Anschlagen desselben Tons: Um den Einsatz herum fällt die
-    /// Lautstärke deutlich unter den typischen Pegel der laufenden Note.
-    /// Vibrato oder Klangfarbwechsel erzeugen zwar Flux-Spitzen, aber keinen Einbruch.
+    /// True re-striking of the same note: around the onset the
+    /// volume falls clearly below the typical level of the running note.
+    /// Vibrato or timbre changes do produce flux peaks, but no dip.
     fn has_dip(&self, seg: &[usize], i: usize) -> bool {
         let k = ((0.04 / self.hop).ceil() as usize).max(1);
         let lo = i.saturating_sub(k);
@@ -187,7 +187,7 @@ mod tests {
     #[test]
     fn onsets_split_repeated_notes_only_when_reattacked() {
         let sr = 44_100.0;
-        // Gleicher Ton, bei 0,5 s kurz leiser (neu angeschlagen).
+        // Same note, briefly quieter at 0.5 s (re-struck).
         let mut x = sine(330.0, 1.0, sr, 0.4);
         for (i, v) in x.iter_mut().enumerate() {
             let t = i as f32 / sr;
@@ -199,7 +199,7 @@ mod tests {
         assert_eq!(notes.len(), 2, "{notes:?}");
         assert!(notes.iter().all(|n| n.midi == 64));
 
-        // Ohne Lautstärke-Einbruch (z. B. Vibrato-Spitze im Flux) bleibt es eine Note.
+        // Without a volume dip (e.g. vibrato peak in the flux) it stays one note.
         let steady = sine(330.0, 1.0, sr, 0.4);
         let frames = detect_pitch(&steady, sr, &YinConfig::default());
         assert_eq!(segment_notes(&frames, &[0.5], &SegmentConfig::default()).len(), 1);

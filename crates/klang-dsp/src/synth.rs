@@ -1,22 +1,22 @@
-//! Klangerzeugung. Keimzelle der Soundwerkstatt: Parameter tragen
-//! sprechende Bedeutungen (Helligkeit, Abklingen, Körper, Anschlag), damit
-//! Menschen und ein Agent sie über Klangbeschreibungen steuern können.
+//! Sound generation. Germ cell of the sound workshop: parameters carry
+//! expressive meanings (brightness, decay, body, velocity) so that
+//! people and an agent can control them through sound descriptions.
 
 use crate::notes::midi_to_hz;
 use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
 
-/// Zupf-Instrument (erweitertes Karplus-Strong). Alle Werte 0…1.
+/// Plucked instrument (extended Karplus-Strong). All values 0…1.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluckParams {
-    /// dunkel ↔ hell (Dämpfung hoher Teiltöne in der Saite)
+    /// dark ↔ bright (damping of high partials in the string)
     pub brightness: f32,
-    /// kurz ↔ lang ausklingend
+    /// short ↔ long decay
     pub decay: f32,
-    /// dünn ↔ warm/voll (Korpusresonanzen)
+    /// thin ↔ warm/full (body resonances)
     pub body: f32,
-    /// weich ↔ hart angeschlagen (Spektrum der Anregung)
+    /// soft ↔ hard strike (spectrum of the excitation)
     pub attack: f32,
 }
 
@@ -38,7 +38,7 @@ impl Rng {
     }
 }
 
-/// Biquad (RBJ-Cookbook), transponierte Direktform II.
+/// Biquad (RBJ cookbook), transposed direct form II.
 #[derive(Clone, Copy)]
 pub(crate) struct Biquad {
     b0: f32,
@@ -71,7 +71,7 @@ impl Biquad {
         let c = w0.cos();
         Self::new((1.0 - c) / 2.0, 1.0 - c, (1.0 - c) / 2.0, 1.0 + alpha, -2.0 * c, 1.0 - alpha)
     }
-    /// Kuhschwanz-Filter für die Tiefen (`db` Anhebung/Absenkung unterhalb `f0`).
+    /// Low shelf filter (`db` boost/cut below `f0`).
     pub(crate) fn lowshelf(f0: f32, db: f32, sr: f32) -> Self {
         let a = 10f32.powf(db / 40.0);
         let w0 = 2.0 * PI * f0 / sr;
@@ -86,7 +86,7 @@ impl Biquad {
             (a + 1.0) + (a - 1.0) * c - sq,
         )
     }
-    /// Kuhschwanz-Filter für die Höhen (`db` oberhalb `f0`).
+    /// High shelf filter (`db` above `f0`).
     pub(crate) fn highshelf(f0: f32, db: f32, sr: f32) -> Self {
         let a = 10f32.powf(db / 40.0);
         let w0 = 2.0 * PI * f0 / sr;
@@ -101,7 +101,7 @@ impl Biquad {
             (a + 1.0) - (a - 1.0) * c - sq,
         )
     }
-    /// Glocke: `db` um `f0` mit Güte `q`.
+    /// Bell: `db` around `f0` with quality `q`.
     pub(crate) fn peaking(f0: f32, q: f32, db: f32, sr: f32) -> Self {
         let a = 10f32.powf(db / 40.0);
         let w0 = 2.0 * PI * f0 / sr;
@@ -117,20 +117,20 @@ impl Biquad {
     }
 }
 
-/// Ein gezupfter Ton. Länge = `duration_secs` plus kurzes Ausklingen.
+/// A plucked note. Length = `duration_secs` plus a short decay.
 pub fn pluck(freq: f32, duration_secs: f32, velocity: f32, sr: f32, p: &PluckParams, seed: u32) -> Vec<f32> {
     pluck_note(&NoteSpec::new(0.0, duration_secs, 69.0 + 12.0 * (freq / 440.0).log2(), velocity), sr, p, seed)
 }
 
-/// Eine schwingende Saite (Karplus-Strong): Verzögerungsleitung mit
-/// Allpass-Feinstimmung und Schleifenfilter.
+/// A vibrating string (Karplus-Strong): delay line with
+/// all-pass fine tuning and loop filter.
 struct Saite {
     line: Vec<f32>,
     w: usize,
-    /// Schleifenfilter: Gewicht des vorigen Samples (Helligkeit).
+    /// Loop filter: weight of the previous sample (brightness).
     s: f32,
     prev: f32,
-    /// Allpass für den Bruchteil der Periode (genaue Stimmung ohne Höhenverlust).
+    /// All-pass for the fraction of the period (accurate tuning without loss of highs).
     ap_x1: f32,
     ap_y1: f32,
     len: usize,
@@ -147,9 +147,9 @@ impl Saite {
         Self { line, w: excitation.len().min(size) % size, s, prev: 0.0, ap_x1: 0.0, ap_y1: 0.0, len: 2, ap: 0.0, g: 0.0 }
     }
 
-    /// Periode (Samples, inkl. Verzögerung des Schleifenfilters) und Abklingzeit setzen.
+    /// Sets the period (samples, incl. delay of the loop filter) and decay time.
     fn tune(&mut self, period_total: f32, t60: f32, freq: f32) {
-        // Schleifenfilter verzögert um s; Rest: ganze Samples + Bruchteil im Bereich 0,5…1,5 (stabiler Allpass)
+        // Loop filter delays by s; remainder: whole samples + fraction in the range 0.5…1.5 (stable all-pass)
         let p = (period_total - self.s).clamp(2.5, (self.line.len() - 3) as f32);
         let len = (p - 0.5).floor().max(1.0);
         let d = p - len;
@@ -162,7 +162,7 @@ impl Saite {
     fn step(&mut self) -> f32 {
         let size = self.line.len();
         let x = self.line[(self.w + size - self.len) % size];
-        // Allpass erster Ordnung (Thiran)
+        // first-order all-pass (Thiran)
         let y = self.ap * x + self.ap_x1 - self.ap * self.ap_y1;
         self.ap_x1 = x;
         self.ap_y1 = y;
@@ -174,13 +174,13 @@ impl Saite {
     }
 }
 
-/// Ein gezupfter Ton mit Ausdruck: Anschlag (Lautstärke und Härte), Helligkeit,
-/// Vibrato und Anschleifen (Verzögerungsleitung mit veränderlicher Länge).
+/// A plucked note with expression: velocity (volume and hardness), brightness,
+/// vibrato and scoop-in (delay line with variable length).
 ///
-/// Für einen natürlichen Klang: Anrissposition (Kammfilter auf der Anregung –
-/// nah am Steg klingt es heller und dünner), zwei minimal verschieden
-/// gestimmte Schwingungsebenen der Saite (leichtes Schweben statt starrem
-/// Ton) und ein Korpus mit mehreren Resonanzen.
+/// For a natural sound: pluck position (comb filter on the excitation –
+/// near the bridge it sounds brighter and thinner), two slightly detuned
+/// planes of vibration of the string (a gentle beating instead of a rigid
+/// tone) and a body with several resonances.
 pub fn pluck_note(n: &NoteSpec, sr: f32, p: &PluckParams, seed: u32) -> Vec<f32> {
     let release = 0.08;
     let duration_secs = n.dur_secs;
@@ -190,20 +190,20 @@ pub fn pluck_note(n: &NoteSpec, sr: f32, p: &PluckParams, seed: u32) -> Vec<f32>
     let freq_of = |offset: f32| (midi_to_hz(n.midi + offset)).clamp(20.0, sr * 0.45);
     let freq = freq_of(n.pitch_offset(0.0));
 
-    // Schleifenfilter: Mittelwert aus zwei Samples, gewichtet nach Helligkeit;
-    // hohe Töne etwas heller, sonst klingen sie stumpf
+    // Loop filter: average of two samples, weighted by brightness;
+    // high notes somewhat brighter, otherwise they sound dull
     let register = ((n.midi - 60.0) / 36.0).clamp(-0.5, 1.0);
     let s = (0.5 - 0.45 * (p.brightness + 0.45 * n.brightness + 0.12 * register).clamp(0.0, 1.0)).max(0.03);
     let t60 = 0.25 + 7.0 * p.decay.clamp(0.0, 1.0).powf(1.5);
 
-    // Puffer für die längste Periode (tiefster Ton beim Anschleifen/Vibrato).
+    // Buffer for the longest period (lowest note during scoop-in/vibrato).
     let longest = sr / freq_of(n.lowest_offset().min(n.pitch_offset(0.0)));
     let size = longest.ceil() as usize + 4;
     let period0 = sr / freq;
 
-    // Anregung: Auslenkung der Saite beim Anreißen – ein Dreieck mit der Spitze an der
-    // Anrissstelle (harter Anschlag nah am Steg, weicher weiter zur Mitte), dazu
-    // gefiltertes Rauschen für Härte und Lebendigkeit (fester = mehr Obertöne)
+    // Excitation: displacement of the string when plucked – a triangle with its peak at the
+    // pluck point (hard strike near the bridge, softer further toward the middle), plus
+    // filtered noise for hardness and liveliness (harder = more overtones)
     let mut rng = Rng(seed.wrapping_mul(2_654_435_761) | 1);
     let hardness = (p.attack + 0.3 * n.brightness + 0.25 * (velocity - 0.8)).clamp(0.0, 1.0);
     let a = 0.15 + 0.85 * hardness;
@@ -229,14 +229,14 @@ pub fn pluck_note(n: &NoteSpec, sr: f32, p: &PluckParams, seed: u32) -> Vec<f32>
     let peak = plucked.iter().fold(0.0f32, |m, v| m.max((v - mean).abs())).max(1e-6);
     let plucked: Vec<f32> = plucked.iter().map(|v| (v - mean) / peak).collect();
 
-    // zwei Schwingungsebenen: die zweite um gut einen Cent höher, klingt etwas kürzer
+    // two planes of vibration: the second a good cent higher, sounds slightly shorter
     let detune = 1.0 + 0.0007 + 0.0004 * (seed % 7) as f32 / 7.0;
     let mut a_str = Saite::new(&plucked, size, s);
     let mut b_str = Saite::new(&plucked, size, s);
     a_str.tune(period0, t60, freq);
     b_str.tune(period0 / detune, t60 * 0.8, freq * detune);
 
-    // Korpus: Luftresonanz, zwei Holzresonanzen, etwas „Luft“ in den Höhen
+    // Body: air resonance, two wood resonances, a little "air" in the highs
     let body = p.body.clamp(0.0, 1.0);
     let mut res = [
         (Biquad::bandpass(110.0, 1.3, sr), 1.0f32),
@@ -270,7 +270,7 @@ pub fn pluck_note(n: &NoteSpec, sr: f32, p: &PluckParams, seed: u32) -> Vec<f32>
     out
 }
 
-/// Bassdrum: abfallende Sinus-Frequenz plus kurzer Klick.
+/// Bass drum: falling sine frequency plus a short click.
 pub fn kick(sr: f32) -> Vec<f32> {
     let n = (0.45 * sr) as usize;
     let mut phase = 0.0f32;
@@ -287,7 +287,7 @@ pub fn kick(sr: f32) -> Vec<f32> {
         .collect()
 }
 
-/// Snare: Ton bei 185 Hz plus bandpassgefiltertes Rauschen.
+/// Snare: tone at 185 Hz plus band-pass-filtered noise.
 pub fn snare(sr: f32, seed: u32) -> Vec<f32> {
     let n = (0.25 * sr) as usize;
     let mut rng = Rng(seed | 1);
@@ -302,7 +302,7 @@ pub fn snare(sr: f32, seed: u32) -> Vec<f32> {
         .collect()
 }
 
-/// Hi-Hat: hochpassgefiltertes Rauschen, `open` klingt länger.
+/// Hi-hat: high-pass-filtered noise, `open` sounds longer.
 pub fn hat(sr: f32, seed: u32, open: bool) -> Vec<f32> {
     let dur = if open { 0.3 } else { 0.07 };
     let decay = if open { 12.0 } else { 60.0 };
@@ -317,23 +317,23 @@ pub fn hat(sr: f32, seed: u32, open: bool) -> Vec<f32> {
         .collect()
 }
 
-/// Vibrato-Tempo in Hz (typisch für Gesang und Streicher).
+/// Vibrato rate in Hz (typical for singing and strings).
 pub const VIBRATO_HZ: f32 = 5.5;
 
-/// Ein zu spielender Ton mit Ausdruck.
+/// A note to be played, with expression.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct NoteSpec {
     pub start_secs: f32,
     pub dur_secs: f32,
-    /// Darf gebrochen sein (z. B. nach Transposition um Cent-Beträge).
+    /// May be fractional (e.g. after transposing by cent amounts).
     pub midi: f32,
-    /// Anschlagstärke 0…1.
+    /// Velocity 0…1.
     pub velocity: f32,
-    /// Vibrato-Tiefe in Halbtönen (0…1).
+    /// Vibrato depth in semitones (0…1).
     pub vibrato: f32,
-    /// Helligkeit relativ zum Instrument (−1…+1).
+    /// Brightness relative to the instrument (−1…+1).
     pub brightness: f32,
-    /// Anschleifen: Startversatz in Halbtönen, gleitet zum Ton (−12…+12).
+    /// Scoop-in: start offset in semitones, glides to the note (−12…+12).
     pub bend: f32,
 }
 
@@ -342,14 +342,14 @@ impl NoteSpec {
         Self { start_secs, dur_secs, midi, velocity, ..Default::default() }
     }
 
-    /// Ändert sich die Tonhöhe während der Note (Vibrato, Anschleifen)?
+    /// Does the pitch change during the note (vibrato, scoop-in)?
     pub fn modulated(&self) -> bool {
         self.vibrato != 0.0 || self.bend != 0.0
     }
 
-    /// Tonhöhenversatz in Halbtönen `t` Sekunden nach Notenbeginn.
-    /// Anschleifen: vom Versatz weich (quadratisch) in den Ton gleiten.
-    /// Vibrato: setzt verzögert ein und schwillt an – wie bei Sängern.
+    /// Pitch offset in semitones `t` seconds after the note starts.
+    /// Scoop-in: glides smoothly (quadratically) from the offset into the note.
+    /// Vibrato: starts delayed and swells – like singers do.
     pub fn pitch_offset(&self, t: f32) -> f32 {
         let dur = self.dur_secs.max(0.05);
         let mut off = 0.0;
@@ -367,13 +367,13 @@ impl NoteSpec {
         off
     }
 
-    /// Tiefster Versatz, den die Note erreicht (für Puffergrößen).
+    /// Lowest offset the note reaches (for buffer sizes).
     pub fn lowest_offset(&self) -> f32 {
         self.bend.min(0.0) - self.vibrato.abs()
     }
 }
 
-/// Rendert eine Notenliste mit dem Zupf-Instrument in einen Mono-Puffer.
+/// Renders a note list with the plucked instrument into a mono buffer.
 pub fn render_notes(notes: &[NoteSpec], total_secs: f32, sr: f32, p: &PluckParams) -> Vec<f32> {
     let mut out = vec![0f32; ((total_secs.max(0.0) + 0.1) * sr) as usize];
     for (i, n) in notes.iter().enumerate() {
@@ -392,7 +392,7 @@ pub fn render_notes(notes: &[NoteSpec], total_secs: f32, sr: f32, p: &PluckParam
     out
 }
 
-/// Mischt `src` mit Verstärkung `gain` ab Position `at` in `dst` (ohne Überlauf).
+/// Mixes `src` with gain `gain` at position `at` into `dst` (without overflow).
 pub fn mix_into(dst: &mut [f32], src: &[f32], at: usize, gain: f32) {
     for (j, v) in src.iter().enumerate() {
         match dst.get_mut(at + j) {
@@ -429,17 +429,17 @@ mod tests {
         let freqs = |x: &[f32], a: f32, b: f32| -> Vec<f32> {
             detect_pitch(&x[(a * sr) as usize..(b * sr) as usize], sr, &YinConfig::default()).iter().filter_map(|q| q.freq).collect()
         };
-        // ohne Ausdruck unverändert gestimmt
+        // without expression, tuned unchanged
         let plain = pluck_note(&NoteSpec::new(0.0, 1.2, 57.0, 0.9), sr, &p, 3);
         let m = median(&mut freqs(&plain, 0.1, 1.0));
         assert!((m - 220.0).abs() < 3.0, "{m}");
-        // Anschleifen von unten: Anfang deutlich tiefer, Ende auf 220 Hz
+        // Scoop-in from below: start clearly lower, end at 220 Hz
         let bent = pluck_note(&NoteSpec { bend: -4.0, ..NoteSpec::new(0.0, 1.2, 57.0, 0.9) }, sr, &p, 3);
         let early = median(&mut freqs(&bent, 0.0, 0.07));
         let late = median(&mut freqs(&bent, 0.5, 1.0));
         assert!(early < 205.0, "Anfang {early}");
         assert!((late - 220.0).abs() < 3.0, "Ende {late}");
-        // Vibrato: Tonhöhe schwankt um den Ton
+        // Vibrato: pitch wavers around the note
         let vib = pluck_note(&NoteSpec { vibrato: 0.5, ..NoteSpec::new(0.0, 1.5, 57.0, 0.9) }, sr, &p, 3);
         let f = freqs(&vib, 0.5, 1.4);
         let (lo, hi) = f.iter().fold((f32::MAX, 0.0f32), |(l, h), &v| (l.min(v), h.max(v)));

@@ -1,13 +1,13 @@
-//! Stereo-Hall für den Raum-Anteil der Spuren (nach dem bekannten Aufbau aus
-//! acht parallelen Kammfiltern mit gedämpfter Rückkopplung und vier Allpässen
-//! je Kanal; der rechte Kanal ist leicht verstimmt, das macht die Breite).
+//! Stereo reverb for the room portion of the tracks (after the well-known design of
+//! eight parallel comb filters with damped feedback and four all-passes
+//! per channel; the right channel is slightly detuned, which creates the width).
 //!
-//! Alles wird beim Anlegen reserviert – `process` allokiert nichts und darf im
-//! Audio-Callback laufen.
+//! Everything is allocated on creation – `process` allocates nothing and may run
+//! in the audio callback.
 
 const COMBS: [usize; 8] = [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617];
 const ALLPASSES: [usize; 4] = [556, 441, 341, 225];
-/// Versatz des rechten Kanals (Samples bei 44,1 kHz).
+/// Offset of the right channel (samples at 44.1 kHz).
 const SPREAD: usize = 23;
 
 struct Comb {
@@ -25,7 +25,7 @@ impl Comb {
     fn process(&mut self, x: f32, feedback: f32, damp: f32) -> f32 {
         let out = self.buf[self.pos];
         self.store = out * (1.0 - damp) + self.store * damp;
-        // sehr kleine Werte nullen: denormale Zahlen bremsen die CPU im Ausklang
+        // zero out very small values: denormal numbers slow the CPU down in the decay
         if self.store.abs() < 1e-18 {
             self.store = 0.0;
         }
@@ -67,7 +67,7 @@ pub struct Reverb {
     allpasses: [Vec<Allpass>; 2],
     predelay: Vec<f32>,
     pre_pos: usize,
-    /// Tiefen vor dem Hall weg (sonst dröhnt er): einpoliger Hochpass.
+    /// Removes lows before the reverb (otherwise it booms): one-pole high-pass.
     hp_lp: f32,
     hp_coef: f32,
     feedback: f32,
@@ -75,7 +75,7 @@ pub struct Reverb {
 }
 
 impl Reverb {
-    /// Mittelgroßer, warmer Saal für die Abtastrate `sr`.
+    /// Medium-sized, warm hall for the sample rate `sr`.
     pub fn new(sr: f32) -> Self {
         let scale = sr / 44_100.0;
         let len = |n: usize, extra: usize| ((n + extra) as f32 * scale).round() as usize;
@@ -96,7 +96,7 @@ impl Reverb {
         }
     }
 
-    /// Ein Sample Hall-Eingang (Summe der Sends) → Hall links/rechts.
+    /// One sample of reverb input (sum of the sends) → reverb left/right.
     #[inline]
     pub fn process(&mut self, input: f32) -> (f32, f32) {
         let delayed = self.predelay[self.pre_pos];
@@ -125,8 +125,8 @@ impl Reverb {
     }
 }
 
-/// Weicher Begrenzer für die Summe: bis 0,7 unverändert, darüber sanft gegen 1
-/// (statt hart abzuschneiden – das klingt bei vielen Stimmen kratzig).
+/// Soft limiter for the sum: unchanged up to 0.7, above that gently towards 1
+/// (instead of clipping hard – that sounds scratchy with many voices).
 #[inline]
 pub fn soft_limit(x: f32) -> f32 {
     const KNEE: f32 = 0.7;

@@ -1,7 +1,7 @@
-// Klang-Fenster: Instrument wählen, Klang in Feldern gestalten (Charakter,
-// Klangfarbe, Raum – jedes mit eigenen Startpunkten, die nur seine eigenen
-// Regler setzen), Zeitverlauf als Wellenform (beim Synth mit gezeichneten
-// Kurven und Verlaufsvorlagen), alle Regler im Feinschliff, Messwerte.
+// Sound window: choose an instrument, shape the sound in fields (character,
+// timbre, room – each with its own starting points that only set its own
+// sliders), time course as a waveform (for the synth with drawn
+// curves and curve presets), all sliders in fine-tuning, measurements.
 
 import { backend } from "../bridge.js";
 import { fitCanvas, h, icon, noteName, setRange } from "../dom.js";
@@ -14,7 +14,7 @@ export interface SoundPanel {
   update(): void;
 }
 
-/** Vorhör-Muster je Regler-Gruppe beim Schlagzeug (Klick auf die Gruppenüberschrift). */
+/** Preview pattern per slider group for drums (click on the group heading). */
 const GROUP_PREVIEW: Record<string, string> = {
   Bassdrum: "kick", Snare: "snare", Clap: "clap", "Hi-Hat": "hihat", Toms: "toms",
 };
@@ -23,23 +23,23 @@ export function defaultParams(spec: InstrumentSpec): Record<string, number> {
   return Object.fromEntries(spec.params.map((p) => [p.key, p.default]));
 }
 
-/** Instrument mit Standardwerten (Synth: mit dem ersten Verlauf). */
+/** Instrument with default values (synth: with the first curve preset). */
 export function defaultInstrument(spec: InstrumentSpec): Instrument {
   const v = spec.verlauf[0];
   return { kind: spec.kind, preset: "standard", params: defaultParams(spec), ...(v ? { curves: { laut: v.laut, hell: v.hell } } : {}) };
 }
 
-// ---------------------------------------------------------------- Einstellungen der Ansicht
+// ---------------------------------------------------------------- View settings
 
 const VIEW_KEY = "klangwelt.klang.ansicht";
-/** Was nach einer Änderung kurz erklingt: nichts, ein einzelner Ton (Schlagzeug: Bassdrum) oder das Muster. */
+/** What briefly sounds after a change: nothing, a single note (drums: bass drum) or the pattern. */
 type PlayMode = "aus" | "ton" | "muster";
 type ViewPrefs = { klangfarbe: boolean; raum: boolean; anspielen: PlayMode; feinschliff: boolean; zeitverlauf: boolean; klaenge: boolean };
 function viewPrefs(): ViewPrefs {
   const d: ViewPrefs = { klangfarbe: true, raum: true, anspielen: "ton", feinschliff: false, zeitverlauf: true, klaenge: false };
   try {
     const v = { ...d, ...(JSON.parse(localStorage.getItem(VIEW_KEY) ?? "{}") as Partial<Record<keyof ViewPrefs, unknown>>) };
-    // früher ein Häkchen: an → Einzelton, aus → aus
+    // used to be a checkbox: on → single note, off → off
     const a = v.anspielen;
     return { ...(v as ViewPrefs), anspielen: a === false ? "aus" : a === "aus" || a === "muster" ? a : "ton" };
   } catch {
@@ -47,7 +47,7 @@ function viewPrefs(): ViewPrefs {
   }
 }
 
-/** Vorhör-Muster für das Anspielen nach einer Änderung. */
+/** Preview pattern for auditioning after a change. */
 export function playPattern(spec: InstrumentSpec, mode: PlayMode): PreviewPattern | null {
   if (mode === "aus") return null;
   if (mode === "muster") return spec.previews[0]?.key ?? null;
@@ -58,21 +58,21 @@ function setViewPref<K extends keyof ViewPrefs>(k: K, v: ViewPrefs[K]): void {
   try {
     localStorage.setItem(VIEW_KEY, JSON.stringify({ ...viewPrefs(), [k]: v }));
   } catch {
-    /* ohne Speicher eben nicht gemerkt */
+    /* without storage it simply isn't remembered */
   }
 }
 
 const word = (words: readonly string[], v: number) => words[Math.min(3, Math.max(0, Math.floor(v * 4)))] ?? "";
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
-// ---------------------------------------------------------------- Feld
+// ---------------------------------------------------------------- Field
 
 interface FieldView {
   el: HTMLElement;
   set(x: number, y: number, active: string | null): void;
 }
 
-/** Ein Feld: Startpunkte als Marken (Klick setzt sie), Punkt zum Ziehen. */
+/** A field: starting points as markers (click sets them), a point to drag. */
 function fieldView(f: FieldSpec, pick: (name: string) => void, move: (x: number, y: number, phase: "start" | "move" | "end") => void): FieldView {
   const dot = h("div", { class: "snd-dot", title: t("Drag") });
   const marks = f.presets.map((p) => {
@@ -136,11 +136,11 @@ function fieldView(f: FieldSpec, pick: (name: string) => void, move: (x: number,
   return view;
 }
 
-// ---------------------------------------------------------------- Zeitverlauf
+// ---------------------------------------------------------------- Time course
 
 type Lane = "laut" | "hell";
 
-/** Zeitachse, Wellenform und – beim Synth – die gezeichneten Kurven. */
+/** Time axis, waveform and – for the synth – the drawn curves. */
 function timeView(isSynth: boolean, edit: (lane: Lane, pts: CurvePoint[], merge: boolean, done: boolean) => void) {
   const canvas = h("canvas", { class: `snd-wave${isSynth ? " synth" : ""}`, title: isSynth ? t("Envelope of a note: dragging points changes volume (loud) and brightness (bright) over time – double-click adds or removes a point") : t("Waveform of a note with the current sound") }) as HTMLCanvasElement;
   let wave: WaveView | null = null;
@@ -179,7 +179,7 @@ function timeView(isSynth: boolean, edit: (lane: Lane, pts: CurvePoint[], merge:
       ctx.fillStyle = muted;
       ctx.fillText(geo.T > 1.2 ? `${t.toLocaleString(language(), { maximumFractionDigits: 2 })} s` : `${Math.round(t * 1000)} ms`, xOf(t), hh - 4);
     }
-    // Wellenform (in der Lautstärke-Spur)
+    // waveform (in the volume lane)
     if (wave?.peaks.length) {
       const [top, bot] = geo.lanes.laut;
       const mid = (top + bot) / 2;
@@ -281,7 +281,7 @@ function timeView(isSynth: boolean, edit: (lane: Lane, pts: CurvePoint[], merge:
     };
     canvas.addEventListener("pointerup", up);
     canvas.addEventListener("pointercancel", up);
-    // Doppelklick: Punkt hinzufügen bzw. (auf einem Punkt) entfernen
+    // double-click: add a point or (on a point) remove it
     canvas.addEventListener("dblclick", (e) => {
       const [x, y] = local(e);
       const target = hit(x, y);
@@ -318,9 +318,9 @@ function timeView(isSynth: boolean, edit: (lane: Lane, pts: CurvePoint[], merge:
   };
 }
 
-// ---------------------------------------------------------------- Meine Klänge
+// ---------------------------------------------------------------- My sounds
 
-/** Derselbe Klang? Alle Regler (fehlende = Standardwert), beim Synth auch die Kurven. */
+/** The same sound? All sliders (missing = default value), for the synth also the curves. */
 function sameSound(spec: InstrumentSpec, a: Instrument, b: Instrument): boolean {
   if (a.kind !== b.kind) return false;
   for (const p of spec.params) {
@@ -333,9 +333,9 @@ function sameSound(spec: InstrumentSpec, a: Instrument, b: Instrument): boolean 
 }
 
 /**
- * Klang-Bibliothek im Klang-Fenster: die aktuelle Einstellung unter einem
- * Namen sichern (gleicher Name beim selben Instrument = ersetzen), gesicherte
- * Klänge laden, umbenennen, löschen. Hervorgehoben ist, was gerade eingestellt ist.
+ * Sound library in the Sound window: save the current setting under a
+ * name (same name for the same instrument = replace), load saved
+ * sounds, rename, delete. What is currently set is highlighted.
  */
 function soundLibrary(spec: InstrumentSpec, trackId: number, loaded: (s: SavedSound) => void) {
   const nameInput = h("input", { type: "text", class: "snd-lib-name", maxLength: 60, title: t("Sound name") }) as HTMLInputElement;
@@ -352,7 +352,7 @@ function soundLibrary(spec: InstrumentSpec, trackId: number, loaded: (s: SavedSo
   const clean = (n: string) => n.trim().replace(/\s+/g, " ");
   const mine = () => (savedSounds.peek() ?? []).filter((s) => s.kind === spec.kind);
   const existing = (name: string) => mine().find((s) => s.name.toLowerCase() === clean(name).toLowerCase());
-  /** Vorschlag: der gewählte Charakter-Startpunkt, sonst der Instrumentname – frei gemacht mit einer Zahl. */
+  /** Suggestion: the chosen character starting point, otherwise the instrument name – made unique with a number. */
   const suggestion = () => {
     const charakter = spec.fields.find((f) => f.key === "charakter");
     const base = inst && charakter?.presets.some((p) => p.name === inst!.preset) ? t(inst.preset) : spec.name;
@@ -428,7 +428,7 @@ function soundLibrary(spec: InstrumentSpec, trackId: number, loaded: (s: SavedSo
       input.focus();
       input.select();
     });
-    // Löschen mit zweitem Klick (wie bei den Notenbibliotheken)
+    // delete with a second click (as with the note libraries)
     let armed = false;
     const del = h("button", { class: "btn ghost small snd-lib-del", title: t("Delete from \"My sounds\"") }, icon("trash"));
     del.addEventListener("click", () => {
@@ -470,7 +470,7 @@ function soundLibrary(spec: InstrumentSpec, trackId: number, loaded: (s: SavedSo
     others.hidden = rest.length === 0;
     others.replaceChildren(h("summary", {}, t("Other instruments ({n})", { n: rest.length })), ...rest.map((s) => row(s, false, true)));
     others.open = othersOpen;
-    // Kurzinfo für den eingeklappten Zustand: Anzahl und der gerade eingestellte Klang
+    // Summary for the collapsed state: count and the currently set sound
     const on = own.find((s) => active.has(s.id));
     badge.textContent = all === null ? "" : `${own.length}${on ? ` · ${on.name}` : ""}`;
     badge.title = on
@@ -487,12 +487,12 @@ function soundLibrary(spec: InstrumentSpec, trackId: number, loaded: (s: SavedSo
     update(i: Instrument) {
       inst = i;
       render();
-      refreshSave(); // Vorschlag folgt dem Charakter-Startpunkt
+      refreshSave(); // suggestion follows the character starting point
     },
   };
 }
 
-// ---------------------------------------------------------------- Fenster
+// ---------------------------------------------------------------- Window
 
 export function soundPanel(trackId: number): SoundPanel {
   const spec = specFor(findTrack(project(), trackId)?.instrument);
@@ -507,14 +507,14 @@ export function soundPanel(trackId: number): SoundPanel {
   };
   const setParams = (params: Record<string, number>, preset: string, merge: boolean) => setInstrument({ ...base(), preset, params: { ...base().params, ...params } }, merge);
   const preview = (pattern: PreviewPattern) => backend.previewTrack(trackId, pattern).catch((e) => notify(errorText(e), "error"));
-  // Anspielen nach einer Änderung: aus · Einzelton · Muster (gemerkt)
+  // Auditioning after a change: off · single note · pattern (remembered)
   let playMode: PlayMode = prefs.anspielen;
   const autoPreview = (s: InstrumentSpec = spec) => {
     const p = playPattern(s, playMode);
     if (p) void preview(p);
   };
 
-  // Instrumentwahl
+  // Instrument selection
   const kinds = h(
     "div",
     { class: "seg snd-kinds" },
@@ -535,7 +535,7 @@ export function soundPanel(trackId: number): SoundPanel {
   );
   const insert = h("button", { class: "btn small", title: t("Insert one bar of an example pattern after the last clip"), onclick: () => act(backend.insertPattern(trackId)) }, icon("plus"), t("Insert pattern"));
 
-  // Felder (Charakter immer, Klangfarbe und Raum zuschaltbar)
+  // Fields (character always, timbre and room switchable)
   let dragging: string | null = null;
   let pending: { field: string; x: number; y: number } | null = null;
   let fresh = false;
@@ -580,16 +580,16 @@ export function soundPanel(trackId: number): SoundPanel {
     return { f, view };
   });
   const fieldBox = h("div", { class: "snd-fields" }, ...fieldViews.map((v) => v.view.el));
-  /** Seitenlänge der Felder: gleich breit nebeneinander, aber nie höher als der sichtbare Platz. */
+  /** Side length of the fields: equally wide side by side, but never taller than the visible space. */
   const fitPads = () => {
     const body = fieldBox.closest(".tab-body") as HTMLElement | null;
     const shown = fieldViews.filter((v) => !v.view.el.hidden).length;
     if (!body || !shown || !fieldBox.clientWidth) return;
     const GAP = 14;
-    const YLAB = 20; // senkrechte Beschriftung links vom Feld
+    const YLAB = 20; // vertical label left of the field
     const perW = (fieldBox.clientWidth - GAP * (shown - 1)) / shown - YLAB;
     const top = fieldBox.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop;
-    const perH = body.clientHeight - top - 22 - 18 - 14; // Kopfzeile, Achsenwörter, Rand
+    const perH = body.clientHeight - top - 22 - 18 - 14; // header row, axis words, margin
     const size = Math.round(Math.max(120, Math.min(perW, perH, 640)));
     if (fieldBox.style.getPropertyValue("--pad") !== `${size}px`) fieldBox.style.setProperty("--pad", `${size}px`);
   };
@@ -630,7 +630,7 @@ export function soundPanel(trackId: number): SoundPanel {
   });
   const playSwitch = h("div", { class: "seg mini snd-play" }, ...playBtns);
 
-  // Zeitverlauf
+  // Time course
   const time = timeView(isSynth, (lane, pts, merge) => {
     const cur = base();
     void setInstrument({ ...cur, preset: cur.preset, curves: { ...(cur.curves ?? {}), [lane]: pts } }, merge);
@@ -683,7 +683,7 @@ export function soundPanel(trackId: number): SoundPanel {
     );
   }
 
-  // Feinschliff: alle Regler
+  // Fine-tuning: all sliders
   const sliders: Array<{ p: ParamSpec; input: HTMLInputElement; val: HTMLElement }> = [];
   const makeSlider = (p: ParamSpec) => {
     const input = h("input", { type: "range", min: p.min, max: p.max, step: p.note ? 1 : 0.01 }) as HTMLInputElement;
@@ -719,7 +719,7 @@ export function soundPanel(trackId: number): SoundPanel {
   const fine = h("details", { class: "snd-fine", open: prefs.feinschliff }, h("summary", {}, t("Fine-tuning – all controls")), ...groupEls) as HTMLDetailsElement;
   fine.addEventListener("toggle", () => setViewPref("feinschliff", fine.open));
 
-  // Messwerte – dieselben Zahlen und Wörter sieht der Agent.
+  // Measurements – the agent sees the same numbers and words.
   const measures = h("div", { class: "measures" });
   const measureTon = h("span", { class: "muted" });
   let lastKey = "";
@@ -744,21 +744,21 @@ export function soundPanel(trackId: number): SoundPanel {
           }),
         );
       } catch {
-        /* Messung ist optional */
+        /* measurement is optional */
       }
     }, 180);
   };
 
-  // Meine Klänge (Klang-Bibliothek über alle Projekte)
+  // My sounds (sound library across all projects)
   const lib = soundLibrary(spec, trackId, (s) => autoPreview(instrumentSpecs.peek().find((x) => x.kind === s.kind) ?? spec));
 
-  // Meine Klänge einklappbar (anfangs zu); eingeklappt zeigt die Zeile Anzahl und eingestellten Klang
+  // My sounds collapsible (closed at first); collapsed, the row shows the count and the current sound
   const libBox = h("details", { class: "prop snd-lib-box", open: prefs.klaenge },
     h("summary", { title: t("Your own sounds – available in every project") }, h("span", { class: "snd-lib-title" }, t("My sounds")), lib.badge),
     lib.el) as HTMLDetailsElement;
   libBox.addEventListener("toggle", () => setViewPref("klaenge", libBox.open));
 
-  // Zeitverlauf einklappbar
+  // Time course collapsible
   const timeBox = h("details", { class: "snd-time", open: prefs.zeitverlauf },
     h("summary", { class: "snd-time-head" }, h("b", {}, t("Over time")), testton),
     time.el,
@@ -790,7 +790,7 @@ export function soundPanel(trackId: number): SoundPanel {
       agentNote),
   );
   new ResizeObserver(() => time.draw()).observe(time.el);
-  // Felder wachsen mit dem Platz: so groß, wie Breite und sichtbare Höhe des Fensters erlauben
+  // Fields grow with the space: as large as the window's width and visible height allow
   let bodySeen = false;
   const padObserver = new ResizeObserver(() => {
     if (!el.isConnected) {

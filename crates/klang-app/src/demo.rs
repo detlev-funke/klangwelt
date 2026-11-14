@@ -1,5 +1,5 @@
-//! Demo-Inhalte, damit die App sofort klingt – und um die Tempo-Synchronisation
-//! zu zeigen: Beat (96 BPM) und Arpeggio (128 BPM) laufen beide im Projekttempo.
+//! Demo content so the app sounds right away – and to show tempo
+//! synchronization: beat (96 BPM) and arpeggio (128 BPM) both run at the project tempo.
 
 use crate::state::AssetPool;
 use klang_core::{Clip, ClipSource, Command, Instrument, Note, Project, ProjectPatch, Track, TrackKind};
@@ -11,7 +11,7 @@ const SR: u32 = 48_000;
 
 fn drum_loop(bpm: f64, bars: usize) -> Vec<f32> {
     let sr = SR as f32;
-    let step = 60.0 / bpm / 4.0; // Sechzehntel
+    let step = 60.0 / bpm / 4.0; // sixteenth
     let total = (bars as f64 * 16.0 * step * SR as f64) as usize;
     let mut out = vec![0f32; total + SR as usize];
     let (kick, snare) = (synth::kick(sr), synth::snare(sr, 11));
@@ -37,7 +37,7 @@ fn drum_loop(bpm: f64, bars: usize) -> Vec<f32> {
 }
 
 fn arpeggio(bpm: f64) -> Vec<f32> {
-    // a-Moll, F-Dur, C-Dur, G-Dur – je ein Takt Sechzehntel-Arpeggio.
+    // A minor, F major, C major, G major – one bar of sixteenth-note arpeggio each.
     let chords: [[u8; 4]; 4] = [[57, 60, 64, 69], [53, 57, 60, 65], [48, 52, 55, 60], [55, 59, 62, 67]];
     let pattern = [0usize, 1, 2, 3, 2, 1, 2, 3, 0, 1, 2, 3, 2, 3, 2, 1];
     let step = 60.0 / bpm as f32 / 4.0;
@@ -60,7 +60,7 @@ fn arpeggio(bpm: f64) -> Vec<f32> {
 }
 
 fn melody() -> Vec<Note> {
-    // (Ton, Start, Länge) in Schlägen – eine eigene kleine Melodie in a-Moll.
+    // (pitch, start, length) in beats – a small melody of our own in A minor.
     let n: [(u8, f64, f64); 18] = [
         (69, 0.0, 1.0), (72, 1.0, 0.5), (71, 1.5, 0.5), (69, 2.0, 1.0), (64, 3.0, 1.0),
         (65, 4.0, 1.0), (69, 5.0, 1.0), (67, 6.0, 1.5),
@@ -104,7 +104,7 @@ pub fn demo_command(project: &mut Project, pool: &mut AssetPool) -> Command {
     lead.gain_db = -3.0;
     lead.pan = -0.2;
     let mut instrument = Instrument::pluck();
-    instrument.preset = "warm".into(); // Kennung, nicht übersetzen
+    instrument.preset = "warm".into(); // identifier, do not translate
     for (k, v) in [("helligkeit", 0.4), ("abklingen", 0.7), ("koerper", 0.75), ("anschlag", 0.35)] {
         instrument.params.insert(k.into(), v);
     }

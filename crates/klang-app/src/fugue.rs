@@ -1,6 +1,6 @@
-//! Fugen-Fenster und Agent: Thema aus einem Clip, Antwort, Verwandlungen,
-//! Engführungen, Gegensatz und Fugenplan; Material als Spuren schreiben und
-//! mehrstimmig vorspielen; Kontrapunkt-Prüfer über alle Instrumentspuren.
+//! Fugue window and agent: subject from a clip, answer, transformations,
+//! strettos, countersubject and fugue plan; write material as tracks and
+//! play it back polyphonically; counterpoint checker across all instrument tracks.
 
 use crate::harmony::{key_info, project_key, KeyInfo};
 use crate::sound;
@@ -22,7 +22,7 @@ fn shift_of(t: &Track) -> i32 {
     if sound::transposes(t.instrument.as_ref()) { t.pitch_semitones.round() as i32 } else { 0 }
 }
 
-/// Noten eines Clips in Projektzeit, je Einsatz der oberste Ton.
+/// Notes of a clip in project time, the top note for each onset.
 fn clip_vnotes(t: &Track, c: &Clip) -> Vec<VNote> {
     let ClipSource::Notes { notes, length_beats } = &c.source else { return Vec::new() };
     let shift = shift_of(t);
@@ -36,7 +36,7 @@ fn clip_vnotes(t: &Track, c: &Clip) -> Vec<VNote> {
     v
 }
 
-/// Thema einer Fuge: Noten eines Clips mit Herkunft.
+/// Subject of a fugue: notes of a clip with their origin.
 pub struct Subject {
     pub track_name: String,
     pub clip_name: String,
@@ -59,7 +59,7 @@ pub fn subject_of(st: &AppState, track_id: Id, clip_id: Id) -> CmdResult<Subject
     Ok(Subject { track_name: t.name.clone(), clip_name: c.name.clone(), start, notes: fugue::normalize(&notes) })
 }
 
-/// Tonart: gewählt, sonst aus dem Thema geschätzt (Grundton am Anfang/Ende zählt mehr), sonst aus dem Projekt.
+/// Key: chosen, otherwise estimated from the subject (tonic at the start/end counts more), otherwise from the project.
 fn subject_key(st: &AppState, notes: &[VNote], chosen: Option<Key>) -> CmdResult<KeyInfo> {
     if let Some(k) = chosen {
         return Ok(key_info(k, "gewaehlt"));
@@ -94,9 +94,9 @@ pub struct SubjectView {
     pub key: KeyInfo,
     pub track_name: String,
     pub clip_name: String,
-    /// Einsatz des Themas im Projekt (Schläge).
+    /// Entry of the subject in the project (beats).
     pub start: f64,
-    /// Thema ab 0.
+    /// Subject from 0.
     pub notes: Vec<VNote>,
     pub length: f64,
     pub range: (u8, u8),
@@ -141,7 +141,7 @@ pub struct VoiceIn {
     pub notes: Vec<VNote>,
 }
 
-/// Stimmen als neue Instrumentspuren ab `start` schreiben (ein Undo-Schritt).
+/// Writes voices as new instrument tracks from `start` (one undo step).
 pub fn add_voices(st: &AppState, voices: &[VoiceIn], start: f64, kind: InstrumentKind, label: &str) -> CmdResult<(Snapshot, Vec<Id>)> {
     if voices.iter().all(|v| v.notes.is_empty()) {
         return Err(tr!("No notes to write"));
@@ -157,7 +157,7 @@ pub fn add_voices(st: &AppState, voices: &[VoiceIn], start: f64, kind: Instrumen
             let id = p.alloc_id();
             let mut track = Track::new(id, v.name.clone(), TrackKind::Instrument);
             let mut inst = sound::default_instrument(kind);
-            // Pedal für den Bass der Orgel
+            // Pedal for the organ bass
             let low = v.notes.iter().map(|n| n.pitch as f64).sum::<f64>() / v.notes.len() as f64 <= 52.0;
             if kind == InstrumentKind::Organ && low {
                 if let Some(pre) = spec.presets.iter().find(|x| x.name.starts_with("Pedal")) {
@@ -191,7 +191,7 @@ pub fn add_voices(st: &AppState, voices: &[VoiceIn], start: f64, kind: Instrumen
     Ok((st.execute(cmd, false)?, ids))
 }
 
-/// Mehrere Stimmen zusammen vorspielen (Klang des gewählten Instruments).
+/// Plays several voices together (sound of the chosen instrument).
 pub fn preview_voices(st: &AppState, voices: &[Vec<VNote>], kind: InstrumentKind) -> CmdResult<f32> {
     let engine = st.engine()?;
     let sr = engine.info().sample_rate as f32;
@@ -214,7 +214,7 @@ pub fn preview_voices(st: &AppState, voices: &[Vec<VNote>], kind: InstrumentKind
     Ok(secs)
 }
 
-// ------------------------------------------------------------------ Prüfer
+// ------------------------------------------------------------------ Checker
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -245,7 +245,7 @@ pub struct CheckView {
     pub hints: usize,
 }
 
-/// Satzfehler in den Instrumentspuren mit Tonhöhe (je Spur eine Stimme).
+/// Part-writing errors in the instrument tracks with pitch (one voice per track).
 pub fn check_tracks(st: &AppState, only: Option<&[Id]>) -> CmdResult<CheckView> {
     let s = lock(&st.session)?;
     let p = &s.project;

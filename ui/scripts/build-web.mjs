@@ -1,11 +1,11 @@
-// Browser-Version bauen: ui/dist-web/ – ein Ordner mit statischen Dateien,
-// den jeder einfache HTTP-Server ausliefern kann (z. B. `npm run serve:web`).
-// Nur Node-Bordmittel; WebAssembly mit cargo (Ziel wasm32-unknown-unknown).
+// Build the browser version: ui/dist-web/ - a folder of static files
+// that any simple HTTP server can serve (e.g. `npm run serve:web`).
+// Node built-ins only; WebAssembly with cargo (target wasm32-unknown-unknown).
 //
-//   npm run build:web   (baut vorher die Oberfläche mit tsc)
+//   npm run build:web   (first builds the UI with tsc)
 //
-// Inhalt: die Oberfläche (wie für die Desktop-App), klang_web.wasm (Kern),
-// klang_worklet.wasm (Mischer) und sw.js (Service Worker mit Dateiliste).
+// Contents: the UI (as for the desktop app), klang_web.wasm (core),
+// klang_worklet.wasm (mixer) and sw.js (service worker with file list).
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -27,10 +27,10 @@ mkdirSync(out, { recursive: true });
 cpSync(dist, out, { recursive: true, filter: (src) => !src.endsWith(".map") });
 const wasmDir = join(root, "target", "wasm32-unknown-unknown", "release");
 for (const f of ["klang_web.wasm", "klang_worklet.wasm"]) {
-  // Beide Module dürfen nur importieren, was Worker und Worklet liefern
-  // (Modul „klangwelt“, siehe web/worker.ts) – fehlt z. B. libopus eine
-  // C-Funktion, landet sie sonst als Import „env.…“ in der Datei und der
-  // Kern startet im Browser nicht.
+  // Both modules may only import what worker and worklet provide
+  // (module "klangwelt", see web/worker.ts) - if libopus is missing
+  // a C function, say, it otherwise ends up as an import "env.…" in the file and the
+  // core does not start in the browser.
   const foreign = WebAssembly.Module.imports(new WebAssembly.Module(readFileSync(join(wasmDir, f))))
     .filter((i) => i.module !== "klangwelt")
     .map((i) => `${i.module}.${i.name}`);
@@ -38,7 +38,7 @@ for (const f of ["klang_web.wasm", "klang_worklet.wasm"]) {
   cpSync(join(wasmDir, f), join(out, f));
 }
 
-// Service Worker: Version = Prüfsumme aller Dateien, Liste = alles außer ihm selbst
+// Service worker: version = checksum of all files, list = everything except itself
 const files = [];
 const walk = (dir) => {
   for (const name of readdirSync(dir)) {

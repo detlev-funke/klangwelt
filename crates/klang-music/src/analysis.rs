@@ -1,8 +1,8 @@
-//! Analyse einer Partitur: Stimmfunktionen, Kadenzen, Stimmung.
+//! Analysis of a score: voice functions, cadences, mood.
 //!
-//! Stufe 1 sind nachvollziehbare Heuristiken. Sie liefern die ersten
-//! (schwachen) Beschriftungen, mit denen später ein Modell trainiert und
-//! von Hand bzw. vom Agenten korrigiert wird.
+//! Stage 1 is comprehensible heuristics. They provide the first
+//! (weak) labels, with which a model is later trained and
+//! corrected by hand or by the agent.
 
 use crate::melody::{features, skyline, Feature, MelodyNote};
 use crate::score::{Score, Voice};
@@ -44,17 +44,17 @@ pub struct VoiceProfile {
     pub note_count: usize,
     pub mean_pitch: f32,
     pub range: u8,
-    /// Einsätze pro Viertel, solange die Stimme spielt.
+    /// Onsets per quarter note while the voice is playing.
     pub density: f32,
-    /// Anteil der Stückdauer, in dem die Stimme klingt.
+    /// Share of the piece's duration in which the voice sounds.
     pub coverage: f32,
-    /// Anteil der Schritte ≤ Ganzton.
+    /// Share of steps ≤ whole tone.
     pub stepwise: f32,
-    /// Anteil der Einsätze mit mehreren Tönen.
+    /// Share of onsets with several notes.
     pub chordal: f32,
-    /// 0…1 – wie stark sich ein Muster wiederholt.
+    /// 0…1 – how strongly a pattern repeats.
     pub repetition: f32,
-    /// Länge des wiederholten Musters in Noten.
+    /// Length of the repeated pattern in notes.
     pub period: Option<usize>,
     pub rhythmic_variety: f32,
     pub salience: f32,
@@ -66,18 +66,18 @@ pub struct VoiceProfile {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum CadenceKind {
-    /// V → I im Bass, Oberstimme endet auf dem Grundton.
+    /// V → I in the bass, upper voice ends on the tonic.
     Authentic,
-    /// V → I im Bass, Oberstimme nicht auf dem Grundton.
+    /// V → I in the bass, upper voice not on the tonic.
     ImperfectAuthentic,
-    /// Längeres Verweilen auf der Dominante am Phrasenende.
+    /// Longer dwelling on the dominant at the phrase end.
     Half,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Cadence {
-    /// Position in Vierteln.
+    /// Position in quarter notes.
     pub onset: f64,
     pub kind: CadenceKind,
     pub label: &'static str,
@@ -86,9 +86,9 @@ pub struct Cadence {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Mood {
-    /// −1 (traurig/dunkel) … +1 (fröhlich/hell)
+    /// −1 (sad/dark) … +1 (happy/bright)
     pub valence: f32,
-    /// −1 (ruhig) … +1 (energisch)
+    /// −1 (calm) … +1 (energetic)
     pub arousal: f32,
     /// German keyword – stored like this in the index facets (an identifier for
     /// `klang_i18n::translate`).
@@ -166,10 +166,10 @@ pub fn analyze_score(score: &Score) -> ScoreAnalysis {
     analyze_score_with(score, true)
 }
 
-/// Wie [`analyze_score`]; ohne Kadenzsuche (`cadences = false`) deutlich
-/// schneller – genug für die Merkmale der Baumansicht.
-/// Tonart einer Partitur: aus den Vorzeichen (Tongeschlecht notfalls
-/// geschätzt), sonst aus der Tonverteilung.
+/// Like [`analyze_score`]; without cadence search (`cadences = false`) significantly
+/// faster – enough for the features of the tree view.
+/// Key of a score: from the key signature (mode guessed if necessary),
+/// otherwise from the pitch distribution.
 pub fn score_key(score: &Score) -> Option<Key> {
     score_key_hist(score).0
 }
@@ -182,7 +182,7 @@ fn score_key_hist(score: &Score) -> (Option<Key>, [f64; 12]) {
     let key = match (score.key_fifths, score.key_mode.as_deref()) {
         (Some(f), Some("minor")) => Some(Key::from_fifths(f, true)),
         (Some(f), Some("major")) => Some(Key::from_fifths(f, false)),
-        // Vorzeichen ohne Tongeschlecht: Dur oder parallele Molltonart schätzen.
+        // Key signature without mode: guess major or the relative minor key.
         (Some(f), _) => {
             let notes = score.parts.iter().flat_map(|p| &p.voices).flat_map(|v| &v.notes);
             let last = notes.clone().map(|n| n.onset).fold(f64::MIN, f64::max);
@@ -197,7 +197,7 @@ fn score_key_hist(score: &Score) -> (Option<Key>, [f64; 12]) {
 pub fn analyze_score_with(score: &Score, with_cadences: bool) -> ScoreAnalysis {
     let total = score.duration_quarters().max(1e-6);
 
-    // Tonart: aus der Partitur, sonst geschätzt.
+    // Key: from the score, otherwise estimated.
     let (key, hist) = score_key_hist(score);
     let hist_total: f64 = hist.iter().sum();
     let chromaticism = match key {
@@ -270,7 +270,7 @@ pub fn analyze_score_with(score: &Score, with_cadences: bool) -> ScoreAnalysis {
         })
         .collect();
 
-    // Salienz: hohe Lage, wenig Wiederholung, rhythmisch lebendig, schrittweise, präsent.
+    // Salience: high register, little repetition, rhythmically lively, stepwise, present.
     let n = profiles.len();
     let mut order: Vec<usize> = (0..n).collect();
     order.sort_by(|&a, &b| profiles[a].mean_pitch.total_cmp(&profiles[b].mean_pitch));
@@ -282,7 +282,7 @@ pub fn analyze_score_with(score: &Score, with_cadences: bool) -> ScoreAnalysis {
             - 0.3 * p.chordal;
     }
 
-    // Rollen vergeben.
+    // Assign roles.
     let mut assigned = vec![false; n];
     for i in 0..n {
         let p = &mut profiles[i];
@@ -324,7 +324,7 @@ pub fn analyze_score_with(score: &Score, with_cadences: bool) -> ScoreAnalysis {
         p.role_label = klang_i18n::translate(p.role.label_de());
     }
 
-    // Kadenzen aus Bass- und Hauptstimme.
+    // Cadences from bass and main voice.
     let mut cadences = Vec::new();
     if let Some(k) = key.filter(|_| with_cadences) {
         let bass = profiles.iter().position(|p| p.role == VoiceRole::Bass);
@@ -356,7 +356,7 @@ pub fn analyze_score_with(score: &Score, with_cadences: bool) -> ScoreAnalysis {
         }
     }
 
-    // Stimmung (Valenz/Erregung) aus Tongeschlecht, Tempo, Lage, Dichte.
+    // Mood (valence/arousal) from mode, tempo, register, density.
     let tempo = score.tempo_bpm.unwrap_or(100.0) as f32;
     let all_notes = score.note_count().max(1) as f32;
     let avg_pitch = score.parts.iter().flat_map(|p| &p.voices).flat_map(|v| &v.notes).map(|n| n.midi as f32).sum::<f32>() / all_notes;
@@ -389,7 +389,7 @@ pub fn analyze_score_with(score: &Score, with_cadences: bool) -> ScoreAnalysis {
     }
 }
 
-/// Anteil der Einsätze von `b`, die nicht mit Einsätzen von `a` zusammenfallen.
+/// Share of the onsets of `b` that do not coincide with onsets of `a`.
 fn rhythmic_independence(a: &[MelodyNote], b: &[MelodyNote]) -> f32 {
     if b.is_empty() {
         return 0.0;
@@ -415,15 +415,15 @@ mod tests {
 
     #[test]
     fn finds_theme_ostinato_bass_and_cadence() {
-        // Melodie in C-Dur (Achtel = 1), endet auf c''.
+        // Melody in C major (eighth = 1), ends on c''.
         let melody: &[(u8, u32)] = &[
             (72, 2), (74, 1), (76, 1), (77, 2), (76, 2), (74, 3), (72, 1), (71, 2), (74, 2),
             (76, 2), (79, 2), (77, 1), (76, 1), (74, 2), (72, 4), (71, 2), (74, 2), (72, 8),
         ];
-        // Ostinato: dieselbe Achtelfigur immer wieder.
+        // Ostinato: the same eighth-note figure over and over.
         let fig = [(60u8, 1u32), (64, 1), (67, 1), (64, 1)];
         let ostinato: Vec<(u8, u32)> = fig.iter().copied().cycle().take(40).collect();
-        // Bass in langen Werten, G → C am Schluss.
+        // Bass in long values, G → C at the end.
         let bass: &[(u8, u32)] = &[(48, 8), (53, 8), (55, 8), (43, 8), (48, 8)];
         let xml = make_xml("Probe", &[("Flöte", melody), ("Harfe", &ostinato), ("Cello", bass)]);
         let score = parse_musicxml(&xml).unwrap();

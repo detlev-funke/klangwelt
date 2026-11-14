@@ -196,7 +196,8 @@ the browser just the same. There are two ways to reach them:
    (JSON-RPC) and returns the response – e.g.
    `{ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "get_project", arguments: {} } }`.
    Any agent that is allowed to run JavaScript in the page can do this (a
-   browser extension such as Claude in Chrome, or the DevTools protocol).
+   browser extension such as Claude in Chrome or the Playwright MCP Bridge – see
+   [Variant: Playwright MCP](#variant-playwright-mcp-vivaldi-brave-edge-chrome) – or the DevTools protocol).
 2. **stdio bridge** (`ui/scripts/web-mcp.mjs`, `npm run mcp:web`): an
    ordinary MCP server for clients such as Claude Code that forwards each
    message to the open Klangwelt tab via the DevTools protocol.
@@ -222,21 +223,75 @@ the `project-changed` event).
 long as no agent is listening, it shows a prompt to copy
 (`ui/src/web/agent-prompt.ts`) containing the page's address – intended for
 Claude Desktop with the "Claude in Chrome" extension (whose JavaScript tool
-runs in the page and supports `await`) or another agent with a browser tool.
-The prompt explains the route via `window.__klangweltWeb.mcp` and the
-listening loop with `chat_poll`/`chat_reply`.
+runs in the page and supports `await`), for Playwright MCP with the
+"Playwright MCP Bridge" extension, or another agent with a browser tool.
+The prompt explains the route via `window.__klangweltWeb.mcp`, the Playwright
+variant and the roles: a listener (small model) that only calls `chat_poll` and
+confirms each task at once, the main session that starts a worker per task, the
+workers (at most one per track, project-wide changes one after another). The tools
+are the same as on the desktop – reserving tasks, `chat_peek`, `cancelRequested`,
+`revision`/`ifRevision`, placeholders, `batch`, compact notes (see
+[ARCHITECTURE.md](ARCHITECTURE.md#agent-via-mcp)).
 
 **`chat_poll` waits**, as on the desktop, until a task arrives or
 `timeoutSeconds` expires. In the browser the core has only one thread and
 must not block; so the web worker keeps the response open and queries the
-core again as soon as the UI sends a task (`chat_send`). Other commands and
-tools keep running normally in the meantime; every 30 s the worker refreshes
-"Agent is listening". A service worker would be the wrong place for this: it
+core again as soon as the UI sends a task (`chat_send`, `chat_stop`). Other commands and
+tools keep running normally in the meantime; every 5 s the worker asks the core again –
+that refreshes "Agent is listening" and hands out a task whose lease ran out (no
+`chat_reply` in time). `chat_poll {peek: true}` is not held. A service worker would be the wrong place for this: it
 can't see the core's state (that lives in the web worker), and the browser
 terminates it when idle. The prompt uses a 20 s wait because the time limit
 of the JavaScript tool is unknown. If a tool aborts the call before that, the
-page doesn't notice – a task that arrives at exactly that moment counts as
-picked up; so it's better to wait for a shorter time.
+page doesn't notice – a task that arrives at exactly that moment is reserved for
+nobody who listens; since it is only reserved, not used up, it is offered again
+after its lease (60 s) and nothing is lost.
+
+### Variant: Playwright MCP (Vivaldi, Brave, Edge, Chrome)
+
+Without Claude in Chrome and without a debug port, an agent reaches the Klangwelt tab in
+the person's own browser through Microsoft's Playwright MCP server in extension mode and
+the browser extension **"Playwright MCP Bridge"** ([Chrome Web Store](https://chromewebstore.google.com/detail/mmlmfjhmonkocbjadbfplnigmagldckm), ID `mmlmfjhmonkocbjadbfplnigmagldckm`; works in Chromium browsers such as Vivaldi, Brave and Edge too). Tested with
+Vivaldi 8.3 and `@playwright/mcp` 0.0.85. The `--remote-debugging-port` route no longer
+works for the default profile since Chrome 136 (and so presumably in Vivaldi, too).
+
+```
+agent ─▶ Playwright MCP (stdio) ─▶ relay ws://127.0.0.1:<port>/extension/<uuid> ─▶ extension (chrome.debugger) ─▶ Klangwelt tab: window.__klangweltWeb.mcp()
+```
+
+1. If the agent has Playwright MCP tools (`browser_tabs`, `browser_evaluate`), it uses them.
+   Otherwise it starts the server itself and talks to it over stdio (`initialize`,
+   `notifications/initialized`, `tools/call`):
+
+   ```bash
+   npx @playwright/mcp@latest --extension --executable-path "<path to the browser exe>"
+   ```
+
+   Without `--executable-path` Playwright looks for Google Chrome.
+2. The first tool call opens the extension's connect page as a new tab in the running
+   browser (no second window, no new profile). The person allows the Klangwelt tab there –
+   once per start of the server. With the token from the extension
+   (`PLAYWRIGHT_MCP_EXTENSION_TOKEN`) this step should be skipped (according to the
+   Playwright source; not tested).
+3. `browser_tabs {action: "list"}` lists the tabs, e.g. `- 0: (current) [Klangwelt](http://127.0.0.1:1477/)`;
+   select the Klangwelt tab with `browser_tabs {action: "select", index}` if needed.
+4. Every message is one `browser_evaluate` with
+   `function: async () => JSON.stringify(await window.__klangweltWeb.mcp(<message>))`.
+   Playwright wraps the result in Markdown (`### Result`, then `### Ran Playwright code`);
+   a script that parses it reliably returns the JSON base64-encoded between fixed markers
+   (e.g. `KW<…>KW`). `page.evaluate` has no time limit of its own, so `chat_poll` with 20 s
+   works.
+5. Several Klangwelt messages fit into one `browser_evaluate` – an empty
+   `browser_evaluate` costs about 0.57 s (measured: a tool call through such a bridge
+   ≈ 630 ms in total, the Klangwelt part is small). Fewer calls matter more: `batch`,
+   placeholders in `execute`, compact notes and `get_project` with filters save model
+   rounds, and every round takes seconds.
+6. Only one process listens with `chat_poll` (client `"zuhoerer"`). Tasks are reserved, not
+   used up – a second poller (a test, say) no longer snatches them for good, but they stay
+   with it until its lease runs out; workers look with `chat_peek`.
+
+If Playwright MCP is registered as an MCP server (with `--extension`, `--executable-path`
+and the token), the agent calls `browser_evaluate` directly and needs no bridge of its own.
 
 ## Tests
 
@@ -258,8 +313,11 @@ the project file, export as WAV and Opus download (the browser decodes the
 Opus file itself – a cross-check of the libopus in the core),
 analysis/harmony/fugue/counterpoint, recording with the browser's fake
 microphone, starting without a server via the service worker, agent in the
-page and via the stdio bridge, agent window with prompt, waiting `chat_poll`
-(a task from the chat wakes it, timeout, each task delivered only once).
+page and via the stdio bridge, agent window with prompt (roles, Playwright variant), waiting `chat_poll`
+(a task from the chat wakes it, timeout, each task delivered only once), reserving and
+offering again after the lease, `chat_peek`, stop button and `cancelRequested`, the agent
+indicator (listening and working), `revision`/`ifRevision`, placeholders, compact notes,
+`get_project` filters and `batch` as one undo step.
 
 ## Performance
 

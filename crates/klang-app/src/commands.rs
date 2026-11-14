@@ -62,6 +62,7 @@ pub const COMMANDS: &[&str] = &[
     "create_instrument_track",
     "insert_pattern",
     "chat_send",
+    "chat_stop",
     "chat_history",
     "project_save",
     "project_open",
@@ -296,6 +297,13 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
             let (text,) = args!(a; text: String);
             // Pass along the situation in the project: which tracks are sounding, which range is selected
             st.chat.send_user(&text, st.chat_context().ok())?;
+            json(st.chat_view())
+        }
+        // Stop button at a task: cancelled if nobody picked it up yet, otherwise
+        // every tool response carries cancelRequested until the agent finishes it
+        "chat_stop" => {
+            let (id, text) = args!(a; id: u64, text: String);
+            st.chat.stop_task(id, &text)?;
             json(st.chat_view())
         }
         "chat_history" => json(st.chat_view()),

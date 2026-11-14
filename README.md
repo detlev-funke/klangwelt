@@ -92,7 +92,7 @@ do what a web page is not allowed to do, or cannot do well:
 | Projects | in browser storage, download and upload as files | files on your computer, open by double-click |
 | Score library (download thousands of scores, sing a melody and find it) | – | ✓ |
 | Choose audio devices (interface, headphones) | system default | ✓ |
-| Agent | via Claude in Chrome | its own MCP endpoint, one prompt for Claude Code |
+| Agent | via Claude in Chrome or Playwright MCP (extension "Playwright MCP Bridge", also Vivaldi, Brave, Edge) – one prompt to copy | its own MCP endpoint, one prompt for Claude Code |
 | Installation | none | a single file, no installer |
 
 ## For developers

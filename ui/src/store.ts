@@ -46,7 +46,7 @@ export const panelEmphasis = signal<{ id: PanelId; minWidth?: number } | null>(n
 /** Windows that are currently visible (active tab of their group). */
 export const visiblePanels = signal<ReadonlySet<string>>(new Set());
 /** Chat with the agent. */
-export const chat = signal<ChatView>({ messages: [], agentListening: false, agentConnected: false });
+export const chat = signal<ChatView>({ messages: [], agentListening: false, agentConnected: false, agentWorking: false, workingOn: [] });
 /** Number of unread agent replies (dot on the tab). */
 export const chatUnread = signal(0);
 /** Library is being downloaded or indexed (dot on the tab). */

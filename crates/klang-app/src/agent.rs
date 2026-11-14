@@ -32,30 +32,68 @@ use klang_music::melody::MelodyNote;
 use klang_music::score::load_score;
 use serde_json::{json, Value};
 use serde::Serialize;
+use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// Task for the listening subagent (also in `.claude/agents/klangwelt-zuhoerer.md`).
-pub const LISTENER_BRIEF: &str = "You are the listener of the Klangwelt app. The person gives tasks in the chat of the interface, \
-you carry them out with the Klangwelt MCP tools.\n\
-Loop: 1. Call `chat_poll` – it answers as soon as a task arrives, otherwise after timeoutSeconds. Use 280; \
+/// Task for the listening subagent (role "listener"; also in
+/// `.claude/agents/klangwelt-zuhoerer.md` of the desktop) – MCP prompt `zuhoeren`.
+pub const LISTENER_BRIEF: &str = "You are the listener of the Klangwelt app. The person gives tasks in the chat of the interface. \
+You only listen and confirm – the work is done by workers that the main session (to: \"main\") starts.\n\
+Loop: 1. Call `chat_poll` with client \"zuhoerer\" – it answers as soon as a task arrives, otherwise after timeoutSeconds. Use 280; \
 if the call fails with a timeout error or the reply contains `abbruch`, use 50 from then on (the client's \
 limit is shorter then; no task is lost). 2. If an empty list comes back, call `chat_poll` again right away – that is normal, \
-don't ask, don't summarize. 3. For each task: for longer jobs first send a short `chat_reply` with \
-done=false (\"On it …\"), then carry it out with `get_project` and the other tools and use `chat_reply` \
-(replyTo = task id, done=true) to say in one or two sentences, in the person's language, what you changed. Ask questions \
-via `chat_reply` as well and then wait for the answer with `chat_poll`. 4. Continue with step 1.\n\
-Don't stop on your own. Only when the person explicitly asks you to stop in the chat (e.g. \"stop\", \"Stopp\"), say goodbye via \
-`chat_reply` and end the loop. Your final report to the calling agent: which tasks you completed.";
+don't ask, don't summarize. 3. Confirm EVERY task at once with `chat_reply` (replyTo = task id, done=false, a few words in the person's \
+language, e.g. \"On it.\") – otherwise it's offered again after the lease. Questions you can answer yourself in one or two \
+calls (\"what's going on?\", status: `chat_peek`, `get_project` with fields) you answer right away with done=true. \
+Everything else you send to the main session with SendMessage (to: \"main\"): task id, text and kontext. Follow-ups to a \
+running task and stop messages (field `cancels`) go there as well – the app already flags stopped tasks with cancelRequested. \
+4. Continue with step 1 – don't do the work yourself, so that you stay available.\n\
+Only if you can't send messages to a main session, carry out the tasks yourself with the tools and finish each with \
+`chat_reply` (done=true, one or two sentences on what you changed).\n\
+Don't stop on your own. A plain \"stop\" only stops running tasks. Only when the person explicitly asks you to stop listening, \
+say goodbye via `chat_reply` and end the loop. Your final report to the calling agent: which tasks you handled.";
+
+/// Task for a worker subagent (role "worker") – MCP prompt `arbeiten`;
+/// the main session adds the task.
+pub const WORKER_BRIEF: &str = "You are a worker of the Klangwelt app and carry out ONE task from its chat with the Klangwelt tools.\n\
+- Read only what you need: `get_project` with trackIds/fields; remember `revision` and pass it to `execute` as ifRevision – \
+if someone changed the project in the meantime, read again and retry.\n\
+- Write in few calls: `execute` with placeholders (ref \"$bass\" for new tracks/clips, then trackId \"$bass\"), notes compact \
+(\"C4 1 · E4 .5 v100 · G4 .5\"), several tools at once with `batch` (one undo step). Write responses return new IDs and the revision.\n\
+- Only touch your track(s). Project-wide changes (tempo, delete_range, write_song) only if the task asks for them.\n\
+- Report progress with `chat_reply` (replyTo = task id, done=false), finish with done=true: one or two sentences in the person's \
+language on what you changed.\n\
+- If a tool response contains cancelRequested with your task id, stop at once and reply done=true (\"Stopped.\"). Between steps \
+`chat_peek` (sinceId) shows follow-ups without taking them from the listener.";
+
+/// Short help on roles for the main session (dispatcher).
+const ROLES: &str = "Roles (so that someone always listens while others work): listener = a subagent on a small, fast model \
+that only calls `chat_poll` and confirms each task at once (task: prompt `zuhoeren`); dispatcher = you, the main session: \
+for each task the listener sends you (SendMessage), start a worker subagent in the background (task: prompt `arbeiten` plus \
+the task) and pass follow-ups and stops on to it with SendMessage – react only to messages, so you stay available; \
+worker = carries out one task (larger model for composing). At most one worker per track; project-wide changes (tempo, \
+delete_range, write_song) one after another. If you can't start subagents, listen and work yourself.";
 
 const INSTRUCTIONS: &str = "Klangwelt is a music app (multitrack, recording, melody detection, sound workshop). \
 You control the open project; everything appears live in the interface and can be reverted with `undo`.\n\
 Chat: The person gives you tasks in the chat of the interface. To listen, start a subagent \
 (Agent/Task tool, preferably in the background; in Claude Code there is the type \"klangwelt-zuhoerer\" for this, if available), \
-so that you yourself stay available. The subagent calls `chat_poll` in a loop, carries out each task and \
-replies briefly, in the person's language, with `chat_reply` (replyTo = task id). If it ends (e.g. because its context is full), start a new one. \
-Only if you can't start subagents do you poll yourself. The prompt `zuhoeren` contains the ready-made task for the subagent.\n\
+so that you yourself stay available. The subagent calls `chat_poll` in a loop and confirms each task with `chat_reply` (replyTo = task id). \
+If it ends (e.g. because its context is full), start a new one. \
+The prompts `zuhoeren` (listener) and `arbeiten` (worker) contain the ready-made tasks (prompts/get).\n\
+Chat details: `chat_poll` reserves tasks for its client (\"claimed by …\"); without a `chat_reply` within leaseSeconds (default 60) \
+a task is offered again. `chat_peek` (sinceId) reads new messages without picking anything up. If the person writes \"stop\" \
+(or \"stop #3\"), every tool response carries `cancelRequested: [ids]` – stop working on those tasks and confirm with chat_reply.\n\
 Units: positions and lengths in beats, tempo in BPM, volume in dB (−60…+12), pan −1 (left) … +1 (right), pitch in semitones (−24…+24), MIDI notes 0–127 (60 = middle C).\n\
-Workflow: first read `get_project` to learn the track and clip IDs. Make changes with `execute` (several commands = one undo step). Create new tracks/clips with id 0 – the app assigns IDs.\n\
+Workflow: first read `get_project` to learn the track and clip IDs (trackIds/fields read only a part; `revision` protects against \
+overwriting: execute with ifRevision fails if someone changed the project in the meantime). Make changes with `execute` \
+(several commands = one undo step). Create new tracks/clips with id 0 – the app assigns IDs; or give them a placeholder \
+(\"ref\": \"$bass\") and use \"$bass\" as trackId/clipId in later commands – the response lists the IDs. `batch` runs several tools \
+in a row as one undo step (stops and reverts at the first error; \"$0.trackId\" uses a result of an earlier call). \
+Every writing tool returns the new `revision`, `change` and the IDs it created. Notes can also be written compactly: \
+\"C4 1 · E4 .5 v100 · G4 .5\" (pitch, length in beats, v = velocity; + for chords, r = rest; German note names H = B, B = B♭).\n\
+{ROLES}\n\
 Audio clips with `warp: true` play at the project tempo; `sourceBpm` is the tempo they were recorded at.\n\
 Audio and ranges: `import_audio` inserts audio files (WAV, AIFF, FLAC, Opus; no MP3) as tracks. `audio_to_notes` converts a recording \
 into a melody track (detected pitches) or a rhythm track (hits → kick/snare/hi-hat) directly below it. \
@@ -171,8 +209,13 @@ fn tool(name: &'static str, title: &'static str, description: &'static str, inpu
     Tool { name, title, description, input_schema, read_only }
 }
 
+/// Placeholder for an ID in `execute` and `batch`: `$` plus letters, digits, `_`.
+const PLACEHOLDER_PATTERN: &str = r"^\$[A-Za-z_][A-Za-z0-9_]*$";
+
 fn command_schema() -> Value {
-    let id = json!({ "type": "integer", "minimum": 0 });
+    let id = json!({ "type": ["integer", "string"], "minimum": 0, "pattern": PLACEHOLDER_PATTERN,
+        "description": "ID, or a placeholder like \"$bass\" declared with ref in an earlier command" });
+    let reference = json!({ "type": "string", "pattern": PLACEHOLDER_PATTERN, "description": "Placeholder for the new ID, e.g. \"$bass\" – usable as trackId/clipId in later commands (and later calls of a batch)" });
     let note = json!({ "type": "object", "properties": {
         "pitch": { "type": "integer", "minimum": 0, "maximum": 127 },
         "startBeats": { "type": "number", "minimum": 0 },
@@ -182,13 +225,17 @@ fn command_schema() -> Value {
         "brightness": { "type": "number", "minimum": -1, "maximum": 1, "description": "Brightness relative to the instrument (−1 darker … +1 brighter); omit = 0" },
         "bend": { "type": "number", "minimum": -12, "maximum": 12, "description": "Slide-in: the note starts this many semitones off and glides in (−2 = from below); omit = 0" } },
         "required": ["pitch", "startBeats", "lengthBeats", "velocity"] });
-    let clip = json!({ "type": "object", "description": "id 0 = new. Instrument clips: source {type:'notes', lengthBeats, notes[]}",
-        "properties": { "id": id, "name": { "type": "string" }, "startBeats": { "type": "number", "minimum": 0 },
+    let notes = json!({ "oneOf": [
+        { "type": "array", "items": note },
+        { "type": "string", "description": "Compact: \"C4 1 · E4 .5 v100 · G4 .5\" – pitch (German names: H = B, B = B♭; or MIDI number), length in beats (omitted = previous), v<velocity> (stays until the next v, start 100), @<start>; C4+E4+G4 = chord, r = rest; separators · , ; | or line break. Notes follow each other unless @ is given." }
+    ] });
+    let clip = json!({ "type": "object", "description": "id 0 (or omitted) = new. Instrument clips: source {type:'notes', lengthBeats, notes}",
+        "properties": { "id": id, "ref": reference, "name": { "type": "string" }, "startBeats": { "type": "number", "minimum": 0 },
             "source": { "type": "object", "properties": {
-                "type": { "enum": ["notes", "audio"] }, "lengthBeats": { "type": "number" }, "notes": { "type": "array", "items": note },
+                "type": { "enum": ["notes", "audio"] }, "lengthBeats": { "type": "number" }, "notes": notes,
                 "assetId": { "type": "string" }, "sourceBpm": { "type": "number" }, "warp": { "type": "boolean" }, "durationSecs": { "type": "number" } },
                 "required": ["type"] } },
-        "required": ["id", "name", "startBeats", "source"] });
+        "required": ["startBeats", "source"] });
     let instrument = json!({ "type": "object", "properties": {
         "preset": { "type": "string" },
         "params": { "type": "object", "properties": {
@@ -212,9 +259,9 @@ fn command_schema() -> Value {
         variant("setProject", json!({ "patch": { "type": "object", "properties": {
             "name": { "type": "string" }, "tempoBpm": { "type": "number", "minimum": 20, "maximum": 400 },
             "beatsPerBar": { "type": "integer", "minimum": 1, "maximum": 32 }, "beatUnit": { "enum": [1, 2, 4, 8, 16, 32] } } } }), &["patch"]),
-        variant("addTrack", json!({ "track": { "type": "object", "description": "id 0 = new; kind 'audio' or 'instrument'; other fields as in setTrack, optional clips[]",
-            "properties": { "id": id, "name": { "type": "string" }, "kind": { "enum": ["audio", "instrument"] }, "clips": { "type": "array", "items": clip } },
-            "required": ["id", "name", "kind"] }, "index": { "type": "integer", "minimum": 0 } }), &["track"]),
+        variant("addTrack", json!({ "track": { "type": "object", "description": "id 0 (or omitted) = new; kind 'audio' or 'instrument'; other fields as in setTrack, optional clips[]",
+            "properties": { "id": id, "ref": reference, "name": { "type": "string" }, "kind": { "enum": ["audio", "instrument"] }, "clips": { "type": "array", "items": clip } },
+            "required": ["name", "kind"] }, "index": { "type": "integer", "minimum": 0 } }), &["track"]),
         variant("removeTrack", json!({ "trackId": id }), &["trackId"]),
         variant("moveTrack", json!({ "trackId": id, "index": { "type": "integer", "minimum": 0 } }), &["trackId", "index"]),
         variant("setTrack", json!({ "trackId": id, "patch": track_patch }), &["trackId", "patch"]),
@@ -224,7 +271,7 @@ fn command_schema() -> Value {
             "name": { "type": "string" }, "startBeats": { "type": "number", "minimum": 0 },
             "sourceBpm": { "type": "number", "minimum": 20, "maximum": 400 }, "warp": { "type": "boolean" } } } }), &["trackId", "clipId", "patch"]),
         variant("setClipNotes", json!({ "trackId": id, "clipId": id,
-            "notes": { "type": "array", "items": note, "description": "Complete new note list of the clip (replaces the old one)" },
+            "notes": notes.clone(),
             "lengthBeats": { "type": "number", "exclusiveMinimum": 0, "description": "Optional new clip length" } }), &["trackId", "clipId", "notes"])
     ] })
 }
@@ -242,12 +289,29 @@ fn tools(packs: &[&'static str]) -> Vec<Tool> {
                         or as scale degrees in the key (I, ii6, I64, V7, vii°7, V7/V, V7/vi, N6, ♭VI, iv6)" });
     vec![
         tool("get_project", "Read project",
-            "Returns the open project: tempo, time signature, tracks with IDs, level, pan, pitch, instrument parameters and clips (start/length in beats). With includeNotes also the notes of the instrument clips.",
-            schema(json!({ "includeNotes": { "type": "boolean" } }), &[]), true),
+            "Returns the open project: tempo, time signature, tracks with IDs, level, pan, pitch, instrument parameters and clips (start/length in beats). With includeNotes also the notes of the instrument clips. \
+             revision changes with every change – pass it to execute as ifRevision so you don't overwrite someone else's change. \
+             trackIds: only these tracks; fields: only these fields, e.g. [\"tempoBpm\", \"tracks.name\", \"tracks.clips\"] (\"tracks.x\" = field x of every track; track id and revision always come along).",
+            schema(json!({ "includeNotes": { "type": "boolean" },
+                "trackIds": { "type": "array", "items": { "type": "integer", "minimum": 1 } },
+                "fields": { "type": "array", "items": { "type": "string" } } }), &[]), true),
         tool("execute", "Apply changes",
-            "Runs one or more project commands as one undo step (on error everything is rolled back). Examples: {\"type\":\"setProject\",\"patch\":{\"tempoBpm\":96}}, {\"type\":\"setTrack\",\"trackId\":3,\"patch\":{\"gainDb\":-6,\"pan\":-0.3}}, {\"type\":\"addTrack\",\"track\":{\"id\":0,\"name\":\"Bass\",\"kind\":\"instrument\",\"clips\":[{\"id\":0,\"name\":\"Riff\",\"startBeats\":0,\"source\":{\"type\":\"notes\",\"lengthBeats\":4,\"notes\":[{\"pitch\":45,\"startBeats\":0,\"lengthBeats\":1,\"velocity\":100}]}}]}}.",
+            "Runs one or more project commands as one undo step (on error everything is rolled back). Examples: {\"type\":\"setProject\",\"patch\":{\"tempoBpm\":96}}, {\"type\":\"setTrack\",\"trackId\":3,\"patch\":{\"gainDb\":-6,\"pan\":-0.3}}, {\"type\":\"addTrack\",\"track\":{\"id\":0,\"name\":\"Bass\",\"kind\":\"instrument\",\"clips\":[{\"id\":0,\"name\":\"Riff\",\"startBeats\":0,\"source\":{\"type\":\"notes\",\"lengthBeats\":4,\"notes\":[{\"pitch\":45,\"startBeats\":0,\"lengthBeats\":1,\"velocity\":100}]}}]}}.\n\
+             Placeholders instead of reading IDs afterwards: {\"type\":\"addTrack\",\"track\":{\"ref\":\"$bass\",\"name\":\"Bass\",\"kind\":\"instrument\"}} then {\"type\":\"addClip\",\"trackId\":\"$bass\",\"clip\":{\"ref\":\"$riff\",\"startBeats\":0,\"source\":{\"type\":\"notes\",\"lengthBeats\":4,\"notes\":\"A2 1 · C3 · E3 · G3\"}}} – \
+             the response contains ids {\"$bass\": 7, \"$riff\": 8}. Notes as a list or compact text (see notes). ifRevision: only if the project is still at this revision (from get_project or the last write response).",
             schema(json!({ "commands": { "type": "array", "minItems": 1, "items": command_schema() },
-                "label": { "type": "string", "description": "Label of the undo step" } }), &["commands"]), false),
+                "label": { "type": "string", "description": "Label of the undo step" },
+                "ifRevision": { "type": "integer", "description": "Fails (nothing changed) if the project's revision differs – someone else changed it in the meantime" } }), &["commands"]), false),
+        tool("batch", "Several tools at once",
+            "Runs several tool calls in a row as ONE undo step and stops at the first error – then everything before it is reverted too \
+             (except effects outside the project such as saved sounds, exports or chat messages). Saves a round per call. \
+             In args, \"$0.trackId\" uses a field of the result of call 0 (\"$2.trackIds.1\" = second entry), \"$bass\" a placeholder declared with ref in an execute before. \
+             Not allowed inside: batch, chat_poll, undo, redo, open_project. Results come back in order (execute without the project).",
+            schema(json!({
+                "calls": { "type": "array", "minItems": 1, "maxItems": 50, "items": { "type": "object", "properties": {
+                    "tool": { "type": "string" }, "args": { "type": "object" } }, "required": ["tool"] } },
+                "label": { "type": "string", "description": "Label of the undo step" },
+                "ifRevision": { "type": "integer", "description": "Only if the project is still at this revision" } }), &["calls"]), false),
         tool("undo", "Undo", "Reverts the last step (including changes made in the interface).", schema(json!({}), &[]), false),
         tool("redo", "Redo", "Restores the most recently reverted step.", schema(json!({}), &[]), false),
         tool("transport", "Control playback", "Starts/stops playback or jumps to a position.",
@@ -280,12 +344,23 @@ fn tools(packs: &[&'static str]) -> Vec<Tool> {
              the interface asks first (the reply comes immediately, the opening follows in the window).",
             schema(json!({ "path": { "type": "string", "description": "Path to the project file" } }), &["path"]), false),
         tool("chat_poll", "Fetch tasks (chat)",
-            "Waits (long poll) for new tasks typed into the chat of the Klangwelt interface and returns them – or an empty list when the wait time is up. Meant for a listening subagent (see prompt 'zuhoeren') so that the main agent stays available. Workflow: call chat_poll → carry out the tasks with the other tools → reply with chat_reply → call chat_poll again. While chat_poll is waiting, the interface shows \"Agent listening\".",
+            "Waits (long poll) for new tasks typed into the chat of the Klangwelt interface and returns them – or an empty list when the wait time is up. Meant for a listening subagent (see prompt 'zuhoeren') so that the main agent stays available. Workflow: call chat_poll → confirm each task with chat_reply (done=false) → have it carried out → finish with chat_reply (done=true) → call chat_poll again. \
+             Picked-up tasks are reserved for client (shown as \"claimed by …\"); without a chat_reply within leaseSeconds they are offered again (redelivered counts how often). \
+             A task with cancels is a stop request for those task ids. While chat_poll is waiting, the interface shows \"Agent listening\". peek: true = like chat_peek.",
             schema(json!({ "timeoutSeconds": { "type": "number", "minimum": 1, "maximum": 590,
-                "description": "Maximum wait time; if a task arrives earlier, chat_poll answers immediately. Default 50 s – fits under the 60 s limit that Claude Code sets for HTTP calls without further configuration. With \"timeout\": 330000 in the server's MCP configuration, 280 s are possible (one request every ~5 minutes)." } }), &[]), true),
+                "description": "Maximum wait time; if a task arrives earlier, chat_poll answers immediately. Default 50 s – fits under the 60 s limit that Claude Code sets for HTTP calls without further configuration. With \"timeout\": 330000 in the server's MCP configuration, 280 s are possible (one request every ~5 minutes)." },
+                "client": { "type": "string", "maxLength": 40, "description": "Name of the poller, e.g. \"zuhoerer\" (default \"agent\")" },
+                "leaseSeconds": { "type": "number", "minimum": 10, "maximum": 3600, "description": "How long a picked-up task stays reserved without a chat_reply (default 60)" },
+                "peek": { "type": "boolean", "description": "Only look (= chat_peek), pick up nothing" },
+                "sinceId": { "type": "integer", "minimum": 0, "description": "With peek: messages after this id" } }), &[]), true),
+        tool("chat_peek", "Look at the chat",
+            "Returns the chat messages after sinceId (tasks with status and \"claimed by\", replies) without picking anything up – for workers between steps \
+             (follow-ups, stop requests) and for status questions. Without sinceId the last 20. lastId = sinceId for the next call.",
+            schema(json!({ "sinceId": { "type": "integer", "minimum": 0 } }), &[]), true),
         tool("chat_reply", "Reply in chat",
-            "Writes a reply into the chat of the interface. replyTo = id of the task from chat_poll; done = true (default) marks it as done, false for progress updates.",
-            schema(json!({ "text": { "type": "string" }, "replyTo": { "type": "integer" }, "done": { "type": "boolean" } }), &["text"]), false),
+            "Writes a reply into the chat of the interface. replyTo = id of the task from chat_poll – a reply confirms the task (it's no longer offered again); done = true (default) marks it as done, false for confirmations and progress updates. client: as in chat_poll.",
+            schema(json!({ "text": { "type": "string" }, "replyTo": { "type": "integer" }, "done": { "type": "boolean" },
+                "client": { "type": "string", "maxLength": 40 } }), &["text"]), false),
         tool("list_instruments", "Show instruments",
             "Describes the instruments of the sound workshop: all parameters with range, default value and meaning, the three fields (axes, starting points, which controls they set), presets (= starting points of the character field), preview patterns, for the synth the envelope templates (verlauf) and for the drums the key mapping.",
             schema(json!({}), &[]), true),
@@ -546,6 +621,84 @@ fn chord_json(i: &kh::ChordInfo) -> Value {
     json!({ "name": i.name, "stufe": i.roman, "funktion": i.function, "rolle": i.role })
 }
 
+thread_local! {
+    /// Short descriptions of the changes of the running tool call (`change` in
+    /// the response) – per thread, because the desktop serves several clients at once.
+    static CHANGES: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Track and clip IDs and the revision before a tool call.
+struct IdState {
+    revision: u64,
+    tracks: Vec<u64>,
+    clips: Vec<(u64, u64)>,
+}
+
+/// `client` of `chat_poll`/`chat_reply`: short, printable, default "agent".
+fn client_arg(a: &Value) -> String {
+    let c: String = a.get("client").and_then(Value::as_str).unwrap_or("").trim().chars().filter(|c| !c.is_control()).take(40).collect();
+    if c.is_empty() { "agent".into() } else { c }
+}
+
+fn is_placeholder(s: &str) -> bool {
+    let mut chars = s.chars();
+    chars.next() == Some('$')
+        && chars.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Replaces placeholders (`"$bass"`) in ID fields of a command by the real IDs.
+fn resolve_ids(v: &mut Value, refs: &BTreeMap<String, u64>) -> Result<(), String> {
+    match v {
+        Value::Object(o) => {
+            for (k, x) in o.iter_mut() {
+                match x {
+                    Value::String(s) if matches!(k.as_str(), "id" | "trackId" | "clipId") => {
+                        let id = refs.get(s.as_str()).ok_or_else(|| {
+                            if s.starts_with('$') { format!("Unknown placeholder {s} – declare it first with \"ref\": \"{s}\" in an addTrack/addClip") } else { format!("{k} must be a number or a placeholder like \"$bass\"") }
+                        })?;
+                        *x = json!(id);
+                    }
+                    _ => resolve_ids(x, refs)?,
+                }
+            }
+            Ok(())
+        }
+        Value::Array(a) => a.iter_mut().try_for_each(|x| resolve_ids(x, refs)),
+        _ => Ok(()),
+    }
+}
+
+/// In the args of a `batch` call: `"$0.trackId"` → field of the result of call 0,
+/// `"$bass"` → placeholder of an earlier execute (inside an execute it resolves itself,
+/// it may declare it only now).
+fn resolve_results(v: &mut Value, results: &[Value], refs: &BTreeMap<String, u64>, in_execute: bool) -> Result<(), String> {
+    match v {
+        Value::String(s) if s.starts_with('$') => {
+            let (head, path) = s[1..].split_once('.').map_or((&s[1..], None), |(h, p)| (h, Some(p)));
+            if let (Ok(n), Some(path)) = (head.parse::<usize>(), path) {
+                let mut cur = results.get(n).ok_or_else(|| format!("{s}: there is no result {n} yet (calls count from 0)"))?;
+                for part in path.split('.') {
+                    cur = match part.parse::<usize>() {
+                        Ok(i) => cur.get(i),
+                        Err(_) => cur.get(part),
+                    }
+                    .ok_or_else(|| format!("{s}: the result of call {n} has no \"{part}\""))?;
+                }
+                *v = cur.clone();
+            } else if let Some(id) = refs.get(s.as_str()) {
+                *v = json!(id);
+            } else if !in_execute && is_placeholder(s) {
+                return Err(format!("Unknown placeholder {s}"));
+            }
+            Ok(())
+        }
+        Value::Object(o) => o.values_mut().try_for_each(|x| resolve_results(x, results, refs, in_execute)),
+        Value::Array(a) => a.iter_mut().try_for_each(|x| resolve_results(x, results, refs, in_execute)),
+        _ => Ok(()),
+    }
+}
+
 
 impl<S: AgentShell> Agent<S> {
     fn st(&self) -> &AppState {
@@ -565,11 +718,14 @@ impl<S: AgentShell> Agent<S> {
         harmony::resolve_key(&self.st(), chosen)
     }
 
-    /// Informs the UI about changes and activity of the agent.
+    /// Informs the UI about changes and activity of the agent; `summary` also
+    /// goes into the tool's response (`change`).
     fn changed(&self, tool: &str, summary: impl Into<String>) {
         if let Ok(s) = self.st().snapshot() {
             self.emit("project-changed", &s);
         }
+        let summary = summary.into();
+        CHANGES.with(|c| c.borrow_mut().push(summary.clone()));
         self.activity(tool, summary);
     }
 
@@ -578,10 +734,20 @@ impl<S: AgentShell> Agent<S> {
     }
 
     fn project_summary(&self, include_notes: bool) -> Result<Value, String> {
+        self.project_view(include_notes, None, None)
+    }
+
+    /// The project for the agent; `track_ids` / `fields` read only a part (see `get_project`).
+    fn project_view(&self, include_notes: bool, track_ids: Option<&[u64]>, fields: Option<&[String]>) -> Result<Value, String> {
         let st = self.st();
         let status = st.status();
         let s = lock(&st.session)?;
         let p = &s.project;
+        if let Some(ids) = track_ids {
+            if let Some(missing) = ids.iter().find(|id| p.track(Id(**id)).is_none()) {
+                return Err(format!("Track {missing} doesn't exist"));
+            }
+        }
         let mut v = serde_json::to_value(p).map_err(|e| e.to_string())?;
         if let Some(obj) = v.as_object_mut() {
             obj.remove("nextId");
@@ -602,21 +768,54 @@ impl<S: AgentShell> Agent<S> {
         v["redo"] = json!(s.redo_label());
         v["playing"] = json!(status.playing);
         v["positionBeats"] = json!((status.position_secs * p.tempo_bpm / 60.0 * 100.0).round() / 100.0);
+        v["revision"] = json!(s.revision());
+        drop(s);
+        if let (Some(ids), Some(tracks)) = (track_ids, v.get_mut("tracks").and_then(Value::as_array_mut)) {
+            tracks.retain(|t| t["id"].as_u64().is_some_and(|id| ids.contains(&id)));
+        }
+        if let (Some(fields), Some(obj)) = (fields, v.as_object_mut()) {
+            let track_fields: Vec<&str> = fields.iter().filter_map(|f| f.strip_prefix("tracks.")).collect();
+            let keep_tracks = !track_fields.is_empty() || fields.iter().any(|f| f == "tracks");
+            obj.retain(|k, _| k == "revision" || (k == "tracks" && keep_tracks) || fields.iter().any(|f| f == k));
+            if !track_fields.is_empty() && !fields.iter().any(|f| f == "tracks") {
+                for t in obj.get_mut("tracks").and_then(Value::as_array_mut).into_iter().flatten() {
+                    if let Some(t) = t.as_object_mut() {
+                        t.retain(|k, _| k == "id" || track_fields.contains(&k.as_str()));
+                    }
+                }
+            }
+        }
         Ok(v)
     }
 
-    fn execute(&self, args: &Value) -> Result<Value, String> {
+    /// `execute`: commands as one undo step. Placeholders (`ref`) are given real
+    /// IDs before; `refs` collects them (shared by the calls of a `batch`).
+    fn execute(&self, args: &Value, refs: &mut BTreeMap<String, u64>) -> Result<Value, String> {
         let list = args.get("commands").and_then(Value::as_array).ok_or("Argument \"commands\" (list) is missing")?;
         if list.is_empty() {
             return Err("\"commands\" is empty".into());
         }
+        let if_revision = args.get("ifRevision").and_then(Value::as_u64);
+        let declared_before: Vec<String> = refs.keys().cloned().collect();
         let mut commands = Vec::with_capacity(list.len());
         for (i, c) in list.iter().enumerate() {
-            let cmd: Command = serde_json::from_value(c.clone()).map_err(|e| format!("Command {}: {e}", i + 1))?;
+            let mut c = c.clone();
+            let err = |e: String| format!("Command {}: {e}", i + 1);
+            crate::notation::expand(&mut c).map_err(err)?;
+            self.declare_refs(&mut c, refs).map_err(err)?;
+            resolve_ids(&mut c, refs).map_err(err)?;
+            let cmd: Command = serde_json::from_value(c).map_err(|e| err(e.to_string()))?;
             commands.push(cmd);
         }
+        let new_ids: BTreeMap<&String, &u64> = refs.iter().filter(|(k, _)| !declared_before.contains(k)).collect();
         if commands.iter().all(Command::is_view_only) {
             // Pure view changes: run individually, no undo step.
+            if let Some(want) = if_revision {
+                let now = self.st().revision()?;
+                if now != want {
+                    return Err(format!("The project was changed in the meantime (revision {now} instead of {want}) – read it again with get_project and retry."));
+                }
+            }
             for c in commands {
                 self.st().execute(c, false)?;
             }
@@ -629,10 +828,214 @@ impl<S: AgentShell> Agent<S> {
             _ => trn!(commands.len(), "{n} change", "{n} changes"),
         };
         let label = tr!("Agent · {label}", label = label);
-        let snap = self.st().execute(Command::Batch { label: label.clone(), commands }, false)?;
+        let snap = self.st().execute_if(Command::Batch { label: label.clone(), commands }, if_revision)?;
         drop(snap);
         self.changed("execute", label.clone());
-        Ok(json!({ "ok": true, "undoLabel": label, "project": self.project_summary(false)? }))
+        let mut out = json!({ "ok": true, "undoLabel": label, "project": self.project_summary(false)? });
+        if !new_ids.is_empty() {
+            out["ids"] = json!(new_ids);
+        }
+        Ok(out)
+    }
+
+    /// Gives every object with `"ref": "$name"` (new track or clip) a real ID
+    /// and remembers it in `refs`; new tracks and clips without `id` get 0 (= new).
+    fn declare_refs(&self, v: &mut Value, refs: &mut BTreeMap<String, u64>) -> Result<(), String> {
+        let new_object = |o: &mut serde_json::Map<String, Value>| {
+            o.entry("id").or_insert(json!(0));
+        };
+        if let Some(o) = v.as_object_mut() {
+            match o.get("type").and_then(Value::as_str) {
+                Some("addTrack") => {
+                    if let Some(t) = o.get_mut("track").and_then(Value::as_object_mut) {
+                        new_object(t);
+                        for c in t.get_mut("clips").and_then(Value::as_array_mut).into_iter().flatten().filter_map(Value::as_object_mut) {
+                            new_object(c);
+                            c.entry("name").or_insert(json!("Clip"));
+                        }
+                    }
+                }
+                Some("addClip") => {
+                    if let Some(c) = o.get_mut("clip").and_then(Value::as_object_mut) {
+                        new_object(c);
+                        c.entry("name").or_insert(json!("Clip"));
+                    }
+                }
+                _ => {}
+            }
+        }
+        self.declare_in(v, refs)
+    }
+
+    fn declare_in(&self, v: &mut Value, refs: &mut BTreeMap<String, u64>) -> Result<(), String> {
+        match v {
+            Value::Object(o) => {
+                if let Some(r) = o.remove("ref") {
+                    let name = r.as_str().filter(|s| is_placeholder(s)).ok_or_else(|| format!("ref must look like \"$bass\" (got {r})"))?.to_string();
+                    if refs.contains_key(&name) {
+                        return Err(format!("Placeholder {name} is already used"));
+                    }
+                    let id = lock(&self.st().session)?.project.alloc_id();
+                    o.insert("id".into(), json!(id.0));
+                    refs.insert(name, id.0);
+                }
+                o.values_mut().try_for_each(|x| self.declare_in(x, refs))
+            }
+            Value::Array(a) => a.iter_mut().try_for_each(|x| self.declare_in(x, refs)),
+            _ => Ok(()),
+        }
+    }
+
+    /// `batch`: several tool calls as one undo step; at the first error
+    /// everything before it is reverted.
+    fn batch(&self, args: &Value) -> Result<Value, String> {
+        let calls = args.get("calls").and_then(Value::as_array).ok_or("Argument \"calls\" (list of {tool, args}) is missing")?;
+        if calls.is_empty() || calls.len() > 50 {
+            return Err("\"calls\" needs 1 to 50 entries".into());
+        }
+        let st = self.st();
+        if let Some(want) = args.get("ifRevision").and_then(Value::as_u64) {
+            let now = st.revision()?;
+            if now != want {
+                return Err(format!("The project was changed in the meantime (revision {now} instead of {want}) – read it again with get_project and retry."));
+            }
+        }
+        let mark = st.undo_mark()?;
+        let mut refs = BTreeMap::new();
+        let mut results: Vec<Value> = Vec::with_capacity(calls.len());
+        for (i, call) in calls.iter().enumerate() {
+            let tool = call.get("tool").and_then(Value::as_str).unwrap_or_default();
+            let mut run = || -> Result<Value, String> {
+                if matches!(tool, "batch" | "chat_poll" | "undo" | "redo" | "open_project") {
+                    return Err(format!("{tool} is not allowed inside batch"));
+                }
+                if !Handler::tools(self).iter().any(|t| t.name == tool) {
+                    return Err(format!("Unknown tool \"{tool}\""));
+                }
+                let mut a = call.get("args").cloned().unwrap_or_else(|| json!({}));
+                if !a.is_object() {
+                    return Err("args must be an object".into());
+                }
+                resolve_results(&mut a, &results, &refs, tool == "execute")?;
+                let mut r = if tool == "execute" { self.execute(&a, &mut refs)? } else { self.dispatch(tool, a)? };
+                if let Some(o) = r.as_object_mut() {
+                    o.remove("project");
+                }
+                Ok(r)
+            };
+            match run() {
+                Ok(r) => results.push(r),
+                Err(e) => {
+                    let reverted = st.rollback_steps(mark.clone()).map(|s| self.emit("project-changed", &s)).is_ok();
+                    CHANGES.with(|c| c.borrow_mut().clear());
+                    return Err(if reverted {
+                        format!("Call {} ({tool}) failed: {e}\nThe project is unchanged – the calls before it were reverted.", i + 1)
+                    } else {
+                        format!("Call {} ({tool}) failed: {e}\nReverting the calls before it failed as well – check with get_project.", i + 1)
+                    });
+                }
+            }
+        }
+        let label = match args.get("label").and_then(Value::as_str) {
+            Some(l) if !l.trim().is_empty() => l.trim().to_string(),
+            _ => trn!(calls.len(), "{n} step", "{n} steps"),
+        };
+        let label = tr!("Agent · {label}", label = label);
+        if st.squash_steps(&mark, label.clone())? {
+            if let Ok(s) = st.snapshot() {
+                self.emit("project-changed", &s);
+            }
+        }
+        let mut out = json!({ "ok": true, "undoLabel": label, "results": results });
+        if !refs.is_empty() {
+            out["ids"] = json!(refs);
+        }
+        Ok(out)
+    }
+
+    /// Track and clip IDs and the revision – to report what a tool changed.
+    fn id_state(&self) -> Option<IdState> {
+        let s = lock(&self.st().session).ok()?;
+        Some(IdState {
+            revision: s.revision(),
+            tracks: s.project.tracks.iter().map(|t| t.id.0).collect(),
+            clips: s.project.tracks.iter().flat_map(|t| t.clips.iter().map(move |c| (t.id.0, c.id.0))).collect(),
+        })
+    }
+
+    /// Adds to a write tool's response what changed: new `revision`, `change`
+    /// (short description), `created` / `removed` IDs.
+    fn report_changes(&self, v: &mut Value, before: &IdState) {
+        let Some(after) = self.id_state() else { return };
+        let summary = CHANGES.with(|c| std::mem::take(&mut *c.borrow_mut()));
+        let Some(o) = v.as_object_mut() else { return };
+        if after.revision == before.revision {
+            return;
+        }
+        o.insert("revision".into(), json!(after.revision));
+        if !summary.is_empty() {
+            o.insert("change".into(), json!(summary.join("; ")));
+        }
+        let diff = |a: &IdState, b: &IdState| {
+            let tracks: Vec<u64> = b.tracks.iter().filter(|t| !a.tracks.contains(t)).copied().collect();
+            let clips: Vec<Value> = b.clips.iter().filter(|c| !a.clips.contains(c)).map(|(t, c)| json!({ "trackId": t, "clipId": c })).collect();
+            let mut m = serde_json::Map::new();
+            if !tracks.is_empty() {
+                m.insert("tracks".into(), json!(tracks));
+            }
+            if !clips.is_empty() {
+                m.insert("clips".into(), json!(clips));
+            }
+            m
+        };
+        let created = diff(before, &after);
+        if !created.is_empty() {
+            o.insert("created".into(), Value::Object(created));
+        }
+        let removed = diff(&after, before);
+        if !removed.is_empty() {
+            o.insert("removed".into(), Value::Object(removed));
+        }
+    }
+
+    fn chat_peek(&self, args: &Value) -> Value {
+        let chat = &self.st().chat;
+        let since = args.get("sinceId").and_then(Value::as_u64).unwrap_or(0);
+        let mut msgs = chat.peek(since);
+        let keep = if since == 0 { 20 } else { 50 };
+        if msgs.len() > keep {
+            msgs.drain(..msgs.len() - keep);
+        }
+        let status = |s: Option<crate::chat::Status>| match s {
+            Some(crate::chat::Status::Neu) => Some("new"),
+            Some(crate::chat::Status::InArbeit) => Some("inProgress"),
+            Some(crate::chat::Status::Erledigt) => Some("done"),
+            Some(crate::chat::Status::Abgebrochen) => Some("cancelled"),
+            None => None,
+        };
+        let messages: Vec<Value> = msgs
+            .iter()
+            .map(|m| {
+                let mut j = json!({ "id": m.id, "von": if m.from == crate::chat::Author::User { "user" } else { "agent" }, "text": m.text });
+                if let Some(s) = status(m.status) {
+                    j["status"] = json!(s);
+                }
+                if let Some(c) = &m.claimed_by {
+                    j["claimedBy"] = json!(c);
+                }
+                if let Some(r) = m.reply_to {
+                    j["replyTo"] = json!(r);
+                }
+                if m.cancel_requested {
+                    j["cancelRequested"] = json!(true);
+                }
+                if !m.cancels.is_empty() {
+                    j["cancels"] = json!(m.cancels);
+                }
+                j
+            })
+            .collect();
+        json!({ "messages": messages, "lastId": chat.last_id() })
     }
 
     fn set_sound(&self, args: &Value) -> Result<Value, String> {
@@ -723,7 +1126,7 @@ impl<S: AgentShell> Handler for Agent<S> {
             name: "klangwelt".into(),
             title: "Klangwelt".into(),
             version: env!("CARGO_PKG_VERSION").into(),
-            instructions: INSTRUCTIONS.into(),
+            instructions: INSTRUCTIONS.replace("{ROLES}", ROLES),
         }
     }
 
@@ -731,24 +1134,61 @@ impl<S: AgentShell> Handler for Agent<S> {
         tools(&self.shell.pack_ids())
     }
 
+    /// Every tool call: counts as "agent working" (except the waiting
+    /// `chat_poll`), reports what changed and carries `cancelRequested`.
     fn call(&self, name: &str, args: Value) -> Result<Value, String> {
-        let mut v = self.dispatch(name, args)?;
-        tidy(&mut v);
-        Ok(v)
+        let st = self.st();
+        let polling = name == "chat_poll" && !args.get("peek").and_then(Value::as_bool).unwrap_or(false);
+        if !polling {
+            st.chat.touch();
+        }
+        // a long poll may wait minutes – changes in the meantime aren't its own
+        let before = if polling { None } else { self.id_state() };
+        CHANGES.with(|c| c.borrow_mut().clear());
+        let out = self.dispatch(name, args);
+        let cancel = st.chat.cancel_requested();
+        match out {
+            Ok(mut v) => {
+                if let Some(b) = &before {
+                    self.report_changes(&mut v, b);
+                }
+                if !cancel.is_empty() {
+                    match v.as_object_mut() {
+                        Some(o) => {
+                            o.insert("cancelRequested".into(), json!(cancel));
+                        }
+                        None => v = json!({ "result": v, "cancelRequested": cancel }),
+                    }
+                }
+                tidy(&mut v);
+                Ok(v)
+            }
+            Err(e) if !cancel.is_empty() => Err(format!("{e}\n(cancelRequested: {cancel:?} – the person asked to stop these tasks)")),
+            Err(e) => Err(e),
+        }
     }
 
     fn prompts(&self) -> Vec<Prompt> {
-        vec![Prompt {
-            name: "zuhoeren",
-            title: "Listen in the Klangwelt chat",
-            description: "Starts a subagent that picks up tasks from the chat of the Klangwelt interface and carries them out.",
-            text: format!(
-                "Start a subagent that listens in the Klangwelt chat – preferably in the background so we can keep talking \
-                 (type \"klangwelt-zuhoerer\" if available, otherwise a general-purpose subagent with access to the Klangwelt tools). \
-                 Give it this task word for word:\n\n{LISTENER_BRIEF}\n\n\
-                 Let me know briefly when it is running. If it ends without the person having asked it to stop in the chat, start a new one."
-            ),
-        }]
+        vec![
+            Prompt {
+                name: "zuhoeren",
+                title: "Listen in the Klangwelt chat",
+                description: "Starts a listener subagent that picks up tasks from the chat of the Klangwelt interface and confirms them; you start workers for them.",
+                text: format!(
+                    "Start a subagent that listens in the Klangwelt chat – in the background so we can keep talking, on a small, fast model \
+                     (type \"klangwelt-zuhoerer\" if available, otherwise a general-purpose subagent with access to the Klangwelt tools). \
+                     Give it this task word for word:\n\n{LISTENER_BRIEF}\n\n\
+                     {ROLES}\n\
+                     Let me know briefly when it is running. If it ends without the person having asked it to stop listening, start a new one."
+                ),
+            },
+            Prompt {
+                name: "arbeiten",
+                title: "Worker for a Klangwelt task",
+                description: "Task for a worker subagent that carries out one task from the chat (add the task id, text and context).",
+                text: format!("{WORKER_BRIEF}\n\nYour task (id, text, context):"),
+            },
+        ]
     }
 }
 
@@ -771,8 +1211,14 @@ impl<S: AgentShell> Agent<S> {
     fn dispatch(&self, name: &str, args: Value) -> Result<Value, String> {
         let st = self.st();
         match name {
-            "get_project" => self.project_summary(args.get("includeNotes").and_then(Value::as_bool).unwrap_or(false)),
-            "execute" => self.execute(&args),
+            "get_project" => {
+                let ids: Option<Vec<u64>> = args.get("trackIds").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_u64).collect());
+                let fields: Option<Vec<String>> = args.get("fields").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect());
+                self.project_view(args.get("includeNotes").and_then(Value::as_bool).unwrap_or(false), ids.as_deref(), fields.as_deref())
+            }
+            "execute" => self.execute(&args, &mut BTreeMap::new()),
+            "batch" => self.batch(&args),
+            "chat_peek" => Ok(self.chat_peek(&args)),
             "undo" | "redo" => {
                 let label = { let s = lock(&st.session)?; if name == "undo" { s.undo_label() } else { s.redo_label() }.map(str::to_string) };
                 let Some(label) = label else { return Ok(json!({ "ok": false, "info": "Nothing to do" })) };
@@ -993,11 +1439,14 @@ impl<S: AgentShell> Agent<S> {
                 self.activity("delete_saved_sound", tr!("Sound \"{name}\" deleted", name = saved.name));
                 Ok(json!({ "ok": true, "geloescht": saved.name, "uebrig": list.len() }))
             }
+            "chat_poll" if args.get("peek").and_then(Value::as_bool).unwrap_or(false) => Ok(self.chat_peek(&args)),
             "chat_poll" => {
                 // At most 590 s: the stdio bridge waits up to 600 s for a reply.
                 let secs = args.get("timeoutSeconds").and_then(Value::as_f64).unwrap_or(50.0).clamp(1.0, 590.0);
+                let lease = args.get("leaseSeconds").and_then(Value::as_f64).unwrap_or(crate::chat::DEFAULT_LEASE.as_secs_f64()).clamp(10.0, 3600.0);
+                let client = client_arg(&args);
                 let notify = || self.emit("chat-changed", &self.st().chat_view());
-                let polled = st.chat.poll(std::time::Duration::from_secs_f64(secs), notify, klang_mcp::caller_gone);
+                let polled = st.chat.poll(&client, std::time::Duration::from_secs_f64(lease), std::time::Duration::from_secs_f64(secs), notify, klang_mcp::caller_gone);
                 let tasks = polled.tasks;
                 // If the client aborted an earlier poll, its timeout is shorter than the wait time.
                 let abbruch = polled.abandoned_before.map(|s| {
@@ -1021,9 +1470,24 @@ impl<S: AgentShell> Agent<S> {
                     .iter()
                     .map(|m| json!({ "id": m.id, "von": if m.from == crate::chat::Author::User { "user" } else { "agent" }, "text": m.text }))
                     .collect();
+                let auftraege: Vec<Value> = tasks
+                    .iter()
+                    .map(|m| {
+                        let mut j = json!({ "id": m.id, "text": m.text, "kontext": m.kontext });
+                        if !m.cancels.is_empty() {
+                            j["cancels"] = json!(m.cancels);
+                        }
+                        if m.redelivered > 0 {
+                            j["redelivered"] = json!(m.redelivered);
+                        }
+                        j
+                    })
+                    .collect();
                 let mut r = json!({
-                    "auftraege": tasks.iter().map(|m| json!({ "id": m.id, "text": m.text, "kontext": m.kontext })).collect::<Vec<_>>(),
-                    "hinweis": "Carry out the tasks, then reply with chat_reply (replyTo = id) and call chat_poll again.",
+                    "auftraege": auftraege,
+                    "hinweis": format!("Confirm each task right away with chat_reply (replyTo = id, done=false) – without a reply within {lease:.0} s it's offered again. \
+                                        Have it carried out, finish with chat_reply (done=true), then call chat_poll again. A task with cancels asks to stop those tasks."),
+                    "leaseSeconds": lease,
                     "verlauf": verlauf,
                 });
                 if let Some(a) = abbruch {
@@ -1035,7 +1499,8 @@ impl<S: AgentShell> Agent<S> {
                 let text = str_arg(&args, "text")?;
                 let reply_to = args.get("replyTo").and_then(Value::as_u64);
                 let done = args.get("done").and_then(Value::as_bool).unwrap_or(true);
-                let m = st.chat.reply(text, reply_to, done)?;
+                let client = args.get("client").and_then(Value::as_str).map(|_| client_arg(&args));
+                let m = st.chat.reply(text, reply_to, done, client.as_deref())?;
                 self.emit("chat-changed", &st.chat_view());
                 Ok(json!({ "ok": true, "id": m.id }))
             }
@@ -1457,10 +1922,10 @@ mod tests {
 
     #[test]
     fn schema_examples_parse_as_commands() {
-        // The examples from the tool description must be valid commands.
+        // The examples from the tool description (first paragraph) must be valid commands.
         let desc = tools(&[]).into_iter().find(|t| t.name == "execute").unwrap().description;
         let mut found = 0;
-        for part in desc.split(", ") {
+        for part in desc.lines().next().unwrap().split(", ") {
             let start = part.find('{').unwrap();
             let json_text = part[start..].trim_end_matches('.');
             let cmd: Result<Command, _> = serde_json::from_str(json_text);
@@ -1468,5 +1933,165 @@ mod tests {
             found += 1;
         }
         assert_eq!(found, 3);
+    }
+
+    struct TestShell(AppState);
+
+    impl AgentShell for TestShell {
+        fn state(&self) -> &AppState {
+            &self.0
+        }
+    }
+
+    fn agent() -> Agent<TestShell> {
+        Agent::new(TestShell(AppState::without_audio()))
+    }
+
+    fn call(a: &Agent<TestShell>, name: &str, args: Value) -> Value {
+        Handler::call(a, name, args).unwrap_or_else(|e| panic!("{name}: {e}"))
+    }
+
+    fn tracks(a: &Agent<TestShell>) -> usize {
+        lock(&a.st().session).unwrap().project.tracks.len()
+    }
+
+    #[test]
+    fn execute_with_placeholders_and_compact_notes_reports_ids() {
+        let a = agent();
+        let r = call(&a, "execute", json!({ "commands": [
+            { "type": "addTrack", "track": { "ref": "$bass", "name": "Bass", "kind": "instrument" } },
+            { "type": "addClip", "trackId": "$bass", "clip": { "ref": "$riff", "startBeats": 0, "source": { "type": "notes", "lengthBeats": 4, "notes": "A2 1 · C3 · E3 v80 · G3" } } },
+            { "type": "setTrack", "trackId": "$bass", "patch": { "gainDb": -4 } }
+        ] }));
+        let bass = r["ids"]["$bass"].as_u64().unwrap();
+        let riff = r["ids"]["$riff"].as_u64().unwrap();
+        assert_eq!(r["created"]["tracks"], json!([bass]));
+        assert_eq!(r["created"]["clips"], json!([{ "trackId": bass, "clipId": riff }]));
+        assert!(r["revision"].as_u64().is_some());
+        assert!(r["change"].as_str().unwrap().starts_with("Agent · "));
+        let s = lock(&a.st().session).unwrap();
+        let t = s.project.track(Id(bass)).unwrap();
+        assert_eq!(t.gain_db, -4.0);
+        let ClipSource::Notes { notes, .. } = &t.clips[0].source else { panic!() };
+        assert_eq!(notes.iter().map(|n| (n.pitch, n.start_beats, n.velocity)).collect::<Vec<_>>(), vec![(45, 0.0, 100), (48, 1.0, 100), (52, 2.0, 80), (55, 3.0, 80)]);
+        drop(s);
+        // unknown placeholder: nothing changes
+        let before = tracks(&a);
+        let e = Handler::call(&a, "execute", json!({ "commands": [{ "type": "setTrack", "trackId": "$drums", "patch": { "mute": true } }] })).unwrap_err();
+        assert!(e.contains("$drums"), "{e}");
+        assert_eq!(tracks(&a), before);
+    }
+
+    #[test]
+    fn if_revision_refuses_after_someone_else_changed_the_project() {
+        let a = agent();
+        let rev = call(&a, "get_project", json!({}))["revision"].as_u64().unwrap();
+        let add = json!({ "type": "addTrack", "track": { "name": "A", "kind": "instrument" } });
+        let r = call(&a, "execute", json!({ "commands": [add], "ifRevision": rev }));
+        let rev2 = r["revision"].as_u64().unwrap();
+        assert_ne!(rev, rev2);
+        let e = Handler::call(&a, "execute", json!({ "commands": [add], "ifRevision": rev })).unwrap_err();
+        assert!(e.contains("changed in the meantime"), "{e}");
+        assert_eq!(tracks(&a), 1);
+        let e = Handler::call(&a, "batch", json!({ "calls": [{ "tool": "execute", "args": { "commands": [add] } }], "ifRevision": rev })).unwrap_err();
+        assert!(e.contains("changed in the meantime"), "{e}");
+        // read-only tools don't report a revision of their own
+        assert!(call(&a, "list_song_templates", json!({})).get("revision").is_none());
+    }
+
+    #[test]
+    fn get_project_reads_only_the_asked_parts() {
+        let a = agent();
+        let r = call(&a, "execute", json!({ "commands": [
+            { "type": "addTrack", "track": { "ref": "$a", "name": "A", "kind": "instrument" } },
+            { "type": "addTrack", "track": { "ref": "$b", "name": "B", "kind": "audio" } }
+        ] }));
+        let b = r["ids"]["$b"].as_u64().unwrap();
+        let p = call(&a, "get_project", json!({ "trackIds": [b], "fields": ["tempoBpm", "tracks.name"] }));
+        let keys: Vec<&String> = p.as_object().unwrap().keys().collect();
+        assert_eq!(keys.len(), 3, "{keys:?}");
+        assert!(p["revision"].is_u64() && p["tempoBpm"].is_number());
+        assert_eq!(p["tracks"], json!([{ "id": b, "name": "B" }]));
+        assert!(Handler::call(&a, "get_project", json!({ "trackIds": [999] })).unwrap_err().contains("999"));
+    }
+
+    #[test]
+    fn batch_is_one_undo_step_and_reverts_at_the_first_error() {
+        let a = agent();
+        let r = call(&a, "batch", json!({ "label": "Bass", "calls": [
+            { "tool": "create_instrument_track", "args": { "kind": "bass" } },
+            { "tool": "execute", "args": { "commands": [{ "type": "setTrack", "trackId": "$0.trackId", "patch": { "gainDb": -6 } }] } },
+            { "tool": "execute", "args": { "commands": [{ "type": "addClip", "trackId": "$0.trackId", "clip": { "ref": "$end", "startBeats": 16, "source": { "type": "notes", "lengthBeats": 4, "notes": "E2 2 · G2" } } }] } },
+            { "tool": "execute", "args": { "commands": [{ "type": "setClip", "trackId": "$0.trackId", "clipId": "$end", "patch": { "name": "Ende" } }] } }
+        ] }));
+        assert_eq!(r["undoLabel"], "Agent · Bass");
+        assert_eq!(r["results"].as_array().unwrap().len(), 4);
+        assert!(r["results"][1].get("project").is_none(), "execute inside a batch without the project");
+        assert!(r["ids"]["$end"].is_u64());
+        let track = r["results"][0]["trackId"].as_u64().unwrap();
+        assert_eq!(r["created"]["tracks"], json!([track]));
+        {
+            let s = lock(&a.st().session).unwrap();
+            let t = s.project.track(Id(track)).unwrap();
+            assert_eq!((t.gain_db, t.clips.last().unwrap().name.as_str()), (-6.0, "Ende"));
+            assert_eq!(s.undo_label(), Some("Agent · Bass"));
+        }
+        call(&a, "undo", json!({}));
+        assert_eq!(tracks(&a), 0, "one undo step reverts the whole batch");
+
+        // error in call 2: call 1 is reverted, the undo history stays as it was
+        let e = Handler::call(&a, "batch", json!({ "calls": [
+            { "tool": "create_instrument_track", "args": { "kind": "synth" } },
+            { "tool": "execute", "args": { "commands": [{ "type": "setTrack", "trackId": 9999, "patch": { "mute": true } }] } }
+        ] })).unwrap_err();
+        assert!(e.contains("Call 2 (execute)") && e.contains("unchanged"), "{e}");
+        assert_eq!(tracks(&a), 0);
+        {
+            let s = lock(&a.st().session).unwrap();
+            assert!(s.undo_label().is_none());
+            assert_eq!(s.redo_label(), Some("Agent · Bass"), "the undone batch stays redoable");
+        }
+        let e = Handler::call(&a, "batch", json!({ "calls": [{ "tool": "undo" }] })).unwrap_err();
+        assert!(e.contains("not allowed"), "{e}");
+    }
+
+    #[test]
+    fn chat_tools_reserve_peek_and_carry_cancel_requests() {
+        let a = agent();
+        let st = a.st();
+        let task = st.chat.send_user("Bau ein Jazz-Stück", None).unwrap();
+        let r = call(&a, "chat_poll", json!({ "timeoutSeconds": 1, "client": "zuhoerer", "leaseSeconds": 30 }));
+        assert_eq!(r["auftraege"][0]["id"], task.id);
+        assert_eq!(r["leaseSeconds"], 30.0);
+        // a second poller doesn't get the reserved task
+        assert_eq!(call(&a, "chat_poll", json!({ "timeoutSeconds": 1, "client": "test" }))["auftraege"], json!([]));
+        let peek = call(&a, "chat_peek", json!({}));
+        assert_eq!(peek["messages"][0]["claimedBy"], "zuhoerer");
+        assert_eq!(peek["messages"][0]["status"], "inProgress");
+        let since = peek["lastId"].as_u64().unwrap();
+        call(&a, "chat_reply", json!({ "text": "Bin dran", "replyTo": task.id, "done": false, "client": "arbeiter" }));
+        // the person writes "Stopp": every tool response carries it
+        st.chat.send_user("Stopp", None).unwrap();
+        let p = call(&a, "get_project", json!({ "fields": ["name"] }));
+        assert_eq!(p["cancelRequested"], json!([task.id]));
+        let peek = call(&a, "chat_poll", json!({ "peek": true, "sinceId": since }));
+        let msgs = peek["messages"].as_array().unwrap();
+        assert_eq!(msgs.len(), 2, "reply and stop request: {msgs:?}");
+        assert_eq!(msgs[1]["cancels"], json!([task.id]));
+        let e = Handler::call(&a, "get_project", json!({ "trackIds": [12345] })).unwrap_err();
+        assert!(e.contains("cancelRequested"), "{e}");
+        call(&a, "chat_reply", json!({ "text": "Gestoppt.", "replyTo": task.id }));
+        assert!(call(&a, "get_project", json!({})).get("cancelRequested").is_none());
+    }
+
+    #[test]
+    fn tool_calls_mark_the_agent_as_working_but_waiting_polls_do_not() {
+        let a = agent();
+        call(&a, "chat_poll", json!({ "timeoutSeconds": 1 }));
+        let v = a.st().chat_view();
+        assert!(v.agent_listening && !v.agent_working);
+        call(&a, "get_project", json!({}));
+        let v = a.st().chat_view();
+        assert!(v.agent_working && v.agent_connected);
     }
 }

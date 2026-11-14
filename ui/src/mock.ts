@@ -280,9 +280,13 @@ export function createMock(): Backend {
     onFileDrag: () => {},
     chatSend: (text) => {
       chatMessages.push({ id: chatMessages.length + 1, from: "user", text, time: Date.now(), status: "neu", replyTo: null });
-      return later({ messages: [...chatMessages], agentListening: false, agentConnected: false });
+      return later({ messages: [...chatMessages], agentListening: false, agentConnected: false, agentWorking: false, workingOn: [] });
     },
-    chatHistory: () => later({ messages: [...chatMessages], agentListening: false, agentConnected: false }),
+    chatHistory: () => later({ messages: [...chatMessages], agentListening: false, agentConnected: false, agentWorking: false, workingOn: [] }),
+    chatStop: (id, text) => {
+      chatMessages.push({ id: chatMessages.length + 1, from: "user", text, time: Date.now(), status: "neu", replyTo: null, cancels: [id] });
+      return later({ messages: [...chatMessages], agentListening: false, agentConnected: false, agentWorking: false, workingOn: [] });
+    },
     onChatChanged: () => {},
     instrumentSpecs: () => Promise.reject(t("Instruments are only available in the desktop app.")),
     soundWave: () => Promise.reject(t("Sound editing is only available in the desktop app.")),

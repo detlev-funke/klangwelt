@@ -130,6 +130,8 @@ const panelTopics: Record<string, HelpTopic> = {
     text: [
       t("Tasks for a connected AI agent (e.g. Claude Code via MCP). Every message includes the current state: which tracks are audible, muted or soloed and which time range is selected – so \"make this part quieter\" works."),
       t("The top explains how to connect the agent and make it listen."),
+      t("Each task shows its number and who took it (\"claimed by …\"). If the agent doesn't confirm a task within a minute, it's offered again – nothing gets lost. **Stop** at a task (or the message \"Stop\", \"Stop #3\") cancels it if nobody has picked it up yet, otherwise the agent is told with its next tool call."),
+      t("In the browser version an agent connects through a browser tool: \"Claude in Chrome\", or Playwright MCP with the \"Playwright MCP Bridge\" extension (also in Vivaldi, Brave or Edge)."),
     ],
     keys: [[t("Enter"), t("send")], [t("Shift + Enter"), t("new line")]],
   },
@@ -161,7 +163,7 @@ const ENTRIES: Entry[] = [
   { sel: "canvas.meter", topic: { title: t("Level"), text: [t("Output on top, microphone below. Red means too loud – lower the track levels.")] } },
   { sel: ".chip.agent", topic: { title: t("Agent"), text: [
     t("Shows whether an AI agent (e.g. Claude Code) is connected to Klangwelt:"),
-    t("**No agent connected** – the app's endpoint is running and waiting; no agent has checked in during the last few minutes or holds a connection. **Agent ready** – an agent is connected and can control the project. **Agent listening** – it picks up tasks from the chat right away. **Agent off** – the endpoint couldn't start."),
+    t("**Agent listening** – it picks up tasks from the chat right away. **Agent working on #n** – a task is in progress, or the agent called a tool within the last minute. **Agent ready** – an agent is connected but quiet. **No agent connected** – nothing for more than a minute; the app's endpoint is waiting. **Agent off** – the endpoint couldn't start."),
     t("A click opens the agent chat with the prompt for connecting: copy it, paste it into Claude Code, done."),
   ] } },
   { sel: "[data-help=ausgabegeraet]", topic: { title: t("Output device"), text: [

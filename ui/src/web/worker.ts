@@ -347,9 +347,11 @@ interface HeldPoll {
   retry(last: boolean): void;
 }
 const heldPolls = new Set<HeldPoll>();
-/** "Agent is listening" holds in the core for 90 s after the last poll – as long as one
- *  is waiting, the worker refreshes it. */
-const POLL_REFRESH_MS = 30_000;
+/** "Agent is listening" holds in the core for 30 s after the last poll – as long as one
+ *  is waiting, the worker refreshes it. Each refresh also asks again, so a task whose
+ *  lease ran out (no chat_reply in time) is offered again within these few seconds,
+ *  like on the desktop. */
+const POLL_REFRESH_MS = 5_000;
 
 function mcpCore(message: string): string {
   withText(message, (p, l) => wasm.kw_mcp(p, l));
@@ -363,29 +365,32 @@ async function mcpWithData(message: string): Promise<string> {
   return r.out || "null";
 }
 
-/** Number of jobs in a response to chat_poll; −1 on errors (then do not wait). */
+/** Number of jobs in a response to chat_poll; −1 on errors and for other
+ *  responses (`peek`) – then do not wait. */
 function pollTasks(json: string): number {
   try {
     const r = JSON.parse(json) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } };
     const text = r.result?.content?.[0]?.text;
     if (r.result?.isError || typeof text !== "string") return -1;
-    return ((JSON.parse(text) as { auftraege?: unknown[] }).auftraege ?? []).length;
+    const tasks = (JSON.parse(text) as { auftraege?: unknown[] }).auftraege;
+    return Array.isArray(tasks) ? tasks.length : -1;
   } catch {
     return -1;
   }
 }
 
 async function mcp(message: string): Promise<string> {
-  let req: { method?: string; params?: { name?: string; arguments?: { timeoutSeconds?: unknown } } } | null = null;
+  let req: { method?: string; params?: { name?: string; arguments?: { timeoutSeconds?: unknown; peek?: unknown } } } | null = null;
   try {
     req = JSON.parse(message);
   } catch {
     // the core answers invalid JSON (parse error)
   }
   const first = await mcpWithData(message);
-  if (req?.method !== "tools/call" || req.params?.name !== "chat_poll" || pollTasks(first) !== 0) return Promise.resolve(first);
+  const waits = req?.method === "tools/call" && req.params?.name === "chat_poll" && req.params.arguments?.peek !== true;
+  if (!waits || pollTasks(first) !== 0) return Promise.resolve(first);
   // as in the core: default 50 s, at most 590 s
-  const secs = Math.min(590, Math.max(1, Number(req.params.arguments?.timeoutSeconds) || 50));
+  const secs = Math.min(590, Math.max(1, Number(req?.params?.arguments?.timeoutSeconds) || 50));
   return new Promise((resolve) => {
     const held: HeldPoll = {
       retry(last) {
@@ -461,7 +466,7 @@ async function handle(r: Request): Promise<void> {
         const { status, out } = await withData(() => invokeOnce(r.cmd, r.args));
         if (status === 0) reply({ id: r.id, ok: true, json: out });
         else reply({ id: r.id, ok: false, error: out });
-        if (status === 0 && r.cmd === "chat_send") wakePolls();
+        if (status === 0 && (r.cmd === "chat_send" || r.cmd === "chat_stop")) wakePolls();
       }
     }
   } catch (e) {

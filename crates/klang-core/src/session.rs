@@ -1,5 +1,14 @@
 use crate::command::{apply, Command, CoreError};
 use crate::model::Project;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Revisions are unique within the process (also across sessions: opening
+/// another project never repeats a revision an agent may still hold).
+static REVISION: AtomicU64 = AtomicU64::new(0);
+
+fn next_revision() -> u64 {
+    REVISION.fetch_add(1, Ordering::Relaxed) + 1
+}
 
 #[derive(Clone, Debug)]
 struct Entry {
@@ -15,6 +24,8 @@ pub struct Session {
     undo: Vec<Entry>,
     redo: Vec<Entry>,
     limit: usize,
+    /// Changes with every change of the content (not with pure view changes).
+    revision: u64,
 }
 
 impl Default for Session {
@@ -25,7 +36,7 @@ impl Default for Session {
 
 impl Session {
     pub fn new(project: Project) -> Self {
-        Self { project, undo: Vec::new(), redo: Vec::new(), limit: 500 }
+        Self { project, undo: Vec::new(), redo: Vec::new(), limit: 500, revision: next_revision() }
     }
 
     /// Runs a command. With `merge = true` it merges with the previous
@@ -38,6 +49,7 @@ impl Session {
         let label = cmd.label();
         let key = cmd.merge_key();
         let inverse = apply(&mut self.project, cmd)?;
+        self.revision = next_revision();
         self.redo.clear();
         if merge {
             if let (Some(k), Some(last)) = (&key, self.undo.last()) {
@@ -59,6 +71,7 @@ impl Session {
         };
         match apply(&mut self.project, entry.inverse.clone()) {
             Ok(redo) => {
+                self.revision = next_revision();
                 self.redo.push(Entry { label: entry.label, inverse: redo, merge_key: None });
                 Ok(true)
             }
@@ -75,6 +88,7 @@ impl Session {
         };
         match apply(&mut self.project, entry.inverse.clone()) {
             Ok(undo) => {
+                self.revision = next_revision();
                 self.undo.push(Entry { label: entry.label, inverse: undo, merge_key: None });
                 Ok(true)
             }
@@ -92,6 +106,51 @@ impl Session {
     pub fn redo_label(&self) -> Option<&str> {
         self.redo.last().map(|e| e.label.as_str())
     }
+
+    /// Revision of the content: changes with every change, undo and redo.
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    /// Mark in the history for [`Session::squash`] and [`Session::rollback`].
+    pub fn mark(&self) -> UndoMark {
+        UndoMark { depth: self.undo.len(), redo: self.redo.clone() }
+    }
+
+    /// Steps since `mark` (have there been changes?).
+    pub fn steps_since(&self, mark: &UndoMark) -> usize {
+        self.undo.len().saturating_sub(mark.depth)
+    }
+
+    /// Merges all steps since `mark` into one undo step named `label`.
+    pub fn squash(&mut self, mark: &UndoMark, label: String) {
+        let depth = mark.depth.min(self.undo.len());
+        if self.undo.len() == depth {
+            return;
+        }
+        let steps: Vec<Entry> = self.undo.drain(depth..).collect();
+        let inverse = Command::Batch { label: label.clone(), commands: steps.into_iter().rev().map(|e| e.inverse).collect() };
+        self.undo.push(Entry { label, inverse, merge_key: None });
+    }
+
+    /// Reverts all steps since `mark` – the history is as it was then,
+    /// including what could be redone.
+    pub fn rollback(&mut self, mark: UndoMark) -> Result<(), CoreError> {
+        while self.undo.len() > mark.depth {
+            let Some(e) = self.undo.pop() else { break };
+            apply(&mut self.project, e.inverse)?;
+        }
+        self.redo = mark.redo;
+        self.revision = next_revision();
+        Ok(())
+    }
+}
+
+/// A point in the undo history (see [`Session::mark`]).
+#[derive(Clone, Debug)]
+pub struct UndoMark {
+    depth: usize,
+    redo: Vec<Entry>,
 }
 
 #[cfg(test)]
@@ -282,6 +341,49 @@ mod tests {
         s.execute(reset, false).unwrap();
         assert_eq!(s.project.tracks[0].notes_height, 0.0);
         assert!(!Command::SetTrack { track_id: tid, patch: TrackPatch::default() }.is_view_only());
+    }
+
+    #[test]
+    fn revision_changes_with_content_and_steps_squash_into_one() {
+        let mut s = Session::default();
+        let r0 = s.revision();
+        let add = |name: &str| Command::AddTrack { track: Track::new(Id::NEW, name, TrackKind::Instrument), index: None };
+        s.execute(add("A"), false).unwrap();
+        let r1 = s.revision();
+        assert!(r1 > r0);
+        let tid = s.project.tracks[0].id;
+        // pure view change: same revision
+        s.execute(Command::SetTrack { track_id: tid, patch: TrackPatch { notes_height: Some(300.0), ..Default::default() } }, false).unwrap();
+        assert_eq!(s.revision(), r1);
+        // another session never repeats a revision
+        assert!(Session::default().revision() > r1);
+
+        let mark = s.mark();
+        s.execute(add("B"), false).unwrap();
+        s.execute(Command::SetTrack { track_id: tid, patch: TrackPatch { gain_db: Some(-3.0), ..Default::default() } }, false).unwrap();
+        assert_eq!(s.steps_since(&mark), 2);
+        s.squash(&mark, "Agent · batch".into());
+        assert_eq!(s.undo_label(), Some("Agent · batch"));
+        assert_eq!(s.project.tracks.len(), 2);
+        s.undo().unwrap();
+        assert_eq!(s.project.tracks.len(), 1, "one step reverts both");
+        assert_eq!(s.project.tracks[0].gain_db, 0.0);
+        s.redo().unwrap();
+        assert_eq!((s.project.tracks.len(), s.project.tracks[0].gain_db), (2, -3.0));
+
+        // a rollback after an undo: what could be redone stays redoable
+        s.undo().unwrap();
+        let mark = s.mark();
+        let before = s.revision();
+        s.execute(add("C"), false).unwrap();
+        assert!(s.redo_label().is_none());
+        s.rollback(mark).unwrap();
+        assert_eq!(s.project.tracks.len(), 1);
+        assert_eq!(s.undo_label(), Some("Add track"));
+        assert_eq!(s.redo_label(), Some("Agent · batch"));
+        assert!(s.revision() > before);
+        s.redo().unwrap();
+        assert_eq!(s.project.tracks.len(), 2);
     }
 
     #[test]

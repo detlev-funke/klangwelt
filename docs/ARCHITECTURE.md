@@ -1003,10 +1003,14 @@ Claude Desktop ─stdio─▶ klangwelt --mcp ─HTTP─▶ klang-mcp (127.0.0.1
   * Clients that never open a stream (scripts that call tools directly)
     count for `AGENT_GRACE` (2 min) after their last request. `DELETE` ends
     a session immediately. Requests without a session together count as one client.
-  * `AppState::agent_connected`: an agent is listening or connected in this way. The
-    status loop checks this twice per second and sends
-    `chat-changed` (`ChatView.agentConnected`) when it changes. The bar shows "No agent
-    connected" → "Agent ready" → "Agent listening" (or "Agent off" without a server).
+  * `AppState::agent_connected`: an agent is listening, working or connected in this way.
+    `AppState::tick` (both shells call it periodically) checks the agent state twice per
+    second (`watch_agent`: listening, working, tasks in progress, connected) and sends
+    `chat-changed` when it changes – also for changes without an event of their own (a
+    lease or the minute after the last tool call running out, a client going away).
+    The bar shows "Agent listening", "Agent working on #n" (or both), "Agent ready",
+    "No agent connected" (only after more than a minute without a sign) or "Agent off"
+    without a server.
   * The stdio bridge keeps a stream open for its client (in its own thread,
     reopening it after an abort) and ends the session when the
     client stops.
@@ -1058,17 +1062,44 @@ then runs `cargo build --release -p klangwelt --features tauri/custom-protocol`.
   the app sends `project-changed` (new snapshot) and `agent-activity`
   (message in the UI). Pure view changes (note view,
   track heights) create no undo step.
+  * `Agent::call` wraps every tool: it marks the agent as working (`Chat::touch`, except a
+    waiting `chat_poll`), compares track/clip IDs and the revision before and after and adds
+    `revision`, `change` (the summaries passed to `changed`, collected per thread) and
+    `created` / `removed` to the response, and adds `cancelRequested` (also to error texts).
+  * **Revision** (`Session::revision`, klang-core): a process-wide counter that moves with
+    every content change, undo and redo (not with view changes; a newly opened project never
+    repeats one). `get_project` returns it, `execute {ifRevision}` checks it under the same
+    lock as the change (`AppState::execute_if`). `get_project {trackIds, fields}` filters
+    (`"tracks.name"` = field of every track).
+  * **Placeholders** in `execute`: an object with `"ref": "$bass"` gets a real ID from
+    `Project::alloc_id` before the commands are parsed; `"$bass"` in `id`/`trackId`/`clipId`
+    is replaced by it. New tracks/clips may omit `id` (= 0, new).
+  * **Compact notes** (`crates/klang-app/src/notation.rs`): wherever a command has
+    `"notes": "<text>"`, the text (`C4 1 · E4 .5 v100`, chords with `+`, rests `r`, `@start`,
+    German note names) becomes the JSON note list.
+  * **`batch`**: runs tool calls in a row; `Session::mark` marks the start (with what can be redone),
+    `Session::squash` merges all undo steps since then into one, `Session::rollback` reverts
+    them at the first error, redo included. `"$0.trackId"` takes a field of an earlier result; placeholders
+    of an `execute` stay valid for the following calls.
 * **Chat** (`crates/klang-app/src/chat.rs`): the UI writes tasks
   (`chat_send`), the agent picks them up with `chat_poll` – a long poll over
   `Mutex` + `Condvar` that waits up to `timeoutSeconds` and returns
-  immediately as soon as something new arrives. Picked-up tasks are marked
-  "in progress"; `chat_reply` (with `done`) answers them. While a poll is
-  waiting (plus a 90 s grace period), the UI shows "Agent listening".
-  Listening is the job of a **subagent**: the connect prompt, the
-  server instructions and the MCP prompt `zuhoeren` (for configured
-  MCP clients; in Claude Code `/mcp__klangwelt__zuhoeren`) have the
-  agent start a subagent in the background (`LISTENER_BRIEF` in
-  `crates/klang-app/src/agent.rs`, worded identically in `.claude/agents/klangwelt-zuhoerer.md`).
+  immediately as soon as something new arrives. Picking up **reserves** a task for the
+  poller's `client` ("claimed by …") for `leaseSeconds` (default 60): without a
+  `chat_reply` in that time it is offered again (`redelivered`). The poll checks for leases
+  running out in its 1 s slices; in the browser the web worker asks again every 5 s. A
+  reply confirms the task (never offered again); with `done` it is finished.
+  `chat_peek {sinceId}` reads messages without picking up. A short message of stop words
+  ("Stopp", "stop #3", all UI languages) or the stop button (`chat_stop`) stops tasks:
+  not picked up yet → cancelled, in progress → `cancel_requested` until the agent finishes it.
+  While a poll is waiting (plus a 30 s grace period), the UI shows "Agent listening"; a task
+  in progress or a tool call in the last 60 s shows "Agent working on #n".
+  **Roles:** a listener subagent (small model) only polls and confirms, the main session
+  starts a worker subagent per task and passes follow-ups on (subagents can't start
+  subagents in Claude Code, so the listener sends tasks to the main session). The connect
+  prompt, the server instructions (`ROLES`) and the MCP prompts `zuhoeren` (`LISTENER_BRIEF`,
+  worded identically in `.claude/agents/klangwelt-zuhoerer.md` of the desktop) and `arbeiten`
+  (`WORKER_BRIEF`) describe them; in Claude Code `/mcp__klangwelt__zuhoeren`.
   Empty poll responses are deliberately minimal so that the subagent runs for a long time.
   The poll waits in 1 s slices and in between checks via
   `klang_mcp::caller_gone()` (thread-local connection, non-blocking

@@ -9,10 +9,16 @@ import { fileControls, projectLabel } from "./fileops.js";
 import { act, agentPulse, chat, errorText, notify, project, run, showPanel, snapshot, status } from "../store.js";
 import type { AudioDevices, AudioKind } from "../types.js";
 
-/** Text of the agent indicator at the top right. */
-export function agentLabel(serverRunning: boolean, connected: boolean, listening: boolean): string {
+/** Text of the agent indicator at the top right: listening (a poll waits),
+ *  working on #n (a task in progress or a tool call in the last minute), both,
+ *  ready (desktop: connected, quiet) – "No agent connected" only after a minute of silence. */
+export function agentLabel(serverRunning: boolean, connected: boolean, listening: boolean, working = false, workingOn: number[] = []): string {
   if (!serverRunning) return t("Agent off");
+  const tasks = workingOn.map((id) => `#${id}`).join(", ");
+  if (listening && workingOn.length) return t("Agent listening · working on {tasks}", { tasks });
   if (listening) return t("Agent listening");
+  if (workingOn.length) return t("Agent working on {tasks}", { tasks });
+  if (working) return t("Agent working");
   return connected ? t("Agent ready") : t("No agent connected");
 }
 
@@ -188,16 +194,19 @@ class KwTransport extends HTMLElement {
       // Browser: no endpoint, but the MCP server in the page is always there
       const web = backend.platform === "web";
       const ok = !!a?.url || web;
-      const { agentListening, agentConnected } = chat.value;
+      const { agentListening, agentConnected, agentWorking, workingOn } = chat.value;
       const listening = ok && agentListening;
-      const connected = ok && (agentConnected || agentListening);
+      const working = ok && agentWorking;
+      const connected = ok && (agentConnected || agentListening || agentWorking);
       agent.classList.toggle("warn", !connected);
       agent.classList.toggle("listening", listening);
+      agent.classList.toggle("working", working && !listening);
       agent.classList.toggle("connected", connected);
-      agent.replaceChildren(h("span", { class: "dot" }), agentLabel(ok, connected, listening));
+      agent.replaceChildren(h("span", { class: "dot" }), agentLabel(ok, connected, listening, working, ok ? workingOn : []));
       if (!ok) agent.title = a?.error ?? t("Agent endpoint not started");
+      else if (working && !listening) agent.title = t("An agent is working (a task in progress or a tool call within the last minute). Nobody is listening right now – new messages wait until a listener picks them up.\nClick to open the agent chat.");
       else if (web && listening) agent.title = t("An agent is listening – tasks in the chat are picked up right away.\nClick to open the agent chat.");
-      else if (web) agent.title = t("MCP server inside the page (no network) – for an agent with a browser tool like \"Claude in Chrome\".\nClick to open the agent chat with the prompt to copy.");
+      else if (web) agent.title = t("MCP server inside the page (no network) – for an agent with a browser tool like \"Claude in Chrome\" or Playwright MCP with the \"Playwright MCP Bridge\" extension.\nClick to open the agent chat with the prompt to copy.");
       else if (listening) agent.title = t("An agent is listening – tasks in the chat are picked up right away.\nEndpoint: {url}\nClick to open the agent chat.", { url: String(a!.url) });
       else if (connected) agent.title = t("An agent is connected but isn't listening in the chat right now.\nEndpoint: {url}\nClick to open the agent chat – it explains how to make it listen.", { url: String(a!.url) });
       else agent.title = t("No agent connected yet – the endpoint is waiting at {url}.\nClick to open the agent chat: copy the prompt there and paste it into Claude Code.", { url: String(a!.url) });

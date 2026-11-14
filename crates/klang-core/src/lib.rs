@@ -14,4 +14,4 @@ pub use command::{apply, ClipPatch, Command, CoreError, ProjectPatch, TrackPatch
 pub use model::{
     Clip, ClipSource, Id, Instrument, InstrumentKind, Note, Project, Track, TrackKind, TrackView, TRACK_COLORS,
 };
-pub use session::Session;
+pub use session::{Session, UndoMark};

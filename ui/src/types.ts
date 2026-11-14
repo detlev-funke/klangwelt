@@ -800,17 +800,31 @@ export interface ChatMessage {
   text: string;
   /** Unix time in ms */
   time: number;
-  status: "neu" | "inArbeit" | "erledigt" | null;
+  status: "neu" | "inArbeit" | "erledigt" | "abgebrochen" | null;
   replyTo: number | null;
   /** Position in the project when sending (goes along to the agent) */
   kontext?: string;
+  /** Client that picked up the task (`client` of chat_poll) */
+  claimedBy?: string;
+  /** The agent replied to the task – it's no longer offered again */
+  confirmed?: boolean;
+  /** The person asked to stop this task */
+  cancelRequested?: boolean;
+  /** Stop message: the tasks it stops */
+  cancels?: number[];
+  /** Offered again this often because nobody replied in time */
+  redelivered?: number;
 }
 
 export interface ChatView {
   messages: ChatMessage[];
   agentListening: boolean;
-  /** An agent is connected via MCP (active session) or is listening. */
+  /** An agent is connected via MCP (active session), listening or working. */
   agentConnected: boolean;
+  /** An agent is working: a tool call within the last minute or a task in progress. */
+  agentWorking: boolean;
+  /** Tasks in progress (picked up, not done yet). */
+  workingOn: number[];
 }
 
 export interface AgentActivity {

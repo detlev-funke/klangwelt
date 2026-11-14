@@ -30,6 +30,7 @@ pub mod fugue;
 pub mod harmony;
 pub mod host;
 pub mod library;
+pub mod notation;
 pub mod project;
 pub mod rhythm;
 pub mod settings;

@@ -239,6 +239,9 @@ pub struct StatusDto {
     pub prerendered: usize,
 }
 
+/// State of the agent indicator: listening, working, tasks in progress, connected.
+type AgentKey = (bool, bool, Vec<u64>, bool);
+
 pub struct AppState {
     /// Chat between UI and agent (requests via `chat_poll`).
     pub chat: crate::chat::Chat,
@@ -278,6 +281,8 @@ pub struct AppState {
     prerender: Mutex<Prerender>,
     /// For tests: the mixer counts as at least this loaded (f32 bits).
     test_load: AtomicU32,
+    /// Agent indicator: next check (Unix ms) and the state reported last.
+    agent_watch: Mutex<(u64, Option<AgentKey>)>,
 }
 
 /// Checksum for "unsaved": the content without the internal counter for new
@@ -425,6 +430,7 @@ impl AppState {
             host: std::sync::OnceLock::new(),
             prerender: Mutex::new(Prerender::default()),
             test_load: AtomicU32::new(0),
+            agent_watch: Mutex::new((0, None)),
         };
         if let Some(e) = &state.engine {
             e.set_metronome(false);
@@ -562,6 +568,50 @@ impl AppState {
         self.snapshot()
     }
 
+    /// Like [`AppState::execute`], but only if the project is still at revision
+    /// `if_revision` (nobody changed it in the meantime) – checked under the same lock.
+    pub fn execute_if(&self, cmd: Command, if_revision: Option<u64>) -> CmdResult<Snapshot> {
+        {
+            let mut s = lock(&self.session)?;
+            if let Some(want) = if_revision {
+                if s.revision() != want {
+                    // for the agent (not translated, like the other agent texts)
+                    return Err(format!("The project was changed in the meantime (revision {} instead of {want}) – read it again with get_project and retry.", s.revision()));
+                }
+            }
+            s.execute(cmd, false).map_err(|e| e.to_string())?;
+        }
+        self.sync_engine()?;
+        self.snapshot()
+    }
+
+    /// Revision of the project (changes with every change, undo and redo).
+    pub fn revision(&self) -> CmdResult<u64> {
+        Ok(lock(&self.session)?.revision())
+    }
+
+    /// Mark in the undo history for [`AppState::squash_steps`] / [`AppState::rollback_steps`].
+    pub fn undo_mark(&self) -> CmdResult<klang_core::UndoMark> {
+        Ok(lock(&self.session)?.mark())
+    }
+
+    /// All steps since `mark` become one undo step; false if there were none.
+    pub fn squash_steps(&self, mark: &klang_core::UndoMark, label: String) -> CmdResult<bool> {
+        let mut s = lock(&self.session)?;
+        if s.steps_since(mark) == 0 {
+            return Ok(false);
+        }
+        s.squash(mark, label);
+        Ok(true)
+    }
+
+    /// Reverts all steps since `mark` – the history (undo and redo) is as it was then.
+    pub fn rollback_steps(&self, mark: klang_core::UndoMark) -> CmdResult<Snapshot> {
+        lock(&self.session)?.rollback(mark).map_err(|e| e.to_string())?;
+        self.sync_engine()?;
+        self.snapshot()
+    }
+
     pub fn undo(&self) -> CmdResult<Snapshot> {
         lock(&self.session)?.undo().map_err(|e| e.to_string())?;
         self.sync_engine()?;
@@ -633,14 +683,38 @@ impl AppState {
     /// Chat for the UI, including "agent connected".
     pub fn chat_view(&self) -> crate::chat::ChatView {
         let mut v = self.chat.view();
-        v.agent_connected = v.agent_listening || self.agent_session_active();
+        v.agent_connected = v.agent_listening || v.agent_working || self.agent_session_active();
         v
+    }
+
+    /// Reports changes of the agent indicator to the UI ("chat-changed") – also
+    /// those that come without an event: a lease or the minute after the last
+    /// tool call running out, an MCP client going away. Called by `tick`,
+    /// checks twice a second.
+    fn watch_agent(&self) {
+        let now = crate::clock::now_ms();
+        let Ok(mut w) = self.agent_watch.lock() else { return };
+        if now < w.0 {
+            return;
+        }
+        w.0 = now + 500;
+        let (listening, working, on) = self.chat.agent_key();
+        let key = (listening, working, on, listening || working || self.agent_session_active());
+        if w.1.as_ref() != Some(&key) {
+            let first = w.1.is_none();
+            w.1 = Some(key);
+            drop(w);
+            if !first {
+                self.host().emit("chat-changed", &self.chat_view());
+            }
+        }
     }
 
     /// Is an agent connected: is it listening, or does it keep a connection to
     /// the MCP server open (see [`AGENT_GRACE`] and `klang_mcp::Presence`)?
     pub fn agent_connected(&self) -> bool {
-        self.chat.listening() || self.agent_session_active()
+        let (listening, working, _) = self.chat.agent_key();
+        listening || working || self.agent_session_active()
     }
 
     fn agent_session_active(&self) -> bool {
@@ -859,6 +933,7 @@ impl AppState {
     /// live mixer can't keep up, note clips around the playback position are
     /// rendered step by step and then play from their buffer.
     pub fn tick(&self) {
+        self.watch_agent();
         let Some(engine) = &self.engine else { return };
         // without taking the peak levels: they belong to the UI's status
         let s = engine.peek_status();

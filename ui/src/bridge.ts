@@ -176,6 +176,8 @@ export interface Backend {
   /** Browser: a request to the score library server waits for its request limit (seconds). */
   onLibraryWait(cb: (seconds: number) => void): void;
   chatSend(text: string): Promise<ChatView>;
+  /** The person stops task `id`; `text` appears in the chat and goes to the agent. */
+  chatStop(id: number, text: string): Promise<ChatView>;
   chatHistory(): Promise<ChatView>;
   onChatChanged(cb: (c: ChatView) => void): void;
   onStatus(cb: (s: EngineStatus) => void): void;
@@ -312,6 +314,7 @@ function coreBackend(link: CoreLink, platform: "desktop" | "web"): Backend {
       listen<{ seconds: number }>("library-wait", (p) => cb(p.seconds));
     },
     chatSend: (text) => call("chat_send", { text }),
+    chatStop: (id, text) => call("chat_stop", { id, text }),
     chatHistory: () => call("chat_history"),
     onChatChanged: (cb) => {
       listen<ChatView>("chat-changed", (p) => cb(p));

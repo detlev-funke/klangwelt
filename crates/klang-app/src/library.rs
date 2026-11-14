@@ -258,7 +258,7 @@ pub fn parse_melody(s: &str) -> Result<Vec<MelodyNote>, String> {
     Ok(out)
 }
 
-fn parse_note(s: &str) -> Option<u8> {
+pub(crate) fn parse_note(s: &str) -> Option<u8> {
     if let Ok(n) = s.parse::<u8>() {
         return (n <= 127).then_some(n);
     }

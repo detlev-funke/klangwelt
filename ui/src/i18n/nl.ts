@@ -44,14 +44,23 @@ const dict: Dict = {
   "waiting": "wacht",
   "in progress": "bezig",
   "done": "klaar",
+  "cancelled": "geannuleerd",
+  "Stop #{id}": "Stop #{id}",
   "Sent to the agent along with the message": "Wordt met het bericht naar de agent gestuurd",
+  "The agent confirmed the task": "De agent heeft de opdracht bevestigd",
+  "Reserved – offered again if the agent doesn't reply in time": "Gereserveerd – wordt opnieuw aangeboden als de agent niet op tijd antwoordt",
+  "claimed by {client}": "opgepakt door {client}",
+  "stop requested": "stop gevraagd",
+  "Stop this task – the agent is told with its next tool call": "Deze opdracht stoppen – de agent hoort het bij zijn volgende tool-aanroep",
+  "Stop": "Stop",
   "Klangwelt (a music app) is running on this computer. Control it through its HTTP endpoint {url} – without setting it up as an MCP server. Wherever the app's instructions mention tools, call them as described here.": "Klangwelt (een muziekapp) draait op deze computer. Bestuur de app via het HTTP-endpoint {url} – zonder het als MCP-server in te stellen. Waar de instructies van de app over tools spreken, roep je die aan zoals hier beschreven.",
   "How to make a call: HTTP POST to {url} with a JSON-RPC 2.0 message in the body and the header Content-Type: application/json; the response is JSON. Easiest with curl in Bash (on Windows Git Bash; in PowerShell curl.exe):": "Zo werkt een aanroep: HTTP-POST naar {url} met een JSON-RPC-2.0-bericht in de body en de header Content-Type: application/json; het antwoord is JSON. Het eenvoudigst met curl in Bash (onder Windows Git Bash; in PowerShell curl.exe):",
   "Write texts with non-ASCII characters (e.g. for chat_reply) – and in PowerShell every message – to a UTF-8 file and send it with --data-binary @file.json. You don't need the Mcp-Session-Id header.": "Teksten met speciale tekens (bijv. voor chat_reply) – en in PowerShell elk bericht – als UTF-8-bestand opslaan en met --data-binary @bestand.json versturen. De header Mcp-Session-Id heb je niet nodig.",
   "1. Send initialize (as above) and follow result.instructions from the response.": "1. Stuur initialize (zoals hierboven) en houd je aan result.instructions uit het antwoord.",
   "2. tools/list lists all tools with their descriptions and parameters. Calling a tool: {\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"get_project\",\"arguments\":{}}} – the result is in result.structuredContent (as text also in result.content[0].text), result.isError reports errors.": "2. tools/list noemt alle tools met beschrijving en parameters. Een tool aanroepen: {\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"get_project\",\"arguments\":{}}} – het resultaat staat in result.structuredContent (als tekst ook in result.content[0].text), result.isError meldt fouten.",
-  "3. Listening: start a general-purpose subagent in the background (not one that requires configured MCP tools) and give it these complete instructions, so you stay available yourself. It calls chat_poll in a loop, with a shell timeout of 300000 ms:": "3. Luisteren: start een algemene subagent op de achtergrond (geen die ingestelde MCP-tools vereist) en geef hem deze hele handleiding mee, zodat je zelf aanspreekbaar blijft. Hij roept in een lus chat_poll aan, met een shell-time-out van 300000 ms:",
-  "The call waits until a task arrives in the app's chat. Empty list: poll again right away. Carry out each task with the tools, reply briefly in English with chat_reply (replyTo = id of the task), then poll again. If the response reports a cancellation, continue with the shorter wait time it gives. If the subagent ends, start a new one.": "De aanroep wacht tot er in de chat van de app een opdracht binnenkomt. Lege lijst: meteen opnieuw pollen. Voer elke opdracht uit met de tools, antwoord kort in het Nederlands met chat_reply (replyTo = id van de opdracht) en poll dan opnieuw. Meldt het antwoord een afbreking, ga dan verder met de genoemde kortere wachttijd. Stopt de subagent, start dan een nieuwe.",
+  "3. Listening (roles in result.instructions): start a general-purpose subagent in the background as the listener, on a small, fast model (not one that requires configured MCP tools). Give it these complete instructions plus the listener's task from prompts/get with name \"zuhoeren\", so you stay available yourself. It calls chat_poll in a loop, with a shell timeout of 300000 ms:": "3. Luisteren (rollen in result.instructions): start een algemene subagent op de achtergrond als luisteraar, op een klein, snel model (geen die ingestelde MCP-tools vereist). Geef hem deze hele handleiding mee en daarbij de taak van de luisteraar uit prompts/get met naam \"zuhoeren\", zodat je zelf aanspreekbaar blijft. Hij roept in een lus chat_poll aan, met een shell-time-out van 300000 ms:",
+  "The call waits until a task arrives in the app's chat. Empty list: poll again right away. The listener confirms each task at once with chat_reply (replyTo = id, done=false) and sends it to you with SendMessage. You start a worker subagent for it with the task from prompts/get with name \"arbeiten\" plus the task – at most one per track, project-wide changes one after another – and pass follow-ups and stop messages on to it. The worker finishes with chat_reply (done=true), briefly in English. If a response reports a cancellation, continue with the shorter wait time it gives. If the listener ends, start a new one. If you can't start subagents, listen and work yourself.": "De aanroep wacht tot er in de chat van de app een opdracht binnenkomt. Lege lijst: meteen opnieuw pollen. De luisteraar bevestigt elke opdracht meteen met chat_reply (replyTo = id, done=false) en stuurt hem naar jou met SendMessage. Jij start daarvoor een werker-subagent met de taak uit prompts/get met naam \"arbeiten\" plus de opdracht – hooguit één per spoor, projectbrede wijzigingen na elkaar – en geeft vervolgvragen en stopberichten aan hem door. De werker sluit af met chat_reply (done=true), kort in het Nederlands. Meldt een antwoord een afbreking, ga dan verder met de genoemde kortere wachttijd. Stopt de luisteraar, start dan een nieuwe. Kun je geen subagents starten, dan luister en werk je zelf.",
+  "Saving rounds: get_project with trackIds/fields, execute with placeholders (\"ref\": \"$bass\") and compact notes (\"C4 1 · E4 .5 v100\"), several tools in one batch call.": "Rondes besparen: get_project met trackIds/fields, execute met plaatshouders (\"ref\": \"$bass\") en compacte noten (\"C4 1 · E4 .5 v100\"), meerdere tools in één batch-aanroep.",
   "4. If the server responds with 401, ask me for the token and send it as the header Authorization: Bearer <token>.": "4. Antwoordt de server met 401, vraag mij dan om het token en stuur het mee als header Authorization: Bearer <Token>.",
   "Let me know once you're connected and listening.": "Laat kort weten zodra je verbonden bent en luistert.",
   "Copy to clipboard": "Naar het klembord kopiëren",
@@ -60,10 +69,10 @@ const dict: Dict = {
   "Can't copy – please select it: {text}": "Kopiëren niet mogelijk – selecteer zelf: {text}",
   "Prompt for Claude Code (just paste it):": "Prompt voor Claude Code (plakken, klaar):",
   "Paste this text into Claude Code": "Deze tekst in Claude Code plakken",
-  "With this, Claude Code talks to the app's endpoint directly over HTTP – no MCP setup – and starts a subagent that listens in the background. Claude Code stays free.": "Claude Code bedient daarmee het endpoint van de app rechtstreeks via HTTP – zonder MCP-installatie – en start een subagent die op de achtergrond luistert. Claude Code blijft vrij.",
+  "With this, Claude Code talks to the app's endpoint directly over HTTP – no MCP setup. A listener on a small model picks up your tasks in the background and confirms them at once, workers carry them out – so someone always listens, and \"Stop\" reaches the running task. Claude Code stays free.": "Claude Code praat zo rechtstreeks met het eindpunt van de app via HTTP – zonder MCP-instelling. Een luisteraar op een klein model haalt je opdrachten op de achtergrond op en bevestigt ze meteen, werkers voeren ze uit – zo luistert er altijd iemand, en „Stop” bereikt de lopende opdracht. Claude Code blijft vrij.",
   "Prompt for your agent (just paste it):": "Prompt voor je agent (plakken, klaar):",
   "Give this text to your agent": "Geef deze tekst aan je agent",
-  "For Claude Desktop with the \"Claude in Chrome\" extension – or any other agent that can run JavaScript in a browser tab. It talks to the MCP server inside this page, without any network.": "Voor Claude Desktop met de extensie “Claude in Chrome” – of een andere agent die JavaScript in een browsertabblad kan uitvoeren. Die praat met de MCP-server in deze pagina, zonder netwerk.",
+  "For Claude Desktop with the \"Claude in Chrome\" extension, for Playwright MCP with the \"Playwright MCP Bridge\" extension (also in Vivaldi, Brave or Edge, without a debug port) – or any other agent that can run JavaScript in a browser tab. It talks to the MCP server inside this page, without any network.": "Voor Claude Desktop met de extensie „Claude in Chrome”, voor Playwright MCP met de extensie „Playwright MCP Bridge” (ook in Vivaldi, Brave of Edge, zonder debugpoort) – of elke andere agent die JavaScript in een browsertabblad kan uitvoeren. Hij praat met de MCP-server in deze pagina, zonder netwerk.",
   "Make the kick deeper and punchier": "Maak de kick dieper en punchier",
   "Tune the kick to the bass's root note": "Stem de kick af op de grondtoon van de bas",
   "Make the bass warmer with more sub": "Maak de bas warmer met meer sub",
@@ -73,7 +82,10 @@ const dict: Dict = {
   "Send this task to the agent": "Deze opdracht naar de agent sturen",
   "Send task (Enter)": "Opdracht versturen (Enter)",
   "Send": "Versturen",
+  "Agent is listening – tasks are picked up right away. Working on {tasks}.": "Agent luistert – opdrachten worden meteen opgehaald. Werkt aan {tasks}.",
   "Agent is listening – tasks are picked up right away.": "Agent luistert – opdrachten worden meteen opgehaald.",
+  "An agent is working on {tasks}, but nobody is listening right now. New tasks wait until a listener picks them up – the prompt below starts one.": "Een agent werkt aan {tasks}, maar er luistert nu niemand. Nieuwe opdrachten wachten tot een luisteraar ze ophaalt – de prompt hieronder start er een.",
+  "An agent is working, but nobody is listening right now. New tasks wait until a listener picks them up – the prompt below starts one.": "Een agent werkt, maar er luistert nu niemand. Nieuwe opdrachten wachten tot een luisteraar ze ophaalt – de prompt hieronder start er een.",
   "An agent is connected but not listening. Tasks wait until it listens – the prompt below starts listening.": "Er is een agent verbonden, maar die luistert niet. Opdrachten wachten tot hij luistert – de prompt hieronder start het luisteren.",
   "No agent connected. Tasks wait until one picks them up.": "Geen agent verbonden. Opdrachten wachten tot een agent ze ophaalt.",
   "No messages yet. Suggestions:": "Nog geen berichten. Suggesties:",
@@ -605,7 +617,6 @@ const dict: Dict = {
   "Back to the score's tempo (♩ = {bpm}, not specified)": "Terug naar het tempo van de partituur (♩ = {bpm}, geen aanduiding)",
   "Listen at ♩ = {bpm}; when added, it's stretched so it sounds just as fast at the project tempo ({projectBpm} BPM) – one quarter note per beat": "Beluisteren op ♩ = {bpm}; bij het overnemen zo uitgerekt dat het in het projecttempo ({projectBpm} BPM) even snel klinkt – één kwart per tel",
   "Listen at ♩ = {bpm}; when added, it's stretched so it sounds just as fast at the project tempo ({projectBpm} BPM) – one quarter note = {beats} beats": "Beluisteren op ♩ = {bpm}; bij het overnemen zo uitgerekt dat het in het projecttempo ({projectBpm} BPM) even snel klinkt – één kwart = {beats} tellen",
-  "Stop": "Stop",
   "Clear selection": "Markering opheffen",
   "Marked range": "Markering",
   "From bar {bar}": "Vanaf m. {bar}",
@@ -974,7 +985,10 @@ const dict: Dict = {
 
   // ui/src/components/transport.ts
   "Agent off": "Agent uit",
+  "Agent listening · working on {tasks}": "Agent luistert · werkt aan {tasks}",
   "Agent listening": "Agent luistert",
+  "Agent working on {tasks}": "Agent werkt aan {tasks}",
+  "Agent working": "Agent werkt",
   "Agent ready": "Agent gereed",
   "No agent connected": "Geen agent verbonden",
   "Output device": "Uitvoerapparaat",
@@ -1004,8 +1018,9 @@ const dict: Dict = {
   "Time signature of the project": "Maatsoort van het project",
   "Time signature": "Maat",
   "Agent endpoint not started": "Agent-endpoint niet gestart",
+  "An agent is working (a task in progress or a tool call within the last minute). Nobody is listening right now – new messages wait until a listener picks them up.\nClick to open the agent chat.": "Een agent werkt (een opdracht loopt of een tool-aanroep in de laatste minuut). Er luistert nu niemand – nieuwe berichten wachten tot een luisteraar ze ophaalt.\nKlik om de agent-chat te openen.",
   "An agent is listening – tasks in the chat are picked up right away.\nClick to open the agent chat.": "Een agent luistert – opdrachten in de chat worden meteen opgehaald.\nKlik opent de agentchat.",
-  "MCP server inside the page (no network) – for an agent with a browser tool like \"Claude in Chrome\".\nClick to open the agent chat with the prompt to copy.": "MCP-server in de pagina (zonder netwerk) – voor een agent met een browsertool zoals “Claude in Chrome”.\nKlik opent de agentchat met de prompt om te kopiëren.",
+  "MCP server inside the page (no network) – for an agent with a browser tool like \"Claude in Chrome\" or Playwright MCP with the \"Playwright MCP Bridge\" extension.\nClick to open the agent chat with the prompt to copy.": "MCP-server in de pagina (zonder netwerk) – voor een agent met een browsertool zoals „Claude in Chrome” of Playwright MCP met de extensie „Playwright MCP Bridge”.\nKlik om de agent-chat met de prompt om te kopiëren te openen.",
   "An agent is listening – tasks in the chat are picked up right away.\nEndpoint: {url}\nClick to open the agent chat.": "Een agent luistert – opdrachten in de chat worden meteen opgehaald.\nEndpoint: {url}\nKlik opent de agentchat.",
   "An agent is connected but isn't listening in the chat right now.\nEndpoint: {url}\nClick to open the agent chat – it explains how to make it listen.": "Er is een agent verbonden, maar die luistert nu niet in de chat.\nEndpoint: {url}\nKlik opent de agentchat – daar staat hoe hij gaat luisteren.",
   "No agent connected yet – the endpoint is waiting at {url}.\nClick to open the agent chat: copy the prompt there and paste it into Claude Code.": "Nog geen agent verbonden – het endpoint wacht op {url}.\nKlik opent de agentchat: kopieer daar de prompt en plak hem in Claude Code.",
@@ -1138,6 +1153,8 @@ const dict: Dict = {
   "\"Agent\" window": "Venster “Agent”",
   "Tasks for a connected AI agent (e.g. Claude Code via MCP). Every message includes the current state: which tracks are audible, muted or soloed and which time range is selected – so \"make this part quieter\" works.": "Opdrachten voor een verbonden AI-agent (bijv. Claude Code via MCP). Elk bericht neemt de situatie mee: welke sporen hoorbaar, gedempt of solo zijn en welk tijdbereik gemarkeerd is – “maak dit hier zachter” werkt dus.",
   "The top explains how to connect the agent and make it listen.": "Bovenaan staat hoe je de agent verbindt en laat luisteren.",
+  "Each task shows its number and who took it (\"claimed by …\"). If the agent doesn't confirm a task within a minute, it's offered again – nothing gets lost. **Stop** at a task (or the message \"Stop\", \"Stop #3\") cancels it if nobody has picked it up yet, otherwise the agent is told with its next tool call.": "Elke opdracht toont zijn nummer en wie hem heeft opgepakt („opgepakt door …”). Bevestigt de agent een opdracht niet binnen een minuut, dan wordt hij opnieuw aangeboden – er gaat niets verloren. **Stop** bij een opdracht (of het bericht „Stop”, „Stop #3”) annuleert hem zolang niemand hem heeft opgehaald, anders hoort de agent het bij zijn volgende tool-aanroep.",
+  "In the browser version an agent connects through a browser tool: \"Claude in Chrome\", or Playwright MCP with the \"Playwright MCP Bridge\" extension (also in Vivaldi, Brave or Edge).": "In de browserversie verbindt een agent zich via een browsertool: „Claude in Chrome”, of Playwright MCP met de extensie „Playwright MCP Bridge” (ook in Vivaldi, Brave of Edge).",
   "Enter": "Enter",
   "send": "versturen",
   "Shift + Enter": "Shift + Enter",
@@ -1185,7 +1202,7 @@ const dict: Dict = {
   "Basic settings, e.g. the pitch axis: low notes at the top (like a piano turned sideways) or high notes at the top (like in sheet music).": "Basisinstellingen, bijv. de toonas: lage tonen boven (zoals bij een gedraaid klavier) of hoge tonen boven (zoals in bladmuziek).",
   "Output on top, microphone below. Red means too loud – lower the track levels.": "Boven de uitgang, onder de microfoon. Rood betekent: te luid – verlaag dan het niveau van de sporen.",
   "Shows whether an AI agent (e.g. Claude Code) is connected to Klangwelt:": "Toont of er een AI-agent (bijv. Claude Code) met Klangwelt verbonden is:",
-  "**No agent connected** – the app's endpoint is running and waiting; no agent has checked in during the last few minutes or holds a connection. **Agent ready** – an agent is connected and can control the project. **Agent listening** – it picks up tasks from the chat right away. **Agent off** – the endpoint couldn't start.": "**Geen agent verbonden** – het endpoint van de app draait en wacht; geen agent heeft zich de laatste minuten gemeld of houdt een verbinding open. **Agent gereed** – een agent is verbonden en kan het project besturen. **Agent luistert** – die haalt opdrachten meteen uit de chat op. **Agent uit** – het endpoint kon niet starten.",
+  "**Agent listening** – it picks up tasks from the chat right away. **Agent working on #n** – a task is in progress, or the agent called a tool within the last minute. **Agent ready** – an agent is connected but quiet. **No agent connected** – nothing for more than a minute; the app's endpoint is waiting. **Agent off** – the endpoint couldn't start.": "**Agent luistert** – hij haalt opdrachten meteen uit de chat. **Agent werkt aan #n** – er loopt een opdracht, of de agent heeft in de laatste minuut een tool aangeroepen. **Agent gereed** – er is een agent verbonden, maar die is stil. **Geen agent verbonden** – al meer dan een minuut niets; het eindpunt van de app wacht. **Agent uit** – het eindpunt kon niet starten.",
   "A click opens the agent chat with the prompt for connecting: copy it, paste it into Claude Code, done.": "Een klik opent de agentchat met de prompt om te verbinden: kopiëren, in Claude Code plakken, klaar.",
   "The device Klangwelt plays through (speakers, headphones, audio interface) and its sample rate.": "Het apparaat waarover Klangwelt afspeelt (luidsprekers, koptelefoon, audio-interface), en de samplefrequentie ervan.",
   "A click opens the list: **System default** follows the default device of Windows or macOS, below it are all devices. The choice takes effect immediately – playback in progress continues on the new device – and also applies the next time you start. If the chosen device isn't connected then, Klangwelt plays through the system default and briefly lets you know.": "Een klik opent de lijst: **Systeemstandaard** volgt het standaardapparaat van Windows of macOS, daaronder staan alle apparaten. De keuze werkt meteen – lopend afspelen gaat door op het nieuwe apparaat – en geldt ook bij de volgende start. Is het gekozen apparaat dan niet aangesloten, dan speelt Klangwelt af via de systeemstandaard en laat dat even weten.",
@@ -1355,14 +1372,15 @@ const dict: Dict = {
   "{note} minor": "{low} klein",
 
   // ui/src/web/agent-prompt.ts
-  "Klangwelt (a music app) runs as a web page at {address}. Operate it via Claude in Chrome (or another tool that runs JavaScript in a browser tab) – without setting it up as an MCP server. Wherever the app's instructions mention tools, call them as described here.": "Klangwelt (een muziekapp) draait als website op {address}. Bedien hem via Claude in Chrome (of een andere tool die JavaScript in een browsertabblad uitvoert) – zonder hem als MCP-server in te stellen. Waar de instructies van de app over tools spreken, roep je ze aan zoals hier beschreven.",
+  "Klangwelt (a music app) runs as a web page at {address}. Operate it via Claude in Chrome, Playwright MCP or another tool that runs JavaScript in a browser tab – without setting it up as an MCP server. Wherever the app's instructions mention tools, call them as described here.": "Klangwelt (een muziekapp) draait als webpagina op {address}. Bedien hem via Claude in Chrome, Playwright MCP of een andere tool die JavaScript in een browsertabblad uitvoert – zonder hem als MCP-server in te stellen. Waar de instructies van de app tools noemen, roep je ze aan zoals hier beschreven.",
   "1. Open the address in a tab of your tab group (if it's already open, use that tab) and wait until `window.__klangweltWeb` exists.": "1. Open het adres in een tabblad van je tabbladgroep (is het al open, gebruik dan dat tabblad) en wacht tot `window.__klangweltWeb` bestaat.",
   "2. The page contains an MCP server without a network: `await window.__klangweltWeb.mcp(message)` takes a JSON-RPC 2.0 message (as an object) and returns the response. Operate Klangwelt only through it (with the JavaScript tool), not by clicking in the UI.": "2. De pagina bevat een MCP-server zonder netwerk: `await window.__klangweltWeb.mcp(bericht)` neemt een JSON-RPC-2.0-bericht (als object) aan en levert het antwoord. Bedien Klangwelt alleen daarmee (met de JavaScript-tool), niet door in de interface te klikken.",
+  "With Playwright MCP (browser extension \"Playwright MCP Bridge\", also in Vivaldi, Brave or Edge): browser_tabs {action:\"list\"}, select the tab with this address (browser_tabs {action:\"select\", index}); each message is one browser_evaluate with function: async () => JSON.stringify(await window.__klangweltWeb.mcp(<message>)). The first call opens the extension's connect page – ask the person to allow the Klangwelt tab there. Several messages fit into one browser_evaluate (saves about half a second each).": "Met Playwright MCP (browserextensie „Playwright MCP Bridge”, ook in Vivaldi, Brave of Edge): browser_tabs {action:\"list\"}, kies het tabblad met dit adres (browser_tabs {action:\"select\", index}); elk bericht is één browser_evaluate met function: async () => JSON.stringify(await window.__klangweltWeb.mcp(<bericht>)). De eerste aanroep opent de verbindingspagina van de extensie – vraag de persoon daar het Klangwelt-tabblad vrij te geven. Meerdere berichten passen in één browser_evaluate (bespaart elk ongeveer een halve seconde).",
   "3. Initialize first: JSON.stringify(await window.__klangweltWeb.mcp({jsonrpc:\"2.0\", id:1, method:\"initialize\", params:{protocolVersion:\"2025-06-18\", capabilities:{}, clientInfo:{name:\"claude-in-chrome\", version:\"1\"}}})). Follow result.instructions from the response.": "3. Eerst initialize: JSON.stringify(await window.__klangweltWeb.mcp({jsonrpc:\"2.0\", id:1, method:\"initialize\", params:{protocolVersion:\"2025-06-18\", capabilities:{}, clientInfo:{name:\"claude-in-chrome\", version:\"1\"}}})). Houd je aan result.instructions uit het antwoord.",
   "4. tools/list lists all tools with their description and parameters. Calling a tool: {jsonrpc:\"2.0\", id:<sequential>, method:\"tools/call\", params:{name:\"get_project\", arguments:{}}} – the result is in result.structuredContent (as text also in result.content[0].text); result.isError reports errors.": "4. tools/list noemt alle tools met beschrijving en parameters. Een tool aanroepen: {jsonrpc:\"2.0\", id:<oplopend>, method:\"tools/call\", params:{name:\"get_project\", arguments:{}}} – het resultaat staat in result.structuredContent (als tekst ook in result.content[0].text), result.isError meldt fouten.",
   "5. Return responses as JSON.stringify(...); for very large ones, only the parts you need.": "5. Geef antwoorden terug als JSON.stringify(...), bij zeer grote alleen de benodigde delen.",
   "6. Tools that don't exist in the browser say so – then don't keep trying.": "6. Tools die in de browser niet bestaan, melden dat – probeer het dan niet verder.",
-  "7. Listening: the person gives you tasks in the page's chat. If you can start a subagent that also has the browser tool, use a general-purpose one (not one that requires configured MCP tools) and pass it these complete instructions so that you stay available yourself; otherwise, listen yourself. The loop: call chat_poll with arguments {timeoutSeconds: {seconds}} – the call waits until a task arrives, at most {seconds} s; the page stays usable meanwhile. If the JavaScript tool aborts earlier with a timeout, use 10 from then on. Empty list: call chat_poll again right away – that's normal. Carry out each task with the tools and use chat_reply (replyTo = the task's id) to say in one or two sentences in English what you changed; for longer work, send a short chat_reply with done=false first. Then call chat_poll again. Don't stop on your own – only when the person explicitly writes \"Stop\" in the chat, say goodbye via chat_reply.": "7. Luisteren: de persoon geeft je opdrachten in de chat van de pagina. Kun je een subagent starten die ook de browsertool heeft, neem dan een algemene (geen die ingestelde MCP-tools vereist) en geef hem deze hele handleiding mee, zodat je zelf aanspreekbaar blijft; anders luister je zelf. De lus: roep chat_poll aan met arguments {timeoutSeconds: {seconds}} – de aanroep wacht tot er een opdracht komt, hoogstens {seconds} s; de pagina blijft intussen bedienbaar. Breekt de JavaScript-tool eerder af met een tijdslimiet, neem dan voortaan 10. Lege lijst: meteen weer chat_poll – dat is normaal. Voer elke opdracht uit met de tools en vertel met chat_reply (replyTo = id van de opdracht) in een of twee zinnen in het Nederlands wat je hebt veranderd; bij langere klussen eerst een kort chat_reply met done=false. Dan weer chat_poll. Stop niet uit jezelf – alleen als de persoon in de chat uitdrukkelijk “Stop” schrijft, neem je afscheid via chat_reply.",
+  "7. Listening (roles in result.instructions): the person gives you tasks in the page's chat. If you can start subagents that also have the browser tool, start a general-purpose one (not one that requires configured MCP tools) on a small, fast model as the listener and give it these complete instructions plus the listener's task from prompts/get with name \"zuhoeren\". You stay available and start a worker subagent for each task it sends you (task: prompts/get with name \"arbeiten\", plus the task) – at most one per track, project-wide changes one after another. Otherwise listen and work yourself. The loop: call chat_poll with arguments {timeoutSeconds: {seconds}, client: \"zuhoerer\"} – the call waits until a task arrives, at most {seconds} s; the page stays usable meanwhile. If the JavaScript tool aborts earlier with a timeout, use 10 from then on. Empty list: call chat_poll again right away – that's normal. Confirm each task at once with chat_reply (replyTo = id, done=false) – otherwise it's offered again after 60 s; finish with done=true and one or two sentences in English on what you changed. A plain \"Stop\" only stops running tasks (every tool response then carries cancelRequested). Don't stop listening on your own – only when the person explicitly asks you to, say goodbye via chat_reply.": "7. Luisteren (rollen in result.instructions): de persoon geeft je opdrachten in de chat van de pagina. Kun je subagents starten die ook de browsertool hebben, start dan een algemene (geen die ingestelde MCP-tools vereist) op een klein, snel model als luisteraar en geef hem deze hele handleiding mee en daarbij de taak van de luisteraar uit prompts/get met naam \"zuhoeren\". Jij blijft aanspreekbaar en start voor elke opdracht die hij je stuurt een werker-subagent (taak: prompts/get met naam \"arbeiten\", plus de opdracht) – hooguit één per spoor, projectbrede wijzigingen na elkaar. Anders luister en werk je zelf. De lus: roep chat_poll aan met arguments {timeoutSeconds: {seconds}, client: \"zuhoerer\"} – de aanroep wacht tot er een opdracht komt, hooguit {seconds} s; de pagina blijft intussen bruikbaar. Breekt de JavaScript-tool eerder af met een time-out, gebruik dan vanaf dat moment 10. Lege lijst: roep meteen opnieuw chat_poll aan – dat is normaal. Bevestig elke opdracht meteen met chat_reply (replyTo = id, done=false) – anders wordt hij na 60 s opnieuw aangeboden; sluit af met done=true en een of twee zinnen in het Nederlands over wat je hebt veranderd. Een gewone „Stop” stopt alleen lopende opdrachten (elk tool-antwoord bevat dan cancelRequested). Stop niet uit jezelf met luisteren – alleen als de persoon je er uitdrukkelijk om vraagt, neem je afscheid via chat_reply.",
 
   // ui/src/web/host.ts
   "There's no agent server (MCP) in the browser – a web page can't open a port. An agent can still operate Klangwelt: via a browser extension or the Chrome DevTools Protocol, see docs/WEB.md.": "In de browser is er geen agentserver (MCP) – een website kan geen poort openen. Een agent kan Klangwelt toch bedienen: via een browserextensie of het Chrome DevTools Protocol, zie docs/WEB.md.",
@@ -1378,6 +1396,7 @@ const dict: Dict = {
   "View changed": "Weergave gewijzigd",
   "{n} changes": { one: "{n} wijziging", other: "{n} wijzigingen" },
   "Agent · {label}": "Agent · {label}",
+  "{n} steps": { one: "{n} stap", other: "{n} stappen" },
   "Change sound": "Klank wijzigen",
   "Sound \"{name}\": {words}": "Klank “{name}”: {words}",
   "Melody search: {n} matches": { one: "Melodie zoeken: {n} resultaat", other: "Melodie zoeken: {n} resultaten" },
@@ -1465,8 +1484,8 @@ const dict: Dict = {
 
   // crates/klang-app/src/chat.rs
   "Empty message": "Leeg bericht",
-  "Empty reply": "Leeg antwoord",
   "Task {id} doesn't exist": "Opdracht {id} bestaat niet",
+  "Empty reply": "Leeg antwoord",
 
   // crates/klang-app/src/commands.rs
   "Invalid input: {error}": "Ongeldige gegevens: {error}",
@@ -2561,10 +2580,11 @@ const dict: Dict = {
   "As": "As",
   "B": "Bes",
 
-  // not used in this repo (e.g. the desktop shell, klangwelt-desktop/app/src)
-  "There's no score library in the browser yet (downloading and indexing are missing) – see docs/WEB.md.": "In de browser is er nog geen partituurbibliotheek (downloaden en indexeren ontbreken) – zie docs/WEB.md.",
+  // ../klangwelt-desktop/app/src/lib.rs
   "{path} no longer exists": "{path} bestaat niet meer",
   "Cancelled: {error}": "Geannuleerd: {error}",
+
+  // ../klangwelt-desktop/app/src/libraries.rs
   "Library list locked": "Bibliotheeklijst vergrendeld",
   "The library list is still missing (it is created at startup).": "De bibliotheeklijst ontbreekt nog (wordt bij het starten aangemaakt).",
   "The library list is still missing.": "De bibliotheeklijst ontbreekt nog.",
@@ -2585,6 +2605,8 @@ const dict: Dict = {
   "Libraries set up: \"{name}\" with {count} scores; separate libraries: {libraries}.": { one: "Bibliotheken ingesteld: “{name}” met {count} partituur; aparte bibliotheken: {libraries}.", other: "Bibliotheken ingesteld: “{name}” met {count} partituren; aparte bibliotheken: {libraries}." },
   "Libraries set up: \"{name}\" with {count} scores (from {folders}); separate libraries: {libraries}.": { one: "Bibliotheken ingesteld: “{name}” met {count} partituur (uit {folders}); aparte bibliotheken: {libraries}.", other: "Bibliotheken ingesteld: “{name}” met {count} partituren (uit {folders}); aparte bibliotheken: {libraries}." },
   "Library \"{name}\": {count} scores": { one: "Bibliotheek “{name}”: {count} partituur", other: "Bibliotheek “{name}”: {count} partituren" },
+
+  // ../klangwelt-desktop/app/src/library.rs
   "The library is busy loading, indexing or adding scores.": "De bibliotheek is bezig met laden, indexeren of partituren opnemen.",
   "The library is still loading – just a moment.": "De bibliotheek wordt nog geladen – een ogenblik.",
   "No file given": "Geen bestand opgegeven",
@@ -2676,7 +2698,12 @@ const dict: Dict = {
   "{name}: download stopped after {count} scores ({error}) – \"Download\" continues, scores already there are skipped.": { one: "{name}: download gestopt na {count} partituur ({error}) – “Downloaden” gaat verder, al aanwezige partituren worden overgeslagen.", other: "{name}: download gestopt na {count} partituren ({error}) – “Downloaden” gaat verder, al aanwezige partituren worden overgeslagen." },
   "{name}: connection interrupted ({why}) – resuming at {position} (connection {connection}) …": "{name}: verbinding onderbroken ({why}) – verder bij {position} (verbinding {connection}) …",
   "Can't create the folder {folder}: {error}": "Map {folder} kan niet worden aangemaakt: {error}",
+
+  // ../klangwelt-desktop/app/src/mcp.rs
   "Port {port} is in use or not available: {error}": "Poort {port} is bezet of niet beschikbaar: {error}",
+
+  // not used in this repo (e.g. the desktop shell, klangwelt-desktop/app/src)
+  "There's no score library in the browser yet (downloading and indexing are missing) – see docs/WEB.md.": "In de browser is er nog geen partituurbibliotheek (downloaden en indexeren ontbreken) – zie docs/WEB.md.",
 };
 
 export default dict;

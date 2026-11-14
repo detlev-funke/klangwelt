@@ -243,6 +243,8 @@ kw-panel > .tab-body { height: 100%; }
 .tab.unread .badge { display: inline-block; }
 .chip.agent.listening .dot { box-shadow: 0 0 0 3px rgba(110, 231, 216, .25); animation: listen 1.6s infinite; }
 @keyframes listen { 50% { box-shadow: 0 0 0 6px rgba(110, 231, 216, 0); } }
+/* working, nobody listening: steady amber dot */
+.chip.agent.working .dot { background: var(--accent); }
 
 /* Agent chat */
 .tab-body:has(> .chat), .tab-body:has(> .library) { overflow: hidden; padding-bottom: 10px; }
@@ -278,6 +280,10 @@ kw-panel > .tab-body { height: 100%; }
 .msg .state { padding: 0 6px; border-radius: 999px; background: var(--panel-3); }
 .msg .state.inArbeit { color: var(--accent); }
 .msg .state.erledigt { color: var(--ok); }
+.msg .state.abgebrochen { color: var(--muted); text-decoration: line-through; }
+.msg .state.stopping { color: var(--muted); font-style: italic; }
+.msg .claimed { color: var(--faint); }
+.msg .stop-task { padding: 0 7px; font-size: 10.5px; line-height: 16px; height: 18px; }
 .chat-empty { color: var(--faint); display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .chat-suggest { display: flex; flex-wrap: wrap; gap: 6px; }
 .chat-suggest .btn { white-space: normal; text-align: left; height: auto; min-height: 26px; padding: 4px 8px; }

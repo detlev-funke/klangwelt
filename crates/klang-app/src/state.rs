@@ -242,7 +242,11 @@ pub struct AppState {
     pub agent: Mutex<AgentLink>,
     engine: Option<Engine>,
     engine_error: Option<String>,
+    /// Metronome on (the person's choice; off by default).
     metronome: AtomicBool,
+    /// Silenced for the running recording, so it doesn't click into the
+    /// microphone – until the person switches it on during the recording.
+    metronome_muted: AtomicBool,
     looping: Mutex<LoopState>,
     pub record_counter: AtomicU32,
     /// Datei des offenen Projekts (None = noch nie gespeichert).
@@ -288,6 +292,29 @@ mod hash_tests {
         b.tempo_bpm = 99.0;
         assert_ne!(project_hash(&a), project_hash(&b));
     }
+
+    #[test]
+    fn metronome_is_off_until_switched_on() {
+        let st = AppState::without_audio();
+        assert!(!st.snapshot().unwrap().engine.metronome, "off by default");
+        assert!(st.set_metronome(true).unwrap().engine.metronome);
+        assert!(!st.set_metronome(false).unwrap().engine.metronome);
+    }
+
+    #[test]
+    fn metronome_silent_while_recording_unless_switched_on_there() {
+        let st = AppState::without_audio();
+        st.set_metronome(true).unwrap();
+        st.mute_metronome_for_recording();
+        assert!(!st.snapshot().unwrap().engine.metronome, "silent once the recording starts");
+        st.unmute_metronome_after_recording();
+        assert!(st.snapshot().unwrap().engine.metronome, "the choice applies again afterwards");
+        st.set_metronome(false).unwrap();
+        st.mute_metronome_for_recording();
+        assert!(st.set_metronome(true).unwrap().engine.metronome, "switched on during the recording: audible");
+        st.unmute_metronome_after_recording();
+        assert!(st.snapshot().unwrap().engine.metronome, "and still on afterwards");
+    }
 }
 
 impl AppState {
@@ -319,7 +346,8 @@ impl AppState {
             agent: Mutex::new(AgentLink::default()),
             engine,
             engine_error,
-            metronome: AtomicBool::new(true),
+            metronome: AtomicBool::new(false),
+            metronome_muted: AtomicBool::new(false),
             looping: Mutex::new(LoopState::default()),
             record_counter: AtomicU32::new(0),
             project_file: Mutex::new(None),
@@ -331,7 +359,7 @@ impl AppState {
             host: std::sync::OnceLock::new(),
         };
         if let Some(e) = &state.engine {
-            e.set_metronome(true);
+            e.set_metronome(false);
             // KLANGWELT_STUMM=1: nichts zu hören (automatische Tests), alles andere läuft wie sonst
             if std::env::var_os("KLANGWELT_STUMM").is_some_and(|v| !v.is_empty() && v != "0") {
                 e.set_muted(true);
@@ -397,7 +425,8 @@ impl AppState {
                 output_notice: notice.output_text(),
                 input_notice: notice.input_text(),
                 sample_rate: info.as_ref().map(|i| i.sample_rate).unwrap_or(48_000),
-                metronome: self.metronome.load(Ordering::Relaxed),
+                // what is heard: silenced for a recording shows as off
+                metronome: self.metronome.load(Ordering::Relaxed) && !self.metronome_muted.load(Ordering::Relaxed),
                 loop_on: looping.on,
                 loop_range: looping.range,
             },
@@ -519,6 +548,8 @@ impl AppState {
 
     pub fn set_metronome(&self, on: bool) -> CmdResult<Snapshot> {
         self.metronome.store(on, Ordering::Relaxed);
+        // switched during a recording, too: from now on it's heard as chosen
+        self.metronome_muted.store(false, Ordering::Relaxed);
         if let Some(e) = &self.engine {
             e.set_metronome(on);
         }
@@ -945,8 +976,26 @@ impl AppState {
         }
         let engine = self.engine()?;
         engine.start_recording().map_err(|e| e.to_string())?;
+        self.mute_metronome_for_recording();
         engine.play();
         Ok(())
+    }
+
+    /// A recording starts without a click in the microphone, even if the
+    /// metronome is switched on; switching it on now makes it heard.
+    fn mute_metronome_for_recording(&self) {
+        self.metronome_muted.store(true, Ordering::Relaxed);
+        if let Some(e) = &self.engine {
+            e.set_metronome(false);
+        }
+    }
+
+    /// After the recording the person's choice applies again.
+    fn unmute_metronome_after_recording(&self) {
+        self.metronome_muted.store(false, Ordering::Relaxed);
+        if let Some(e) = &self.engine {
+            e.set_metronome(self.metronome.load(Ordering::Relaxed));
+        }
     }
 
     /// Aufnahme beenden: als Audiospur ins Projekt (ein Rückgängig-Schritt), mit Analyse.
@@ -955,7 +1004,9 @@ impl AppState {
             return Err(tr!("This is the library's sing-to-search recording – stop it there with \"Stop\"."));
         }
         let engine = self.engine()?;
-        let rec = engine.stop_recording().map_err(|e| e.to_string())?;
+        let rec = engine.stop_recording().map_err(|e| e.to_string());
+        self.unmute_metronome_after_recording();
+        let rec = rec?;
         engine.stop();
         let out_sr = engine.info().sample_rate as f64;
         if rec.samples.len() < (rec.sample_rate as usize) / 4 {

@@ -185,6 +185,8 @@ export async function toggleRecord(): Promise<void> {
   if (!status.peek().recording) {
     await guarded(async () => {
       await backend.recordStart();
+      // the metronome falls silent for the recording: show that on its button
+      snapshot.value = await backend.getState();
       notify(t("Recording – press again (or R) to stop"));
     });
     return;

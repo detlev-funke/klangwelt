@@ -3,3 +3,6 @@
 *.png binary
 *.ico binary
 *.kwix binary
+
+# Bundled third-party code (libopus): not counted in GitHub's language statistics
+crates/klang-opus/opus/** linguist-vendored

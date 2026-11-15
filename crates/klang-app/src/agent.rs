@@ -96,7 +96,7 @@ Every writing tool returns the new `revision`, `change` and the IDs it created. 
 {ROLES}\n\
 Audio clips with `warp: true` play at the project tempo; `sourceBpm` is the tempo they were recorded at.\n\
 Audio and ranges: `import_audio` inserts audio files (WAV, AIFF, FLAC, Opus; no MP3) as tracks. `audio_to_notes` converts a recording \
-into a melody track (detected pitches) or a rhythm track (hits → kick/snare/hi-hat) directly below it. \
+into a melody track (detected pitches with their dynamics, accents/sforzati and staccato/legato) or a rhythm track (hits → kick/snare/hi-hat) directly below it. \
 `delete_range` deletes a time range from all tracks, everything after it moves up (clips are split or shortened). \
 `quantize_notes` snaps notes to the grid (grid in beats: 1 = quarter, 0.5 = eighth, 0.25 = sixteenth).\n\
 Editing notes: read `get_project` with includeNotes, then `setClipNotes` with the complete new note list (start/length in beats relative to the clip start). \
@@ -440,14 +440,14 @@ fn tools(packs: &[&'static str]) -> Vec<Tool> {
         tool("preview_sound", "Preview sound", "Plays a short preview pattern with the instrument track's sound, independent of playback.",
             schema(json!({ "trackId": id, "pattern": pattern }), &["trackId"]), false),
         tool("analyze_clip", "Analyze recording",
-            "Analyzes an audio clip: detected notes (cleaned up), key, tempo estimate and hits with fundamental (also drums: kick, snare, toms; grundton null = unpitched like a hi-hat).",
+            "Analyzes an audio clip: detected notes (cleaned up) with how they were played – velocity 1–127 (dynamics relative to the recording, the median note is mf = 80), attack (normal, accent, sforzato) and articulation (normal, staccato, legato) – key, tempo estimate and hits with fundamental (also drums: kick, snare, toms; grundton null = unpitched like a hi-hat).",
             schema(json!({ "trackId": id, "clipId": id }), &["trackId", "clipId"]), true),
         tool("melody_to_track", "Import melody",
-            "Creates an instrument track from the detected melody of an audio clip (quantized to sixteenths).",
+            "Creates an instrument track from the detected melody of an audio clip (quantized to sixteenths) – with the detected dynamics as velocity, a brighter attack for accents and sforzati, staccato notes short and legato notes up to the next one.",
             schema(json!({ "trackId": id, "clipId": id }), &["trackId", "clipId"]), false),
         tool("audio_to_notes", "Convert recording to notes",
             "Converts audio clips into notes – as a new instrument track directly below the audio track, one clip per audio clip at the same position (one undo step). \
-             target 'melodie': detected pitches, snapped to sixteenths (a low register becomes a bass track); 'rhythmus': detected hits as a drum track \
+             target 'melodie': detected pitches, snapped to sixteenths, with the played dynamics, accents/sforzati (velocity, brighter attack) and staccato/legato lengths (a low register becomes a bass track); 'rhythmus': detected hits as a drum track \
              (kick, snare, hi-hat by timbre). Without clipId all audio clips of the track.",
             schema(json!({ "trackId": id, "clipId": id, "target": { "enum": ["melodie", "rhythmus"] } }), &["trackId", "target"]), false),
         tool("import_audio", "Insert audio files",
@@ -1551,7 +1551,8 @@ impl<S: AgentShell> Agent<S> {
                     "tempoSchaetzung": a.tempo_estimate,
                     "noten": a.notes.iter().map(|n| json!({
                         "midi": n.midi, "name": note_name(n.midi), "start": (n.start_secs * 1000.0).round() / 1000.0,
-                        "ende": (n.end_secs * 1000.0).round() / 1000.0, "korrigiert": n.midi != n.raw_midi })).collect::<Vec<_>>(),
+                        "ende": (n.end_secs * 1000.0).round() / 1000.0, "korrigiert": n.midi != n.raw_midi,
+                        "velocity": n.velocity, "attack": n.attack, "articulation": n.articulation })).collect::<Vec<_>>(),
                     "anschlaege": a.hits.iter().map(|h| json!({
                         "start": (h.time * 1000.0).round() / 1000.0,
                         "grundton": h.midi.map(|m| note_name(m.round().clamp(0.0, 127.0) as u8)),

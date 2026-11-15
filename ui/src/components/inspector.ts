@@ -15,6 +15,7 @@ import { rhythmPanel } from "./rhythm.js";
 import { songPanel } from "./song.js";
 import { libraryPanel, librarySignals } from "./library.js";
 import { liveAnalysisPanel } from "./liveanalysis.js";
+import { accentsText, articulationText, drawMarks, dynamicsRange, noteAlpha } from "./performance.js";
 import { soundPanel } from "./sound.js";
 import type { Analysis, Note, Track } from "../types.js";
 
@@ -261,6 +262,7 @@ function analysisPanel(a: Analysis): Panel {
     prop(t("Key"), a.key ? a.key.name : "–", a.key ? t("Confidence {percent}%", { percent: (a.key.confidence * 100).toFixed(0) }) : t("too few notes")),
     prop(t("Tempo estimate"), a.tempoEstimate ? `${a.tempoEstimate.toFixed(1)} BPM` : "–"),
     prop(t("Notes"), String(a.notes.length), corrected ? t("Corrected {n} out-of-tune notes", { n: corrected }) : t("no correction needed")),
+    ...performanceFacts(a),
     prop(t("Duration"), `${a.durationSecs.toFixed(2)} s`),
     h("button", { class: "btn", onclick: () => melodyToTrack() }, icon("keys"), t("Melody → instrument track")),
   );
@@ -271,9 +273,22 @@ function analysisPanel(a: Analysis): Panel {
     h("span", {}, h("i", { style: "background:#ffb454" }), t("detected notes")),
     h("span", {}, h("i", { style: "background:#ff5d6c" }), t("corrected (before)")),
     h("span", {}, h("i", { style: "background:#8a93a6" }), t("Onsets")),
+    h("span", {}, h("b", { class: "mark" }, "> sfz"), t("Accents")),
   );
   const el = h("div", { class: "analysis" }, facts, h("div", { style: "display:grid;grid-template-rows:auto 1fr;gap:8px;min-height:0" }, legend, canvas));
   return { el, update: draw };
+}
+
+/** Dynamics, accents and articulation of the detected notes – they come along into the notes. */
+function performanceFacts(a: Analysis): HTMLElement[] {
+  const dyn = dynamicsRange(a.notes);
+  const acc = accentsText(a.notes);
+  const art = articulationText(a.notes);
+  return [
+    prop(t("Dynamics"), dyn?.text ?? "–", dyn ? t("velocity {from} to {to}", { from: dyn.from, to: dyn.to }) : undefined),
+    prop(t("Accents"), acc || "–", acc ? t("come along as a louder, brighter attack") : t("no attack stands out")),
+    prop(t("Articulation"), art || "–", art ? t("staccato short, legato up to the next note") : t("no staccato or legato")),
+  ];
 }
 
 function drawAnalysis(canvas: HTMLCanvasElement, a: Analysis): void {
@@ -317,11 +332,16 @@ function drawAnalysis(canvas: HTMLCanvasElement, a: Analysis): void {
       ctx.strokeRect(x(n.startSecs), y(n.rawMidi) - nh / 2, x(n.endSecs) - x(n.startSecs), nh);
       ctx.setLineDash([]);
     }
-    ctx.fillStyle = "rgba(255, 180, 84, 0.85)";
+    // dynamics: soft notes fainter
+    ctx.fillStyle = `rgba(255, 180, 84, ${noteAlpha(n.velocity).toFixed(2)})`;
     ctx.beginPath();
     ctx.roundRect(x(n.startSecs), y(n.midi) - nh / 2, Math.max(2, x(n.endSecs) - x(n.startSecs)), nh, 3);
     ctx.fill();
   }
+  a.notes.forEach((n, i) => {
+    const next = a.notes[i + 1];
+    drawMarks(ctx, n, x(n.startSecs), x(n.endSecs), y(n.midi), nh, next ? x(next.startSecs) : null, next ? y(next.midi) : null);
+  });
 
   ctx.strokeStyle = "#6ee7d8";
   ctx.lineWidth = 1.5;

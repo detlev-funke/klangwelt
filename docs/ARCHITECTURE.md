@@ -255,7 +255,11 @@ instrument track directly below the audio track; the track's pitch shift is
 taken into account.
 * Melody: notes detected by the analysis, quantized to sixteenths; if the
   median lies below C (48), it becomes a bass track. `melody_to_track` (Clip
-  panel, agent) goes through this.
+  panel, agent) goes through this. How each note was played comes along
+  (`expression.rs`): its velocity (dynamics, accents), brightness +0.2 for an
+  accent and +0.4 for a sforzato (a harder, brighter attack – no extra note
+  property, so every instrument plays it), staccato at most half the way to
+  the next note (1/32 resolution), legato up to the next note.
 * Rhythm (`klang_dsp::hits`): for each hit found by the analysis, it measures
   what is **added** in the low (< 150 Hz), mid and high (> 5 kHz) band compared
   with the equally long stretch before it – so a decaying kick drum does not
@@ -612,6 +616,20 @@ default layout.
 3. Segmentation into notes (median smoothing, splitting at jumps/onsets).
 4. Key (Krumhansl-Kessler); out-of-scale notes that were sung imprecisely
    are pulled onto the scale.
+   How the notes were played (`expression.rs`, from the frames' RMS):
+   * Dynamics: velocity from the body level (median after the first 80 ms),
+     relative to the recording – the median note is mf (80), 3.4 per dB, so
+     microphone gain doesn't matter.
+   * Accent / sforzato: the attack (−30 … +80 ms) stands out against the
+     median attack of up to four notes on *each* side (4.5 dB accent, 9 dB
+     sforzato; 6 dB plus a drop after the attack 5 dB beyond the recording's
+     usual one = sfp). Requiring both sides keeps a subito forte from counting;
+     at the edges the whole recording is the other side. An accent lifts the
+     velocity 18 above the surrounding dynamics, a sforzato 32.
+   * Articulation: legato = at most 35 ms to the next note and the level stays
+     within 10 dB in between (the frames smear short breaks, the level shows
+     them); staccato = at most 60 % of the way to the next note, at least
+     60 ms of silence and short (0.6 beats, or 0.3 s without a tempo).
 5. "Melody → instrument track" or "♪ → Notes": quantization to
    sixteenths; "Convert to rhythm track": hits as drum notes
    (see "Track editing").
@@ -635,7 +653,10 @@ recording.
 * The UI polls `record_live` with a cursor (take, curve points, settled notes,
   onsets) and gets only what is new. `StatusDto::live_analysis` says when to
   show it (not for the library's sing-to-search).
-* After stopping, the finished analysis (unchanged) replaces the live view.
+* Dynamics, accents and articulation are computed live as well (relative to the
+  notes so far); the last eight settled notes are sent again each time, since
+  their accents and articulation depend on the notes after them.
+* After stopping, the finished analysis replaces the live view.
 * Tests: `KLANGWELT_FAKE_MIC=<wav>` makes the desktop engine record from a
   file (`FakeInput`: in real time, looped); the browser tests use Chromium's
   `--use-file-for-fake-audio-capture`.

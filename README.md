@@ -36,7 +36,9 @@ it follows your browser's language, and the gear menu switches it.
 * **Record and recognize** – play or sing into the microphone; while you
   record, a live analysis shows the note you're singing (tuner-style), the
   level, and soon the key and tempo. Afterwards Klangwelt detects tempo, key
-  and melody, and turns a recording into a melody or drum track.
+  and melody – with how you played it: dynamics, accents and sforzati,
+  staccato and legato – and turns a recording into a melody or drum track
+  that keeps all of that.
 * **Score library** – more than 76,000 free scores (public domain and CC0,
   from PDMX and OpenScore). Search by title, composer or melody – type the
   notes, take them from a clip or simply sing them – or browse by genre,

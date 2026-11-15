@@ -854,13 +854,22 @@ export interface EngineStatus {
   liveAnalysis?: boolean;
 }
 
+/** How a detected note was struck / how long it sounds against the way to the next. */
+export type Attack = "normal" | "accent" | "sforzato";
+export type Articulation = "normal" | "staccato" | "legato";
+
 export interface AnalyzedNote {
   startSecs: number;
   endSecs: number;
   midi: number;
   rawMidi: number;
   cents: number;
+  /** 1–127 as it goes into the notes: dynamics relative to the recording (median note = mf 80), raised for accents. */
   velocity: number;
+  /** Loudness of the note's body (dBFS). */
+  levelDb: number;
+  attack: Attack;
+  articulation: Articulation;
 }
 
 export interface HitPitch {
@@ -898,6 +907,9 @@ export interface LiveNote {
   endSecs: number;
   midi: number;
   cents: number;
+  velocity: number;
+  attack: Attack;
+  articulation: Articulation;
 }
 
 /** What the UI already has of the running live analysis. */

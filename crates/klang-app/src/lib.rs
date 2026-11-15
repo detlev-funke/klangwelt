@@ -25,6 +25,7 @@ pub mod commands;
 pub mod convert;
 pub mod demo;
 pub mod export;
+pub mod expression;
 pub mod flac;
 pub mod fugue;
 pub mod harmony;

@@ -12,6 +12,7 @@
 //! needs audio data or the analysis. Every action is one undo step.
 
 use crate::analysis::Analysis;
+use crate::expression::{self, Articulation, Attack};
 use crate::audiofile;
 use crate::sound;
 use crate::state::{lock, AppState, CmdResult, Snapshot};
@@ -19,7 +20,6 @@ use klang_core::edit::{self, AudioKeep};
 use klang_core::{Clip, ClipSource, Command, Id, InstrumentKind, Note, Track, TrackKind};
 use klang_dsp::hits;
 use klang_i18n::{tr, trn};
-use klang_music::theory::{quantize, TimedNote};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -118,16 +118,59 @@ fn splice(x: &[f32], sr: u32, parts: &[(f64, f64)]) -> Vec<f32> {
     out
 }
 
-/// Detected melody → notes (sixteenth-note grid); `spb` = seconds per beat of the source.
+/// Detected melody → notes on the sixteenth grid; `spb` = seconds per beat of
+/// the source. How each note was played comes along: velocity (dynamics,
+/// accents), a brighter attack for accents and sforzati, and the length –
+/// staccato short (at most half the way to the next note), legato up to it.
 fn melody_notes(a: &Analysis, spb: f64, shift: i32) -> Vec<Note> {
-    let timed: Vec<TimedNote> = a
+    const GRID: f64 = 0.25;
+    const FINE: f64 = 0.125;
+    let snap = |b: f64, grid: f64| (b / grid).round() * grid;
+    let mut notes: Vec<(Note, Articulation, f64)> = a
         .notes
         .iter()
-        .map(|n| TimedNote { start: n.start_secs, end: n.end_secs, midi: n.midi, cents: 0.0, velocity: n.velocity })
+        .map(|n| {
+            let start = snap(n.start_secs / spb, GRID).max(0.0);
+            let end = snap(n.end_secs / spb, GRID).max(start + GRID);
+            let mut note = Note::new((n.midi as i32 + shift).clamp(0, 127) as u8, start, end - start, n.velocity.max(1));
+            note.brightness = match n.attack {
+                Attack::Normal => 0.0,
+                Attack::Accent => expression::ACCENT_BRIGHTNESS,
+                Attack::Sforzato => expression::SFORZATO_BRIGHTNESS,
+            };
+            (note, n.articulation, (n.end_secs - n.start_secs) / spb)
+        })
         .collect();
-    quantize(&timed, spb, 0.25)
-        .iter()
-        .map(|n| Note::new((n.midi as i32 + shift).clamp(0, 127) as u8, n.start_beats, n.length_beats, (40.0 + 87.0 * n.velocity.clamp(0.0, 1.0)) as u8))
+    notes.sort_by(|a, b| a.0.start_beats.total_cmp(&b.0.start_beats));
+    // the same start position: keep the louder note
+    notes.dedup_by(|b, a| {
+        let same = (a.0.start_beats - b.0.start_beats).abs() < 1e-9;
+        if same && b.0.velocity > a.0.velocity {
+            std::mem::swap(a, b);
+        }
+        same
+    });
+    let starts: Vec<f64> = notes.iter().map(|n| n.0.start_beats).collect();
+    notes
+        .into_iter()
+        .enumerate()
+        .map(|(i, (mut note, articulation, sounding))| {
+            let next = starts.get(i + 1).copied();
+            match (articulation, next) {
+                (Articulation::Legato, Some(nx)) => note.length_beats = nx - note.start_beats,
+                (Articulation::Staccato, _) => {
+                    let short = snap(sounding, FINE).max(FINE);
+                    let half = next.map_or(short, |nx| ((nx - note.start_beats) * 0.5).max(FINE));
+                    note.length_beats = short.min(half);
+                }
+                _ => {}
+            }
+            // never into the next note
+            if let Some(nx) = next {
+                note.length_beats = note.length_beats.min(nx - note.start_beats);
+            }
+            note
+        })
         .collect()
 }
 
@@ -424,5 +467,107 @@ mod tests {
         assert_eq!(y[0], 1.0, "Anfang der Datei bleibt");
         assert!(y[19] < 0.5 && y[20] < 0.5, "Schnittkante geblendet");
         assert_eq!(y[69], 1.0, "Ende der Datei bleibt");
+    }
+
+    /// A played melody: (MIDI, seconds sounding, amplitude, attack gain, silence after).
+    /// The attack gain falls back to 1 within about 30 ms (sforzato: 4 = +12 dB);
+    /// without silence after it, the next note follows phase-continuously (legato).
+    fn perform(notes: &[(f32, f32, f32, f32, f32)], sr: f32) -> Vec<f32> {
+        let mut out = Vec::new();
+        let mut phase = 0.0f32;
+        for &(midi, secs, amp, accent, rest) in notes {
+            let f = 440.0 * 2f32.powf((midi - 69.0) / 12.0);
+            for i in 0..(secs * sr) as usize {
+                let t = i as f32 / sr;
+                phase += 2.0 * std::f32::consts::PI * f / sr;
+                let fade_in = if out.last().is_some_and(|v: &f32| v.abs() > 0.0) && rest == 0.0 { 1.0 } else { (t / 0.01).min(1.0) };
+                let fade_out = if rest > 0.0 { ((secs - t) / 0.015).clamp(0.0, 1.0) } else { 1.0 };
+                let gain = 1.0 + (accent - 1.0) * (-t / 0.03).exp();
+                out.push(amp * gain * fade_in * fade_out * (0.6 * phase.sin() + 0.25 * (2.0 * phase).sin() + 0.1 * (3.0 * phase).sin()));
+            }
+            out.extend(std::iter::repeat(0.0).take((rest * sr) as usize));
+        }
+        out
+    }
+
+    #[test]
+    fn played_dynamics_accents_and_articulation_carry_into_the_notes() {
+        let sr = 44_100.0;
+        // 120 BPM, a note per beat: legato pair, sforzato, two soft notes (−12 dB), staccato
+        let x = perform(
+            &[
+                (60.0, 0.5, 0.3, 1.0, 0.0),   // legato into the next
+                (64.0, 0.44, 0.3, 1.0, 0.06),
+                (67.0, 0.44, 0.3, 4.0, 0.06), // sforzato
+                (72.0, 0.44, 0.3, 1.0, 0.06),
+                (67.0, 0.44, 0.075, 1.0, 0.06), // soft
+                (64.0, 0.44, 0.075, 1.0, 0.06), // soft
+                (62.0, 0.12, 0.3, 1.0, 0.38), // staccato
+                (60.0, 0.44, 0.3, 1.0, 0.06),
+                (64.0, 0.44, 0.3, 1.0, 0.06),
+                (60.0, 0.8, 0.3, 1.0, 0.2),
+            ],
+            sr,
+        );
+        let a = crate::analysis::analyze("t", &x, sr as u32);
+        let midis: Vec<u8> = a.notes.iter().map(|n| n.midi).collect();
+        assert_eq!(midis, vec![60, 64, 67, 72, 67, 64, 62, 60, 64, 60], "{:?}", a.notes);
+        let attacks: Vec<Attack> = a.notes.iter().map(|n| n.attack).collect();
+        assert_eq!(attacks[2], Attack::Sforzato, "{attacks:?}");
+        assert!(attacks.iter().enumerate().all(|(i, k)| i == 2 || *k == Attack::Normal), "{attacks:?}");
+        assert_eq!(a.notes[0].articulation, Articulation::Legato);
+        assert_eq!(a.notes[6].articulation, Articulation::Staccato);
+        assert!([1, 2, 3, 4, 5, 7, 8].iter().all(|&i| a.notes[i].articulation == Articulation::Normal), "{:?}", a.notes.iter().map(|n| n.articulation).collect::<Vec<_>>());
+        let vel: Vec<u8> = a.notes.iter().map(|n| n.velocity).collect();
+        assert!((74..=86).contains(&vel[3]), "a normal note is about mf: {vel:?}");
+        assert!(vel[2] >= 108, "sforzato: {vel:?}");
+        assert!(vel[4] <= 50 && vel[5] <= 50, "soft notes about p/pp: {vel:?}");
+
+        let notes = melody_notes(&a, 0.5, 0);
+        assert_eq!(notes.len(), 10);
+        assert_eq!(notes.iter().map(|n| n.start_beats).collect::<Vec<_>>(), (0..10).map(|i| i as f64).collect::<Vec<_>>());
+        assert_eq!(notes[2].brightness, expression::SFORZATO_BRIGHTNESS, "harder, brighter attack");
+        assert!(notes.iter().enumerate().all(|(i, n)| i == 2 || n.brightness == 0.0));
+        assert_eq!(notes[2].velocity, vel[2]);
+        assert_eq!(notes[0].length_beats, 1.0, "legato: up to the next note");
+        assert_eq!(notes[6].length_beats, 0.25, "staccato: short");
+        assert!(notes[3].length_beats >= 0.75 && notes[3].length_beats <= 1.0, "{}", notes[3].length_beats);
+    }
+
+    #[test]
+    fn plucked_notes_decay_without_counting_as_accents() {
+        // the melody of the end-to-end tests, twice: (MIDI, amplitude, attack gain, sounding seconds)
+        let sr = 48_000.0f32;
+        let melody = [
+            (60.0, 1.0, 1.0, 0.46), (64.0, 1.0, 1.0, 0.46), (67.0, 1.0, 1.0, 0.46), (72.0, 1.0, 1.0, 0.14),
+            (67.0, 1.0, 1.0, 0.46), (64.0, 1.0, 1.0, 0.46), (65.0, 1.0, 1.0, 0.46), (69.0, 1.0, 4.0, 0.46),
+            (67.0, 1.0, 1.0, 0.46), (62.0, 0.25, 1.0, 0.46), (59.0, 0.25, 1.0, 0.46), (60.0, 1.0, 1.0, 0.46),
+        ];
+        let mut x = Vec::new();
+        for _ in 0..2 {
+            for &(midi, amp, accent, secs) in &melody {
+                let f = 440.0 * 2f32.powf((midi - 69.0) / 12.0);
+                for i in 0..(0.5 * sr) as usize {
+                    let t = i as f32 / sr;
+                    let gain = amp * (1.0 + (accent - 1.0) * (-t / 0.03).exp());
+                    let env = (t / 0.005).min(1.0) * (-t * 2.0).exp() * ((secs - t) / 0.02).clamp(0.0, 1.0);
+                    let w = 2.0 * std::f32::consts::PI * f * t;
+                    x.push(gain * env * (0.15 * w.sin() + 0.056 * (2.0 * w).sin() + 0.022 * (3.0 * w).sin()));
+                }
+            }
+        }
+        let a = crate::analysis::analyze("t", &x, sr as u32);
+        let got: Vec<(u8, Attack, Articulation, u8)> = a.notes.iter().map(|n| (n.midi, n.attack, n.articulation, n.velocity)).collect();
+        assert_eq!(a.notes.len(), 24, "{got:?}");
+        for (i, n) in a.notes.iter().enumerate() {
+            let k = i % 12;
+            assert_eq!(n.attack == Attack::Sforzato, k == 7, "{i}: {got:?}");
+            assert!(n.attack != Attack::Accent, "{i}: {got:?}");
+            assert_eq!(n.articulation == Articulation::Staccato, k == 3, "{i}: {got:?}");
+            assert_ne!(n.articulation, Articulation::Legato, "40 ms breaks between plucked notes: {i}: {got:?}");
+            if k == 9 || k == 10 {
+                assert!(n.velocity < 50, "{i}: {got:?}");
+            }
+        }
     }
 }

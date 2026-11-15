@@ -10,6 +10,8 @@ import { backend } from "../bridge.js";
 import { fitCanvas, h, noteName } from "../dom.js";
 import { t } from "../i18n.js";
 import { highOnTop } from "../pianoroll.js";
+import { dynamicName } from "../expression.js";
+import { accentsText, drawMarks, noteAlpha } from "./performance.js";
 import type { KeyInfo, LiveNote, LiveView } from "../types.js";
 
 /** Seconds the running view shows. */
@@ -85,6 +87,8 @@ export function liveAnalysisPanel(): Panel {
   const keyHint = h("div", { class: "hint" }, t("after a few notes"));
   const tempoValue = h("div", { class: "value" }, "–");
   const tempoHint = h("div", { class: "hint" }, t("needs a steady beat"));
+  const dynValue = h("div", { class: "value" }, "–");
+  const dynHint = h("div", { class: "hint" }, "");
   const notesValue = h("div", { class: "value" }, "0");
   const durationValue = h("div", { class: "value" }, "0.0 s");
 
@@ -96,6 +100,7 @@ export function liveAnalysisPanel(): Panel {
     fact(t("Input level"), level, levelHint, true),
     fact(t("Key"), keyValue, keyHint),
     fact(t("Tempo estimate"), tempoValue, tempoHint),
+    fact(t("Dynamics"), dynValue, dynHint),
     fact(t("Notes"), notesValue, null),
     fact(t("Duration"), durationValue, null),
   );
@@ -134,6 +139,11 @@ export function liveAnalysisPanel(): Panel {
     tempoValue.textContent = v.tempoEstimate ? `${v.tempoEstimate.toFixed(1)} BPM` : "–";
     tempoHint.textContent = v.tempoEstimate ? "" : t("needs a steady beat");
     notesValue.textContent = String(st.notes.length + st.pending.length);
+    // dynamics of the latest note, accents and sforzati so far
+    const all = [...st.notes, ...st.pending];
+    const latest = all[all.length - 1];
+    dynValue.textContent = latest ? dynamicName(latest.velocity) : "–";
+    dynHint.textContent = accentsText(all);
     durationValue.textContent = `${v.seconds.toFixed(1)} s`;
   };
 
@@ -230,13 +240,17 @@ function drawLive(canvas: HTMLCanvasElement, st: LiveState): void {
   for (const o of st.onsets) if (o >= start) ctx.fillRect(x(o), hh - 14, 1.5, 10);
 
   const nh = Math.max(4, Math.min(12, (hh - 28) / (hi - lo)));
-  for (const n of notes) {
-    const settled = !st.pending.includes(n);
-    ctx.fillStyle = settled ? "rgba(255, 180, 84, 0.85)" : "rgba(255, 180, 84, 0.45)";
+  notes.forEach((n, i) => {
+    // dynamics as opacity; the running phrase (may still change) fainter
+    const alpha = noteAlpha(n.velocity) * (st.pending.includes(n) ? 0.55 : 1);
+    ctx.fillStyle = `rgba(255, 180, 84, ${alpha.toFixed(2)})`;
+    const x0 = x(Math.max(n.startSecs, start));
     ctx.beginPath();
-    ctx.roundRect(x(Math.max(n.startSecs, start)), y(n.midi) - nh / 2, Math.max(2, x(n.endSecs) - x(Math.max(n.startSecs, start))), nh, 3);
+    ctx.roundRect(x0, y(n.midi) - nh / 2, Math.max(2, x(n.endSecs) - x0), nh, 3);
     ctx.fill();
-  }
+    const next = notes[i + 1];
+    if (n.startSecs >= start) drawMarks(ctx, n, x0, x(n.endSecs), y(n.midi), nh, next ? x(next.startSecs) : null, next ? y(next.midi) : null);
+  });
 
   ctx.strokeStyle = "#6ee7d8";
   ctx.lineWidth = 1.5;

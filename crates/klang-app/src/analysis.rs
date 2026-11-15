@@ -1,5 +1,7 @@
-//! Recording analysis: pitch curve → notes → key → cleanup.
+//! Recording analysis: pitch curve → notes → key → cleanup, and how the notes
+//! were played (dynamics, accents, articulation – see [`crate::expression`]).
 
+use crate::expression::{self, Articulation, Attack};
 use klang_dsp::notes::{hz_to_midi, segment_notes, SegmentConfig};
 use klang_dsp::onset::{detect_onsets, estimate_tempo, OnsetConfig};
 use klang_dsp::pitch::{detect_pitch, hit_pitches, HitPitch, YinConfig};
@@ -17,7 +19,13 @@ pub struct AnalyzedNote {
     /// Originally detected note.
     pub raw_midi: u8,
     pub cents: f32,
-    pub velocity: f32,
+    /// Velocity 1–127 as it goes into the notes: dynamics relative to the
+    /// recording (the median note is mf = 80), raised for accents and sforzati.
+    pub velocity: u8,
+    /// Loudness of the note's body (dBFS).
+    pub level_db: f32,
+    pub attack: Attack,
+    pub articulation: Articulation,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -74,6 +82,8 @@ pub fn analyze_with(asset_id: &str, samples: &[f32], sample_rate: u32, yin: &Yin
         Some(k) => snap_to_key(&timed, k),
         None => timed.clone(),
     };
+    let spans = expression::spans(&frames, &cleaned.iter().map(|c| (c.start, c.end)).collect::<Vec<_>>());
+    let played = expression::expression(&spans, tempo_estimate);
 
     Analysis {
         asset_id: asset_id.to_string(),
@@ -83,13 +93,17 @@ pub fn analyze_with(asset_id: &str, samples: &[f32], sample_rate: u32, yin: &Yin
         notes: cleaned
             .iter()
             .zip(&timed)
-            .map(|(c, r)| AnalyzedNote {
+            .zip(spans.iter().zip(&played))
+            .map(|((c, r), (s, p))| AnalyzedNote {
                 start_secs: c.start,
                 end_secs: c.end,
                 midi: c.midi,
                 raw_midi: r.midi,
                 cents: r.cents,
-                velocity: c.velocity,
+                velocity: p.velocity,
+                level_db: round2(s.levels.body_db),
+                attack: p.attack,
+                articulation: p.articulation,
             })
             .collect(),
         onsets: onsets.onsets,
@@ -108,6 +122,9 @@ const LIVE_KEY_MIN_NOTES: usize = 6;
 /// (with fewer, the estimate jumps around).
 const LIVE_TEMPO_WINDOW_SECS: f32 = 20.0;
 const LIVE_TEMPO_MIN_ONSETS: usize = 6;
+/// The last settled notes are sent again with every view: their accents and
+/// articulation depend on the notes after them.
+const LIVE_REVISE_NOTES: usize = 8;
 /// The tempo is estimated anew after this many seconds of new audio …
 const LIVE_TEMPO_EVERY_SECS: f64 = 0.5;
 /// … and shown as the median of the last estimates (one octave error among
@@ -157,6 +174,10 @@ pub struct LiveNote {
     pub end_secs: f64,
     pub midi: u8,
     pub cents: f32,
+    /// As in [`AnalyzedNote`] – relative to the notes so far.
+    pub velocity: u8,
+    pub attack: Attack,
+    pub articulation: Articulation,
 }
 
 /// The running analysis for the UI – the growing parts from the cursor on.
@@ -177,7 +198,8 @@ pub struct LiveView {
     /// Pitch curve (time, MIDI or null) from point number `curve_from` on.
     pub curve_from: usize,
     pub curve: Vec<(f32, Option<f32>)>,
-    /// Notes that won't change any more, from number `notes_from` on.
+    /// Notes that won't change any more, from number `notes_from` on (the
+    /// last few again: their accents and articulation may still change).
     pub notes_from: usize,
     pub notes: Vec<LiveNote>,
     /// Notes of the running phrase (may still change) – always all of them.
@@ -193,8 +215,16 @@ fn round2(v: f32) -> f32 {
     (v * 100.0).round() / 100.0
 }
 
-fn live_note(n: &TimedNote) -> LiveNote {
-    LiveNote { start_secs: (n.start * 1000.0).round() / 1000.0, end_secs: (n.end * 1000.0).round() / 1000.0, midi: n.midi, cents: n.cents.round() }
+fn live_note(n: &TimedNote, p: &expression::Played) -> LiveNote {
+    LiveNote {
+        start_secs: (n.start * 1000.0).round() / 1000.0,
+        end_secs: (n.end * 1000.0).round() / 1000.0,
+        midi: n.midi,
+        cents: n.cents.round(),
+        velocity: p.velocity,
+        attack: p.attack,
+        articulation: p.articulation,
+    }
 }
 
 impl LiveAnalysis {
@@ -295,7 +325,10 @@ impl LiveAnalysis {
         let since = if since.take == self.take { since } else { LiveCursor::default() };
         let frames = self.tracker.frames();
         let curve_from = since.curve.min(frames.len());
-        let notes_from = since.notes.min(self.settled.len());
+        let notes_from = since.notes.min(self.settled.len().saturating_sub(LIVE_REVISE_NOTES));
+        let spans = expression::spans(frames, &self.settled.iter().chain(&self.pending).map(|n| (n.start, n.end)).collect::<Vec<_>>());
+        let played = expression::expression(&spans, self.tempo);
+        let settled = self.settled.len();
         let onsets = self.tracker.onsets();
         let onsets_from = since.onsets.min(onsets.len());
         let (rms, peak) = self.tracker.level();
@@ -312,8 +345,8 @@ impl LiveAnalysis {
             curve_from,
             curve: frames[curve_from..].iter().map(|f| ((f.time * 1000.0).round() / 1000.0, f.freq.map(|hz| round2(hz_to_midi(hz))))).collect(),
             notes_from,
-            notes: self.settled[notes_from..].iter().map(live_note).collect(),
-            pending: self.pending.iter().map(live_note).collect(),
+            notes: self.settled[notes_from..].iter().zip(&played[notes_from..settled]).map(|(n, p)| live_note(n, p)).collect(),
+            pending: self.pending.iter().zip(&played[settled..]).map(|(n, p)| live_note(n, p)).collect(),
             onsets_from,
             onsets: onsets[onsets_from..].iter().map(|t| (t * 1000.0).round() / 1000.0).collect(),
             tempo_estimate: self.tempo.map(|t| (t * 10.0).round() / 10.0),

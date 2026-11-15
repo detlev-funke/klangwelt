@@ -36,6 +36,11 @@ it follows your browser's language, and the gear menu switches it.
 * **Record and recognize** – play or sing into the microphone; Klangwelt
   detects tempo, key and melody, and turns a recording into a melody or drum
   track.
+* **Score library** – more than 76,000 free scores (public domain and CC0,
+  from PDMX and OpenScore). Search by title, composer or melody – type the
+  notes, take them from a clip or simply sing them – or browse by genre,
+  composer and mood. Listen to a score and take a voice or a section into
+  your tracks. Your own MusicXML files join the search, too.
 * **Audio files** – just drag WAV, AIFF, FLAC or Opus into the window.
 * **Export** – WAV, FLAC, Opus (small, for your phone), individual stems or
   MIDI – as a download.
@@ -78,8 +83,12 @@ listen to them, then write them into a track with one click.
 ## Your data stays with you
 
 There is no server doing the work, no account and no tracking. Projects,
-recordings and your own sounds live only in your browser's storage; none of it
-is uploaded. Klangwelt asks for the microphone only when you record.
+recordings, your own sounds and your own scores live only in your browser's
+storage; none of it is uploaded. The score library is a set of files on
+[Zenodo](https://doi.org/10.5281/zenodo.24231431): your browser reads only the
+parts a search or an opened score needs and keeps them, so what you have used
+once also works offline. Klangwelt asks for the microphone only when you
+record or sing a melody.
 
 ## Browser or desktop?
 
@@ -90,7 +99,8 @@ do what a web page is not allowed to do, or cannot do well:
 | | Browser | Desktop |
 |---|---|---|
 | Projects | in browser storage, download and upload as files | files on your computer, open by double-click |
-| Score library (download thousands of scores, sing a melody and find it) | – | ✓ |
+| Score library (search by title or melody, also sung; browse; take voices into tracks) | ✓ | ✓ |
+| Scores in the library | more than 76,000 free scores, read as you search; plus your own MusicXML files | download collections yourself (all of PDMX with 254,000 scores, KernScores, DCML …), several libraries |
 | Choose audio devices (interface, headphones) | system default | ✓ |
 | Agent | via Claude in Chrome or Playwright MCP (extension "Playwright MCP Bridge", also Vivaldi, Brave, Edge) – one prompt to copy | its own MCP endpoint, one prompt for Claude Code |
 | Installation | none | a single file, no installer |
@@ -105,6 +115,7 @@ version. The desktop app includes it as a Git submodule.
 | `crates/klang-core` | project model, commands, undo |
 | `crates/klang-dsp` | our own signal processing: pitch, onsets, time stretching, synthesis |
 | `crates/klang-music` | music theory, MusicXML, score library and melody search |
+| `crates/klang-libbuild` | builds the browser's score library package from pinned sources |
 | `crates/klang-engine` | mixer and audio engine (desktop: cpal, browser: AudioWorklet) |
 | `crates/klang-mcp` | MCP protocol for agents |
 | `crates/klang-opus` | libopus and the Ogg container for Opus export |
@@ -134,14 +145,19 @@ cd ui && npm run build:web && npm run test:web   # headless Edge, muted
 How the core, the browser shell and the desktop shell fit together is
 described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); everything about the
 browser version – including publishing to GitHub Pages – is in
-[docs/WEB.md](docs/WEB.md).
+[docs/WEB.md](docs/WEB.md), and how the score library package is built,
+published and read is in [docs/LIBRARY.md](docs/LIBRARY.md).
 
 ## License
 
 Klangwelt is free software under the [MIT License](LICENSE): free of charge
 and usable for any purpose, without warranty. The third-party libraries built
 into it (Rust crates and libopus) are under free licenses, see
-[THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md). Klangwelt does not ship
-any scores; collections that the desktop app downloads from their sources
-come under their own licenses. Klangwelt is an independent free project and
+[THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md). The app itself contains
+no scores. The browser version reads the
+[score library package on Zenodo](https://doi.org/10.5281/zenodo.24231431)
+(CC BY 4.0, with attribution to PDMX and OpenScore); every score in it is in
+the public domain or under CC0, and every hit shows its source and license.
+Collections that the desktop app downloads from their sources come under
+their own licenses. Klangwelt is an independent free project and
 not affiliated with any companies, brands or institutions of the same name.

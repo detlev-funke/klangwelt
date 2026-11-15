@@ -6,7 +6,7 @@ import { effect } from "../signals.js";
 import { DYNAMICS, EXPRS, EXPR_ORDER, type ExprKey, type Mark, applyMark, exprKeysFor, exprValue, setExprAll } from "../expression.js";
 import {
   analysis, chat, clipLengthBeats, findClip, findTrack, instrumentSpecs,
-  project, run, savedSounds, selection, snapshot,
+  liveRecording, project, run, savedSounds, selection, snapshot,
 } from "../store.js";
 import { chatPanel } from "./chat.js";
 import { fuguePanel } from "./fugue.js";
@@ -14,6 +14,7 @@ import { harmonyPanel } from "./harmony.js";
 import { rhythmPanel } from "./rhythm.js";
 import { songPanel } from "./song.js";
 import { libraryPanel, librarySignals } from "./library.js";
+import { liveAnalysisPanel } from "./liveanalysis.js";
 import { soundPanel } from "./sound.js";
 import type { Analysis, Note, Track } from "../types.js";
 
@@ -362,6 +363,8 @@ class KwPanel extends HTMLElement {
       const sel = selection.value;
       const snap = snapshot.value;
       const a = tab === "analyse" ? analysis.value : null;
+      // while recording, the analysis window shows the live analysis
+      const live = tab === "analyse" && liveRecording.value;
       if (tab === "agent") chat.value; // redraw chat
       if (tab === "analyse") highOnTop.value; // redraw curve when the pitch axis changes
       if (tab === "clip") noteSel.value; // expression follows the note selection
@@ -374,8 +377,9 @@ class KwPanel extends HTMLElement {
       const key =
         tab === "clip" ? `${track?.id ?? ""}|${clip?.clip.id ?? ""}`
         : tab === "klang" ? `${track?.id ?? ""}|${track?.kind ?? ""}|${track?.instrument?.kind ?? ""}|${specsReady}`
+        : live ? "analyse-live"
         : tab;
-      if (key !== this.#key || a !== this.#analysis) {
+      if (key !== this.#key || (a !== this.#analysis && !live)) {
         this.#key = key;
         this.#analysis = a;
         this.#panel = this.#build(tab, track ?? null, clip ? clip.clip.id : null, a);
@@ -398,6 +402,7 @@ class KwPanel extends HTMLElement {
       return placeholder(t("Select a clip in the timeline."));
     }
     if (tab === "analyse") {
+      if (liveRecording.peek()) return liveAnalysisPanel();
       if (a) return analysisPanel(a);
       return placeholder(t("Record something (R) or select an audio clip and click \"Analyze\" (or double-click the clip)."));
     }

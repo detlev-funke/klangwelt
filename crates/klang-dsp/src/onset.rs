@@ -47,35 +47,12 @@ pub fn detect_onsets(samples: &[f32], sample_rate: f32, cfg: &OnsetConfig) -> On
     let mut padded = vec![0.0f32; lead + samples.len().max(n)];
     padded[lead..lead + samples.len()].copy_from_slice(samples);
     let samples = &padded[..];
-    let lead_secs = lead as f32 / sample_rate;
-    let fft = Fft::new(n);
-    let win = hann(n);
-    let bins = n / 2 + 1;
-    let mut buf = vec![Complex::ZERO; n];
-    let mut prev = vec![0f32; bins];
-    let mut cur = vec![0f32; bins];
+    let mut flux = Flux::new(cfg.frame_len);
     let mut env = Vec::with_capacity(samples.len() / cfg.hop + 1);
-    let mut first = true;
 
     let mut start = 0;
     while start + n <= samples.len() {
-        for i in 0..n {
-            buf[i] = Complex::new(samples[start + i] * win[i], 0.0);
-        }
-        fft.forward(&mut buf);
-        let mut flux = 0.0;
-        for k in 0..bins {
-            cur[k] = (1.0 + 10.0 * buf[k].norm()).ln();
-            if !first {
-                let d = cur[k] - prev[k];
-                if d > 0.0 {
-                    flux += d;
-                }
-            }
-        }
-        env.push(flux);
-        std::mem::swap(&mut prev, &mut cur);
-        first = false;
+        env.push(flux.frame(&samples[start..start + n]));
         start += cfg.hop;
     }
 
@@ -90,20 +67,10 @@ pub fn detect_onsets(samples: &[f32], sample_rate: f32, cfg: &OnsetConfig) -> On
     let mut last = f32::NEG_INFINITY;
     let mut window = Vec::with_capacity(2 * cfg.median_radius + 1);
     for i in 1..env.len().saturating_sub(1) {
-        let v = env[i];
-        if !(v > env[i - 1] && v >= env[i + 1]) {
+        if !is_peak(&env, i, 1.0, cfg, &mut window) {
             continue;
         }
-        let lo = i.saturating_sub(cfg.median_radius);
-        let hi = (i + cfg.median_radius + 1).min(env.len());
-        window.clear();
-        window.extend_from_slice(&env[lo..hi]);
-        let threshold = (median(&mut window) + cfg.delta).max(0.12);
-        if v <= threshold {
-            continue;
-        }
-        // The flux peak lies about a quarter frame after the onset.
-        let t = (((i * cfg.hop) as f32 + n as f32 * 0.25) / sample_rate - lead_secs).max(0.0);
+        let t = peak_time(i, n, sample_rate, cfg);
         if t - last < cfg.min_interval_secs {
             continue;
         }
@@ -114,6 +81,80 @@ pub fn detect_onsets(samples: &[f32], sample_rate: f32, cfg: &OnsetConfig) -> On
     // Align the envelope back to the original start.
     let skip = (lead / cfg.hop).min(env.len());
     OnsetAnalysis { hop_secs, envelope: env.split_off(skip), onsets }
+}
+
+/// Spectral flux frame by frame: how much the (log) spectrum grew since the
+/// previous frame. [`detect_onsets`] and the live analysis
+/// ([`crate::tracker`]) share it.
+pub struct Flux {
+    n: usize,
+    fft: Fft,
+    win: Vec<f32>,
+    buf: Vec<Complex>,
+    prev: Vec<f32>,
+    cur: Vec<f32>,
+    first: bool,
+}
+
+impl Flux {
+    pub fn new(frame_len: usize) -> Self {
+        let n = frame_len.next_power_of_two().max(2);
+        let bins = n / 2 + 1;
+        Self { n, fft: Fft::new(n), win: hann(n), buf: vec![Complex::ZERO; n], prev: vec![0f32; bins], cur: vec![0f32; bins], first: true }
+    }
+
+    /// Samples one frame needs.
+    pub fn frame_len(&self) -> usize {
+        self.n
+    }
+
+    /// Flux of the next frame (`x`: [`Flux::frame_len`] samples); 0 for the first.
+    pub fn frame(&mut self, x: &[f32]) -> f32 {
+        for i in 0..self.n {
+            self.buf[i] = Complex::new(x[i] * self.win[i], 0.0);
+        }
+        self.fft.forward(&mut self.buf);
+        let mut flux = 0.0;
+        for k in 0..self.cur.len() {
+            self.cur[k] = (1.0 + 10.0 * self.buf[k].norm()).ln();
+            if !self.first {
+                let d = self.cur[k] - self.prev[k];
+                if d > 0.0 {
+                    flux += d;
+                }
+            }
+        }
+        std::mem::swap(&mut self.prev, &mut self.cur);
+        self.first = false;
+        flux
+    }
+}
+
+/// Is `env[i]` an onset peak – a local maximum clearly above the median of its
+/// neighbourhood? `scale` is what counts as 1 in the envelope (the finished
+/// analysis normalizes it, the live one measures against the loudest so far).
+/// Looks [`OnsetConfig::median_radius`] values ahead.
+pub fn is_peak(env: &[f32], i: usize, scale: f32, cfg: &OnsetConfig, window: &mut Vec<f32>) -> bool {
+    if i == 0 || i + 1 >= env.len() {
+        return false;
+    }
+    let v = env[i];
+    if !(v > env[i - 1] && v >= env[i + 1]) {
+        return false;
+    }
+    let lo = i.saturating_sub(cfg.median_radius);
+    let hi = (i + cfg.median_radius + 1).min(env.len());
+    window.clear();
+    window.extend_from_slice(&env[lo..hi]);
+    let threshold = (median(window) + cfg.delta * scale).max(0.12 * scale);
+    v > threshold
+}
+
+/// Time of the onset whose flux peak is in frame `i` (`n`: frame length; the
+/// envelope begins `n` samples of silence before the recording).
+pub fn peak_time(i: usize, n: usize, sample_rate: f32, cfg: &OnsetConfig) -> f32 {
+    // The flux peak lies about a quarter frame after the onset.
+    (((i * cfg.hop) as f32 + n as f32 * 0.25) / sample_rate - n as f32 / sample_rate).max(0.0)
 }
 
 /// Estimates the tempo from the novelty curve. Prefers values around 120 BPM

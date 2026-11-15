@@ -2,7 +2,7 @@
 
 import { backend } from "./bridge.js";
 import {
-  act, analysis, errorText, findClip, notify, project, rangeFocus, run, selection, showPanel, snapshot, status, viewport,
+  act, analysis, errorText, findClip, holdLive, liveRecording, notify, project, rangeFocus, run, selection, showPanel, snapshot, status, viewport,
 } from "./store.js";
 import { heightDraft, heightLimits, noteKey, noteSel, rowHeight } from "./pianoroll.js";
 import { playheadMoved } from "./noteinput.js";
@@ -188,21 +188,30 @@ export async function toggleRecord(): Promise<void> {
   if (!status.peek().recording) {
     await guarded(async () => {
       await backend.recordStart();
+      // the analysis window follows the recording live
+      liveRecording.value = true;
+      showPanel("analyse");
       // the metronome falls silent for the recording: show that on its button
       snapshot.value = await backend.getState();
       notify(t("Recording – press again (or R) to stop"));
     });
     return;
   }
-  await guarded(async () => {
-    const r = await backend.recordStop();
-    snapshot.value = r.snapshot;
-    analysis.value = r.analysis;
-    selection.value = { trackId: r.trackId, clipId: r.clipId };
-    showPanel("analyse");
-    const key = r.analysis.key ? ` · ${r.analysis.key.name}` : "";
-    notify(`${t("Detected {n} notes", { n: r.analysis.notes.length })}${key}`);
-  });
+  // the live view stays until the finished analysis replaces it
+  holdLive(true);
+  try {
+    await guarded(async () => {
+      const r = await backend.recordStop();
+      snapshot.value = r.snapshot;
+      analysis.value = r.analysis;
+      selection.value = { trackId: r.trackId, clipId: r.clipId };
+      showPanel("analyse");
+      const key = r.analysis.key ? ` · ${r.analysis.key.name}` : "";
+      notify(`${t("Detected {n} notes", { n: r.analysis.notes.length })}${key}`);
+    });
+  } finally {
+    holdLive(false);
+  }
 }
 
 export const undo = () => act(backend.undo());

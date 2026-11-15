@@ -48,6 +48,8 @@ static SHARED: Shared = Shared {
     muted: AtomicBool::new(false),
     sample_rate: AtomicU32::new(0),
     load: AtomicU32::new(0),
+    tap_on: AtomicBool::new(false),
+    tap: Mutex::new(Vec::new()),
 };
 
 /// Microphone samples of the current recording.
@@ -78,6 +80,7 @@ pub fn report(playing: bool, previewing: bool, position_frames: u64, peak_out: f
 pub fn record_input(samples: &[f32]) {
     if let Some(rec) = REC.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
         rec.extend_from_slice(samples);
+        SHARED.tap_push(samples);
     }
 }
 
@@ -366,6 +369,18 @@ impl Engine {
         SHARED.recording.store(false, Ordering::Relaxed);
         let samples = REC.lock().unwrap_or_else(|e| e.into_inner()).take().ok_or_else(|| EngineError(tr!("No recording is running")))?;
         Ok(Recording { samples, sample_rate: self.info.sample_rate, start_frame: REC_START.load(Ordering::Relaxed), device: "Mikrofon".into() })
+    }
+
+    /// From now on the recording's samples are also collected for the live
+    /// analysis ([`Engine::take_input_tap`]); `false` stops that.
+    pub fn set_input_tap(&self, on: bool) {
+        SHARED.set_tap(on);
+    }
+
+    /// Recording samples since the last call (mono, at the rate
+    /// [`Engine::start_recording`] returned).
+    pub fn take_input_tap(&self) -> Vec<f32> {
+        SHARED.take_tap()
     }
 
     /// Reads the status; peak levels are reset in the process.

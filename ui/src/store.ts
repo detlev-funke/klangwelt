@@ -33,6 +33,18 @@ effect(() => {
   rangeFocus.value = false;
 });
 export const analysis = signal<Analysis | null>(null);
+/** A recording with live analysis is running – the analysis window shows it. */
+export const liveRecording = signal(false);
+let liveHeld = false;
+/** Follows the engine status – except while a recording is being finished
+ *  ([`holdLive`]): the live view then stays until the finished analysis replaces it. */
+export function followLive(s: EngineStatus): void {
+  if (s.liveAnalysis || !liveHeld) liveRecording.value = !!s.liveAnalysis;
+}
+export function holdLive(on: boolean): void {
+  liveHeld = on;
+  if (!on) followLive(status.peek());
+}
 /** Windows in the docking system. */
 export type PanelId = "spuren" | "clip" | "analyse" | "klang" | "rhythmus" | "song" | "agent" | "bibliothek" | "harmonie" | "fuge" | "hilfe";
 /** Request to show a window (each request is a new object, even for the same window). */

@@ -28,8 +28,8 @@ type FromWorker = { k: number; d: Float64Array } | { b: number; n: number; off: 
 const RECORD = 13;
 /** Status every this many blocks (128 frames: about 24 ms at 48 kHz). */
 const STATUS_EVERY = 9;
-/** Microphone samples per message to the worker. */
-const REC_CHUNK = 4096;
+/** Microphone samples per message to the worker (about 43 ms at 48 kHz – the live analysis follows that closely). */
+const REC_CHUNK = 2048;
 
 class KlangweltProcessor extends AudioWorkletProcessor {
   private wasm: WorkletExports;

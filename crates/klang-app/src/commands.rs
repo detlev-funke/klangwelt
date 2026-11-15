@@ -39,6 +39,7 @@ pub const COMMANDS: &[&str] = &[
     "audio_set_device",
     "record_start",
     "record_stop",
+    "record_live",
     "get_waveform",
     "analyze_asset",
     "create_melody_track",
@@ -186,6 +187,11 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
         // ------------------------------------------------ Recording, analysis
         "record_start" => json(st.record_start()?),
         "record_stop" => json(st.record_stop()?),
+        // What the running recording's live analysis found since the cursor (null: no recording running)
+        "record_live" => {
+            let (since,) = args!(a; since: Option<crate::analysis::LiveCursor>);
+            json(st.record_live(since.unwrap_or_default())?)
+        }
         "get_waveform" => {
             let (asset_id, buckets) = args!(a; asset_id: String, buckets: usize);
             json(st.waveform(&asset_id, buckets)?)

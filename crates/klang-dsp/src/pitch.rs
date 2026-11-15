@@ -143,39 +143,88 @@ pub struct PitchFrame {
 }
 
 pub fn detect_pitch(samples: &[f32], sample_rate: f32, cfg: &YinConfig) -> Vec<PitchFrame> {
-    let w = cfg.frame_len / 2;
-    let tau_max = ((sample_rate / cfg.min_freq).ceil() as usize).min(w).max(4);
-    let tau_min = ((sample_rate / cfg.max_freq).floor() as usize).max(2);
-    if tau_min + 2 >= tau_max {
+    let Some(mut yin) = Yin::new(sample_rate, cfg) else {
         return Vec::new();
-    }
-    let span = w + tau_max;
+    };
+    let span = yin.span();
     if samples.len() < span || cfg.hop == 0 {
         return Vec::new();
     }
-
-    let n = span.next_power_of_two();
-    let fft = Fft::new(n);
-    let mut a = vec![Complex::ZERO; n];
-    let mut b = vec![Complex::ZERO; n];
-    let mut d = vec![0f32; tau_max + 1];
-    let mut cm = vec![0f32; tau_max + 1];
-    let mut prefix = vec![0f64; span + 1];
     let mut frames = Vec::with_capacity(samples.len() / cfg.hop + 1);
-
     let mut start = 0;
     while start + span <= samples.len() {
-        let x = &samples[start..start + span];
         let time = (start as f32 + span as f32 * 0.5) / sample_rate;
+        frames.push(yin.frame(&samples[start..start + span], time));
+        start += cfg.hop;
+    }
+    frames
+}
+
+/// YIN for one frame at a time, with its buffers – [`detect_pitch`] walks a
+/// whole recording with it, the live analysis ([`crate::tracker`]) one frame
+/// whenever enough new samples have arrived. Both measure alike.
+pub struct Yin {
+    cfg: YinConfig,
+    sample_rate: f32,
+    w: usize,
+    tau_min: usize,
+    tau_max: usize,
+    span: usize,
+    n: usize,
+    fft: Fft,
+    a: Vec<Complex>,
+    b: Vec<Complex>,
+    d: Vec<f32>,
+    cm: Vec<f32>,
+    prefix: Vec<f64>,
+}
+
+impl Yin {
+    /// `None` when the frequency range doesn't fit into the frame at this rate.
+    pub fn new(sample_rate: f32, cfg: &YinConfig) -> Option<Self> {
+        let w = cfg.frame_len / 2;
+        let tau_max = ((sample_rate / cfg.min_freq).ceil() as usize).min(w).max(4);
+        let tau_min = ((sample_rate / cfg.max_freq).floor() as usize).max(2);
+        if tau_min + 2 >= tau_max {
+            return None;
+        }
+        let span = w + tau_max;
+        let n = span.next_power_of_two();
+        Some(Self {
+            cfg: *cfg,
+            sample_rate,
+            w,
+            tau_min,
+            tau_max,
+            span,
+            n,
+            fft: Fft::new(n),
+            a: vec![Complex::ZERO; n],
+            b: vec![Complex::ZERO; n],
+            d: vec![0f32; tau_max + 1],
+            cm: vec![0f32; tau_max + 1],
+            prefix: vec![0f64; span + 1],
+        })
+    }
+
+    /// Samples one frame needs.
+    pub fn span(&self) -> usize {
+        self.span
+    }
+
+    /// Measures one frame: `x` holds at least [`Yin::span`] samples (only
+    /// those are used), `time` is its center in seconds.
+    pub fn frame(&mut self, x: &[f32], time: f32) -> PitchFrame {
+        let (w, span, n, tau_min, tau_max) = (self.w, self.span, self.n, self.tau_min, self.tau_max);
+        let Self { cfg, sample_rate, fft, a, b, d, cm, prefix, .. } = self;
+        let x = &x[..span];
 
         for i in 0..span {
             prefix[i + 1] = prefix[i] + (x[i] as f64) * (x[i] as f64);
         }
         let rms = (prefix[w] / w as f64).sqrt() as f32;
         if rms < cfg.silence_rms {
-            frames.push(PitchFrame { time, freq: None, clarity: 0.0, rms });
-            start += cfg.hop;
-            continue;
+            return PitchFrame { time, freq: None, clarity: 0.0, rms };
         }
 
         // r(τ) = Σ_j x[j]·x[j+τ] via FFT cross-correlation.
@@ -183,12 +232,12 @@ pub fn detect_pitch(samples: &[f32], sample_rate: f32, cfg: &YinConfig) -> Vec<P
             a[i] = if i < w { Complex::new(x[i], 0.0) } else { Complex::ZERO };
             b[i] = if i < span { Complex::new(x[i], 0.0) } else { Complex::ZERO };
         }
-        fft.forward(&mut a);
-        fft.forward(&mut b);
+        fft.forward(a);
+        fft.forward(b);
         for i in 0..n {
             a[i] = a[i].conj() * b[i];
         }
-        fft.inverse(&mut a);
+        fft.inverse(a);
 
         // d(τ) = E(0) + E(τ) − 2·r(τ)
         let e0 = prefix[w];
@@ -232,17 +281,15 @@ pub fn detect_pitch(samples: &[f32], sample_rate: f32, cfg: &YinConfig) -> Vec<P
             }
         };
 
-        let refined = parabolic(&cm, best);
+        let refined = parabolic(cm, best);
         let clarity = (1.0 - cm[best]).clamp(0.0, 1.0);
         let freq = if voiced && refined > 0.0 {
-            Some(sample_rate / refined)
+            Some(*sample_rate / refined)
         } else {
             None
         };
-        frames.push(PitchFrame { time, freq, clarity, rms });
-        start += cfg.hop;
+        PitchFrame { time, freq, clarity, rms }
     }
-    frames
 }
 
 fn parabolic(v: &[f32], i: usize) -> f32 {

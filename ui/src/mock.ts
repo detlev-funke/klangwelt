@@ -180,6 +180,7 @@ export function createMock(): Backend {
     },
     recordStart: noAudio,
     recordStop: noAudio,
+    recordLive: () => later(null),
     analyzeAsset: noAudio,
     createMelodyTrack: noAudio,
     audioImport: noAudio,

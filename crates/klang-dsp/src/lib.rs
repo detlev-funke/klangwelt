@@ -11,6 +11,7 @@
 //! * [`onset`]   – onsets (spectral flux) and tempo estimation
 //! * [`stretch`] – change tempo/pitch (WSOLA + sinc resampling)
 //! * [`synth`]   – sound generation (plucked-string model, drums) – germ of the sound workshop
+//! * [`tracker`] – live analysis of a running recording (pitch, onsets, level, tempo)
 //! * [`util`]    – small helpers (level, median, waveform overview)
 
 pub mod bass;
@@ -27,6 +28,7 @@ pub mod pad;
 pub mod pitch;
 pub mod stretch;
 pub mod synth;
+pub mod tracker;
 pub mod util;
 
 #[cfg(test)]

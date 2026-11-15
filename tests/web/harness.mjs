@@ -276,8 +276,9 @@ async function ready(app) {
  *  tests check German texts; the UI detects its language from them (ui/src/i18n.ts).
  *  `library`: folder of a score library package (klang-libbuild), served under
  *  /library/ like Zenodo (ranges, CORS) – see docs/LIBRARY.md. Without it the
- *  app gets no package (never the Zenodo record from ui/static/library.json). */
-export async function startWeb({ languages = "de-DE,de", library = null } = {}) {
+ *  app gets no package (never the Zenodo record from ui/static/library.json).
+ *  `fakeMic`: WAV file the substitute microphone plays (in a loop) instead of its beep. */
+export async function startWeb({ languages = "de-DE,de", library = null, fakeMic = null } = {}) {
   if (!existsSync(join(ROOT, "ui", "dist-web", "klang_web.wasm"))) throw new Error("ui/dist-web fehlt – erst „npm run build:web“ in ui/");
   if (!existsSync(EDGE)) throw new Error(`Edge nicht gefunden: ${EDGE} (KLANGWELT_EDGE setzen)`);
   const tmp = mkdtempSync(join(tmpdir(), "klangwelt-web-"));
@@ -303,6 +304,7 @@ export async function startWeb({ languages = "de-DE,de", library = null } = {}) 
       "--autoplay-policy=no-user-gesture-required",
       "--use-fake-ui-for-media-stream",
       "--use-fake-device-for-media-stream",
+      ...(fakeMic ? [`--use-file-for-fake-audio-capture=${fakeMic}`] : []),
       "--window-size=1600,1000",
       `--accept-lang=${languages}`,
       "about:blank",

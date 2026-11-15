@@ -33,9 +33,10 @@ it follows your browser's language, and the gear menu switches it.
   progressions with mood and twists, a harmony timeline above the piece.
 * **Fugue and counterpoint** – pick a subject, find countersubjects, let the
   voices enter; a checker points out parallel fifths and other mistakes.
-* **Record and recognize** – play or sing into the microphone; Klangwelt
-  detects tempo, key and melody, and turns a recording into a melody or drum
-  track.
+* **Record and recognize** – play or sing into the microphone; while you
+  record, a live analysis shows the note you're singing (tuner-style), the
+  level, and soon the key and tempo. Afterwards Klangwelt detects tempo, key
+  and melody, and turns a recording into a melody or drum track.
 * **Score library** – more than 76,000 free scores (public domain and CC0,
   from PDMX and OpenScore). Search by title, composer or melody – type the
   notes, take them from a clip or simply sing them – or browse by genre,

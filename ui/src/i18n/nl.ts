@@ -671,6 +671,21 @@ const dict: Dict = {
   "Read PDMX.csv (225 MB), keep the matching rows, re-index": "PDMX.csv (225 MB) lezen, passende regels behouden, opnieuw indexeren",
   "Download genre & composer (225 MB)": "Genre & componist alsnog downloaden (225 MB)",
 
+  // ui/src/components/liveanalysis.ts
+  "after a few notes": "na een paar tonen",
+  "−50 to +50 cents": "−50 tot +50 cent",
+  "Sing or play a note": "Zing of speel een toon",
+  "needs a steady beat": "heeft een regelmatige maat nodig",
+  "Live analysis": "Live-analyse",
+  "Current note": "Huidige toon",
+  "Input level": "Ingangsniveau",
+  "in tune": "zuiver",
+  "too sharp": "te hoog",
+  "too flat": "te laag",
+  "Clipping – move back or turn the input down": "Oversturing – ga verder weg of zet de ingang zachter",
+  "Very quiet – move closer to the microphone": "Erg zacht – kom dichter bij de microfoon",
+  "Listening… sing, hum or play something.": "Luistert… zing, neurie of speel iets.",
+
   // ui/src/components/rhythm.ts
   "\"{name}\" · {bpm} BPM – Space plays it, edit the beat in the \"Rhythm\" window": "“{name}” · {bpm} BPM – Spatiebalk speelt af, in het venster “Ritme” bewerk je de beat",
   "Beat templates – new drum track, template tempo": "Beatsjablonen – nieuw drumspoor, tempo van het sjabloon",

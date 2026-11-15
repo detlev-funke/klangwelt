@@ -7,7 +7,7 @@
 import type {
   AgentActivity, Analysis, CatalogEntry, CheckView, ExportInfo, ExportOptions, ExportResult, Chord, ChordInfo, ChatView, Command, Countersubject, Dimension, EngineStatus, FugueOptions,
   FuguePlan, HarmonyView, InstrumentKind, InstrumentSpec, SubjectView, TransformSpec, VNote,
-  AddResult, ConvertResult, ConvertTarget, ImportResult, QuantizeResult, KeySpec, LibEntry, LibHit, LibraryInfo, ListenResult, OwnScore, PlacedChord, PlayInfo, PreviewPattern, ProjectFile, RecordResult, HarmonyLine, SongPlan, SongWritten, ClipGrid, RhythmGrid, RhythmInfo, RhythmWritten, SavedSound, ScoreView, Snapshot, SoundReport, SoundSaveResult, SuggestResult, TreeLevel, WaveView,
+  AddResult, ConvertResult, ConvertTarget, ImportResult, QuantizeResult, KeySpec, LibEntry, LibHit, LibraryInfo, ListenResult, OwnScore, PlacedChord, PlayInfo, PreviewPattern, ProjectFile, RecordResult, LiveCursor, LiveView, HarmonyLine, SongPlan, SongWritten, ClipGrid, RhythmGrid, RhythmInfo, RhythmWritten, SavedSound, ScoreView, Snapshot, SoundReport, SoundSaveResult, SuggestResult, TreeLevel, WaveView,
 } from "./types.js";
 import type { AudioDevices, AudioKind } from "./types.js";
 import { createMock } from "./mock.js";
@@ -59,6 +59,8 @@ export interface Backend {
   setAudioDevice(kind: AudioKind, name: string | null): Promise<Snapshot>;
   recordStart(): Promise<void>;
   recordStop(): Promise<RecordResult>;
+  /** What the running recording's live analysis found since `since` (null: no recording running). */
+  recordLive(since: LiveCursor): Promise<LiveView | null>;
   getWaveform(assetId: string, buckets: number): Promise<number[]>;
   analyzeAsset(assetId: string): Promise<Analysis>;
   createMelodyTrack(trackId: number, clipId: number): Promise<Snapshot>;
@@ -225,6 +227,7 @@ function coreBackend(link: CoreLink, platform: "desktop" | "web"): Backend {
     setAudioDevice: (kind, name) => call("audio_set_device", { kind, name }),
     recordStart: () => call("record_start"),
     recordStop: () => call("record_stop"),
+    recordLive: (since) => call("record_live", { since }),
     getWaveform: (assetId, buckets) => call("get_waveform", { assetId, buckets }),
     analyzeAsset: (assetId) => call("analyze_asset", { assetId }),
     createMelodyTrack: (trackId, clipId) => call("create_melody_track", { trackId, clipId }),

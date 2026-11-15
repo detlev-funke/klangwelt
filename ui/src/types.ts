@@ -850,6 +850,8 @@ export interface EngineStatus {
   positionSecs: number;
   peakOut: number;
   peakIn: number;
+  /** A recording with live analysis is running (`recordLive` has it) – not the library's sing-to-search. */
+  liveAnalysis?: boolean;
 }
 
 export interface AnalyzedNote {
@@ -885,6 +887,48 @@ export interface Analysis {
   notes: AnalyzedNote[];
   /** Hits with a root (drums, bass); unpitched ones end up in the rhythm strip. */
   hits: HitPitch[];
+  onsets: number[];
+  tempoEstimate: number | null;
+  key: KeyInfo | null;
+}
+
+/** Note found while recording. */
+export interface LiveNote {
+  startSecs: number;
+  endSecs: number;
+  midi: number;
+  cents: number;
+}
+
+/** What the UI already has of the running live analysis. */
+export interface LiveCursor {
+  /** Number of the recording – another one starts from the beginning. */
+  take: number;
+  /** Curve points, settled notes and onsets already received. */
+  curve: number;
+  notes: number;
+  onsets: number;
+}
+
+/** The running recording's analysis; the growing parts from the cursor on. */
+export interface LiveView {
+  take: number;
+  seconds: number;
+  /** Level of the newest samples: RMS in dBFS, peak 0…1. */
+  levelDb: number;
+  peak: number;
+  /** What sounds right now (MIDI with fraction), its nearest note and the deviation – null when nothing clear sounds. */
+  pitch: number | null;
+  note: number | null;
+  cents: number | null;
+  curveFrom: number;
+  curve: Array<[number, number | null]>;
+  /** Notes that won't change any more, from number `notesFrom` on. */
+  notesFrom: number;
+  notes: LiveNote[];
+  /** Notes of the running phrase (may still change) – always all of them. */
+  pending: LiveNote[];
+  onsetsFrom: number;
   onsets: number[];
   tempoEstimate: number | null;
   key: KeyInfo | null;

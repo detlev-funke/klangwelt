@@ -12,7 +12,7 @@ import { backend } from "./bridge.js";
 import { initLibrary } from "./components/library.js";
 import { initFileDrop } from "./filedrop.js";
 import { t } from "./i18n.js";
-import { agentPulse, chat, chatUnread, errorText, instrumentSpecs, libraryBusy, notify, savedSounds, snapshot, status, visiblePanels } from "./store.js";
+import { agentPulse, chat, chatUnread, errorText, followLive, instrumentSpecs, libraryBusy, notify, savedSounds, snapshot, status, visiblePanels } from "./store.js";
 
 // Windows (tracks, clip, analysis, sound, library, agent) in the dock system.
 initLayout(document.getElementById("dock")!);
@@ -108,7 +108,10 @@ async function boot(): Promise<void> {
       notify(t("Agent: {text}", { text: last.length > 90 ? last.slice(0, 90) + " …" : last }), "agent");
     }
   });
-  backend.onStatus((s) => (status.value = s));
+  backend.onStatus((s) => {
+    status.value = s;
+    followLive(s);
+  });
   handleCloseRequests();
   // Library work in the background (also resumed after a restart): report start and end
   backend.onLibraryChanged((i) => {

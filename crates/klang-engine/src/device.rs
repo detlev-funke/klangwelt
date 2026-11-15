@@ -13,7 +13,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, SizedSample};
 use klang_i18n::tr;
 use rtrb::{Consumer, Producer, RingBuffer};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -30,7 +30,18 @@ enum Control {
     Devices(mpsc::Sender<AudioDevices>),
     SetOutput(Option<String>, mpsc::Sender<Result<EngineInfo, EngineError>>),
     SetInput(Option<String>, mpsc::Sender<Result<EngineInfo, EngineError>>),
+    SetFakeInput(Option<FakeInput>),
     Shutdown,
+}
+
+/// Stand-in for the microphone in automated tests: recordings take these
+/// samples (in a loop, at the pace of real time) instead of a device.
+#[derive(Clone)]
+pub struct FakeInput {
+    pub samples: Arc<[f32]>,
+    pub sample_rate: u32,
+    /// Shown as the recording device.
+    pub name: String,
 }
 
 pub struct Engine {
@@ -185,6 +196,25 @@ impl Engine {
         let (t, r) = mpsc::channel();
         self.send(Control::StopRecording(t));
         r.recv_timeout(Duration::from_secs(5)).map_err(|_| no_answer())?
+    }
+
+    /// From now on the recording's samples are also collected for the live
+    /// analysis ([`Engine::take_input_tap`]); `false` stops that.
+    pub fn set_input_tap(&self, on: bool) {
+        self.shared.set_tap(on);
+    }
+
+    /// Recording samples since the last call (mono, at the rate
+    /// [`Engine::start_recording`] returned).
+    pub fn take_input_tap(&self) -> Vec<f32> {
+        self.shared.take_tap()
+    }
+
+    /// Records from `input` instead of a device from the next recording on
+    /// (`None`: the device again) – for automated tests, which must not
+    /// listen to a real microphone.
+    pub fn set_fake_input(&self, input: Option<FakeInput>) {
+        self.send(Control::SetFakeInput(input));
     }
 
     /// Reads the status; peak levels are reset in the process.
@@ -382,6 +412,7 @@ fn engine_thread(rx: mpsc::Receiver<Control>, shared: Arc<Shared>, info: Arc<Mut
     // Clock for streamed preview (seconds since the thread started)
     let clock = Instant::now();
     let mut input: Option<InputCapture> = None;
+    let mut fake_input: Option<FakeInput> = None;
     let mut stream_preview: Option<PreviewStream> = None;
     let busy = || EngineError(tr!("The device can't be changed during a recording."));
     loop {
@@ -447,9 +478,14 @@ fn engine_thread(rx: mpsc::Receiver<Control>, shared: Arc<Shared>, info: Arc<Mut
                 let i = publish(&out, &output_choice, &input_choice);
                 let _ = reply.send(res.map(|_| i));
             }
+            Ok(Control::SetFakeInput(f)) => fake_input = f,
             Ok(Control::StartRecording(reply)) => {
                 input = None;
-                match InputCapture::start(&host, input_choice.as_deref(), shared.clone()) {
+                let started = match &fake_input {
+                    Some(f) => Ok(InputCapture::fake(f, shared.clone())),
+                    None => InputCapture::start(&host, input_choice.as_deref(), shared.clone()),
+                };
+                match started {
                     Ok(cap) => {
                         let sr = cap.sample_rate;
                         input = Some(cap);
@@ -542,12 +578,36 @@ where
 // ------------------------------------------------------------------ Recording
 
 struct InputCapture {
-    stream: cpal::Stream,
+    source: InputSource,
     consumer: Consumer<f32>,
     samples: Vec<f32>,
     sample_rate: u32,
     start_frame: u64,
     device: String,
+    shared: Arc<Shared>,
+}
+
+/// Where the samples come from: the device's stream or a stand-in – only
+/// held so that dropping it ends the recording.
+#[allow(dead_code)]
+enum InputSource {
+    Device(cpal::Stream),
+    Fake(FakeFeed),
+}
+
+/// Plays a [`FakeInput`] into the ring buffer at the pace of real time.
+struct FakeFeed {
+    stop: Arc<AtomicBool>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl Drop for FakeFeed {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
+        }
+    }
 }
 
 impl InputCapture {
@@ -573,24 +633,64 @@ impl InputCapture {
         }?;
         stream.play().map_err(err)?;
         Ok(Self {
-            stream,
+            source: InputSource::Device(stream),
             consumer,
             samples: Vec::with_capacity(sample_rate as usize * 60),
             sample_rate,
             start_frame: shared.position.load(Ordering::Relaxed),
             device: name,
+            shared,
         })
     }
 
-    fn drain(&mut self) {
-        while let Ok(v) = self.consumer.pop() {
-            self.samples.push(v);
+    /// Records from the stand-in: a thread hands its samples over every few
+    /// milliseconds, as many as real time has advanced (in a loop).
+    fn fake(input: &FakeInput, shared: Arc<Shared>) -> Self {
+        let sample_rate = input.sample_rate.max(1);
+        let (mut producer, consumer) = RingBuffer::<f32>::new(sample_rate as usize * 8);
+        let stop = Arc::new(AtomicBool::new(false));
+        let (data, flag, sh) = (input.samples.clone(), stop.clone(), shared.clone());
+        let thread = std::thread::Builder::new()
+            .name("klang-fake-input".into())
+            .spawn(move || {
+                let start = Instant::now();
+                let mut sent = 0usize;
+                while !flag.load(Ordering::Relaxed) {
+                    std::thread::sleep(Duration::from_millis(5));
+                    let due = (start.elapsed().as_secs_f64() * sample_rate as f64) as usize;
+                    let mut peak = 0f32;
+                    while sent < due {
+                        let v = if data.is_empty() { 0.0 } else { data[sent % data.len()] };
+                        peak = peak.max(v.abs());
+                        let _ = producer.push(v);
+                        sent += 1;
+                    }
+                    update_peak(&sh.peak_in, peak);
+                }
+            })
+            .ok();
+        Self {
+            source: InputSource::Fake(FakeFeed { stop, thread }),
+            consumer,
+            samples: Vec::with_capacity(sample_rate as usize * 60),
+            sample_rate,
+            start_frame: shared.position.load(Ordering::Relaxed),
+            device: input.name.clone(),
+            shared,
         }
     }
 
+    fn drain(&mut self) {
+        let from = self.samples.len();
+        while let Ok(v) = self.consumer.pop() {
+            self.samples.push(v);
+        }
+        self.shared.tap_push(&self.samples[from..]);
+    }
+
     fn finish(self) -> Recording {
-        let InputCapture { stream, mut consumer, mut samples, sample_rate, start_frame, device } = self;
-        drop(stream);
+        let InputCapture { source, mut consumer, mut samples, sample_rate, start_frame, device, .. } = self;
+        drop(source);
         while let Ok(v) = consumer.pop() {
             samples.push(v);
         }

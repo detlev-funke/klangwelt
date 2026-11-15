@@ -616,6 +616,30 @@ default layout.
    sixteenths; "Convert to rhythm track": hits as drum notes
    (see "Track editing").
 
+**Live analysis while recording** (`analysis::LiveAnalysis`): the same steps,
+measured as the samples come in, so the Analysis window can show them while
+recording.
+* Both engines copy the recording's samples into a tap (`Engine::set_input_tap`;
+  desktop: the engine thread while draining the ring buffer, browser:
+  `record_input`). `AppState::tick` (desktop: status thread, browser: worker
+  timer) hands them to the live analysis – no extra thread, one place for both
+  shells.
+* `klang_dsp::tracker::Tracker` measures frame by frame with the building
+  blocks of the finished analysis (`pitch::Yin`, `onset::Flux`,
+  `onset::is_peak`), ~96 pitch frames per second; it keeps only the samples the
+  next frames need.
+* Notes are segmented again after the last silence on every update; notes
+  before it are settled. Key after six notes; tempo from the last 20 s once
+  there are six onsets in them, shown as the median of the last three
+  estimates (twice a second), so a single octave error doesn't show.
+* The UI polls `record_live` with a cursor (take, curve points, settled notes,
+  onsets) and gets only what is new. `StatusDto::live_analysis` says when to
+  show it (not for the library's sing-to-search).
+* After stopping, the finished analysis (unchanged) replaces the live view.
+* Tests: `KLANGWELT_FAKE_MIC=<wav>` makes the desktop engine record from a
+  file (`FakeInput`: in real time, looped); the browser tests use Chromium's
+  `--use-file-for-fake-audio-capture`.
+
 ### c) Melody recognition and classification
 * **Features:** interval (semitones) and duration ratio of consecutive
   notes → independent of key and tempo.

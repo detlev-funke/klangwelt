@@ -671,6 +671,21 @@ const dict: Dict = {
   "Read PDMX.csv (225 MB), keep the matching rows, re-index": "PDMX.csv (225 MB) lesen, passende Zeilen behalten, neu indizieren",
   "Download genre & composer (225 MB)": "Genre & Komponist nachladen (225 MB)",
 
+  // ui/src/components/liveanalysis.ts
+  "after a few notes": "nach ein paar Tönen",
+  "−50 to +50 cents": "−50 bis +50 Cent",
+  "Sing or play a note": "Sing oder spiel einen Ton",
+  "needs a steady beat": "braucht einen gleichmäßigen Takt",
+  "Live analysis": "Live-Analyse",
+  "Current note": "Aktueller Ton",
+  "Input level": "Eingangspegel",
+  "in tune": "sauber",
+  "too sharp": "zu hoch",
+  "too flat": "zu tief",
+  "Clipping – move back or turn the input down": "Übersteuert – weiter weg oder den Eingang leiser stellen",
+  "Very quiet – move closer to the microphone": "Sehr leise – näher ans Mikrofon",
+  "Listening… sing, hum or play something.": "Hört zu … sing, summ oder spiel etwas.",
+
   // ui/src/components/rhythm.ts
   "\"{name}\" · {bpm} BPM – Space plays it, edit the beat in the \"Rhythm\" window": "„{name}“ · {bpm} BPM – Leertaste spielt ab, im Fenster „Rhythmus“ bearbeitest du den Beat",
   "Beat templates – new drum track, template tempo": "Beat-Vorlagen – neue Schlagzeug-Spur, Tempo der Vorlage",

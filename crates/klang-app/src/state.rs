@@ -1,7 +1,7 @@
 //! Application state: session (project + undo), audio assets, engine,
 //! melody library and agent interface.
 
-use crate::analysis::{self, Analysis};
+use crate::analysis::{self, Analysis, LiveAnalysis, LiveCursor, LiveView};
 use crate::sound::{self, SoundReport};
 use klang_core::{Clip, ClipSource, Command, Id, InstrumentKind, Note, Project, Session, Track, TrackKind, TrackPatch};
 use klang_dsp::synth::NoteSpec;
@@ -237,6 +237,9 @@ pub struct StatusDto {
     pub load: f32,
     /// Note clips currently pre-rendered because the mixer couldn't keep up.
     pub prerendered: usize,
+    /// A recording with live analysis is running (`record_live` has it) –
+    /// not the library's sing-to-search.
+    pub live_analysis: bool,
 }
 
 /// State of the agent indicator: listening, working, tasks in progress, connected.
@@ -263,6 +266,10 @@ pub struct AppState {
     metronome_muted: AtomicBool,
     looping: Mutex<LoopState>,
     pub record_counter: AtomicU32,
+    /// Analysis of the running recording (fed in `tick`), with the number of
+    /// the last recording.
+    live: Mutex<Option<LiveAnalysis>>,
+    live_take: AtomicU32,
     /// File of the open project (None = never saved).
     pub project_file: Mutex<Option<std::path::PathBuf>>,
     /// Checksum of the project at the last save/open (for "unsaved").
@@ -421,6 +428,8 @@ impl AppState {
             metronome_muted: AtomicBool::new(false),
             looping: Mutex::new(LoopState::default()),
             record_counter: AtomicU32::new(0),
+            live: Mutex::new(None),
+            live_take: AtomicU32::new(0),
             project_file: Mutex::new(None),
             saved_hash: Mutex::new(project_hash(&Project::default())),
             force_close: AtomicBool::new(false),
@@ -437,6 +446,20 @@ impl AppState {
             // KLANGWELT_STUMM=1: nothing audible (automated tests), everything else runs as usual
             if std::env::var_os("KLANGWELT_STUMM").is_some_and(|v| !v.is_empty() && v != "0") {
                 e.set_muted(true);
+            }
+            // KLANGWELT_FAKE_MIC=<audio file>: recordings take this file (in a loop) instead of a
+            // microphone – automated tests must not listen to a real one
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Some(path) = std::env::var_os("KLANGWELT_FAKE_MIC").filter(|v| !v.is_empty()) {
+                let path = std::path::PathBuf::from(path);
+                match std::fs::read(&path).map_err(|e| e.to_string()).and_then(|b| crate::audiofile::decode(&b)) {
+                    Ok(d) => e.set_fake_input(Some(klang_engine::FakeInput {
+                        samples: d.samples.into(),
+                        sample_rate: d.sample_rate,
+                        name: path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+                    })),
+                    Err(err) => eprintln!("KLANGWELT_FAKE_MIC {}: {err}", path.display()),
+                }
             }
         }
         state
@@ -935,6 +958,7 @@ impl AppState {
     pub fn tick(&self) {
         self.watch_agent();
         let Some(engine) = &self.engine else { return };
+        self.feed_live(engine);
         // without taking the peak levels: they belong to the UI's status
         let s = engine.peek_status();
         let load = s.load.max(f32::from_bits(self.test_load.load(Ordering::Relaxed)));
@@ -944,6 +968,20 @@ impl AppState {
                 eprintln!("pre-rendering: {e}");
             }
         }
+    }
+
+    /// The running recording's new samples into the live analysis.
+    fn feed_live(&self, engine: &Engine) {
+        let Ok(mut live) = lock(&self.live) else { return };
+        if let Some(l) = live.as_mut() {
+            l.push(&engine.take_input_tap());
+        }
+    }
+
+    /// The running recording's analysis – what is new since `since` (see
+    /// [`LiveAnalysis::view`]); `None` when no recording is running.
+    pub fn record_live(&self, since: LiveCursor) -> CmdResult<Option<LiveView>> {
+        Ok(lock(&self.live)?.as_ref().map(|l| l.view(since)))
     }
 
     /// For tests: the live mixer counts as at least `load` loaded (0 = off).
@@ -1037,9 +1075,10 @@ impl AppState {
                     peak_in: s.peak_in,
                     load: s.load,
                     prerendered: lock(&self.pool).map(|p| p.prerendered.len()).unwrap_or(0),
+                    live_analysis: lock(&self.live).map(|l| l.is_some()).unwrap_or(false),
                 }
             }
-            None => StatusDto { playing: false, previewing: false, recording: false, position_secs: 0.0, peak_out: 0.0, peak_in: 0.0, load: 0.0, prerendered: 0 },
+            None => StatusDto { playing: false, previewing: false, recording: false, position_secs: 0.0, peak_out: 0.0, peak_in: 0.0, load: 0.0, prerendered: 0, live_analysis: false },
         }
     }
 
@@ -1215,7 +1254,17 @@ impl AppState {
             return Err(tr!("Sing-to-search for the library is currently running – stop it there first."));
         }
         let engine = self.engine()?;
-        engine.start_recording().map_err(|e| e.to_string())?;
+        // the samples go to the live analysis from the very first one
+        engine.set_input_tap(true);
+        let sample_rate = match engine.start_recording() {
+            Ok(sr) => sr,
+            Err(e) => {
+                engine.set_input_tap(false);
+                return Err(e.to_string());
+            }
+        };
+        let take = self.live_take.fetch_add(1, Ordering::Relaxed) + 1;
+        *lock(&self.live)? = Some(LiveAnalysis::new(take, sample_rate));
         self.mute_metronome_for_recording();
         engine.play();
         Ok(())
@@ -1244,6 +1293,9 @@ impl AppState {
             return Err(tr!("This is the library's sing-to-search recording – stop it there with \"Stop\"."));
         }
         let engine = self.engine()?;
+        // the finished analysis below replaces the live one
+        engine.set_input_tap(false);
+        *lock(&self.live)? = None;
         let rec = engine.stop_recording().map_err(|e| e.to_string());
         self.unmute_metronome_after_recording();
         let rec = rec?;

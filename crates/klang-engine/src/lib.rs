@@ -30,7 +30,7 @@ pub use klang_dsp::live::{LiveNote, LiveNotes, OrganTable, Patch, Plan, Shaping}
 #[cfg(not(target_arch = "wasm32"))]
 mod device;
 #[cfg(not(target_arch = "wasm32"))]
-pub use device::Engine;
+pub use device::{Engine, FakeInput};
 #[cfg(target_arch = "wasm32")]
 pub mod web;
 #[cfg(target_arch = "wasm32")]
@@ -40,7 +40,7 @@ pub use reverb::soft_limit;
 use rtrb::{Consumer, Producer, RingBuffer};
 use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone)]
 pub struct EngineError(pub String);
@@ -172,9 +172,38 @@ struct Shared {
     sample_rate: AtomicU32,
     /// Share of the real-time budget the mixer needs (f32 bits, smoothed).
     load: AtomicU32,
+    /// The recording's samples also go to [`Shared::tap`] (live analysis).
+    tap_on: AtomicBool,
+    /// New recording samples since the last [`Shared::take_tap`].
+    tap: Mutex<Vec<f32>>,
 }
 
+/// The tap holds at most this many seconds (at 192 kHz) when nobody takes them.
+const TAP_MAX_SAMPLES: usize = 192_000 * 30;
+
 impl Shared {
+    /// Switches the tap on or off; either way it starts empty.
+    fn set_tap(&self, on: bool) {
+        self.tap_on.store(on, Ordering::Relaxed);
+        self.tap.lock().unwrap_or_else(|e| e.into_inner()).clear();
+    }
+
+    /// New recording samples (not from the audio callback: it takes a lock).
+    fn tap_push(&self, samples: &[f32]) {
+        if samples.is_empty() || !self.tap_on.load(Ordering::Relaxed) {
+            return;
+        }
+        let mut tap = self.tap.lock().unwrap_or_else(|e| e.into_inner());
+        if tap.len() + samples.len() > TAP_MAX_SAMPLES {
+            tap.clear();
+        }
+        tap.extend_from_slice(samples);
+    }
+
+    fn take_tap(&self) -> Vec<f32> {
+        std::mem::take(&mut *self.tap.lock().unwrap_or_else(|e| e.into_inner()))
+    }
+
     /// Reads the status; peak levels are reset in the process.
     fn status(&self, sample_rate: u32) -> EngineStatus {
         EngineStatus {

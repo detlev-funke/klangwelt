@@ -474,9 +474,10 @@ The app speaks English, German, French, Italian, Spanish, Dutch and Polish.
   `ui/src/i18n/fr.ts`; `--root=../klangwelt-desktop/app/src` adds the desktop
   shell's keys. `tests/unit/i18n.test.mjs` fails if a dictionary lacks a key or
   uses a placeholder the call doesn't pass.
-* **Adding a language:** an entry in `LANGUAGES`, then `--missing=xx`,
-  translate, `--merge=xx` – and a branch in `klang-i18n`'s `category` if its
-  plural rules differ from English.
+* **Adding a language:** an entry in `LANGUAGES` and a flag in `ui/src/flags.ts`
+  (inline SVG, 3:2 – emoji flags show up as letters on Windows), then
+  `--missing=xx`, translate, `--merge=xx` – and a branch in `klang-i18n`'s
+  `category` if its plural rules differ from English.
 * **Tests:** Rust tests run without a dictionary and assert English texts. The
   browser and desktop test harnesses start the browser/WebView with
   `--accept-lang=de-DE,de`, so the end-to-end tests see the German UI they

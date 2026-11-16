@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import {
   LANGUAGES, SOURCE, FALLBACK, coreDictionary, detectLanguage, initI18n, language, plural, setLanguage, supported, t, tid, tk,
 } from "../../ui/dist/i18n.js";
+import { hasFlag } from "../../ui/dist/flags.js";
 import { checkDict, collectKeys, loadDict } from "../../ui/scripts/i18n-keys.mjs";
 
 test("detection: first supported language of the list, otherwise English", () => {
@@ -19,6 +20,11 @@ test("detection: first supported language of the list, otherwise English", () =>
   assert.equal(supported(null), null);
   assert.equal(SOURCE, "en");
   assert.deepEqual(LANGUAGES.map((l) => l.code), ["en", "de", "fr", "it", "es", "nl", "pl"]);
+});
+
+test("every language has a flag for the language menu", () => {
+  assert.deepEqual(LANGUAGES.filter((l) => !hasFlag(l.code)).map((l) => l.code), []);
+  assert.equal(hasFlag("xx"), false);
 });
 
 const dicts = {

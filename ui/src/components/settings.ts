@@ -1,6 +1,7 @@
 // Settings (gear in the transport bar). Stored in localStorage.
 
 import { dropdown, h, icon } from "../dom.js";
+import { flag } from "../flags.js";
 import { LANGUAGES, language, switchLanguage, t } from "../i18n.js";
 import { highOnTop, setHighOnTop } from "../pianoroll.js";
 
@@ -26,7 +27,7 @@ function axisSketch(high: boolean): SVGSVGElement {
   return el;
 }
 
-/** Language choice: every language in its own name; switching reloads the UI. */
+/** Language choice: every language with its flag and in its own name; switching reloads the UI. */
 function languageOptions(close: () => void): HTMLElement {
   const now = language();
   return h(
@@ -39,12 +40,14 @@ function languageOptions(close: () => void): HTMLElement {
           class: `dev-option lang-option${l.code === now ? " on" : ""}`,
           lang: l.code,
           "data-lang": l.code,
+          "aria-current": l.code === now ? "true" : null,
           onclick: () => {
             close();
             if (l.code !== now) switchLanguage(l.code);
           },
         },
         h("span", { class: "dev-check" }, l.code === now ? icon("check") : null),
+        flag(l.code),
         h("span", { class: "dev-text" }, h("b", {}, l.name)),
       ),
     ),

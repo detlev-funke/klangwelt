@@ -44,6 +44,83 @@ const coreError = () =>
     return { text, expected: i18n.t("Track {id} not found", { id: 424242 }) };
   });
 
+/** Colors at points of each flag (viewBox 18×12), the same as in ui/src/flags.ts. */
+const FLAG_COLORS = {
+  en: [[5, 0.6, "#012169"], [9, 6, "#c8102e"], [9, 1, "#c8102e"]],
+  de: [[9, 2, "#000000"], [9, 6, "#dd0000"], [9, 10, "#ffce00"]],
+  fr: [[3, 6, "#0055a4"], [9, 6, "#ffffff"], [15, 6, "#ef4135"]],
+  it: [[3, 6, "#009246"], [9, 6, "#ffffff"], [15, 6, "#ce2b37"]],
+  es: [[9, 1.5, "#aa151b"], [9, 6, "#f1bf00"], [9, 10.5, "#aa151b"]],
+  nl: [[9, 2, "#ae1c28"], [9, 6, "#ffffff"], [9, 10, "#21468b"]],
+  pl: [[9, 3, "#ffffff"], [9, 9, "#dc143c"]],
+};
+
+/** Entries of the open language menu with their flags: size on screen and the
+ *  colors the flag paints at the points of FLAG_COLORS (drawn into a canvas). */
+const languageMenu = () =>
+  app.eval(async (points) => {
+    const hex = (d) => `#${[...d.slice(0, 3)].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+    const paint = async (svg) => {
+      const copy = svg.cloneNode(true);
+      copy.setAttribute("width", "180");
+      copy.setAttribute("height", "120");
+      const img = new Image();
+      img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(copy))}`;
+      await img.decode();
+      const c = document.createElement("canvas");
+      c.width = 180;
+      c.height = 120;
+      const ctx = c.getContext("2d");
+      ctx.drawImage(img, 0, 0, 180, 120);
+      return (points[svg.dataset.flag] ?? []).map(([x, y]) => hex(ctx.getImageData(Math.round(x * 10), Math.round(y * 10), 1, 1).data));
+    };
+    const items = [...document.querySelectorAll(".set-menu.open [data-lang]")];
+    const ids = [...document.querySelectorAll("[id]")].map((e) => e.id);
+    return {
+      duplicateIds: ids.filter((id, i) => ids.indexOf(id) !== i),
+      items: await Promise.all(
+        items.map(async (b) => {
+          const svg = b.querySelector("svg.flag");
+          const r = svg?.getBoundingClientRect();
+          const name = b.querySelector(".dev-text b");
+          return {
+            lang: b.dataset.lang,
+            name: b.textContent.trim(),
+            on: b.classList.contains("on"),
+            current: b.getAttribute("aria-current"),
+            flag: svg?.dataset.flag ?? null,
+            hidden: svg?.getAttribute("aria-hidden"),
+            size: r ? [Math.round(r.width), Math.round(r.height)] : null,
+            beforeName: !!svg && !!(svg.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING),
+            colors: svg ? await paint(svg) : [],
+          };
+        }),
+      ),
+    };
+  }, FLAG_COLORS);
+
+/** Every entry shows its own flag (18×12, before the name, painted in its colors);
+ *  only `current` is marked. */
+function assertFlags(menu, current) {
+  assert.deepEqual(menu.duplicateIds, []);
+  for (const it of menu.items) {
+    assert.equal(it.flag, it.lang, `flag of ${it.lang}`);
+    assert.equal(it.hidden, "true", `flag of ${it.lang} is decoration (the name is beside it)`);
+    assert.deepEqual(it.size, [18, 12], `size of the flag of ${it.lang}`);
+    assert.ok(it.beforeName, `flag of ${it.lang} before the name`);
+    assert.deepEqual(it.colors, FLAG_COLORS[it.lang].map((p) => p[2]), `colors of the flag of ${it.lang}`);
+    assert.equal(it.on, it.lang === current, `${it.lang} marked`);
+    assert.equal(it.current, it.lang === current ? "true" : null, `aria-current of ${it.lang}`);
+  }
+}
+
+/** Open the settings menu and read the language entries. */
+async function openLanguageMenu() {
+  await app.clickOn('[data-help="einstellungen"]');
+  await app.waitFor(() => document.querySelectorAll(".set-menu.open [data-lang]").length === 7, { what: "language menu" });
+  return languageMenu();
+}
+
 /** Choose a language in the settings menu. */
 async function choose(code) {
   await app.clickOn('[data-help="einstellungen"]');
@@ -114,15 +191,14 @@ test("English: note names, keys, chord track and sounds without German leftovers
 test("switch the language in the settings menu; the choice survives a reload", async () => {
   app = await startWeb();
   assert.equal((await ui()).settings, "Einstellungen");
-  // menu: every language in its own name, the current one marked
-  await app.clickOn('[data-help="einstellungen"]');
-  const menu = await app.waitFor(() => {
-    const items = [...document.querySelectorAll(".set-menu.open [data-lang]")];
-    return items.length && { names: items.map((b) => b.textContent.trim()), on: items.filter((b) => b.classList.contains("on")).map((b) => b.dataset.lang) };
-  }, { what: "language menu" });
-  assert.deepEqual(menu.names, ["English", "Deutsch", "Français", "Italiano", "Español", "Nederlands", "Polski"]);
-  assert.deepEqual(menu.on, ["de"]);
+  // menu: every language with its flag and in its own name, the current one marked
+  const menu = await openLanguageMenu();
+  assert.deepEqual(menu.items.map((i) => i.name), ["English", "Deutsch", "Français", "Italiano", "Español", "Nederlands", "Polski"]);
+  assertFlags(menu, "de");
   await app.key("Escape");
+  await app.click(5, 500);
+  // opened again: the menu is rebuilt, still no id twice (the Union Jack's clip path)
+  assertFlags(await openLanguageMenu(), "de");
   await app.click(5, 500);
 
   // unsaved change: the browser asks before reloading (the harness confirms)
@@ -143,6 +219,9 @@ test("switch the language in the settings menu; the choice survives a reload", a
   u = await ui();
   assert.equal(u.lang, "en");
   assert.equal(u.settings, "Settings");
+  // the menu now marks English, with the Union Jack
+  assertFlags(await openLanguageMenu(), "en");
+  await app.click(5, 500);
 
   // and back
   await choose("de");

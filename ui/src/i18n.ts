@@ -9,9 +9,9 @@
 // keep their historical (German) value because they are persisted or sent to
 // the core; they are translated for display in every language but German.
 //
-// New language: an entry in LANGUAGES and `i18n/<code>.ts` with the keys of
-// `i18n/de.ts` plus the identifiers of `i18n/en.ts` (tests/unit/i18n.test.mjs
-// shows what's missing).
+// New language: an entry in LANGUAGES, a flag in `flags.ts` and
+// `i18n/<code>.ts` with the keys of `i18n/de.ts` plus the identifiers of
+// `i18n/en.ts` (tests/unit/i18n.test.mjs shows what's missing).
 //
 // Placeholders: `t("Track {name}", { name })`. Plural: `plural(n, "one note",
 // "{n} notes")` – the key is the plural, `{n}` is always set; in the dictionary

@@ -775,6 +775,8 @@ body.dk-dragging, body.dk-dragging * { cursor: grabbing !important; user-select:
 .menu-hint { padding: 4px 10px 6px; font-size: 11px; color: var(--faint); max-width: 230px; }
 .lang-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
 .lang-option { padding: 4px 10px 4px 6px; }
+/* Flags (ui/src/flags.ts): 3:2, a faint frame so black and white stripes stand off the dark menu */
+.flag { width: 18px; height: 12px; flex: none; display: block; border-radius: 2px; overflow: hidden; box-shadow: 0 0 0 1px rgba(255, 255, 255, .14); }
 /* Context menu (right-click in the timeline) */
 .menu.ctx-menu { position: fixed; top: 0; right: auto; z-index: 1000; min-width: 240px; max-width: 360px; }
 .ctx-menu .menu-item b { font-weight: 600; }

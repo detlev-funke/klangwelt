@@ -9,6 +9,12 @@
 // The empty area of a tab bar drags the whole group (for floating
 // windows: the window). The contents are created only once and moved
 // on rebuild, so they keep their state. The layout ends up in localStorage.
+//
+// Small screens (phones, narrow tablets) where the layout doesn't fit get a
+// compact view instead, without touching the saved layout: the main window on
+// top and all other windows as tabs below it ("sheet", with a divider), or –
+// when it is too low for that – all windows as tabs ("single"). The Windows
+// menu can switch back to the free layout (setFreeLayout).
 
 import { h, icon } from "./dom.js";
 import { t } from "./i18n.js";
@@ -32,6 +38,8 @@ export interface PanelDef {
 }
 
 export type Dir = "row" | "col";
+/** "dock": the layout as arranged; "sheet"/"single": compact view on small screens. */
+export type DockMode = "dock" | "sheet" | "single";
 export type Zone = "center" | "left" | "right" | "top" | "bottom";
 export interface StackNode { kind: "stack"; panels: string[]; active: string }
 export interface SplitNode { kind: "split"; dir: Dir; children: DockNode[]; sizes: number[] }
@@ -85,6 +93,13 @@ const FLOAT_MIN_H = 150;
 const ROOT_SHARE = 0.28;
 const DRAG_START = 5;
 const ZONES: Zone[] = ["center", "left", "right", "top", "bottom"];
+/** Small screen: narrower or lower than this (workspace in px) – only then the compact view may replace the layout. */
+const SMALL_W = 900;
+const SMALL_H = 500;
+/** Compact view: at least this high for "main window above, tabs below", otherwise one window at a time. */
+const SHEET_MIN_H = 500;
+/** Compact view: smallest height of the two parts. */
+const COMPACT_MIN_H = 130;
 const COMPASS: Record<Zone, [number, number]> = { center: [0, 0], left: [-40, 0], right: [40, 0], top: [0, -40], bottom: [0, 40] };
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -150,6 +165,11 @@ export class Dock {
   #emph: { split: SplitNode; sizes: number[] }[] = [];
   #badges = new Set<string>();
   #ghost: HTMLElement | null = null;
+  #mode: DockMode = "dock";
+  /** Small screen, but the free layout anyway (Windows menu). */
+  #free = false;
+  /** Stacks of the compact view – kept, so that the chosen tabs and the divider stay. */
+  readonly #compact = { main: stack([]), sheet: stack([]), single: stack([]), split: split("col", [], [0.5, 0.5]) };
 
   constructor(host: HTMLElement, o: DockOptions) {
     this.#host = host;
@@ -182,12 +202,17 @@ export class Dock {
     host.classList.add("dk-host");
     host.replaceChildren(this.#area, this.#floatLayer);
     this.#layout = this.#load() ?? o.defaults();
+    this.#loadCompact();
     this.#ensureAll();
     this.#normalize();
     this.#render();
     window.addEventListener("resize", () => {
       for (const [w, el] of this.#floatEls) this.#place(el, w);
     });
+    // phone turned, window resized: compact view on or off
+    new ResizeObserver(() => {
+      if (this.#wantMode() !== this.#mode) this.#render();
+    }).observe(host);
   }
 
   // ------------------------------------------------------------ public
@@ -202,8 +227,12 @@ export class Dock {
     }
     const w = this.#where(id);
     if (!w) return;
-    this.#activate(w.stack, id);
-    if (w.win) this.#raise(w.win);
+    const shown = this.#mode === "dock" ? null : this.#views.find((v) => v.stack.panels.includes(id));
+    if (shown) this.#activate(shown.stack, id);
+    else {
+      this.#activate(w.stack, id);
+      if (w.win) this.#raise(w.win);
+    }
     for (const t of this.#tabEls(id)) {
       t.classList.remove("flash");
       void t.offsetWidth;
@@ -239,6 +268,7 @@ export class Dock {
 
   reset(): void {
     this.#layout = this.#defaults();
+    this.#compact.split.sizes = [0.5, 0.5];
     this.#ensureAll();
     this.#normalize();
     this.#render();
@@ -263,6 +293,11 @@ export class Dock {
     const old = this.#emph;
     this.#emph = [];
     for (const e of [...old].reverse()) if (this.#contains(e.split)) e.split.sizes = e.sizes;
+    if (this.#mode !== "dock") {
+      // compact view: every window gets the full width anyway
+      if (old.length) this.#render();
+      return;
+    }
     const w = id ? this.#where(id) : null;
     const grow = (dir: Dir, share: number) => {
       // nearest split of this direction above the stack – it may also sit in a
@@ -295,6 +330,18 @@ export class Dock {
   #contains(node: DockNode): boolean {
     const walk = (n: DockNode | null): boolean => !!n && (n === node || (n.kind === "split" && n.children.some(walk)));
     return walk(this.#layout.root);
+  }
+
+  /** How the windows are shown right now; `small`: the screen is small enough for the compact view. */
+  mode(): { mode: DockMode; small: boolean; free: boolean } {
+    return { mode: this.#mode, small: this.#small(), free: this.#free };
+  }
+
+  /** Small screen: free layout (true) instead of the compact view – remembered. */
+  setFreeLayout(on: boolean): void {
+    this.#free = on;
+    this.#saveCompact();
+    this.#render();
   }
 
   /** Marker (dot) on the tab, e.g. unread agent replies. */
@@ -571,7 +618,28 @@ export class Dock {
     return { root, floats, closed, homes };
   }
 
+  #loadCompact(): void {
+    try {
+      const raw = JSON.parse(localStorage.getItem(`${this.#key}.compact`) ?? "null") as Record<string, unknown> | null;
+      if (!raw || typeof raw !== "object") return;
+      this.#free = raw.free === true;
+      const sz = Array.isArray(raw.sizes) ? raw.sizes.map((v) => num(v, 0.5)) : [];
+      if (sz.length === 2 && sz.every((v) => v > 0.05)) this.#compact.split.sizes = sz;
+    } catch {
+      /* without storage */
+    }
+  }
+
+  #saveCompact(): void {
+    try {
+      localStorage.setItem(`${this.#key}.compact`, JSON.stringify({ free: this.#free, sizes: this.#compact.split.sizes }));
+    } catch {
+      /* without storage */
+    }
+  }
+
   #save(): void {
+    if (this.#mode !== "dock") this.#saveCompact();
     // temporarily enlarged (emphasize): save the actual sizes
     const shown = this.#emph.map((e) => e.split.sizes);
     for (const e of [...this.#emph].reverse()) e.split.sizes = e.sizes;
@@ -587,20 +655,67 @@ export class Dock {
   // ------------------------------------------------------------ Rendering
 
   #render(): void {
+    this.#mode = this.#wantMode();
+    this.#host.dataset.mode = this.#mode;
     this.#views = [];
     this.#floatEls.clear();
     const L = this.#layout;
-    this.#area.replaceChildren(
-      L.root ? this.#node(L.root) : h("div", { class: "dk-empty" }, t("All windows are floating – drag a tab onto the marker in the middle to dock it here.")),
-    );
-    this.#floatLayer.replaceChildren(...L.floats.map((w, i) => this.#float(w, i)));
+    if (this.#mode !== "dock") {
+      this.#area.replaceChildren(this.#compactView());
+      this.#floatLayer.replaceChildren();
+    } else {
+      this.#area.replaceChildren(
+        L.root ? this.#node(L.root) : h("div", { class: "dk-empty" }, t("All windows are floating – drag a tab onto the marker in the middle to dock it here.")),
+      );
+      this.#floatLayer.replaceChildren(...L.floats.map((w, i) => this.#float(w, i)));
+    }
     this.#publish();
     this.#save();
   }
 
+  #small(): boolean {
+    const W = this.#host.clientWidth;
+    const H = this.#host.clientHeight;
+    return !!W && !!H && (W < SMALL_W || H < SMALL_H);
+  }
+
+  /** Compact view only on a small screen where the layout doesn't fit (its minimum sizes). */
+  #wantMode(): DockMode {
+    const W = this.#host.clientWidth;
+    const H = this.#host.clientHeight;
+    if (!W || !H) return this.#mode;
+    if (this.#free || !this.#small()) return "dock";
+    const root = this.#layout.root;
+    const inset = 2 * GUTTER;
+    if (!root || (W >= this.#minSize(root, true) + inset && H >= this.#minSize(root, false) + inset)) return "dock";
+    return H >= SHEET_MIN_H ? "sheet" : "single";
+  }
+
+  /** Compact view: the main window above and the other windows as tabs below – or all as tabs. */
+  #compactView(): HTMLElement {
+    const C = this.#compact;
+    const open = this.#order.filter((id) => this.isOpen(id));
+    const main = open.filter((id) => !this.#defs.get(id)!.closable);
+    const rest = open.filter((id) => this.#defs.get(id)!.closable);
+    // the tool that was in front in the layout stays in front
+    const front = this.#stacks().map((s) => s.stack.active).find((id) => rest.includes(id));
+    const fill = (s: StackNode, panels: string[], prefer?: string) => {
+      s.panels = panels;
+      if (!panels.includes(s.active)) s.active = (prefer && panels.includes(prefer) ? prefer : panels[0]) ?? "";
+    };
+    if (this.#mode === "sheet" && main.length && rest.length) {
+      fill(C.main, main);
+      fill(C.sheet, rest, front);
+      C.split.children = [C.main, C.sheet];
+      return this.#node(C.split);
+    }
+    fill(C.single, open, main[0]);
+    return this.#stack(C.single, null);
+  }
+
   #publish(): void {
     const ids = new Set<string>();
-    for (const { stack: s } of this.#stacks()) if (s.active) ids.add(s.active);
+    for (const v of this.#views) if (v.stack.active) ids.add(v.stack.active);
     this.#onVisible(ids);
   }
 
@@ -631,6 +746,7 @@ export class Dock {
   }
 
   #stack(s: StackNode, win: FloatWin | null): HTMLElement {
+    const compact = this.#mode !== "dock";
     const tabs = h("div", { class: "dk-tabs", role: "tablist" });
     const body = h("div", { class: "dk-body" });
     for (const id of s.panels) {
@@ -656,23 +772,38 @@ export class Dock {
           if (e.button === 1) this.close(id);
         });
       }
-      tab.addEventListener("pointerdown", (e) => this.#pressTab(e, s, id, win));
+      if (compact) tab.addEventListener("click", () => this.#activate(s, id));
+      else tab.addEventListener("pointerdown", (e) => this.#pressTab(e, s, id, win));
       tabs.append(tab);
       const c = this.#panel(id);
       c.hidden = id !== s.active;
       body.append(c);
     }
-    tabs.append(h("div", { class: "dk-fill", title: win ? t("Drag: move or dock the window") : t("Drag: move the whole group") }));
-    tabs.addEventListener("pointerdown", (e) => {
-      if (!(e.target as Element).closest(".dk-tab")) this.#pressGroup(e, s, win);
-    });
+    if (compact) {
+      tabs.append(h("div", { class: "dk-fill" }));
+    } else {
+      tabs.append(h("div", { class: "dk-fill", title: win ? t("Drag: move or dock the window") : t("Drag: move the whole group") }));
+      tabs.addEventListener("pointerdown", (e) => {
+        if (!(e.target as Element).closest(".dk-tab")) this.#pressGroup(e, s, win);
+      });
+    }
     const el = h("div", { class: "dk-stack" }, tabs, body);
     if (!win) {
-      el.style.minWidth = `${this.#stackMin(s, true)}px`;
-      el.style.minHeight = `${this.#stackMin(s, false)}px`;
+      el.style.minWidth = compact ? "0px" : `${this.#stackMin(s, true)}px`;
+      el.style.minHeight = `${compact ? Math.min(COMPACT_MIN_H, this.#stackMin(s, false)) : this.#stackMin(s, false)}px`;
     }
     this.#views.push({ el, tabs, stack: s, win });
+    if (compact) requestAnimationFrame(() => this.#revealTab(tabs, s.active));
     return el;
+  }
+
+  /** Compact view: scroll the tab bar so that the active tab can be seen. */
+  #revealTab(tabs: HTMLElement, id: string): void {
+    const tab = [...tabs.querySelectorAll<HTMLElement>(".dk-tab")].find((x) => x.dataset.panel === id);
+    if (!tab) return;
+    const l = tab.offsetLeft - tabs.offsetLeft;
+    if (l < tabs.scrollLeft) tabs.scrollLeft = Math.max(0, l - 24);
+    else if (l + tab.offsetWidth > tabs.scrollLeft + tabs.clientWidth) tabs.scrollLeft = l + tab.offsetWidth - tabs.clientWidth + 24;
   }
 
   #activate(s: StackNode, id: string): void {
@@ -680,6 +811,7 @@ export class Dock {
     s.active = id;
     const v = this.#views.find((x) => x.stack === s);
     if (v) for (const t of v.tabs.querySelectorAll<HTMLElement>(".dk-tab")) t.classList.toggle("active", t.dataset.panel === id);
+    if (v && this.#mode !== "dock") this.#revealTab(v.tabs, id);
     for (const p of s.panels) {
       const c = this.#content.get(p);
       if (c) c.hidden = p !== id;
@@ -718,8 +850,9 @@ export class Dock {
       const pa = horiz ? ra.width : ra.height;
       const sum = pa + (horiz ? rb.width : rb.height);
       const share = (n.sizes[i] ?? 0.5) + (n.sizes[i + 1] ?? 0.5);
-      const minA = this.#minSize(n.children[i]!, horiz);
-      const minB = this.#minSize(n.children[i + 1]!, horiz);
+      const compact = this.#mode !== "dock";
+      const minA = compact ? COMPACT_MIN_H : this.#minSize(n.children[i]!, horiz);
+      const minB = compact ? COMPACT_MIN_H : this.#minSize(n.children[i + 1]!, horiz);
       const start = horiz ? e.clientX : e.clientY;
       g.classList.add("on");
       document.body.classList.add(horiz ? "dk-resize-col" : "dk-resize-row");

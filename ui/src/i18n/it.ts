@@ -849,6 +849,7 @@ const dict: Dict = {
   "Agent interface (MCP) is not active.": "L'interfaccia per l'agente (MCP) non è attiva.",
 
   // ui/src/components/timeline.ts
+  "Two fingers: move and zoom · Hold: menu · Double-tap: add a note": "Due dita: sposta e zooma · Tieni premuto: menu · Doppio tocco: aggiungi una nota",
   "Empty project": "Progetto vuoto",
   "Load the demo, start with a song or beat, create a track, record straight from the microphone – or drag audio files (WAV, AIFF, FLAC, Opus) here.": "Carica la demo, inizia con un brano o un beat, crea una traccia, registra direttamente dal microfono – oppure trascina qui dei file audio (WAV, AIFF, FLAC, Opus).",
   "Tour of all windows – with notes on the most important features": "Tour di tutte le finestre – con indicazioni sulle funzioni principali",
@@ -969,6 +970,8 @@ const dict: Dict = {
   "End tour": "Termina",
 
   // ui/src/components/tracks.ts
+  "Fold the track headers": "Comprimi le intestazioni delle tracce",
+  "Unfold the track headers: level, pan and all buttons": "Espandi le intestazioni delle tracce: livello, pan e tutti i pulsanti",
   "Show harmony in the timeline: chords in the color of their mood, breaks in red (also appears while you work in the Harmony window)": "Mostra l'armonia nella timeline: accordi nel colore della loro atmosfera, rotture in rosso (appare anche mentre lavori nella finestra Armonia)",
   "Track name – click and type to rename": "Nome della traccia – fai clic e scrivi per rinominare",
   "Mute": "Mute",
@@ -1361,6 +1364,8 @@ const dict: Dict = {
   "cancel": "annulla",
 
   // ui/src/layout.ts
+  "Dock windows freely": "Agganciare liberamente le finestre",
+  "Small screen: the windows are shown as tabs. \"Dock windows freely\" arranges and resizes them as on a large screen.": "Schermo piccolo: le finestre appaiono come schede. «Agganciare liberamente le finestre» le dispone e ridimensiona come su uno schermo grande.",
   "Show/hide windows, reset layout": "Mostra/nascondi finestre, ripristina layout",
   "Hide": "Nascondi",
   "Show": "Mostra",

@@ -35,19 +35,20 @@ function track(): void {
 
 /** Track mouse movement (once at startup). */
 export function initHelp(): void {
-  document.addEventListener(
-    "pointermove",
-    (e) => {
-      const el = e.target instanceof Element ? e.target : null;
-      if (!el) return;
-      pointer = { el, x: e.clientX, y: e.clientY };
-      if (!queued) {
-        queued = true;
-        requestAnimationFrame(track);
-      }
-    },
-    { capture: true, passive: true },
-  );
+  const follow = (e: PointerEvent) => {
+    const el = e.target instanceof Element ? e.target : null;
+    if (!el) return;
+    pointer = { el, x: e.clientX, y: e.clientY };
+    if (!queued) {
+      queued = true;
+      requestAnimationFrame(track);
+    }
+  };
+  document.addEventListener("pointermove", follow, { capture: true, passive: true });
+  // touch has no hovering: a tap explains what was tapped
+  document.addEventListener("pointerdown", (e) => {
+    if (e.pointerType !== "mouse") follow(e);
+  }, { capture: true, passive: true });
 }
 
 /** F1: open the window and pin the text for the element under the mouse (again: unpin). */

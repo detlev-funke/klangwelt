@@ -849,6 +849,7 @@ const dict: Dict = {
   "Agent interface (MCP) is not active.": "Agentinterface (MCP) is niet actief.",
 
   // ui/src/components/timeline.ts
+  "Two fingers: move and zoom · Hold: menu · Double-tap: add a note": "Twee vingers: verschuiven en zoomen · Vasthouden: menu · Dubbeltikken: noot toevoegen",
   "Empty project": "Leeg project",
   "Load the demo, start with a song or beat, create a track, record straight from the microphone – or drag audio files (WAV, AIFF, FLAC, Opus) here.": "Laad de demo, begin met een song of beat, maak een spoor aan, neem direct op via de microfoon – of sleep audiobestanden (WAV, AIFF, FLAC, Opus) hierheen.",
   "Tour of all windows – with notes on the most important features": "Rondleiding door alle vensters – met briefjes bij de belangrijkste functies",
@@ -969,6 +970,8 @@ const dict: Dict = {
   "End tour": "Beëindigen",
 
   // ui/src/components/tracks.ts
+  "Fold the track headers": "Spoorkoppen inklappen",
+  "Unfold the track headers: level, pan and all buttons": "Spoorkoppen uitklappen: niveau, pan en alle knoppen",
   "Show harmony in the timeline: chords in the color of their mood, breaks in red (also appears while you work in the Harmony window)": "Harmonie in de tijdlijn tonen: akkoorden in de kleur van hun sfeer, breuken rood (verschijnt ook zolang je in het harmonievenster werkt)",
   "Track name – click and type to rename": "Naam van het spoor – klik en typ om te hernoemen",
   "Mute": "Dempen",
@@ -1361,6 +1364,8 @@ const dict: Dict = {
   "cancel": "annuleren",
 
   // ui/src/layout.ts
+  "Dock windows freely": "Vensters vrij koppelen",
+  "Small screen: the windows are shown as tabs. \"Dock windows freely\" arranges and resizes them as on a large screen.": "Klein scherm: de vensters verschijnen als tabbladen. ‘Vensters vrij koppelen’ schikt ze en past hun grootte aan zoals op een groot scherm.",
   "Show/hide windows, reset layout": "Vensters tonen/verbergen, lay-out herstellen",
   "Hide": "Verbergen",
   "Show": "Tonen",

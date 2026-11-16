@@ -19,7 +19,14 @@ function panel(tab: string): HTMLElement {
 const PANELS: PanelDef[] = [
   {
     id: "spuren", title: t("Tracks"), icon: "wave", closable: false, minWidth: 520, minHeight: 200,
-    create: () => h("main", { class: "workspace" }, document.createElement("kw-tracks"), document.createElement("kw-timeline")),
+    create: () => {
+      const ws = h("main", { class: "workspace" }, document.createElement("kw-tracks"), document.createElement("kw-timeline"));
+      // narrow window (phone): the track headers become a slim column (styles.css ".workspace.narrow")
+      new ResizeObserver(() => {
+        if (ws.clientWidth) ws.classList.toggle("narrow", ws.clientWidth <= 600);
+      }).observe(ws);
+      return ws;
+    },
   },
   { id: "clip", title: t("Clip"), icon: "clip", closable: true, create: () => panel("clip") },
   { id: "analyse", title: t("Analysis"), icon: "chart", closable: true, create: () => panel("analyse") },
@@ -94,6 +101,7 @@ export function windowMenu(): HTMLElement {
   return dropdown(btn, "win-menu", (menu, close) => {
     if (!dock) return;
     const d = dock;
+    const m = d.mode();
     menu.replaceChildren(
       ...d.list().map((p) =>
         h(
@@ -114,7 +122,14 @@ export function windowMenu(): HTMLElement {
       ),
       h("div", { class: "menu-sep" }),
       h("button", { class: "menu-item", onclick: () => { d.reset(); close(); } }, h("b", { class: "check" }), icon("layout"), h("em", {}, t("Reset layout"))),
-      h("div", { class: "menu-hint" }, t("Drag a tab to dock it, group it with other tabs or let it float freely.")),
+      // small screen: compact view (tabs) or the free layout as on a large screen
+      ...(m.mode !== "dock" || (m.small && m.free)
+        ? [h("button", { class: `menu-item win free-layout${m.free ? " open" : ""}`, onclick: () => { d.setFreeLayout(!m.free); close(); } },
+            h("b", { class: "check" }, m.free ? "✓" : ""), icon("grid"), h("em", {}, t("Dock windows freely")))]
+        : []),
+      h("div", { class: "menu-hint" }, m.mode !== "dock"
+        ? t("Small screen: the windows are shown as tabs. \"Dock windows freely\" arranges and resizes them as on a large screen.")
+        : t("Drag a tab to dock it, group it with other tabs or let it float freely.")),
     );
   });
 }

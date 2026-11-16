@@ -510,7 +510,7 @@ kw-panel > .tab-body { height: 100%; }
 .sound-side { display: flex; flex-direction: column; gap: 14px; min-width: 0; padding-right: 4px; }
 .sound-side .btn.small svg { width: 12px; height: 12px; }
 .measures { display: grid; gap: 6px; }
-.measure { display: grid; grid-template-columns: 118px 74px minmax(36px, 1fr) 104px; align-items: center; gap: 8px; font-size: 12px; }
+.measure { display: grid; grid-template-columns: minmax(64px, 118px) minmax(48px, 74px) minmax(30px, 1fr) minmax(56px, 104px); align-items: center; gap: 8px; font-size: 12px; }
 .measure .name, .measure .detail { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .measure .name { color: var(--muted); }
 .measure b { font-weight: 600; color: var(--text); }
@@ -1228,3 +1228,111 @@ kw-transport.fit-9 .lcd { min-width: 0; padding: 0 8px; }
 kw-transport.fit-9 .lcd .big { font-size: 15px; }
 kw-transport.fit-10 .stop-btn, kw-transport.fit-10 .lcd .small { display: none; }
 kw-transport.fit-11 .lcd { display: none; }
+
+/* ---------- Small screens and touch ----------
+   Phones: the dock shows a compact view (dock.ts: main window above, the other windows as tabs
+   below, or one window at a time); dialogs and menus stay inside the screen; with a finger,
+   everything to tap is at least about 40 px and the drawing surfaces take the finger themselves. */
+#app {
+  height: 100vh; height: 100dvh;
+  /* phones with a notch or rounded corners (viewport-fit=cover) */
+  padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+html, body { overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
+/* surfaces with their own gestures: no panning or zooming by the browser */
+kw-timeline canvas, kw-tracks, .track-row .keys, .track-row .splitter, .dk-gutter, .dk-grip, .snd-plot, canvas.snd-wave { touch-action: none; -webkit-touch-callout: none; }
+.menu { max-width: calc(100vw - 16px); max-height: calc(100dvh - 80px); overflow-y: auto; overscroll-behavior: contain; }
+.menu.dev-menu, .menu.set-menu { min-width: min(300px, calc(100vw - 16px)); }
+.menu.file-menu { min-width: min(250px, calc(100vw - 16px)); }
+.menu.more-menu { min-width: min(240px, calc(100vw - 16px)); }
+.menu.win-menu { min-width: min(230px, calc(100vw - 16px)); }
+.modal-actions { flex-wrap: wrap; }
+kw-toast { max-width: calc(100vw - 24px); }
+@media (max-width: 600px), (max-height: 600px) {
+  .modal { width: calc(100vw - 16px); max-height: calc(100dvh - 24px); }
+  .modal-body { overflow-y: auto; }
+}
+
+/* compact view: tab bars scroll sideways, a tab only switches */
+.dk-host:not([data-mode="dock"]) .dk-area { inset: 3px; }
+.dk-host:not([data-mode="dock"]) .dk-tabs { overflow-x: auto; overflow-y: hidden; scrollbar-width: none; overscroll-behavior-x: contain; touch-action: pan-x; }
+.dk-host:not([data-mode="dock"]) .dk-tabs::-webkit-scrollbar { display: none; }
+.dk-host:not([data-mode="dock"]) .dk-fill { cursor: default; min-width: 8px; }
+.dk-host:not([data-mode="dock"]) .dk-close { opacity: 1; }
+.dk-host[data-mode="sheet"] .dk-gutter.col { height: 12px; }
+.dk-host[data-mode="sheet"] .dk-gutter.col::after { content: ""; position: absolute; left: 50%; top: 4px; width: 44px; height: 4px; margin-left: -22px; border-radius: 2px; background: var(--line-2); }
+
+/* with a finger the track headers get a little more room (larger buttons) */
+@media (pointer: coarse) {
+  .workspace { grid-template-columns: 316px minmax(0, 1fr); }
+  .tracks-head > span { display: none; }
+  .tracks-head .btn.small { height: 28px; min-width: 28px; }
+}
+/* the track headers in a narrow window (class "narrow", layout.ts): a slim column, unfolded over
+   the timeline on request. (Not a container query: a size container would also become the frame
+   of the fixed-position menus inside the workspace.) */
+.heads-toggle { display: none; }
+.heads-toggle svg { transition: transform .15s; }
+kw-tracks.open .heads-toggle svg { transform: rotate(180deg); }
+.workspace.narrow { grid-template-columns: 128px minmax(0, 1fr); }
+.workspace.narrow .heads-toggle { display: inline-flex; }
+.workspace.narrow .tracks-head { padding: 0 6px; gap: 4px; }
+.workspace.narrow kw-tracks.open { width: min(316px, calc(100vw - 48px)); z-index: 6; box-shadow: 14px 0 34px rgba(0, 0, 0, .55); }
+.workspace.narrow kw-tracks:not(.open) .tracks-head > span, .workspace.narrow kw-tracks:not(.open) .harmony-toggle,
+.workspace.narrow kw-tracks:not(.open) .tracks-head [data-help="neue-audiospur"] { display: none; }
+.workspace.narrow kw-tracks:not(.open) .tracks-head .btn.small { padding: 0 6px; gap: 2px; font-size: 0; }
+.workspace.narrow kw-tracks:not(.open) .tracks-head .btn.small svg { width: 14px; height: 14px; }
+.workspace.narrow kw-tracks:not(.open) .track-row .inner { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; padding: 6px 6px 6px 8px; }
+.workspace.narrow kw-tracks:not(.open) .track-row.notes .inner { padding-right: 38px; }
+.workspace.narrow kw-tracks:not(.open) .track-top { flex-wrap: wrap; row-gap: 5px; }
+.workspace.narrow kw-tracks:not(.open) .track-top input.text { flex: 1 1 calc(100% - 22px); width: 0; padding: 0 2px; }
+.workspace.narrow kw-tracks:not(.open) .track-top .btn.ghost, .workspace.narrow kw-tracks:not(.open) .track-top .toggle.x,
+.workspace.narrow kw-tracks:not(.open) .track-top .toggle.convert, .workspace.narrow kw-tracks:not(.open) .track-controls,
+.workspace.narrow kw-tracks:not(.open) .track-row .track-entry { display: none; }
+/* narrow tool windows: switches of several options wrap instead of sticking out */
+@container (max-width: 480px) {
+  .seg { flex-wrap: wrap; max-width: 100%; }
+  .seg-btn { flex: 1 0 auto; padding: 6px 10px; }
+}
+
+/* low window (phone held sideways): a lower toolbar */
+@media (max-height: 500px) {
+  #app { grid-template-rows: 52px minmax(0, 1fr); }
+  kw-transport .lcd { height: 40px; }
+}
+
+/* a finger instead of a mouse: larger targets, nothing that only shows on hover */
+@media (pointer: coarse) {
+  .btn { height: 40px; min-width: 40px; }
+  .btn.icon { width: 40px; }
+  .btn.small { height: 34px; min-width: 34px; }
+  .menu-item { min-height: 42px; padding: 9px 12px; align-items: center; }
+  .dev-option, .set-option, .proj-row { min-height: 44px; }
+  .dk-tabs { height: 42px; }
+  .dk-tab { padding: 0 6px 0 13px; font-size: 13px; max-width: 240px; }
+  .dk-close { opacity: 1; width: 30px; height: 30px; }
+  .dk-close svg { width: 13px; height: 13px; }
+  .dk-gutter::before { content: ""; position: absolute; }
+  .dk-gutter.row::before { top: 0; bottom: 0; left: -8px; right: -8px; }
+  .dk-gutter.col::before { left: 0; right: 0; top: -8px; bottom: -8px; }
+  .toggle { width: 30px; height: 28px; }
+  .track-row .inner { grid-template-rows: 28px 1fr; }
+  .stepper button { width: 28px; height: 28px; }
+  .track-row .splitter { height: 12px; }
+  input[type="range"] { height: 28px; }
+  input[type="range"]::-webkit-slider-thumb { width: 20px; height: 20px; margin-top: -8px; }
+  input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; }
+  .modal .modal-input { height: 40px; min-height: 40px; font-size: 16px; }
+  /* step grid: finger-sized steps, the grid scrolls sideways */
+  .rh-row { grid-template-columns: 76px repeat(16, minmax(30px, 40px)); }
+  .rh-step { height: 34px; }
+  input.text, .num, select { font-size: 16px; }
+}
+@media (hover: none) {
+  .dk-close { opacity: 1; }
+}
+/* empty project in a narrow window: headline and buttons only, never cut off at the top */
+.workspace.narrow .empty-hint { justify-content: safe center; gap: 10px; padding: 0 8px; }
+.workspace.narrow .empty-hint h2 { font-size: 17px; }
+.workspace.narrow .empty-hint > div:not(.row) { display: none; }
+.workspace.narrow kw-timeline:has(.empty-hint:not([style*="none"])) .keys-hint { display: none; }

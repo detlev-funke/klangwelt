@@ -536,7 +536,29 @@ default layout.
   Analysis after recording, Agent via the agent button. `visiblePanels`
   says which panels are currently visible (unread dot on the Agent tab).
 * Narrow panels: container queries switch Sound, Analysis and Library
-  to one column and make the chat bubbles wider.
+  to one column and make the chat bubbles wider. The workspace (tracks +
+  timeline) gets the class `narrow` at 600 px or less (ResizeObserver in
+  layout.ts – not a container query, which would also become the frame of the
+  fixed-position menus inside it): slim track headers that unfold over the
+  timeline.
+* **Small screens:** if the workspace is narrower than 900 px or lower than
+  500 px *and* the layout's minimum sizes don't fit, the dock shows a compact
+  view without touching the saved layout: the main panel (tracks) above and
+  every other open panel as a tab below, with a divider (`sheet`, from 500 px
+  height), otherwise all panels as tabs (`single`). Tabs there only switch,
+  the tab bar scrolls sideways. `setFreeLayout(true)` (Windows menu "Dock
+  windows freely") shows the arranged layout anyway; it and the divider are
+  kept in `klangwelt.dock.v1.compact`. `#dock[data-mode]` names the view.
+* **Toolbar:** `<kw-transport>` measures itself and takes the first of
+  eleven steps (classes `fit-1` … `fit-11`) at which nothing sticks out:
+  labels go first, then controls move into "⋯", Save and Export into the File
+  menu; the gear always stays.
+* **Touch:** in the timeline one finger works like the mouse (on an empty spot
+  it moves the view), two fingers pan and zoom, a long press opens the context
+  menu (in the ruler it marks a range), a double tap is a double-click. A swipe
+  on the track headers scrolls them, dragging along the keys shifts the pitch
+  range, a tap shows the help for what was tapped. With `(pointer: coarse)`
+  everything to tap is at least about 40 px.
 
 ## Project files
 

@@ -19,6 +19,10 @@ WebAssembly. Sound is generated in real time on your own machine.
 The app speaks English, German, French, Italian, Spanish, Dutch and Polish –
 it follows your browser's language, and the gear menu switches it.
 
+It also works on phones and tablets: on a small screen the tracks stay on top
+and the other windows become tabs below them; fingers move and zoom the
+timeline, a long press opens the context menu, a double tap adds a note.
+
 ## What you can do with it
 
 * **Tracks and notes** – multitrack editing with a piano roll, tempo and

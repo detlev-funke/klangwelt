@@ -849,6 +849,7 @@ const dict: Dict = {
   "Agent interface (MCP) is not active.": "Interfejs agenta (MCP) jest nieaktywny.",
 
   // ui/src/components/timeline.ts
+  "Two fingers: move and zoom · Hold: menu · Double-tap: add a note": "Dwa palce: przesuwanie i powiększanie · Przytrzymaj: menu · Dwukrotne stuknięcie: dodaj nutę",
   "Empty project": "Pusty projekt",
   "Load the demo, start with a song or beat, create a track, record straight from the microphone – or drag audio files (WAV, AIFF, FLAC, Opus) here.": "Wczytaj demo, zacznij od utworu lub beatu, utwórz ścieżkę, nagrywaj bezpośrednio przez mikrofon – albo przeciągnij tutaj pliki audio (WAV, AIFF, FLAC, Opus).",
   "Tour of all windows – with notes on the most important features": "Przewodnik po wszystkich oknach – z notatkami o najważniejszych funkcjach",
@@ -969,6 +970,8 @@ const dict: Dict = {
   "End tour": "Zakończ",
 
   // ui/src/components/tracks.ts
+  "Fold the track headers": "Zwiń nagłówki ścieżek",
+  "Unfold the track headers: level, pan and all buttons": "Rozwiń nagłówki ścieżek: poziom, pan i wszystkie przyciski",
   "Show harmony in the timeline: chords in the color of their mood, breaks in red (also appears while you work in the Harmony window)": "Pokaż harmonię na osi czasu: akordy w kolorze ich nastroju, załamania na czerwono (widoczne też podczas pracy w oknie Harmonia)",
   "Track name – click and type to rename": "Nazwa ścieżki – kliknij i pisz, aby zmienić",
   "Mute": "Wycisz",
@@ -1361,6 +1364,8 @@ const dict: Dict = {
   "cancel": "anulowanie",
 
   // ui/src/layout.ts
+  "Dock windows freely": "Swobodnie dokuj okna",
+  "Small screen: the windows are shown as tabs. \"Dock windows freely\" arranges and resizes them as on a large screen.": "Mały ekran: okna są wyświetlane jako karty. „Swobodnie dokuj okna” układa je i zmienia ich rozmiar jak na dużym ekranie.",
   "Show/hide windows, reset layout": "Pokaż/ukryj okna, zresetuj układ",
   "Hide": "Ukryj",
   "Show": "Pokaż",

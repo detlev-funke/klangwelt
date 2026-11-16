@@ -849,6 +849,7 @@ const dict: Dict = {
   "Agent interface (MCP) is not active.": "La interfaz del agente (MCP) no está activa.",
 
   // ui/src/components/timeline.ts
+  "Two fingers: move and zoom · Hold: menu · Double-tap: add a note": "Dos dedos: mover y hacer zoom · Mantener: menú · Doble toque: añadir una nota",
   "Empty project": "Proyecto vacío",
   "Load the demo, start with a song or beat, create a track, record straight from the microphone – or drag audio files (WAV, AIFF, FLAC, Opus) here.": "Carga la demo, empieza con una canción o un beat, crea una pista, graba directamente con el micrófono, o arrastra aquí archivos de audio (WAV, AIFF, FLAC, Opus).",
   "Tour of all windows – with notes on the most important features": "Recorrido por todas las ventanas, con notas sobre las funciones más importantes",
@@ -969,6 +970,8 @@ const dict: Dict = {
   "End tour": "Terminar",
 
   // ui/src/components/tracks.ts
+  "Fold the track headers": "Plegar las cabeceras de pista",
+  "Unfold the track headers: level, pan and all buttons": "Desplegar las cabeceras de pista: nivel, pan y todos los botones",
   "Show harmony in the timeline: chords in the color of their mood, breaks in red (also appears while you work in the Harmony window)": "Mostrar la armonía en la línea de tiempo: acordes con el color de su estado de ánimo, rupturas en rojo (también aparece mientras trabajas en la ventana «Armonía»)",
   "Track name – click and type to rename": "Nombre de la pista: haz clic y escribe para renombrarla",
   "Mute": "Silenciar",
@@ -1361,6 +1364,8 @@ const dict: Dict = {
   "cancel": "cancelar",
 
   // ui/src/layout.ts
+  "Dock windows freely": "Acoplar ventanas libremente",
+  "Small screen: the windows are shown as tabs. \"Dock windows freely\" arranges and resizes them as on a large screen.": "Pantalla pequeña: las ventanas se muestran como pestañas. «Acoplar ventanas libremente» las organiza y redimensiona como en una pantalla grande.",
   "Show/hide windows, reset layout": "Mostrar u ocultar ventanas, restablecer el diseño",
   "Hide": "Ocultar",
   "Show": "Mostrar",

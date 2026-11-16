@@ -284,18 +284,48 @@ class TrackRow {
       e.stopPropagation();
       void resetRowHeight(this.#track);
     });
-    this.#keys.addEventListener("pointerdown", (e) => {
+    const pressKey = (offsetY: number, shift: boolean) => {
       if (this.#track.kind !== "instrument") return;
-      const pitch = pitchAt(geoFor(this.#track), e.offsetY + NOTES_TOP);
+      const pitch = pitchAt(geoFor(this.#track), offsetY + NOTES_TOP);
       const en = entry.peek();
       if (en) {
         // keyboard entry: the key adds its note (Shift: stay in place)
         if (en.trackId !== this.id) setEntryPosition(en.beat, this.id);
-        enterNote(pitch, e.shiftKey);
+        enterNote(pitch, shift);
         return;
       }
       void backend.previewNote(this.id, pitch).catch(() => {});
+    };
+    // Touch: dragging along the keys shifts the pitch range (the mouse wheel's job), a tap plays the key
+    let slide: { id: number; y0: number; low: number; moved: boolean } | null = null;
+    this.#keys.addEventListener("pointerdown", (e) => {
+      if (e.pointerType !== "touch") return pressKey(e.offsetY, e.shiftKey);
+      e.stopPropagation();
+      slide = { id: e.pointerId, y0: e.clientY, low: viewFor(this.#track).low, moved: false };
+      try {
+        this.#keys.setPointerCapture(e.pointerId);
+      } catch {
+        /* synthetic events */
+      }
     });
+    this.#keys.addEventListener("pointermove", (e) => {
+      if (!slide || slide.id !== e.pointerId) return;
+      const dy = e.clientY - slide.y0;
+      if (Math.abs(dy) > 8) slide.moved = true;
+      if (!slide.moved) return;
+      const view = viewFor(this.#track);
+      const lanes = Math.round(dy / geoFor(this.#track).laneH);
+      // the keys follow the finger: high notes on top → dragging down shows higher notes
+      scrollPitch(this.id, slide.low + (highOnTop.peek() ? lanes : -lanes) - view.low, view);
+    });
+    const slideEnd = (e: PointerEvent) => {
+      if (!slide || slide.id !== e.pointerId) return;
+      const tap = !slide.moved && e.type === "pointerup";
+      slide = null;
+      if (tap) pressKey(e.offsetY, false);
+    };
+    this.#keys.addEventListener("pointerup", slideEnd);
+    this.#keys.addEventListener("pointercancel", slideEnd);
 
     this.el = h(
       "div",
@@ -397,9 +427,14 @@ class KwTracks extends HTMLElement {
 
   connectedCallback(): void {
     if (this.childElementCount) return;
+    // Narrow window (phone): the headers are a slim column; this unfolds them over the timeline
+    const unfold = h("button", { class: "btn small icon heads-toggle", onclick: () => this.#unfold(!this.classList.contains("open")) }, icon("chevron"));
+    this.#unfoldBtn = unfold;
+    this.#unfold(false);
     const head = h(
       "div",
       { class: "tracks-head" },
+      unfold,
       h("span", {}, t("Tracks")),
       h(
         "div",
@@ -412,6 +447,8 @@ class KwTracks extends HTMLElement {
           title: t("Add instrument track: pluck, organ, harpsichord, bass, synth or drums"),
           onclick: (e: MouseEvent) => {
             e.stopPropagation();
+            // slim column: unfold first, so that the menu has room
+            if (unfold.getClientRects().length) this.#unfold(true);
             this.#menu.classList.toggle("open");
           },
         }, icon("plus"), `${t("Instrument")} ▾`),
@@ -432,6 +469,10 @@ class KwTracks extends HTMLElement {
       );
     });
     document.addEventListener("click", () => this.#menu.classList.remove("open"));
+    // a tap beside the unfolded headers folds them again
+    document.addEventListener("pointerdown", (e) => {
+      if (this.classList.contains("open") && !this.contains(e.target as Node)) this.#unfold(false);
+    }, true);
     this.append(head, this.#menu, this.#body);
 
     effect(() => {
@@ -462,6 +503,45 @@ class KwTracks extends HTMLElement {
       },
       { passive: false },
     );
+    // Touch: a finger on the track headers scrolls them – and the timeline – up and down
+    let swipe: { id: number; y0: number; scrollY0: number; moved: boolean } | null = null;
+    this.addEventListener("pointerdown", (e) => {
+      if (e.pointerType !== "touch" || swipe) return;
+      // (sliders, menus and the keys keep the finger; a swipe may start on a name or a button)
+      if ((e.target as Element).closest('input[type="range"], select, .splitter, canvas.keys, .menu')) return;
+      swipe = { id: e.pointerId, y0: e.clientY, scrollY0: viewport.peek().scrollY, moved: false };
+    });
+    this.addEventListener("pointermove", (e) => {
+      if (!swipe || swipe.id !== e.pointerId) return;
+      const dy = e.clientY - swipe.y0;
+      if (Math.abs(dy) > 8) swipe.moved = true;
+      if (!swipe.moved) return;
+      const max = maxScrollY(snapshot.peek()?.project.tracks ?? []);
+      const y = Math.max(0, Math.min(max, swipe.scrollY0 - dy));
+      viewport.update((v) => ({ ...v, scrollY: y }));
+    });
+    const swipeEnd = (e: PointerEvent) => {
+      if (swipe?.id !== e.pointerId) return;
+      if (swipe.moved) {
+        // the button the swipe started on is not pressed
+        const swallow = (c: Event) => {
+          c.stopPropagation();
+          c.preventDefault();
+        };
+        this.addEventListener("click", swallow, { capture: true, once: true });
+        setTimeout(() => this.removeEventListener("click", swallow, { capture: true }), 400);
+      }
+      swipe = null;
+    };
+    this.addEventListener("pointerup", swipeEnd);
+    this.addEventListener("pointercancel", swipeEnd);
+  }
+
+  #unfoldBtn: HTMLButtonElement | null = null;
+
+  #unfold(open: boolean): void {
+    this.classList.toggle("open", open);
+    if (this.#unfoldBtn) this.#unfoldBtn.title = open ? t("Fold the track headers") : t("Unfold the track headers: level, pan and all buttons");
   }
 
   #render(tracks: Track[], selectedId: number | undefined): void {

@@ -44,12 +44,29 @@ function rgba(hex: string, a: number): string {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 }
 
+/** Touch: a finger held this long without moving opens the context menu (in the ruler: marks a range). */
+const LONG_PRESS_MS = 520;
+/** Touch: two taps within this time and distance are a double tap. */
+const DOUBLE_TAP_MS = 380;
+const DOUBLE_TAP_PX = 28;
+/** Touch: moving less than this still counts as holding still / a tap. */
+const TOUCH_SLOP = 9;
+
 type Drag =
   | {
       /** Drag ruler: pan the view (without movement: set playhead). */
       kind: "pan";
       startX: number;
       scrollX0: number;
+      moved: boolean;
+    }
+  | {
+      /** Finger on an empty spot: the view follows the finger (time and tracks). */
+      kind: "swipe";
+      x0: number;
+      y0: number;
+      scrollX0: number;
+      scrollY0: number;
       moved: boolean;
     }
   | {
@@ -157,6 +174,17 @@ class KwTimeline extends HTMLElement {
   #width = 0;
   /** "♪ → Notes" buttons of the audio clips (collected while drawing, timeline coordinates). */
   #noteButtons: Array<{ x: number; y: number; w: number; h: number; trackId: number; clipId: number }> = [];
+  /** Touch: larger grab zones for edges (set on every press). */
+  #fat = false;
+  /** Fingers on the canvas (touch) – two of them pan and zoom. */
+  #fingers = new Map<number, { x: number; y: number; x0: number; y0: number; t0: number }>();
+  #pinch: { dist: number; cx: number; cy: number; ppb: number; scrollX: number; scrollY: number } | null = null;
+  /** After two fingers: ignore the rest of the gesture until every finger is lifted. */
+  #touchDone = false;
+  #longPress = 0;
+  #lastTap: { t: number; x: number; y: number } | null = null;
+  /** Until then the browser's own dblclick/contextmenu are ignored (the touch gesture did it). */
+  #quietUntil = 0;
 
   connectedCallback(): void {
     if (this.childElementCount) return;
@@ -205,21 +233,61 @@ class KwTimeline extends HTMLElement {
     });
 
     watchHarmonyLine();
-    this.#canvas.addEventListener("pointerdown", (e) => this.#down(e));
-    this.#canvas.addEventListener("pointermove", (e) => this.#move(e));
-    this.#canvas.addEventListener("pointerup", (e) => this.#up(e));
-    this.#canvas.addEventListener("pointercancel", () => (this.#drag = null));
-    this.#canvas.addEventListener("contextmenu", (e) => this.#context(e));
-    this.#canvas.addEventListener("dblclick", (e) => this.#dblclick(e));
+    // Touch: one finger works like the mouse (on an empty spot it moves the view), two fingers pan
+    // and zoom, a long press opens the context menu, a double tap adds a note (see #touchDown).
+    this.#canvas.addEventListener("pointerdown", (e) => {
+      this.#fat = e.pointerType === "touch";
+      if (e.pointerType === "touch" && this.#touchDown(e)) return;
+      this.#down(e);
+    });
+    this.#canvas.addEventListener("pointermove", (e) => {
+      if (e.pointerType === "touch" && this.#touchMove(e)) return;
+      this.#move(e);
+    });
+    this.#canvas.addEventListener("pointerup", (e) => {
+      if (e.pointerType === "touch" && this.#touchUp(e)) return;
+      this.#up(e);
+    });
+    this.#canvas.addEventListener("pointercancel", (e) => {
+      this.#drag = null;
+      this.#fingers.delete(e.pointerId);
+      this.#endLongPress();
+      if (!this.#fingers.size) {
+        this.#pinch = null;
+        this.#touchDone = false;
+      }
+      this.#invalidate();
+    });
+    this.#canvas.addEventListener("contextmenu", (e) => {
+      if (performance.now() < this.#quietUntil) return e.preventDefault();
+      if (this.#fingers.size) {
+        // the browser's long press came first: the same as ours
+        this.#endLongPress();
+        this.#drag = null;
+        this.#touchDone = true;
+        this.#quietUntil = performance.now() + 700;
+      }
+      this.#context(e);
+    });
+    this.#canvas.addEventListener("dblclick", (e) => {
+      if (performance.now() < this.#quietUntil) return;
+      this.#dblclick(e);
+    });
     this.addEventListener("wheel", (e) => this.#wheel(e), { passive: false });
   }
 
   /** Text of the shortcut line: the usual shortcuts, or the keys of keyboard entry. */
   #updateKeysHint(typing: boolean, labels: number): void {
-    const mode = `${typing}:${labels}`;
+    // a finger instead of mouse and keyboard: the touch gestures instead of the shortcuts
+    const touch = !typing && matchMedia("(pointer: coarse)").matches;
+    const mode = `${typing}:${labels}:${touch}`;
     if (mode === this.#keysHintMode) return;
     this.#keysHintMode = mode;
     this.#keysHint.classList.toggle("entry", typing);
+    if (touch) {
+      this.#keysHint.textContent = t("Two fingers: move and zoom · Hold: menu · Double-tap: add a note");
+      return;
+    }
     this.#keysHint.innerHTML = typing
       ? t("Keyboard entry: <kbd>{first}</kbd>…<kbd>{last}</kbd> notes · <kbd>Shift</kbd> chord · <kbd>{down}</kbd> <kbd>{up}</kbd> octave · <kbd>←</kbd> <kbd>→</kbd> step · <kbd>Backspace</kbd> back · <kbd>Esc</kbd> end", {
           first: keyLabel("KeyA"), last: keyLabel("KeyK"), down: keyLabel("KeyZ"), up: keyLabel("KeyX"),
@@ -312,7 +380,7 @@ class KwTimeline extends HTMLElement {
         if (hit.beatInClip >= note.startBeats && hit.beatInClip <= note.startBeats + note.lengthBeats) {
           hit.note = n;
           const right = this.#beatToX(clip.startBeats + note.startBeats + note.lengthBeats);
-          hit.edge = right - x <= 6 && note.lengthBeats * this.#ppb() > 10;
+          hit.edge = right - x <= (this.#fat ? 14 : 6) && note.lengthBeats * this.#ppb() > (this.#fat ? 24 : 10);
           break;
         }
       }
@@ -324,7 +392,7 @@ class KwTimeline extends HTMLElement {
   #splitterAt(y: number): Track | null {
     const p = snapshot.peek()?.project;
     if (!p || y < RULER_H) return null;
-    const row = this.#rows(p).find((r) => Math.abs(r.y + r.h - y) <= 4);
+    const row = this.#rows(p).find((r) => Math.abs(r.y + r.h - y) <= (this.#fat ? 9 : 4));
     return row?.track ?? null;
   }
 
@@ -355,6 +423,7 @@ class KwTimeline extends HTMLElement {
     if (!hit) {
       selection.value = null;
       noteSel.value = null;
+      if (this.#fat) this.#beginSwipe(e);
       return;
     }
     if (hit.zone === "expr") {
@@ -387,7 +456,9 @@ class KwTimeline extends HTMLElement {
         }
         return;
       }
-      this.#beginMarquee(e, hit);
+      // touch beside the clips: move the view (inside a clip the finger draws a selection box)
+      if (this.#fat && !hit.clip) this.#beginSwipe(e);
+      else this.#beginMarquee(e, hit);
       return;
     }
     if (noteSel.peek()?.clipId !== hit.clip?.id) noteSel.value = null;
@@ -396,7 +467,132 @@ class KwTimeline extends HTMLElement {
         kind: "clip", trackId: hit.track.id, clipId: hit.clip.id, startX: e.offsetX,
         origBeats: hit.clip.startBeats, beats: hit.clip.startBeats, moved: false, curX: e.offsetX, curY: e.offsetY,
       };
+    } else if (this.#fat && !hit.clip) this.#beginSwipe(e);
+  }
+
+  #beginSwipe(e: PointerEvent): void {
+    const v = viewport.peek();
+    this.#drag = { kind: "swipe", x0: e.offsetX, y0: e.offsetY, scrollX0: v.scrollX, scrollY0: v.scrollY, moved: false };
+  }
+
+  // ---------- Touch ----------
+  /** A finger goes down; true = handled here (not as a mouse press). */
+  #touchDown(e: PointerEvent): boolean {
+    const now = performance.now();
+    this.#fingers.set(e.pointerId, { x: e.offsetX, y: e.offsetY, x0: e.offsetX, y0: e.offsetY, t0: now });
+    try {
+      this.#canvas.setPointerCapture(e.pointerId);
+    } catch {
+      /* synthetic events */
     }
+    if (this.#fingers.size >= 2) {
+      // second finger: whatever the first one started is dropped (drafts are not applied)
+      this.#endLongPress();
+      this.#drag = null;
+      this.#touchDone = true;
+      this.#lastTap = null;
+      const [a, b] = [...this.#fingers.values()];
+      const v = viewport.peek();
+      this.#pinch = {
+        dist: Math.max(1, Math.hypot(a!.x - b!.x, a!.y - b!.y)),
+        cx: (a!.x + b!.x) / 2,
+        cy: (a!.y + b!.y) / 2,
+        ppb: v.pxPerBeat,
+        scrollX: v.scrollX,
+        scrollY: v.scrollY,
+      };
+      this.#invalidate();
+      return true;
+    }
+    if (this.#touchDone) return true;
+    const x = e.offsetX;
+    const y = e.offsetY;
+    this.#longPress = window.setTimeout(() => this.#onLongPress(e.pointerId, x, y, e.clientX, e.clientY), LONG_PRESS_MS);
+    return false;
+  }
+
+  #touchMove(e: PointerEvent): boolean {
+    const f = this.#fingers.get(e.pointerId);
+    if (!f) return false;
+    f.x = e.offsetX;
+    f.y = e.offsetY;
+    if (Math.hypot(f.x - f.x0, f.y - f.y0) > TOUCH_SLOP) this.#endLongPress();
+    const p = this.#pinch;
+    if (p && this.#fingers.size >= 2) {
+      const [a, b] = [...this.#fingers.values()];
+      const dist = Math.max(1, Math.hypot(a!.x - b!.x, a!.y - b!.y));
+      const cx = (a!.x + b!.x) / 2;
+      const cy = (a!.y + b!.y) / 2;
+      const max = maxScrollY(snapshot.peek()?.project.tracks ?? []);
+      viewport.update((v) => {
+        const ppb = Math.min(400, Math.max(1.5, p.ppb * (dist / p.dist)));
+        // the beat under the fingers stays under the fingers
+        const beat = (p.cx + p.scrollX) / p.ppb;
+        return { ...v, pxPerBeat: ppb, scrollX: Math.max(0, beat * ppb - cx), scrollY: Math.max(0, Math.min(max, p.scrollY - (cy - p.cy))) };
+      });
+      return true;
+    }
+    return this.#touchDone;
+  }
+
+  #touchUp(e: PointerEvent): boolean {
+    const f = this.#fingers.get(e.pointerId);
+    this.#fingers.delete(e.pointerId);
+    this.#endLongPress();
+    try {
+      if (this.#canvas.hasPointerCapture(e.pointerId)) this.#canvas.releasePointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    if (this.#touchDone) {
+      if (!this.#fingers.size) {
+        this.#touchDone = false;
+        this.#pinch = null;
+      }
+      return true;
+    }
+    // a tap: two of them quickly in one place are a double tap (like a double-click)
+    const now = performance.now();
+    const tap = !!f && Math.hypot(e.offsetX - f.x0, e.offsetY - f.y0) <= TOUCH_SLOP && now - f.t0 < 400;
+    this.#up(e);
+    if (!tap) {
+      this.#lastTap = null;
+      return true;
+    }
+    const last = this.#lastTap;
+    if (last && now - last.t < DOUBLE_TAP_MS && Math.hypot(e.offsetX - last.x, e.offsetY - last.y) < DOUBLE_TAP_PX) {
+      this.#lastTap = null;
+      this.#quietUntil = now + 600;
+      this.#dblclick(e);
+    } else {
+      this.#lastTap = { t: now, x: e.offsetX, y: e.offsetY };
+    }
+    return true;
+  }
+
+  #endLongPress(): void {
+    if (this.#longPress) window.clearTimeout(this.#longPress);
+    this.#longPress = 0;
+  }
+
+  /** Finger held still: in the ruler it starts marking a range, elsewhere the context menu opens. */
+  #onLongPress(pointerId: number, x: number, y: number, clientX: number, clientY: number): void {
+    this.#longPress = 0;
+    if (!this.#fingers.has(pointerId) || this.#fingers.size !== 1) return;
+    navigator.vibrate?.(12);
+    if (y < RULER_H) {
+      const bpb = snapshot.peek()?.project.beatsPerBar ?? 4;
+      const b = Math.max(0, snapTo(this.#xToBeat(x), rangeGrid(this.#ppb(), bpb, false)));
+      this.#drag = { kind: "range", anchor: b, cur: b, moved: false, free: false };
+      this.#invalidate();
+      return;
+    }
+    // the press started a gesture (selection box, moving) – it is dropped, the menu takes over
+    this.#drag = null;
+    this.#touchDone = true;
+    this.#quietUntil = performance.now() + 700;
+    this.#invalidate();
+    this.#context({ offsetX: x, offsetY: y, clientX, clientY, preventDefault() {} } as MouseEvent);
   }
 
   // ---------- Ruler ----------
@@ -410,8 +606,9 @@ class KwTimeline extends HTMLElement {
   #rangeEdgeAt(x: number): 0 | 1 | null {
     const r = snapshot.peek()?.engine.loopRange;
     if (!r) return null;
-    if (Math.abs(x - this.#beatToX(r[0])) <= 5) return 0;
-    if (Math.abs(x - this.#beatToX(r[1])) <= 5) return 1;
+    const tol = this.#fat ? 14 : 5;
+    if (Math.abs(x - this.#beatToX(r[0])) <= tol) return 0;
+    if (Math.abs(x - this.#beatToX(r[1])) <= tol) return 1;
     return null;
   }
 
@@ -671,6 +868,15 @@ class KwTimeline extends HTMLElement {
       if (!d.moved) return;
       viewport.update((v) => ({ ...v, scrollX: Math.max(0, d.scrollX0 - dx) }));
       this.#canvas.style.cursor = "grabbing";
+      return;
+    }
+    if (d.kind === "swipe") {
+      const dx = e.offsetX - d.x0;
+      const dy = e.offsetY - d.y0;
+      if (Math.hypot(dx, dy) > TOUCH_SLOP) d.moved = true;
+      if (!d.moved) return;
+      const max = maxScrollY(snapshot.peek()?.project.tracks ?? []);
+      viewport.update((v) => ({ ...v, scrollX: Math.max(0, d.scrollX0 - dx), scrollY: Math.max(0, Math.min(max, d.scrollY0 - dy)) }));
       return;
     }
     if (d.kind === "range") {

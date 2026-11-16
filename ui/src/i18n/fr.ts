@@ -849,6 +849,7 @@ const dict: Dict = {
   "Agent interface (MCP) is not active.": "L'interface agent (MCP) n'est pas active.",
 
   // ui/src/components/timeline.ts
+  "Two fingers: move and zoom · Hold: menu · Double-tap: add a note": "Deux doigts : déplacer et zoomer · Maintenir : menu · Double-toucher : ajouter une note",
   "Empty project": "Projet vide",
   "Load the demo, start with a song or beat, create a track, record straight from the microphone – or drag audio files (WAV, AIFF, FLAC, Opus) here.": "Chargez la démo, commencez par un morceau ou un beat, créez une piste, enregistrez directement au micro – ou faites glisser des fichiers audio (WAV, AIFF, FLAC, Opus) ici.",
   "Tour of all windows – with notes on the most important features": "Visite de toutes les fenêtres – avec des notes sur les fonctions principales",
@@ -969,6 +970,8 @@ const dict: Dict = {
   "End tour": "Quitter",
 
   // ui/src/components/tracks.ts
+  "Fold the track headers": "Replier les en-têtes de piste",
+  "Unfold the track headers: level, pan and all buttons": "Déplier les en-têtes de piste : niveau, pan et tous les boutons",
   "Show harmony in the timeline: chords in the color of their mood, breaks in red (also appears while you work in the Harmony window)": "Afficher l'harmonie dans la ligne de temps : accords dans la couleur de leur ambiance, ruptures en rouge (apparaît aussi tant que vous travaillez dans la fenêtre Harmonie)",
   "Track name – click and type to rename": "Nom de la piste – cliquez et tapez pour renommer",
   "Mute": "Muet",
@@ -1361,6 +1364,8 @@ const dict: Dict = {
   "cancel": "annuler",
 
   // ui/src/layout.ts
+  "Dock windows freely": "Ancrer les fenêtres librement",
+  "Small screen: the windows are shown as tabs. \"Dock windows freely\" arranges and resizes them as on a large screen.": "Petit écran : les fenêtres s'affichent en onglets. « Ancrer les fenêtres librement » les dispose et les redimensionne comme sur un grand écran.",
   "Show/hide windows, reset layout": "Afficher/masquer les fenêtres, réinitialiser la disposition",
   "Hide": "Masquer",
   "Show": "Afficher",

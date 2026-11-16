@@ -215,8 +215,9 @@ function uploadProject(): void {
 
 /** "Save" button + "File" menu for the transport bar. */
 export function fileControls(): HTMLElement {
-  const saveBtn = h("button", { class: "btn save-btn", onclick: () => void saveProject() }, icon("save"), t("Save"), h("i", { class: "dirty-dot" }));
-  const menuBtn = h("button", { class: "btn", "data-help": "datei", title: t("New, Open, Save as, Export") }, icon("folder"), `${t("File")} ▾`);
+  const saveBtn = h("button", { class: "btn save-btn", onclick: () => void saveProject() }, icon("save"), h("span", { class: "lbl" }, t("Save")), h("i", { class: "dirty-dot" }));
+  // (narrow bar: Save and Export are hidden, then the dot for unsaved changes sits on "File")
+  const menuBtn = h("button", { class: "btn file-btn", "data-help": "datei", title: t("New, Open, Save as, Export") }, icon("folder"), h("span", { class: "lbl" }, t("File")), " ", h("span", { class: "caret" }, "▾"), h("i", { class: "dirty-dot" }));
   const menu = dropdown(menuBtn, "file-menu", (m, close) => {
     const item = (label: string, keys: string, fn: () => void) =>
       h("button", { class: "menu-item", onclick: () => { close(); fn(); } }, label, h("span", {}, keys));
@@ -243,13 +244,14 @@ export function fileControls(): HTMLElement {
     const s = snapshot.value;
     const name = fileName(s?.file);
     saveBtn.classList.toggle("dirty", !!s?.dirty);
+    menuBtn.classList.toggle("dirty", !!s?.dirty);
     saveBtn.title = name
       ? s?.dirty
         ? t("{name} – unsaved changes (Ctrl+S)", { name })
         : t("{name} – saved (Ctrl+S)", { name })
       : t("Save project (Ctrl+S)");
   });
-  const exportBtn = h("button", { class: "btn export-btn", title: t("Export as WAV, FLAC, Opus, stems or MIDI (Ctrl+E)"), onclick: () => void exportDialog() }, icon("download"), t("Export"));
+  const exportBtn = h("button", { class: "btn export-btn", title: t("Export as WAV, FLAC, Opus, stems or MIDI (Ctrl+E)"), onclick: () => void exportDialog() }, icon("download"), h("span", { class: "lbl" }, t("Export")));
   return h("div", { class: "file-controls" }, menu, saveBtn, exportBtn);
 }
 

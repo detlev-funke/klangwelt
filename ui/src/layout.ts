@@ -90,7 +90,7 @@ export function initLayout(host: HTMLElement): void {
 
 /** "Windows ▾" button: show/hide windows, reset the layout. */
 export function windowMenu(): HTMLElement {
-  const btn = h("button", { class: "btn", "data-help": "fenster", title: t("Show/hide windows, reset layout") }, icon("layout"), `${t("Windows")} ▾`);
+  const btn = h("button", { class: "btn win-btn", "data-help": "fenster", title: t("Show/hide windows, reset layout") }, icon("layout"), h("span", { class: "lbl" }, t("Windows")), " ", h("span", { class: "caret" }, "▾"));
   return dropdown(btn, "win-menu", (menu, close) => {
     if (!dock) return;
     const d = dock;

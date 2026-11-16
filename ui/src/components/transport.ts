@@ -27,6 +27,9 @@ const KIND_WORD: Record<AudioKind, { title: string; short: string }> = {
   input: { title: t("Recording device"), short: t("Recording") },
 };
 
+/** Number of steps the bar shrinks in (classes fit-1 … fit-11 in styles.css). */
+const FIT_STEPS = 11;
+
 /** Choose device (null = system default) – takes effect immediately and is remembered. */
 async function chooseDevice(kind: AudioKind, name: string | null): Promise<void> {
   if (await act(backend.setAudioDevice(kind, name))) notify(`${KIND_WORD[kind].short}: ${name ?? t("System default")}`);
@@ -112,8 +115,8 @@ class KwTransport extends HTMLElement {
     if (this.childElementCount) return;
 
     const play = h("button", { class: "btn big primary", title: t("Play / pause (Space)"), onclick: () => togglePlay() }, icon("play"));
-    const stop = h("button", { class: "btn big", title: t("Stop – back to the start, including the view (Home)"), onclick: () => stopToStart() }, icon("stop"));
-    const loop = h("button", { class: "btn icon", "data-help": "wiederholen", onclick: () => void toggleLoop() }, icon("loop"));
+    const stop = h("button", { class: "btn big stop-btn", title: t("Stop – back to the start, including the view (Home)"), onclick: () => stopToStart() }, icon("stop"));
+    const loop = h("button", { class: "btn icon loop-btn", "data-help": "wiederholen", onclick: () => void toggleLoop() }, icon("loop"));
     const rec = h("button", { class: "btn big rec", title: t("Record from the microphone (R)"), onclick: () => toggleRecord() }, icon("record"));
 
     const pos = h("div", { class: "big" }, "1.1.1");
@@ -148,9 +151,10 @@ class KwTransport extends HTMLElement {
     });
     const sig = h("div", { class: "num", style: "display:flex;align-items:center;justify-content:center;width:52px" }, "4/4");
 
-    const metro = h("button", { class: "btn icon", "data-help": "metronom", title: t("Metronome"), onclick: () => act(backend.setMetronome(!snapshot.peek()?.engine.metronome)) }, icon("metronome"));
-    const undoBtn = h("button", { class: "btn icon", "data-help": "rueckgaengig", onclick: () => undo() }, icon("undo"));
-    const redoBtn = h("button", { class: "btn icon", "data-help": "wiederherstellen", onclick: () => redo() }, icon("redo"));
+    const toggleMetronome = () => act(backend.setMetronome(!snapshot.peek()?.engine.metronome));
+    const metro = h("button", { class: "btn icon metro-btn", "data-help": "metronom", title: t("Metronome"), onclick: toggleMetronome }, icon("metronome"));
+    const undoBtn = h("button", { class: "btn icon undo-btn", "data-help": "rueckgaengig", onclick: () => undo() }, icon("undo"));
+    const redoBtn = h("button", { class: "btn icon redo-btn", "data-help": "wiederherstellen", onclick: () => redo() }, icon("redo"));
 
     const meter = h("canvas", { class: "meter", title: t("Levels: output on top, microphone below") });
     // Speaker: shows the output device, click opens the device selection; the microphone next to it
@@ -165,7 +169,13 @@ class KwTransport extends HTMLElement {
       const file = s?.file?.split(/[\\/]/).pop()?.replace(/\.klangwelt$/i, "");
       projName.textContent = `${file ?? projectLabel(s?.project.name ?? "")}${s?.dirty ? " •" : ""}`;
       projName.title = s?.file ?? t("Not saved yet");
+      this.#scheduleFit();
     });
+    const tempoField = h("div", { class: "field tempo-field", "data-help": "tempo" }, h("label", {}, t("Tempo")), tempo);
+    const sigField = h("div", { class: "field sig-field", "data-help": "takt", title: t("Time signature of the project") }, h("label", {}, t("Time signature")), sig);
+    const outWrap = deviceMenu("output", chip);
+    const inWrap = deviceMenu("input", micBtn);
+    const more = this.#moreMenu({ tempoField, sigField, metro, loop, undoBtn, redoBtn, stop, outWrap, inWrap, agent, sendTempo, toggleMetronome });
     this.append(
       h("div", { class: "brand", html: `${LOGO}<span>Klangwelt</span>` }),
       fileControls(),
@@ -173,8 +183,8 @@ class KwTransport extends HTMLElement {
       h("div", { class: "sep" }),
       h("div", { class: "group" }, stop, play, rec),
       h("div", { class: "lcd", title: t("Playback position: bar.beat.sixteenth and time") }, pos, time),
-      h("div", { class: "field", "data-help": "tempo" }, h("label", {}, t("Tempo")), tempo),
-      h("div", { class: "field", "data-help": "takt", title: t("Time signature of the project") }, h("label", {}, t("Time signature")), sig),
+      tempoField,
+      sigField,
       metro,
       loop,
       h("div", { class: "sep" }),
@@ -182,12 +192,16 @@ class KwTransport extends HTMLElement {
       redoBtn,
       h("div", { class: "spacer" }),
       windowMenu(),
+      more,
       settingsMenu(),
       meter,
       agent,
-      deviceMenu("output", chip),
-      deviceMenu("input", micBtn),
+      outWrap,
+      inWrap,
     );
+    // Narrow window: drop labels and controls step by step until the bar fits (see #fit)
+    new ResizeObserver(() => this.#scheduleFit()).observe(this);
+    void document.fonts?.ready.then(() => this.#scheduleFit());
 
     effect(() => {
       const a = snapshot.value?.agent;
@@ -203,6 +217,7 @@ class KwTransport extends HTMLElement {
       agent.classList.toggle("working", working && !listening);
       agent.classList.toggle("connected", connected);
       agent.replaceChildren(h("span", { class: "dot" }), agentLabel(ok, connected, listening, working, ok ? workingOn : []));
+      this.#scheduleFit();
       if (!ok) agent.title = a?.error ?? t("Agent endpoint not started");
       else if (working && !listening) agent.title = t("An agent is working (a task in progress or a tool call within the last minute). Nobody is listening right now – new messages wait until a listener picks them up.\nClick to open the agent chat.");
       else if (web && listening) agent.title = t("An agent is listening – tasks in the chat are picked up right away.\nClick to open the agent chat.");
@@ -263,9 +278,131 @@ class KwTransport extends HTMLElement {
         ? `${t("Output device: {device} ({which}) · {rate} Hz", { device: String(e.outputDevice), which: outWhich, rate: e.sampleRate })}${e.outputNotice ? `\n${e.outputNotice}` : ""}\n${t("Click to choose a different device.")}`
         : `${e.error ?? t("No audio")}\n${t("Click to show the output devices.")}`;
       outLabel.textContent = e.available ? `${e.outputDevice ?? t("Audio")} · ${(e.sampleRate / 1000).toFixed(1)} kHz` : e.error ?? t("no audio");
+      this.#scheduleFit();
       micBtn.classList.toggle("warn", !!e.inputNotice);
       micBtn.title = `${t("Recording device: {device}", { device: e.inputChoice ?? t("System default") })}${e.inputNotice ? `\n${e.inputNotice}` : ""}\n${t("Click to choose a different microphone.")}`;
     });
+  }
+
+  #fitRaf = 0;
+
+  /** Fit again in the next frame (size or a text of the bar changed). */
+  #scheduleFit(): void {
+    if (this.#fitRaf) return;
+    this.#fitRaf = requestAnimationFrame(() => {
+      this.#fitRaf = 0;
+      this.#fit();
+    });
+  }
+
+  /**
+   * Steps for narrow windows: classes fit-1 … fit-N (cumulative, see styles.css
+   * "Toolbar steps"). Takes the first step at which no control sticks out on the
+   * right – measured, so it works for every language. Save and Export then live
+   * in the File menu, the rest in "⋯"; the gear always stays.
+   */
+  #fit(): void {
+    const set = (n: number) => {
+      for (let i = 1; i <= FIT_STEPS; i++) this.classList.toggle(`fit-${i}`, i <= n);
+    };
+    let level = 0;
+    set(0);
+    while (level < FIT_STEPS && this.#overflows()) set(++level);
+    this.dataset.fit = String(level);
+  }
+
+  #overflows(): boolean {
+    const r = this.getBoundingClientRect();
+    if (!r.width) return false;
+    // controls may reach into the padding (as before at 1600 px), but not up to the edge
+    const limit = r.right - 6;
+    for (const c of this.children) {
+      const b = c.getBoundingClientRect();
+      if (b.width && b.right > limit) return true;
+    }
+    return false;
+  }
+
+  /** "⋯": the controls a narrow bar had to drop – only those that are hidden right now. */
+  #moreMenu(o: {
+    tempoField: HTMLElement; sigField: HTMLElement; metro: HTMLElement; loop: HTMLElement; undoBtn: HTMLElement; redoBtn: HTMLElement;
+    stop: HTMLElement; outWrap: HTMLElement; inWrap: HTMLElement; agent: HTMLElement;
+    sendTempo: (v: number) => void; toggleMetronome: () => void;
+  }): HTMLElement {
+    const hidden = (el: HTMLElement) => el.getClientRects().length === 0;
+    const btn = h("button", { class: "btn icon more-btn", title: t("More") }, icon("more"));
+    const wrap = dropdown(btn, "more-menu", (menu, close) => {
+      const snap = snapshot.peek();
+      const item = (cls: string, ic: string, label: string, fn: () => void, x: { on?: boolean; disabled?: boolean; sub?: string | null; keep?: boolean } = {}) =>
+        h(
+          "button",
+          {
+            class: `menu-item more-item ${cls}${x.on ? " on" : ""}`,
+            disabled: !!x.disabled,
+            onclick: () => {
+              if (!x.keep) close();
+              fn();
+            },
+          },
+          h("b", { class: "check" }, x.on ? "✓" : ""),
+          icon(ic),
+          h("em", {}, label),
+          x.sub ? h("span", {}, x.sub) : null,
+        );
+      const devices = (kind: AudioKind) => {
+        menu.replaceChildren(h("div", { class: "menu-title" }, KIND_WORD[kind].title), h("div", { class: "menu-hint" }, t("Searching for devices…")));
+        backend
+          .audioDevices()
+          .then((d) => {
+            if (menu.classList.contains("open")) fillDeviceMenu(menu, kind, d, close);
+          })
+          .catch((err) => menu.replaceChildren(h("div", { class: "menu-title" }, KIND_WORD[kind].title), h("div", { class: "menu-hint dev-notice" }, errorText(err))));
+      };
+      const out: Node[] = [];
+      if (hidden(o.tempoField) || hidden(o.sigField)) {
+        const p = snap?.project;
+        const input = h("input", { class: "num", type: "number", min: 20, max: 400, step: 1, value: String(Math.round((p?.tempoBpm ?? 120) * 10) / 10), title: t("Project tempo in BPM") });
+        const set = (v: number) => {
+          const c = Math.min(400, Math.max(20, Math.round(v)));
+          input.value = String(c);
+          o.sendTempo(c);
+        };
+        input.addEventListener("change", () => set(Number(input.value)));
+        input.addEventListener("keydown", (e) => {
+          e.stopPropagation();
+          if (e.key === "Enter") input.blur();
+        });
+        out.push(
+          h("div", { class: "more-tempo", "data-help": "tempo" },
+            h("label", {}, t("Tempo")),
+            h("button", { class: "btn icon", title: "−1", onclick: () => set(Number(input.value) - 1) }, "−"),
+            input,
+            h("button", { class: "btn icon", title: "+1", onclick: () => set(Number(input.value) + 1) }, "+"),
+            h("span", { class: "more-sig", title: t("Time signature of the project") }, p ? `${p.beatsPerBar}/${p.beatUnit}` : "4/4"),
+          ),
+          h("div", { class: "menu-sep" }),
+        );
+      }
+      if (hidden(o.stop)) out.push(item("mi-stop", "stop", t("Stop"), () => void stopToStart()));
+      if (hidden(o.metro)) out.push(item("mi-metro", "metronome", t("Metronome"), () => void o.toggleMetronome(), { on: !!snap?.engine.metronome }));
+      if (hidden(o.loop)) out.push(item("mi-loop", "loop", t("Loop"), () => void toggleLoop(), { on: !!snap?.engine.loopOn }));
+      if (hidden(o.undoBtn)) {
+        out.push(
+          item("mi-undo", "undo", t("Undo"), () => void undo(), { disabled: !snap?.canUndo, sub: snap?.undoLabel }),
+          item("mi-redo", "redo", t("Redo"), () => void redo(), { disabled: !snap?.canRedo, sub: snap?.redoLabel }),
+        );
+      }
+      const devs: Node[] = [];
+      if (hidden(o.outWrap)) devs.push(item("mi-out", "speaker", KIND_WORD.output.title, () => devices("output"), { keep: true }));
+      if (hidden(o.inWrap)) devs.push(item("mi-in", "mic", KIND_WORD.input.title, () => devices("input"), { keep: true }));
+      if (hidden(o.agent)) devs.push(item("mi-agent", "sparkle", o.agent.textContent ?? t("Agent"), () => openAgentChat()));
+      if (devs.length && out.length && !(out[out.length - 1] as HTMLElement).classList.contains("menu-sep")) out.push(h("div", { class: "menu-sep" }));
+      out.push(...devs);
+      if (out[out.length - 1] instanceof HTMLElement && (out[out.length - 1] as HTMLElement).classList.contains("menu-sep")) out.pop();
+      menu.replaceChildren(...out);
+    });
+    wrap.classList.add("more");
+    return wrap;
   }
 
   #drawMeter(canvas: HTMLCanvasElement, out: number, inp: number): void {

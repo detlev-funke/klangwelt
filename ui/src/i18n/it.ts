@@ -1007,6 +1007,7 @@ const dict: Dict = {
   "with arpeggio": "con arpeggio",
 
   // ui/src/components/transport.ts
+  "More": "Altro",
   "Agent off": "Agente disattivato",
   "Agent listening · working on {tasks}": "Agente in ascolto · lavora a {tasks}",
   "Agent listening": "Agente in ascolto",

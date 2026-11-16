@@ -96,7 +96,7 @@ canvas.meter { width: 120px; height: 22px; border-radius: 4px; background: #0a0c
 .workspace { display: grid; grid-template-columns: 290px minmax(0, 1fr); min-height: 0; }
 
 kw-tracks { position: relative; overflow: hidden; background: var(--panel); border-right: 1px solid var(--line); }
-.tracks-head { height: var(--ruler-h); display: flex; align-items: center; justify-content: space-between; padding: 0 10px 0 14px; border-bottom: 1px solid var(--line); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); background: var(--panel); position: relative; z-index: 2; }
+.tracks-head { height: var(--ruler-h); display: flex; align-items: center; justify-content: flex-end; padding: 0 10px 0 14px; border-bottom: 1px solid var(--line); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); background: var(--panel); position: relative; z-index: 2; }
 .tracks-body { position: absolute; left: 0; right: 0; top: var(--ruler-h); will-change: transform; }
 .track-row {
   height: var(--row-h); display: grid; grid-template-columns: 5px 1fr; border-bottom: 1px solid var(--line);
@@ -712,7 +712,7 @@ body.dk-dragging, body.dk-dragging * { cursor: grabbing !important; user-select:
 .save-btn .dirty-dot { position: absolute; top: 4px; right: 4px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); display: none; box-shadow: 0 0 0 2px var(--panel-2); }
 .save-btn.dirty .dirty-dot { display: block; }
 .save-btn.dirty { border-color: rgba(255, 180, 84, .55); }
-.proj-name { max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; color: var(--muted); font-weight: 600; flex: 0 1 auto; min-width: 70px; }
+.proj-name { max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; color: var(--muted); font-weight: 600; flex: 0 1 auto; min-width: 70px; }
 .menu.file-menu { top: 38px; left: 0; right: auto; min-width: 250px; z-index: 950; }
 .file-menu .menu-item { align-items: center; }
 
@@ -1187,9 +1187,9 @@ kw-help.frozen .help-foot { color: var(--accent); }
 .btn.intro-btn svg { color: #2b2412; }
 
 /* ---------- Toolbar steps (narrow windows) ----------
-   kw-transport gets fit-1 … fit-9 (cumulative): the first step at which nothing sticks out on the
-   right (measured in transport.ts #fit, so it works in every language). Save and Export then
-   live in the File menu, everything else that drops out in "⋯". The gear always stays. */
+   kw-transport gets fit-1 … fit-11 (cumulative): the first step at which nothing sticks out on the
+   right (measured in transport.ts #fit, so it works in every language). Save then lives in the
+   File menu (Export always does), everything else that drops out in "⋯". The gear always stays. */
 kw-transport > .more { display: none; }
 .menu.more-menu { top: 38px; right: 0; min-width: 240px; z-index: 950; }
 .more-menu .menu-item { justify-content: flex-start; align-items: center; gap: 8px; }
@@ -1213,12 +1213,12 @@ kw-transport.fit-3 .file-controls .lbl, kw-transport.fit-3 .win-btn .lbl { displ
 kw-transport.fit-3 .file-controls .btn, kw-transport.fit-3 .win-btn { padding: 0 8px; }
 kw-transport.fit-4 .field label { display: none; }
 kw-transport.fit-4 .lcd { min-width: 104px; padding: 0 10px; }
-kw-transport.fit-4 .proj-name { max-width: 110px; min-width: 50px; }
+kw-transport.fit-4 .proj-name { min-width: 50px; }
 kw-transport.fit-5 > .more { display: block; }
 kw-transport.fit-5 .sig-field, kw-transport.fit-5 > .menu-wrap.dev-out, kw-transport.fit-5 > .menu-wrap.dev-in { display: none; }
 kw-transport.fit-6 { gap: 6px; padding: 0 8px; }
 kw-transport.fit-6 .tempo-field, kw-transport.fit-6 .metro-btn, kw-transport.fit-6 .loop-btn { display: none; }
-kw-transport.fit-7 .save-btn, kw-transport.fit-7 .export-btn { display: none; }
+kw-transport.fit-7 .save-btn { display: none; }
 kw-transport.fit-7 .file-btn.dirty .dirty-dot { display: block; }
 kw-transport.fit-8 .undo-btn, kw-transport.fit-8 .redo-btn, kw-transport.fit-8 .brand, kw-transport.fit-8 .sep { display: none; }
 kw-transport.fit-9 .proj-name, kw-transport.fit-9 .caret { display: none; }
@@ -1265,7 +1265,6 @@ kw-toast { max-width: calc(100vw - 24px); }
 /* with a finger the track headers get a little more room (larger buttons) */
 @media (pointer: coarse) {
   .workspace { grid-template-columns: 316px minmax(0, 1fr); }
-  .tracks-head > span { display: none; }
   .tracks-head .btn.small { height: 28px; min-width: 28px; }
 }
 /* the track headers in a narrow window (class "narrow", layout.ts): a slim column, unfolded over
@@ -1276,9 +1275,9 @@ kw-toast { max-width: calc(100vw - 24px); }
 kw-tracks.open .heads-toggle svg { transform: rotate(180deg); }
 .workspace.narrow { grid-template-columns: 128px minmax(0, 1fr); }
 .workspace.narrow .heads-toggle { display: inline-flex; }
-.workspace.narrow .tracks-head { padding: 0 6px; gap: 4px; }
+.workspace.narrow .tracks-head { padding: 0 6px; gap: 4px; justify-content: space-between; }
 .workspace.narrow kw-tracks.open { width: min(316px, calc(100vw - 48px)); z-index: 6; box-shadow: 14px 0 34px rgba(0, 0, 0, .55); }
-.workspace.narrow kw-tracks:not(.open) .tracks-head > span, .workspace.narrow kw-tracks:not(.open) .harmony-toggle,
+.workspace.narrow kw-tracks:not(.open) .harmony-toggle,
 .workspace.narrow kw-tracks:not(.open) .tracks-head [data-help="neue-audiospur"] { display: none; }
 .workspace.narrow kw-tracks:not(.open) .tracks-head .btn.small { padding: 0 6px; gap: 2px; font-size: 0; }
 .workspace.narrow kw-tracks:not(.open) .tracks-head .btn.small svg { width: 14px; height: 14px; }

@@ -16,7 +16,8 @@ import type { InstrumentKind, Track } from "../types.js";
 
 /** "Harmony" button: show/hide the chord progression in the timeline. */
 function harmonyToggle(): HTMLElement {
-  const b = h("button", { class: "btn small harmony-toggle", title: t("Show harmony in the timeline: chords in the color of their mood, breaks in red (also appears while you work in the Harmony window)"), onclick: () => setHarmonyLane(!harmonyLaneOn.peek()) }, icon("fifths"), t("Harmony"));
+  // only the circle of fifths (like the Harmony window's tab) – the bar above the headers is narrow
+  const b = h("button", { class: "btn small icon harmony-toggle", "aria-label": t("Harmony"), title: t("Show harmony in the timeline: chords in the color of their mood, breaks in red (also appears while you work in the Harmony window)"), onclick: () => setHarmonyLane(!harmonyLaneOn.peek()) }, icon("fifths"));
   effect(() => b.classList.toggle("on", harmonyLaneOn.value));
   return b;
 }
@@ -435,7 +436,7 @@ class KwTracks extends HTMLElement {
       "div",
       { class: "tracks-head" },
       unfold,
-      h("span", {}, t("Tracks")),
+      // (no "Tracks" label: the window's tab right above says it – the buttons need the room)
       h(
         "div",
         { class: "group" },

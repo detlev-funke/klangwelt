@@ -215,19 +215,21 @@ function uploadProject(): void {
 
 /** "Save" button + "File" menu for the transport bar. */
 export function fileControls(): HTMLElement {
-  const saveBtn = h("button", { class: "btn save-btn", onclick: () => void saveProject() }, icon("save"), h("span", { class: "lbl" }, t("Save")), h("i", { class: "dirty-dot" }));
-  // (narrow bar: Save and Export are hidden, then the dot for unsaved changes sits on "File")
+  // the disk and the dot for unsaved changes say enough – the tooltip names the file
+  const saveBtn = h("button", { class: "btn icon save-btn", "aria-label": t("Save"), onclick: () => void saveProject() }, icon("save"), h("i", { class: "dirty-dot" }));
+  // (narrow bar: Save is hidden, then the dot for unsaved changes sits on "File")
   const menuBtn = h("button", { class: "btn file-btn", "data-help": "datei", title: t("New, Open, Save as, Export") }, icon("folder"), h("span", { class: "lbl" }, t("File")), " ", h("span", { class: "caret" }, "▾"), h("i", { class: "dirty-dot" }));
   const menu = dropdown(menuBtn, "file-menu", (m, close) => {
-    const item = (label: string, keys: string, fn: () => void) =>
-      h("button", { class: "menu-item", onclick: () => { close(); fn(); } }, label, h("span", {}, keys));
+    const item = (label: string, keys: string, fn: () => void, cls = "", title = "") =>
+      h("button", { class: `menu-item${cls ? ` ${cls}` : ""}`, title: title || null, onclick: () => { close(); fn(); } }, label, h("span", {}, keys));
     m.replaceChildren(
       item(t("New project"), t("Ctrl+N"), () => void newProject()),
       item(t("Open…"), t("Ctrl+O"), () => void openDialog()),
       h("div", { class: "menu-sep" }),
       item(t("Save"), t("Ctrl+S"), () => void saveProject()),
       item(t("Save as…"), t("Ctrl+Shift+S"), () => void saveAs()),
-      item(t("Export…"), t("Ctrl+E"), () => void exportDialog()),
+      // Export lives only here (and on Ctrl+E) – the bar keeps its room for the project name
+      item(t("Export…"), t("Ctrl+E"), () => void exportDialog(), "mi-export", t("Export as WAV, FLAC, Opus, stems or MIDI (Ctrl+E)")),
       // Browser: projects live in the browser's storage – take them along as a file or bring them in
       ...(backend.platform === "web"
         ? [
@@ -251,8 +253,7 @@ export function fileControls(): HTMLElement {
         : t("{name} – saved (Ctrl+S)", { name })
       : t("Save project (Ctrl+S)");
   });
-  const exportBtn = h("button", { class: "btn export-btn", title: t("Export as WAV, FLAC, Opus, stems or MIDI (Ctrl+E)"), onclick: () => void exportDialog() }, icon("download"), h("span", { class: "lbl" }, t("Export")));
-  return h("div", { class: "file-controls" }, menu, saveBtn, exportBtn);
+  return h("div", { class: "file-controls" }, menu, saveBtn);
 }
 
 /** Keyboard shortcuts; returns true if the key was handled. */

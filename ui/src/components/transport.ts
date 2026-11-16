@@ -298,8 +298,8 @@ class KwTransport extends HTMLElement {
   /**
    * Steps for narrow windows: classes fit-1 … fit-N (cumulative, see styles.css
    * "Toolbar steps"). Takes the first step at which no control sticks out on the
-   * right – measured, so it works for every language. Save and Export then live
-   * in the File menu, the rest in "⋯"; the gear always stays.
+   * right – measured, so it works for every language. Save then lives in the
+   * File menu (as Export always does), the rest in "⋯"; the gear always stays.
    */
   #fit(): void {
     const set = (n: number) => {

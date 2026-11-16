@@ -281,7 +281,9 @@ test("download project file (menu) and upload it again", async () => {
 });
 
 test("export: WAV is downloaded (header, length, level)", async () => {
-  await app.clickOn(".export-btn");
+  // Export lives in the File menu
+  await app.clickOn("kw-transport .file-btn");
+  await app.clickOn(".file-menu.open .mi-export");
   await app.waitFor(() => T.$(".export-modal"), { what: "Export-Dialog" });
   // all formats as on the desktop – Opus too (libopus as WebAssembly)
   assert.deepEqual(await app.eval(() => T.$$(".ex-format .seg-btn").filter((b) => !b.disabled).map((b) => b.dataset.format)), ["wav", "flac", "opus", "stems", "midi"]);
@@ -314,7 +316,9 @@ test("export: WAV is downloaded (header, length, level)", async () => {
 });
 
 test("export: Opus (libopus as WebAssembly) – the browser decodes the file, length matches the WAV", async () => {
-  await app.clickOn(".export-btn");
+  // Export lives in the File menu
+  await app.clickOn("kw-transport .file-btn");
+  await app.clickOn(".file-menu.open .mi-export");
   await app.waitFor(() => T.$(".export-modal"), { what: "Export-Dialog" });
   await app.clickOn(".ex-format [data-format=opus]");
   // choose bitrate as in the dialog: 96 kbit/s

@@ -37,7 +37,6 @@ const toolbar = () =>
       fit: Number(tr.dataset.fit),
       gear: box(T.$('kw-transport [data-help="einstellungen"]')),
       save: box(T.$("kw-transport .save-btn")),
-      export: box(T.$("kw-transport .export-btn")),
       more: box(T.$("kw-transport .more-btn")),
       // widest the page or the bar gets – both must stay within the window
       pageWidth: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth),
@@ -68,21 +67,49 @@ test("toolbar: from 1920 down to 320 px nothing sticks out and the gear stays vi
   assert.ok(last >= 7, `at 320 px Save and Export are in the File menu (step ${last})`);
 });
 
-test("toolbar: at desktop width everything stays as it was – labels, Save, Export, no \"⋯\"", async () => {
+test("toolbar at desktop width: File and Windows with labels, Save as a disk with its dot, Export only in the File menu, no \"⋯\"", async () => {
   await viewport(1600, 1000);
   const s = await toolbar();
   assert.equal(s.fit, 0);
-  assert.ok(s.save && s.export, "Save and Export in the bar");
+  assert.ok(s.save, "Save in the bar");
+  assert.equal(await app.eval(() => T.$("kw-transport .export-btn")), null, "no Export button – it is in the File menu");
   assert.equal(s.more, null, "no \"⋯\" at full width");
-  const labels = await app.eval(() => [".file-btn", ".save-btn", ".export-btn", ".win-btn"].map((sel) => T.$(`kw-transport ${sel} .lbl`).getClientRects().length > 0));
-  assert.deepEqual(labels, [true, true, true, true], "File, Save, Export and Windows with their labels");
+  const labels = await app.eval(() => [".file-btn", ".win-btn"].map((sel) => T.$(`kw-transport ${sel} .lbl`).getClientRects().length > 0));
+  assert.deepEqual(labels, [true, true], "File and Windows with their labels");
+  const save = await app.eval(() => {
+    const b = T.$("kw-transport .save-btn");
+    return { text: b.textContent.trim(), label: b.getAttribute("aria-label"), width: b.getBoundingClientRect().width };
+  });
+  assert.deepEqual({ text: save.text, label: save.label }, { text: "", label: "Speichern" }, "only the disk (named for screen readers)");
+  assert.ok(save.width <= 40, `Save is ${save.width} px wide`);
+  // unsaved changes: the dot on the disk
+  await app.eval(async () => {
+    await T.st.act(T.backend.projectNew());
+    await T.st.run({ type: "addTrack", track: { id: 0, name: "Punkt", kind: "instrument" } });
+  });
+  await app.waitFor(() => T.$("kw-transport .save-btn .dirty-dot").getClientRects().length > 0, { what: "dot on the disk" });
+  // the project name has more room: all that is free in the bar (it used to stop at 160 px), at most 320 px
+  await app.eval(() => T.st.run({ type: "setProject", patch: { name: "Ein ziemlich langer Projekttitel für die Leiste" } }));
+  await app.waitFor(() => T.$("kw-transport .proj-name").getBoundingClientRect().width > 200, { what: "a wide project name" });
+});
+
+test("track header bar: the harmony switch, + Audio and + Instrument fit inside the header column", async () => {
+  await viewport(1600, 1000);
+  const r = await app.eval(() => {
+    const head = T.$(".tracks-head").getBoundingClientRect();
+    return T.$$(".tracks-head .group > *").map((b) => {
+      const x = b.getBoundingClientRect();
+      return { what: b.textContent.trim() || b.getAttribute("aria-label"), inside: x.left >= head.left && x.right <= head.right };
+    });
+  });
+  assert.deepEqual(r.filter((b) => !b.inside), [], "nothing cut off");
+  assert.deepEqual(r.map((b) => b.what), ["Harmonie", "Audio", "Instrument ▾"]);
 });
 
 test("toolbar on a phone: Save and Export are in the File menu and work there", async () => {
   await viewport(390, 844, { touch: true });
   const s = await toolbar();
   assert.equal(s.save, null, "Save left the bar");
-  assert.equal(s.export, null, "Export left the bar");
   // unsaved changes: the dot moves to the File button
   await app.eval(async () => {
     await T.st.act(T.backend.projectNew());

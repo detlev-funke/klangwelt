@@ -88,9 +88,20 @@ test("toolbar at desktop width: File and Windows with labels, Save as a disk wit
     await T.st.run({ type: "addTrack", track: { id: 0, name: "Punkt", kind: "instrument" } });
   });
   await app.waitFor(() => T.$("kw-transport .save-btn .dirty-dot").getClientRects().length > 0, { what: "dot on the disk" });
-  // the project name has more room: all that is free in the bar (it used to stop at 160 px), at most 320 px
+  // the project name has more room: it keeps 240 px while logo text, level meter, device name and
+  // agent status can still make way (it used to stop at 160 px), and takes what is free up to 320 px
   await app.eval(() => T.st.run({ type: "setProject", patch: { name: "Ein ziemlich langer Projekttitel für die Leiste" } }));
-  await app.waitFor(() => T.$("kw-transport .proj-name").getBoundingClientRect().width > 200, { what: "a wide project name" });
+  for (const w of [1600, 1440]) {
+    await viewport(w, 900);
+    const n = await app.eval(() => ({ w: T.$("kw-transport .proj-name").getBoundingClientRect().width, fit: Number(T.$("kw-transport").dataset.fit) }));
+    assert.ok(n.w >= 239, `${w} px: project name ${n.w} px wide`);
+    assert.ok(n.fit <= 2, `${w} px: only extras made way (step ${n.fit})`);
+    assert.ok((await toolbar()).barRight <= w, `${w} px: nothing sticks out`);
+  }
+  // a short name changes nothing: everything as before
+  await app.eval(() => T.st.run({ type: "setProject", patch: { name: "Demo" } }));
+  await viewport(1600, 1000);
+  assert.equal((await toolbar()).fit, 0);
 });
 
 test("track header bar: the harmony switch, + Audio and + Instrument fit inside the header column", async () => {

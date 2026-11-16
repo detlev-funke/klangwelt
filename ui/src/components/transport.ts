@@ -29,6 +29,9 @@ const KIND_WORD: Record<AudioKind, { title: string; short: string }> = {
 
 /** Number of steps the bar shrinks in (classes fit-1 … fit-11 in styles.css). */
 const FIT_STEPS = 11;
+/** Room the project name keeps (px) until step NAME_SHRINKS_AT – the steps before only drop extras. */
+const NAME_KEEP = 240;
+const NAME_SHRINKS_AT = 3;
 
 /** Choose device (null = system default) – takes effect immediately and is remembered. */
 async function chooseDevice(kind: AudioKind, name: string | null): Promise<void> {
@@ -300,11 +303,19 @@ class KwTransport extends HTMLElement {
    * "Toolbar steps"). Takes the first step at which no control sticks out on the
    * right – measured, so it works for every language. Save then lives in the
    * File menu (as Export always does), the rest in "⋯"; the gear always stays.
+   * The project name keeps up to NAME_KEEP px while the first steps can still make
+   * room (logo text, level meter, device name, agent status) – only then it shrinks.
    */
   #fit(): void {
+    const name = this.querySelector<HTMLElement>(".proj-name");
+    let keep = 0;
     const set = (n: number) => {
       for (let i = 1; i <= FIT_STEPS; i++) this.classList.toggle(`fit-${i}`, i <= n);
+      if (name) name.style.minWidth = n < NAME_SHRINKS_AT && keep ? `${keep}px` : "";
     };
+    set(0);
+    // the width the whole name would like (shown in full; the ellipsis only cuts what is visible)
+    keep = name ? Math.min(NAME_KEEP, Math.ceil(name.scrollWidth)) : 0;
     let level = 0;
     set(0);
     while (level < FIT_STEPS && this.#overflows()) set(++level);

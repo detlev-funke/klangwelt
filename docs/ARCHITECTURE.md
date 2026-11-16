@@ -552,7 +552,9 @@ default layout.
 * **Toolbar:** `<kw-transport>` measures itself and takes the first of
   eleven steps (classes `fit-1` … `fit-11`) at which nothing sticks out:
   labels go first, then controls move into "⋯", Save into the File menu
-  (Export is only there anyway, beside Ctrl+E); the gear always stays.
+  (Export is only there anyway, beside Ctrl+E); the gear always stays. The
+  project name keeps up to 240 px while the first two steps can still make
+  room (logo text, level meter, device name, agent status).
 * **Touch:** in the timeline one finger works like the mouse (on an empty spot
   it moves the view), two fingers pan and zoom, a long press opens the context
   menu (in the ruler it marks a range), a double tap is a double-click. A swipe

@@ -1,5 +1,9 @@
 use crate::command::{apply, Command, CoreError};
+use crate::history::{Before, Checkpoint, History, HistoryFile, NodeId, SavedStep, Variant, HISTORY_FILE_VERSION};
+use crate::metrics::Metrics;
 use crate::model::Project;
+use klang_i18n::{tk, tr};
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Revisions are unique within the process (also across sessions: opening
@@ -10,22 +14,20 @@ fn next_revision() -> u64 {
     REVISION.fetch_add(1, Ordering::Relaxed) + 1
 }
 
-#[derive(Clone, Debug)]
-struct Entry {
-    label: String,
-    inverse: Command,
-    merge_key: Option<String>,
+fn invalid<T>(msg: String) -> Result<T, CoreError> {
+    Err(CoreError::Invalid(msg))
 }
 
-/// An open project together with its undo/redo history.
+/// An open project together with its history (undo/redo, checkpoints, variants).
 #[derive(Clone, Debug)]
 pub struct Session {
     pub project: Project,
-    undo: Vec<Entry>,
-    redo: Vec<Entry>,
-    limit: usize,
+    history: History,
     /// Changes with every change of the content (not with pure view changes).
     revision: u64,
+    /// The step of a running control gesture and the state before it began:
+    /// further values of the same gesture go into that step.
+    gesture: Option<(NodeId, Before)>,
 }
 
 impl Default for Session {
@@ -34,77 +36,128 @@ impl Default for Session {
     }
 }
 
+/// Applies the way back (`up`) and forward (`down`) to `project`; on an error
+/// everything applied so far is reverted.
+fn walk(project: &mut Project, h: &History, up: &[NodeId], down: &[NodeId]) -> Result<(), CoreError> {
+    let steps = up
+        .iter()
+        .map(|n| h.n(*n).inverse.clone())
+        .chain(down.iter().map(|n| h.n(*n).forward.clone()));
+    let mut done: Vec<Command> = Vec::new();
+    for cmd in steps {
+        let Some(cmd) = cmd else { return Err(CoreError::Invalid("history step without command".into())) };
+        match apply(project, cmd) {
+            Ok(back) => done.push(back),
+            Err(e) => {
+                for back in done.into_iter().rev() {
+                    let _ = apply(project, back);
+                }
+                return Err(e);
+            }
+        }
+    }
+    Ok(())
+}
+
 impl Session {
     pub fn new(project: Project) -> Self {
-        Self { project, undo: Vec::new(), redo: Vec::new(), limit: 500, revision: next_revision() }
+        Self::with_label(project, tk!("Start").into())
+    }
+
+    /// New session whose first state carries `label` ("Project opened" …; a
+    /// translation key is translated when shown).
+    pub fn with_label(project: Project, label: String) -> Self {
+        // stored as the key: shown in the language of the moment (see the history view)
+        let history = History::new(&project, label, tk!("Main version").into());
+        Self { project, history, revision: next_revision(), gesture: None }
+    }
+
+    /// The history (read-only).
+    pub fn history(&self) -> &History {
+        &self.history
     }
 
     /// Runs a command. With `merge = true` it merges with the previous
     /// step if both affect the same field (control gestures).
-    pub fn execute(&mut self, cmd: Command, merge: bool) -> Result<(), CoreError> {
+    pub fn execute(&mut self, mut cmd: Command, merge: bool) -> Result<(), CoreError> {
         if cmd.is_view_only() {
             apply(&mut self.project, cmd)?;
             return Ok(());
         }
+        let next_id = self.project.next_id;
+        cmd.assign_ids(&mut self.project);
         let label = cmd.label();
         let key = cmd.merge_key();
-        let inverse = apply(&mut self.project, cmd)?;
-        self.revision = next_revision();
-        self.redo.clear();
-        if merge {
-            if let (Some(k), Some(last)) = (&key, self.undo.last()) {
-                if last.merge_key.as_ref() == Some(k) {
-                    return Ok(());
-                }
+        let cur = self.history.current;
+        let merging = merge
+            && key.is_some()
+            && self.gesture.as_ref().is_some_and(|(n, _)| *n == cur)
+            && self.history.n(cur).merge_key == key
+            && self.history.n(cur).children.is_empty()
+            && !self.history.checkpoints.iter().any(|c| c.node == cur);
+        let before = (!merging).then(|| Before::of(&self.project, &cmd));
+        let forward = cmd.clone();
+        let inverse = match apply(&mut self.project, cmd) {
+            Ok(inv) => inv,
+            Err(e) => {
+                self.project.next_id = next_id;
+                return Err(e);
             }
-        }
-        self.undo.push(Entry { label, inverse, merge_key: key });
-        if self.undo.len() > self.limit {
-            self.undo.remove(0);
+        };
+        self.revision = next_revision();
+        let metrics = Metrics::of(&self.project);
+        if let Some(before) = before {
+            let scope = before.scope(&self.project);
+            let id = self.history.push(label, forward, inverse, key.clone(), metrics, scope);
+            self.gesture = key.map(|_| (id, before));
+            self.history.prune();
+        } else if let Some((id, before)) = &self.gesture {
+            // the step's way back still leads to the state before the gesture
+            let scope = before.scope(&self.project);
+            let n = self.history.n_mut(*id);
+            n.forward = Some(forward);
+            n.metrics = metrics;
+            n.scope = scope;
+            n.time = crate::history::now();
         }
         Ok(())
     }
 
     pub fn undo(&mut self) -> Result<bool, CoreError> {
-        let Some(entry) = self.undo.pop() else {
+        let cur = self.history.current;
+        let Some(parent) = self.history.n(cur).parent else {
             return Ok(false);
         };
-        match apply(&mut self.project, entry.inverse.clone()) {
-            Ok(redo) => {
-                self.revision = next_revision();
-                self.redo.push(Entry { label: entry.label, inverse: redo, merge_key: None });
-                Ok(true)
-            }
-            Err(e) => {
-                self.undo.push(entry);
-                Err(e)
-            }
-        }
+        let inverse = self.history.n(cur).inverse.clone().ok_or_else(|| CoreError::Invalid("history step without command".into()))?;
+        apply(&mut self.project, inverse)?;
+        self.history.n_mut(parent).redo = Some(cur);
+        self.history.current = parent;
+        self.gesture = None;
+        self.revision = next_revision();
+        Ok(true)
     }
 
     pub fn redo(&mut self) -> Result<bool, CoreError> {
-        let Some(entry) = self.redo.pop() else {
+        let Some(next) = self.history.redo_target() else {
             return Ok(false);
         };
-        match apply(&mut self.project, entry.inverse.clone()) {
-            Ok(undo) => {
-                self.revision = next_revision();
-                self.undo.push(Entry { label: entry.label, inverse: undo, merge_key: None });
-                Ok(true)
-            }
-            Err(e) => {
-                self.redo.push(entry);
-                Err(e)
-            }
-        }
+        let forward = self.history.n(next).forward.clone().ok_or_else(|| CoreError::Invalid("history step without command".into()))?;
+        apply(&mut self.project, forward)?;
+        let cur = self.history.current;
+        self.history.n_mut(cur).redo = Some(next);
+        self.history.current = next;
+        self.gesture = None;
+        self.revision = next_revision();
+        Ok(true)
     }
 
     pub fn undo_label(&self) -> Option<&str> {
-        self.undo.last().map(|e| e.label.as_str())
+        let n = self.history.n(self.history.current);
+        n.parent.map(|_| n.label.as_str())
     }
 
     pub fn redo_label(&self) -> Option<&str> {
-        self.redo.last().map(|e| e.label.as_str())
+        self.history.redo_target().map(|n| self.history.n(n).label.as_str())
     }
 
     /// Revision of the content: changes with every change, undo and redo.
@@ -112,45 +165,377 @@ impl Session {
         self.revision
     }
 
+    /// Moves to step `target` without touching variants.
+    fn move_to(&mut self, target: NodeId) -> Result<(), CoreError> {
+        if !self.history.nodes.contains_key(&target) {
+            return invalid(tr!("Step {id} is not in the history", id = target));
+        }
+        let cur = self.history.current;
+        if cur == target {
+            return Ok(());
+        }
+        let (up, down) = self.history.path(cur, target);
+        walk(&mut self.project, &self.history, &up, &down)?;
+        for w in up.windows(2) {
+            self.history.n_mut(w[1]).redo = Some(w[0]);
+        }
+        let mut prev = self.history.common_ancestor(cur, target);
+        for &n in &down {
+            self.history.n_mut(prev).redo = Some(n);
+            prev = n;
+        }
+        self.history.current = target;
+        self.gesture = None;
+        self.revision = next_revision();
+        Ok(())
+    }
+
+    /// Jumps to the state after step `target` (undo/redo across any number of
+    /// steps, also onto another variant). A step on an abandoned branch makes
+    /// that branch a variant of its own, so its steps stay safe.
+    pub fn goto(&mut self, target: NodeId) -> Result<(), CoreError> {
+        self.move_to(target)?;
+        let h = &self.history;
+        if h.is_ancestor(target, h.active().head) {
+            return Ok(());
+        }
+        let nearest = h.variants_through(target).into_iter().min_by_key(|v| h.depth(v.head)).map(|v| v.id);
+        match nearest {
+            Some(v) => self.history.active = v,
+            None => {
+                let tip = h.tip(target);
+                let name = h.free_variant_name(|n| tr!("Variant {n}", n = n));
+                self.add_variant(name, tip);
+            }
+        }
+        Ok(())
+    }
+
+    /// The project as it was after step `node` (the open project stays as it is).
+    pub fn project_at(&self, node: NodeId) -> Result<Project, CoreError> {
+        if !self.history.nodes.contains_key(&node) {
+            return invalid(tr!("Step {id} is not in the history", id = node));
+        }
+        let mut p = self.project.clone();
+        let (up, down) = self.history.path(self.history.current, node);
+        walk(&mut p, &self.history, &up, &down)?;
+        Ok(p)
+    }
+
+    // ------------------------------------------------------------ Checkpoints
+
+    /// Names the current state. Without a name: "Checkpoint 1", "Checkpoint 2" …
+    pub fn add_checkpoint(&mut self, name: Option<String>) -> Result<u32, CoreError> {
+        let name = match name.map(|n| n.trim().to_string()) {
+            Some(n) if !n.is_empty() => n,
+            Some(_) => return invalid(tr!("The name can't be empty")),
+            None => {
+                let used: Vec<&str> = self.history.checkpoints.iter().map(|c| c.name.as_str()).collect();
+                (self.history.checkpoints.len() + 1..).map(|n| tr!("Checkpoint {n}", n = n)).find(|n| !used.contains(&n.as_str())).unwrap_or_default()
+            }
+        };
+        let id = self.history.next_mark;
+        self.history.next_mark += 1;
+        let node = self.history.current;
+        self.history.checkpoints.push(Checkpoint { id, name, node, time: crate::history::now() });
+        self.gesture = None;
+        Ok(id)
+    }
+
+    pub fn rename_checkpoint(&mut self, id: u32, name: &str) -> Result<(), CoreError> {
+        let name = name.trim();
+        if name.is_empty() {
+            return invalid(tr!("The name can't be empty"));
+        }
+        let c = self.history.checkpoints.iter_mut().find(|c| c.id == id).ok_or_else(|| CoreError::Invalid(tr!("Checkpoint {id} doesn't exist", id = id)))?;
+        c.name = name.to_string();
+        Ok(())
+    }
+
+    /// Removes the name – the steps stay.
+    pub fn remove_checkpoint(&mut self, id: u32) -> Result<(), CoreError> {
+        let before = self.history.checkpoints.len();
+        self.history.checkpoints.retain(|c| c.id != id);
+        if self.history.checkpoints.len() == before {
+            return invalid(tr!("Checkpoint {id} doesn't exist", id = id));
+        }
+        Ok(())
+    }
+
+    // ------------------------------------------------------------ Variants
+
+    fn add_variant(&mut self, name: String, head: NodeId) -> u32 {
+        let id = self.history.next_mark;
+        self.history.next_mark += 1;
+        self.history.variants.push(Variant { id, name, head, time: crate::history::now() });
+        self.history.active = id;
+        id
+    }
+
+    /// Starts a variant at step `at` (default: the current step): the project goes
+    /// there, and from now on new steps go into the variant – the others stay as they are.
+    pub fn create_variant(&mut self, name: Option<String>, at: Option<NodeId>) -> Result<u32, CoreError> {
+        let name = match name.map(|n| n.trim().to_string()) {
+            Some(n) if !n.is_empty() => n,
+            Some(_) => return invalid(tr!("The name can't be empty")),
+            None => self.history.free_variant_name(|n| tr!("Variant {n}", n = n)),
+        };
+        let at = at.unwrap_or(self.history.current);
+        self.move_to(at)?;
+        Ok(self.add_variant(name, at))
+    }
+
+    /// Switches to a variant: the project goes to its newest step.
+    pub fn switch_variant(&mut self, id: u32) -> Result<(), CoreError> {
+        let head = self.history.variant(id).map(|v| v.head).ok_or_else(|| CoreError::Invalid(tr!("Variant {id} doesn't exist", id = id)))?;
+        self.move_to(head)?;
+        self.history.active = id;
+        Ok(())
+    }
+
+    pub fn rename_variant(&mut self, id: u32, name: &str) -> Result<(), CoreError> {
+        let name = name.trim();
+        if name.is_empty() {
+            return invalid(tr!("The name can't be empty"));
+        }
+        let v = self.history.variants.iter_mut().find(|v| v.id == id).ok_or_else(|| CoreError::Invalid(tr!("Variant {id} doesn't exist", id = id)))?;
+        v.name = name.to_string();
+        Ok(())
+    }
+
+    /// Deletes a variant with the steps only it has. The last variant stays;
+    /// deleting the active one switches to the one it branched from.
+    pub fn delete_variant(&mut self, id: u32) -> Result<(), CoreError> {
+        let Some(v) = self.history.variant(id).cloned() else {
+            return invalid(tr!("Variant {id} doesn't exist", id = id));
+        };
+        if self.history.variants.len() <= 1 {
+            return invalid(tr!("The only variant can't be deleted"));
+        }
+        if self.history.active == id {
+            let fork = self.history.fork_of(id);
+            let h = &self.history;
+            let next = h.variants.iter().filter(|o| o.id != id).find(|o| h.is_ancestor(fork, o.head)).unwrap_or(&h.variants[0]).id;
+            let next = if next == id { h.variants.iter().find(|o| o.id != id).map(|o| o.id).unwrap_or(next) } else { next };
+            self.switch_variant(next)?;
+        }
+        self.history.variants.retain(|o| o.id != id);
+        let alive = self.history.alive();
+        let mut doomed: Vec<NodeId> = self.history.ancestors(v.head).into_iter().filter(|n| !alive.contains(n)).collect();
+        // the topmost one takes the rest with it
+        doomed.reverse();
+        if let Some(&top) = doomed.first() {
+            self.history.remove_subtree(top);
+        }
+        Ok(())
+    }
+
+    /// Forgets all steps: the current state becomes the first one, checkpoints and
+    /// other variants are gone.
+    pub fn clear_history(&mut self, label: String) {
+        let name = self.history.active().name.clone();
+        self.history = History::new(&self.project, label, name);
+        self.gesture = None;
+    }
+
+    // ------------------------------------------------------------ Agent batches
+
     /// Mark in the history for [`Session::squash`] and [`Session::rollback`].
     pub fn mark(&self) -> UndoMark {
-        UndoMark { depth: self.undo.len(), redo: self.redo.clone() }
+        let h = &self.history;
+        UndoMark {
+            node: h.current,
+            next_node: h.next_node,
+            redo: h.n(h.current).redo,
+            variants: h.variants.clone(),
+            active: h.active,
+        }
+    }
+
+    /// The new steps from `mark` to the current one, top to bottom – `None` if
+    /// the current step is not below the mark.
+    fn chain_since(&self, mark: &UndoMark) -> Option<Vec<NodeId>> {
+        let mut chain = Vec::new();
+        let mut n = self.history.current;
+        while n >= mark.next_node {
+            chain.push(n);
+            n = self.history.n(n).parent?;
+        }
+        if n != mark.node {
+            return None;
+        }
+        chain.reverse();
+        Some(chain)
     }
 
     /// Steps since `mark` (have there been changes?).
     pub fn steps_since(&self, mark: &UndoMark) -> usize {
-        self.undo.len().saturating_sub(mark.depth)
+        self.chain_since(mark).map(|c| c.len()).unwrap_or(0)
     }
 
     /// Merges all steps since `mark` into one undo step named `label`.
     pub fn squash(&mut self, mark: &UndoMark, label: String) {
-        let depth = mark.depth.min(self.undo.len());
-        if self.undo.len() == depth {
-            return;
+        match self.chain_since(mark) {
+            Some(chain) if !chain.is_empty() => {
+                self.history.squash_chain(mark.node, &chain, label);
+                self.gesture = None;
+            }
+            _ => {}
         }
-        let steps: Vec<Entry> = self.undo.drain(depth..).collect();
-        let inverse = Command::Batch { label: label.clone(), commands: steps.into_iter().rev().map(|e| e.inverse).collect() };
-        self.undo.push(Entry { label, inverse, merge_key: None });
     }
 
     /// Reverts all steps since `mark` – the history is as it was then,
     /// including what could be redone.
     pub fn rollback(&mut self, mark: UndoMark) -> Result<(), CoreError> {
-        while self.undo.len() > mark.depth {
-            let Some(e) = self.undo.pop() else { break };
-            apply(&mut self.project, e.inverse)?;
+        self.move_to(mark.node)?;
+        let fresh: Vec<NodeId> = self.history.nodes.keys().copied().filter(|&n| n >= mark.next_node).collect();
+        for n in fresh {
+            self.history.remove_subtree(n);
         }
-        self.redo = mark.redo;
+        if let Some(n) = self.history.nodes.get_mut(&mark.node) {
+            n.redo = mark.redo;
+        }
+        self.history.variants = mark.variants;
+        self.history.active = mark.active;
+        self.gesture = None;
         self.revision = next_revision();
         Ok(())
     }
+
+    // ------------------------------------------------------------ File
+
+    /// The history for saving with the project.
+    pub fn history_file(&self) -> Result<HistoryFile, CoreError> {
+        let h = &self.history;
+        let root = self.project_at(h.root)?;
+        let steps = h
+            .preorder()
+            .into_iter()
+            .map(|id| {
+                let n = h.n(id);
+                SavedStep { id, parent: n.parent, label: n.label.clone(), time: n.time, forward: n.forward.clone(), redo: n.redo }
+            })
+            .collect();
+        Ok(HistoryFile {
+            version: HISTORY_FILE_VERSION,
+            root,
+            steps,
+            current: h.current,
+            checkpoints: h.checkpoints.clone(),
+            variants: h.variants.clone(),
+            active: h.active,
+        })
+    }
+
+    /// Opens `project` with its saved history. The steps are replayed from the
+    /// first state; if they don't lead exactly to `project` (file from elsewhere,
+    /// edited by hand), the history is refused.
+    pub fn restore(project: Project, file: HistoryFile) -> Result<Session, CoreError> {
+        let bad = |m: &str| CoreError::Invalid(format!("history: {m}"));
+        if file.version > HISTORY_FILE_VERSION {
+            return Err(bad("newer format"));
+        }
+        let root_step = file.steps.first().ok_or_else(|| bad("empty"))?;
+        if root_step.parent.is_some() {
+            return Err(bad("first step has a parent"));
+        }
+        let root = root_step.id;
+        let mut nodes: BTreeMap<NodeId, crate::history::Node> = BTreeMap::new();
+        for s in &file.steps {
+            if nodes.contains_key(&s.id) {
+                return Err(bad("step twice"));
+            }
+            if let Some(p) = s.parent {
+                let parent = nodes.get_mut(&p).ok_or_else(|| bad("child before its parent"))?;
+                parent.children.push(s.id);
+                if s.forward.is_none() {
+                    return Err(bad("step without command"));
+                }
+            } else if s.id != root {
+                return Err(bad("two first steps"));
+            }
+            nodes.insert(s.id, crate::history::Node {
+                id: s.id,
+                parent: s.parent,
+                children: Vec::new(),
+                redo: s.redo,
+                label: s.label.clone(),
+                time: s.time,
+                forward: s.forward.clone(),
+                inverse: None,
+                merge_key: None,
+                metrics: Metrics::default(),
+                scope: Default::default(),
+            });
+        }
+        // replay depth first: forward into every child, back again afterwards
+        let mut p = file.root.clone();
+        nodes.get_mut(&root).expect("root").metrics = Metrics::of(&p);
+        let mut stack: Vec<(NodeId, usize)> = vec![(root, 0)];
+        while let Some((id, i)) = stack.pop() {
+            let child = nodes[&id].children.get(i).copied();
+            match child {
+                Some(c) => {
+                    stack.push((id, i + 1));
+                    let fwd = nodes[&c].forward.clone().expect("checked");
+                    let before = Before::of(&p, &fwd);
+                    let inverse = apply(&mut p, fwd).map_err(|e| bad(&e.to_string()))?;
+                    let n = nodes.get_mut(&c).expect("node");
+                    n.inverse = Some(inverse);
+                    n.metrics = Metrics::of(&p);
+                    n.scope = before.scope(&p);
+                    stack.push((c, 0));
+                }
+                None => {
+                    if let Some(inv) = nodes[&id].inverse.clone() {
+                        apply(&mut p, inv).map_err(|e| bad(&e.to_string()))?;
+                    }
+                }
+            }
+        }
+        let next_mark = file.checkpoints.iter().map(|c| c.id).chain(file.variants.iter().map(|v| v.id)).max().unwrap_or(0) + 1;
+        let next_node = nodes.keys().max().copied().unwrap_or(root) + 1;
+        let known = |n: NodeId| nodes.contains_key(&n);
+        if !known(file.current) || file.variants.iter().any(|v| !known(v.head)) || file.checkpoints.iter().any(|c| !known(c.node)) {
+            return Err(bad("unknown step"));
+        }
+        let mut variants = file.variants;
+        if variants.is_empty() {
+            variants.push(Variant { id: next_mark, name: tk!("Main version").into(), head: file.current, time: 0 });
+        }
+        let active = if variants.iter().any(|v| v.id == file.active) { file.active } else { variants[0].id };
+        let mut history = History {
+            nodes,
+            root,
+            current: root,
+            next_node,
+            checkpoints: file.checkpoints,
+            variants,
+            active,
+            next_mark: next_mark + 1,
+            limit: crate::history::HISTORY_LIMIT,
+        };
+        // to the saved state – it has to be exactly the saved project
+        let (_, down) = history.path(root, file.current);
+        walk(&mut p, &history, &[], &down).map_err(|e| bad(&e.to_string()))?;
+        history.current = file.current;
+        p.next_id = project.next_id;
+        if p != project {
+            return Err(bad("doesn't lead to the saved project"));
+        }
+        history.prune();
+        Ok(Session { project, history, revision: next_revision(), gesture: None })
+    }
 }
 
-/// A point in the undo history (see [`Session::mark`]).
+/// A point in the history (see [`Session::mark`]).
 #[derive(Clone, Debug)]
 pub struct UndoMark {
-    depth: usize,
-    redo: Vec<Entry>,
+    node: NodeId,
+    next_node: NodeId,
+    redo: Option<NodeId>,
+    variants: Vec<Variant>,
+    active: u32,
 }
 
 #[cfg(test)]
@@ -401,5 +786,274 @@ mod tests {
         assert!(!s.project.tracks[0].color.is_empty());
         let round = Project::from_json(&s.project.to_json()).unwrap();
         assert_eq!(round, s.project);
+    }
+}
+
+#[cfg(test)]
+mod history_tests {
+    use super::*;
+    use crate::{Clip, ClipSource, Id, Note, ProjectPatch, Track, TrackKind, TrackPatch};
+
+    fn add(name: &str) -> Command {
+        Command::AddTrack { track: Track::new(Id::NEW, name, TrackKind::Instrument), index: None }
+    }
+
+    fn gain(id: Id, db: f32) -> Command {
+        Command::SetTrack { track_id: id, patch: TrackPatch { gain_db: Some(db), ..Default::default() } }
+    }
+
+    fn names(s: &Session) -> Vec<String> {
+        s.project.tracks.iter().map(|t| t.name.clone()).collect()
+    }
+
+    fn labels(s: &Session) -> Vec<String> {
+        s.history().line().iter().map(|n| s.history().node(*n).unwrap().label.clone()).collect()
+    }
+
+    /// Instrument track "Lead" with one clip of notes, as one step.
+    fn lead_with_notes(s: &mut Session, notes: Vec<Note>) -> (Id, Id) {
+        let mut t = Track::new(Id::NEW, "Lead", TrackKind::Instrument);
+        t.clips.push(Clip { id: Id::NEW, name: "A".into(), start_beats: 4.0, source: ClipSource::Notes { length_beats: 16.0, notes } });
+        s.execute(Command::AddTrack { track: t, index: None }, false).unwrap();
+        let t = s.project.tracks.last().unwrap();
+        (t.id, t.clips[0].id)
+    }
+
+    #[test]
+    fn every_step_has_metrics_and_scope() {
+        let mut s = Session::with_label(Project::default(), "Neues Projekt".into());
+        assert_eq!(labels(&s), vec!["Neues Projekt"]);
+        let (tid, cid) = lead_with_notes(&mut s, vec![Note::new(60, 0.0, 1.0, 90), Note::new(64, 4.0, 1.0, 90)]);
+        s.execute(Command::SetClipNotes { track_id: tid, clip_id: cid, notes: vec![Note::new(60, 0.0, 1.0, 90), Note::new(65, 4.0, 2.0, 90), Note::new(67, 8.0, 1.0, 90)], length_beats: None }, false).unwrap();
+        s.execute(Command::SetProject { patch: ProjectPatch { tempo_bpm: Some(90.0), ..Default::default() } }, false).unwrap();
+        let h = s.history();
+        let line = h.line();
+        assert_eq!(line.len(), 4);
+        let n = |i: usize| h.node(line[i]).unwrap();
+        assert_eq!((n(1).metrics.notes, n(1).metrics.tracks, n(1).metrics.clips), (2, 1, 1));
+        assert_eq!(n(1).metrics.length_beats, 20.0);
+        assert_eq!(n(1).scope.tracks[0].name, "Lead");
+        assert_eq!(n(1).scope.range, Some((4.0, 9.0)));
+        assert_eq!((n(1).scope.notes_added, n(1).scope.notes_removed), (2, 0));
+        // the edit: one note changed, one added → beats 8..13 (clip starts at 4)
+        assert_eq!(n(2).metrics.notes, 3);
+        assert_eq!(n(2).scope.range, Some((8.0, 13.0)));
+        assert_eq!((n(2).scope.notes_added, n(2).scope.notes_removed), (2, 1));
+        assert!(n(3).scope.project && n(3).scope.tracks.is_empty());
+        assert_eq!(n(3).metrics.tempo_bpm, 90.0);
+        assert_eq!(n(2).metrics.tempo_bpm, 120.0);
+    }
+
+    #[test]
+    fn editing_after_undo_keeps_the_old_steps_as_a_branch() {
+        let mut s = Session::default();
+        s.execute(add("A"), false).unwrap();
+        s.execute(add("B"), false).unwrap();
+        s.execute(add("C"), false).unwrap();
+        let c = s.history().current();
+        s.undo().unwrap();
+        s.undo().unwrap();
+        assert_eq!(s.redo_label(), Some("Add track"));
+        s.execute(add("X"), false).unwrap();
+        assert_eq!(names(&s), ["A", "X"]);
+        assert!(s.redo_label().is_none(), "redo follows the new line");
+        assert_eq!(s.history().len(), 5, "B and C are still there");
+        // jumping to the old branch makes it a variant of its own
+        s.goto(c).unwrap();
+        assert_eq!(names(&s), ["A", "B", "C"]);
+        assert_eq!(s.history().variants().len(), 2);
+        assert_eq!(s.history().active().head, c);
+        assert_eq!(s.history().active().name, "Variant 2");
+        // and back to the main version
+        let main = s.history().variants()[0].id;
+        s.switch_variant(main).unwrap();
+        assert_eq!(names(&s), ["A", "X"]);
+    }
+
+    #[test]
+    fn goto_any_step_and_undo_redo_along_the_line() {
+        let mut s = Session::default();
+        for n in ["A", "B", "C", "D"] {
+            s.execute(add(n), false).unwrap();
+        }
+        let line = s.history().line();
+        let r0 = s.revision();
+        s.goto(line[1]).unwrap();
+        assert_eq!(names(&s), ["A"]);
+        assert!(s.revision() > r0);
+        assert_eq!(s.history().line(), line, "the steps after it can be redone");
+        s.redo().unwrap();
+        assert_eq!(names(&s), ["A", "B"]);
+        s.goto(line[4]).unwrap();
+        assert_eq!(names(&s), ["A", "B", "C", "D"]);
+        s.goto(line[0]).unwrap();
+        assert!(s.project.tracks.is_empty());
+        assert!(!s.undo().unwrap());
+        assert!(s.goto(999).is_err());
+        assert_eq!(s.project_at(line[2]).unwrap().tracks.len(), 2);
+        assert!(s.project.tracks.is_empty(), "project_at leaves the project alone");
+    }
+
+    #[test]
+    fn checkpoints_name_states() {
+        let mut s = Session::default();
+        s.execute(add("A"), false).unwrap();
+        let a = s.add_checkpoint(None).unwrap();
+        s.execute(add("B"), false).unwrap();
+        let b = s.add_checkpoint(Some("  Refrain fertig ".into())).unwrap();
+        let cps = s.history().checkpoints();
+        assert_eq!(cps.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["Checkpoint 1", "Refrain fertig"]);
+        assert_eq!(cps[1].node, s.history().current());
+        s.goto(cps[0].node).unwrap();
+        assert_eq!(names(&s), ["A"]);
+        s.rename_checkpoint(a, "Intro").unwrap();
+        assert!(s.rename_checkpoint(a, " ").is_err());
+        s.remove_checkpoint(b).unwrap();
+        assert!(s.remove_checkpoint(b).is_err());
+        assert_eq!(s.history().checkpoints()[0].name, "Intro");
+    }
+
+    #[test]
+    fn a_slider_gesture_never_changes_a_checkpointed_step() {
+        let mut s = Session::default();
+        s.execute(add("A"), false).unwrap();
+        let tid = s.project.tracks[0].id;
+        s.execute(gain(tid, -1.0), false).unwrap();
+        s.execute(gain(tid, -2.0), true).unwrap();
+        assert_eq!(s.history().len(), 3, "one step for the gesture");
+        s.add_checkpoint(None).unwrap();
+        s.execute(gain(tid, -5.0), true).unwrap();
+        assert_eq!(s.history().len(), 4, "the checkpoint keeps -2 dB");
+        let cp = s.history().checkpoints()[0].node;
+        assert_eq!(s.project_at(cp).unwrap().tracks[0].gain_db, -2.0);
+        // after an undo a gesture value never merges into an older step
+        s.undo().unwrap();
+        s.execute(gain(tid, -7.0), true).unwrap();
+        s.undo().unwrap();
+        assert_eq!(s.project.tracks[0].gain_db, -2.0);
+    }
+
+    #[test]
+    fn variants_branch_switch_rename_and_delete() {
+        let mut s = Session::default();
+        s.execute(add("Lead"), false).unwrap();
+        let base = s.history().current();
+        s.execute(add("Bass"), false).unwrap();
+        let main = s.history().active().id;
+        assert_eq!(s.history().active().name, "Main version");
+        // a variant from the earlier state
+        let v = s.create_variant(Some("Ohne Bass".into()), Some(base)).unwrap();
+        assert_eq!(names(&s), ["Lead"]);
+        s.execute(add("Pad"), false).unwrap();
+        assert_eq!(names(&s), ["Lead", "Pad"]);
+        assert_eq!(s.history().fork_of(v), base);
+        assert_eq!(s.history().variants_through(base).len(), 2);
+        s.switch_variant(main).unwrap();
+        assert_eq!(names(&s), ["Lead", "Bass"]);
+        // undo/redo stay on the active variant
+        s.undo().unwrap();
+        s.redo().unwrap();
+        assert_eq!(names(&s), ["Lead", "Bass"]);
+        s.switch_variant(v).unwrap();
+        assert_eq!(names(&s), ["Lead", "Pad"]);
+        s.rename_variant(v, "Mit Pad").unwrap();
+        assert!(s.create_variant(Some("".into()), None).is_err());
+        // deleting the active variant goes back to the one it came from; its own steps are gone
+        let before = s.history().len();
+        s.delete_variant(v).unwrap();
+        assert_eq!(names(&s), ["Lead", "Bass"]);
+        assert_eq!(s.history().len(), before - 1);
+        assert!(s.delete_variant(main).is_err(), "the last variant stays");
+    }
+
+    #[test]
+    fn agent_batch_inside_a_variant() {
+        let mut s = Session::default();
+        s.execute(add("A"), false).unwrap();
+        let v = s.create_variant(None, None).unwrap();
+        let mark = s.mark();
+        s.execute(add("B"), false).unwrap();
+        s.execute(add("C"), false).unwrap();
+        s.squash(&mark, "Agent".into());
+        assert_eq!(s.history().active().id, v);
+        assert_eq!(s.history().active().head, s.history().current());
+        assert_eq!(s.undo_label(), Some("Agent"));
+        let mark = s.mark();
+        s.execute(add("D"), false).unwrap();
+        s.rollback(mark).unwrap();
+        assert_eq!(names(&s), ["A", "B", "C"]);
+        assert_eq!(s.history().active().head, s.history().current());
+    }
+
+    #[test]
+    fn history_file_roundtrip_with_variants_and_checkpoints() {
+        let mut s = Session::with_label(Project::default(), "Geöffnet".into());
+        let (tid, cid) = lead_with_notes(&mut s, vec![Note::new(60, 0.0, 1.0, 90)]);
+        s.add_checkpoint(Some("Thema".into())).unwrap();
+        s.execute(Command::SetClipNotes { track_id: tid, clip_id: cid, notes: vec![Note::new(62, 0.0, 1.0, 90)], length_beats: None }, false).unwrap();
+        let first = s.history().line()[1];
+        s.create_variant(Some("B".into()), Some(first)).unwrap();
+        s.execute(gain(tid, -6.0), false).unwrap();
+        s.undo().unwrap();
+        s.execute(add("Pad"), false).unwrap();
+        let json = serde_json::to_string(&s.history_file().unwrap()).unwrap();
+        let file: HistoryFile = serde_json::from_str(&json).unwrap();
+        let back = Session::restore(s.project.clone(), file.clone()).unwrap();
+        assert_eq!(back.project, s.project);
+        assert_eq!(back.history().len(), s.history().len());
+        assert_eq!(back.history().line(), s.history().line());
+        assert_eq!(back.history().variants(), s.history().variants());
+        assert_eq!(back.history().checkpoints(), s.history().checkpoints());
+        for (a, b) in s.history().nodes().zip(back.history().nodes()) {
+            assert_eq!((a.id, &a.label, &a.metrics, &a.scope, &a.children), (b.id, &b.label, &b.metrics, &b.scope, &b.children));
+        }
+        // the restored one works like the original
+        let mut back = back;
+        let main = back.history().variants()[0].id;
+        back.switch_variant(main).unwrap();
+        assert_eq!(back.project.tracks.len(), 1);
+        back.undo().unwrap();
+        // a project that does not fit the history is refused
+        let mut other = s.project.clone();
+        other.tempo_bpm = 99.0;
+        assert!(Session::restore(other, file).is_err());
+    }
+
+    #[test]
+    fn old_abandoned_branches_go_first_when_the_history_is_full() {
+        let mut s = Session::default();
+        s.history.limit = 6;
+        s.execute(add("A"), false).unwrap();
+        s.execute(add("B"), false).unwrap();
+        s.undo().unwrap();
+        s.execute(add("C"), false).unwrap(); // B is abandoned now
+        s.add_checkpoint(None).unwrap();
+        for n in ["D", "E", "F", "G"] {
+            s.execute(add(n), false).unwrap();
+        }
+        let h = s.history();
+        assert!(h.len() <= 6, "{}", h.len());
+        assert!(!h.nodes().any(|n| n.scope.tracks.iter().any(|t| t.name == "B")), "the abandoned step went first");
+        let cp = h.checkpoints()[0].node;
+        assert!(h.node(cp).is_some(), "the checkpoint stays");
+        assert_eq!(names(&s), ["A", "C", "D", "E", "F", "G"]);
+        // undo works down to the oldest step that is left
+        while s.undo().unwrap() {}
+        assert!(s.project.tracks.len() <= 2);
+    }
+
+    #[test]
+    fn clear_history_keeps_the_project() {
+        let mut s = Session::default();
+        s.execute(add("A"), false).unwrap();
+        s.create_variant(Some("Zweite".into()), None).unwrap();
+        s.add_checkpoint(None).unwrap();
+        s.clear_history("Verlauf geleert".into());
+        assert_eq!(s.history().len(), 1);
+        assert_eq!(names(&s), ["A"]);
+        assert_eq!(s.history().variants().len(), 1);
+        assert_eq!(s.history().active().name, "Zweite");
+        assert!(s.history().checkpoints().is_empty());
+        assert!(!s.undo().unwrap());
     }
 }

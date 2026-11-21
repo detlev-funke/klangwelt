@@ -437,9 +437,11 @@ impl AppState {
     }
 
     fn with_engine(engine: Option<Engine>, engine_error: Option<String>) -> Self {
+        // the history notes when each step happened
+        klang_core::history::set_clock(crate::clock::now_ms);
         let state = Self {
             chat: crate::chat::Chat::default(),
-            session: Mutex::new(Session::default()),
+            session: Mutex::new(Session::with_label(Project::default(), klang_i18n::tk!("New project").into())),
             pool: Mutex::new(AssetPool::default()),
             library: Mutex::new(None),
             library_status: Mutex::new(Default::default()),
@@ -562,9 +564,10 @@ impl AppState {
         self.session.lock().map(|s| project_hash(&s.project) != saved).unwrap_or(false)
     }
 
-    /// Saves the project together with the recordings it uses to `path`.
+    /// Saves the project together with the recordings it uses and its
+    /// history to `path`.
     pub fn save_project(&self, path: &std::path::Path) -> CmdResult<()> {
-        let project = {
+        let (project, history) = {
             let mut s = lock(&self.session)?;
             // A still unnamed project is afterwards named like its file (without an undo step).
             if s.project.name == Project::default().name {
@@ -572,29 +575,46 @@ impl AppState {
                     s.project.name = stem.to_string();
                 }
             }
-            s.project.clone()
+            (s.project.clone(), s.history_file().ok())
         };
         let audio: Vec<crate::project::AudioData> = {
             let pool = lock(&self.pool)?;
-            crate::project::used_assets(&project)
-                .into_iter()
+            // recordings of earlier steps too, so undo still finds them after opening
+            let mut ids = crate::project::used_assets(&project);
+            if let Some(h) = &history {
+                ids.extend(crate::project::history_assets(h));
+                ids.sort();
+                ids.dedup();
+            }
+            ids.into_iter()
                 .filter_map(|id| {
                     pool.get(&id).map(|a| crate::project::AudioData { name: a.name.clone(), samples: a.samples.to_vec(), sample_rate: a.sample_rate, id })
                 })
                 .collect()
         };
-        crate::project::save(path, &project, &audio).map_err(|e| tr!("Saving to {path} failed: {error}", path = path.display(), error = e))?;
+        crate::project::save_with_history(path, &project, &audio, history.as_ref()).map_err(|e| tr!("Saving to {path} failed: {error}", path = path.display(), error = e))?;
         *lock(&self.saved_hash)? = project_hash(&project);
         *lock(&self.project_file)? = Some(path.to_path_buf());
         Ok(())
     }
 
-    /// Opens a project (replaces the open one, undo history starts anew).
+    /// Opens a project (replaces the open one) with the history saved in it –
+    /// without one (older file) the history starts anew.
     pub fn open_project(&self, path: &std::path::Path) -> CmdResult<()> {
-        let (project, audio) = crate::project::load(path).map_err(|e| format!("{}: {e}", path.display()))?;
-        lock(&self.pool)?.replace_all(audio);
+        let loaded = crate::project::load_with_history(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let project = loaded.project;
+        lock(&self.pool)?.replace_all(loaded.audio);
         *lock(&self.saved_hash)? = project_hash(&project);
-        *lock(&self.session)? = Session::new(project);
+        let session = match loaded.history.map(|h| Session::restore(project.clone(), h)) {
+            Some(Ok(s)) => s,
+            other => {
+                if let Some(Err(e)) = other {
+                    eprintln!("{}: {e}", path.display());
+                }
+                Session::with_label(project, klang_i18n::tk!("Project opened").into())
+            }
+        };
+        *lock(&self.session)? = session;
         *lock(&self.project_file)? = Some(path.to_path_buf());
         lock(&self.song_tracks)?.clear();
         self.sync_engine()
@@ -603,7 +623,7 @@ impl AppState {
     /// Empty project.
     pub fn new_project(&self) -> CmdResult<()> {
         lock(&self.pool)?.replace_all(Vec::new());
-        *lock(&self.session)? = Session::default();
+        *lock(&self.session)? = Session::with_label(Project::default(), klang_i18n::tk!("New project").into());
         *lock(&self.saved_hash)? = project_hash(&Project::default());
         *lock(&self.project_file)? = None;
         lock(&self.song_tracks)?.clear();

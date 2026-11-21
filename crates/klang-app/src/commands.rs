@@ -29,6 +29,16 @@ pub const COMMANDS: &[&str] = &[
     "execute",
     "undo",
     "redo",
+    "history_view",
+    "history_goto",
+    "history_checkpoint",
+    "history_checkpoint_rename",
+    "history_checkpoint_delete",
+    "history_variant_new",
+    "history_variant_switch",
+    "history_variant_rename",
+    "history_variant_delete",
+    "history_clear",
     "transport",
     "seek",
     "set_metronome",
@@ -150,6 +160,41 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
         }
         "undo" => json(st.undo()?),
         "redo" => json(st.redo()?),
+        // ------------------------------------------------ Change history (checkpoints, variants)
+        "history_view" => json(st.history_view()?),
+        "history_goto" => {
+            let (node,) = args!(a; node: u32);
+            json(st.history_goto(node)?)
+        }
+        "history_checkpoint" => {
+            let (name,) = args!(a; name: Option<String>);
+            json(st.history_checkpoint(name)?)
+        }
+        "history_checkpoint_rename" => {
+            let (id, name) = args!(a; id: u32, name: String);
+            json(st.history_checkpoint_rename(id, &name)?)
+        }
+        "history_checkpoint_delete" => {
+            let (id,) = args!(a; id: u32);
+            json(st.history_checkpoint_delete(id)?)
+        }
+        "history_variant_new" => {
+            let (name, node) = args!(a; name: Option<String>, node: Option<u32>);
+            json(st.history_variant_new(name, node)?)
+        }
+        "history_variant_switch" => {
+            let (id,) = args!(a; id: u32);
+            json(st.history_variant_switch(id)?)
+        }
+        "history_variant_rename" => {
+            let (id, name) = args!(a; id: u32, name: String);
+            json(st.history_variant_rename(id, &name)?)
+        }
+        "history_variant_delete" => {
+            let (id,) = args!(a; id: u32);
+            json(st.history_variant_delete(id)?)
+        }
+        "history_clear" => json(st.history_clear()?),
         "transport" => {
             let (action,) = args!(a; action: String);
             json(st.transport(&action)?)

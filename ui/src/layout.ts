@@ -39,6 +39,10 @@ const PANELS: PanelDef[] = [
     id: "song", title: t("Song"), icon: "song", closable: true, minWidth: 420, minHeight: 200,
     place: { near: "klang", zone: "center" }, create: () => panel("song"),
   },
+  {
+    id: "historie", title: t("History"), icon: "history", closable: true, minWidth: 420, minHeight: 160,
+    place: { near: "song", zone: "center" }, create: () => panel("historie"),
+  },
   { id: "bibliothek", title: t("Library"), icon: "book", closable: true, create: () => panel("bibliothek") },
   { id: "agent", title: t("Agent"), icon: "sparkle", closable: true, create: () => panel("agent") },
   {
@@ -60,7 +64,7 @@ const PANELS: PanelDef[] = [
 function defaults(): Layout {
   return {
     root: split("row", [
-      split("col", [stack(["spuren"]), stack(["clip", "analyse", "klang", "rhythmus", "song", "bibliothek", "fuge"])], [0.68, 0.32]),
+      split("col", [stack(["spuren"]), stack(["clip", "analyse", "klang", "rhythmus", "song", "historie", "bibliothek", "fuge"])], [0.68, 0.32]),
       split("col", [stack(["harmonie"]), stack(["agent"])], [0.6, 0.4]),
     ], [0.72, 0.28]),
     floats: [],

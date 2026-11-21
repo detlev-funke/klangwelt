@@ -30,6 +30,7 @@ pub mod expression;
 pub mod flac;
 pub mod fugue;
 pub mod harmony;
+pub mod history;
 pub mod host;
 pub mod library;
 pub mod notation;

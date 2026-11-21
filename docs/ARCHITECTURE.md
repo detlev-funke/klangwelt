@@ -49,6 +49,7 @@ command belongs in `crates/klang-app/src/commands.rs`, a new agent tool in
   exactly this interface via MCP.
 * **Undo/redo** comes about automatically: for every command, `apply` returns
   the inverse command. Control gestures merge into a single step (`merge`).
+  The steps form a tree with checkpoints and variants – see "Change history".
 * **Real-time rules:** Nothing is allocated, locked or freed in the audio
   callback. New arrangements arrive via a lock-free ring buffer; old ones go
   back via a second ring buffer to be freed – so do the clips of finished
@@ -590,7 +591,8 @@ default layout.
   therefore stays honest: undoing back to the saved state removes the
   dot again.
 * Opening replaces the asset pool (`AssetPool::replace_all`, waveforms and
-  analyses are recomputed) and starts a fresh undo history.
+  analyses are recomputed) and restores the change history saved in the file
+  (`historie.json`); a file without one starts a fresh history.
 * Closing: `on_window_event(CloseRequested)` prevents closing when there are
   unsaved changes and sends `close-requested` to the UI;
   the UI asks and calls `app_close` (sets `force_close`, quits the app).
@@ -614,6 +616,41 @@ default layout.
   without a name are still asked about.
 * Dialogs (`ui/src/components/fileops.ts`, `modal()` in `dom.ts`) are custom
   HTML dialogs, not system dialogs, and therefore need no dialog plugin.
+
+## Change history (`klang_core::history`, `Session`, `ui/src/components/history.ts`)
+
+* Every content change is a **node in a tree** (`History`): the command that led
+  there (`forward`, with the IDs of new tracks and clips assigned beforehand, so it
+  replays identically), the way back (`inverse`), time, label, the project's key
+  figures afterwards (`Metrics`: notes, tracks, clips, length, tempo, time
+  signature, pitch classes for the key) and where it changed something (`Scope`:
+  tracks with their names, beat range, notes added/removed – from comparing the
+  touched tracks before and after, `diff::diff_track`).
+* Undo goes to the parent, redo along the active variant. Editing after an undo
+  starts a new branch; the old steps stay. `Session::goto` walks from any step to
+  any other (back to the common ancestor, then forward).
+* **Checkpoints** name a node. **Variants** are named branches: `head` is their
+  newest step, the active variant's head moves with every new step. Jumping onto
+  an abandoned branch makes it a variant of its own, so nothing is unreachable.
+  Deleting a variant removes the steps only it has.
+* Control gestures merge into the open step only while nothing else happened
+  (no navigation, no checkpoint on it). The agent's `batch` uses `mark` /
+  `squash` / `rollback` on the same tree.
+* Limit 1000 nodes: abandoned leaves go first (oldest first), then the oldest
+  steps, as long as no checkpoint or variant depends on them.
+* **In the file** (`historie.json` next to `projekt.json`, compact JSON,
+  deflated): the oldest state kept as a whole project plus, per step, only the
+  command that led there. Loading replays the tree depth first, rebuilds the way
+  back, key figures and scope, and checks that it ends exactly at the saved
+  project – otherwise the history is dropped and the project opens with a fresh
+  one. Recordings that only earlier states use are saved too, so undo finds them
+  after opening.
+* The table (`klang-app/src/history.rs`, `history_view`) shows the active
+  variant's line: labels (root labels and "Main version" are stored as
+  translation keys and translated when shown), "where" in words, key figures,
+  the key estimated with `klang_music::theory`, checkpoints and the branches that
+  leave the line. The window fetches it only while it is visible, after every
+  new snapshot.
 
 ## The four areas
 

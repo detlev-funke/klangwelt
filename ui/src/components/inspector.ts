@@ -13,13 +13,14 @@ import { fuguePanel } from "./fugue.js";
 import { harmonyPanel } from "./harmony.js";
 import { rhythmPanel } from "./rhythm.js";
 import { songPanel } from "./song.js";
+import { historyPanel } from "./history.js";
 import { libraryPanel, librarySignals } from "./library.js";
 import { liveAnalysisPanel } from "./liveanalysis.js";
 import { accentsText, articulationText, drawMarks, dynamicsRange, noteAlpha } from "./performance.js";
 import { soundPanel } from "./sound.js";
 import type { Analysis, Note, Track } from "../types.js";
 
-type Tab = "clip" | "analyse" | "klang" | "rhythmus" | "song" | "agent" | "bibliothek" | "harmonie" | "fuge";
+type Tab = "clip" | "analyse" | "klang" | "rhythmus" | "song" | "historie" | "agent" | "bibliothek" | "harmonie" | "fuge";
 
 interface Panel {
   el: HTMLElement;
@@ -415,6 +416,7 @@ class KwPanel extends HTMLElement {
     if (tab === "harmonie") return harmonyPanel();
     if (tab === "rhythmus") return rhythmPanel();
     if (tab === "song") return songPanel();
+    if (tab === "historie") return historyPanel();
     if (tab === "fuge") return fuguePanel();
     if (tab === "clip") {
       if (track && clipId != null) return clipPanel(track.id, clipId);

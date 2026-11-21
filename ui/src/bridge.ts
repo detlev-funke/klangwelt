@@ -9,7 +9,7 @@ import type {
   FuguePlan, HarmonyView, InstrumentKind, InstrumentSpec, SubjectView, TransformSpec, VNote,
   AddResult, ConvertResult, ConvertTarget, ImportResult, QuantizeResult, KeySpec, LibEntry, LibHit, LibraryInfo, ListenResult, OwnScore, PlacedChord, PlayInfo, PreviewPattern, ProjectFile, RecordResult, LiveCursor, LiveView, HarmonyLine, SongPlan, SongWritten, ClipGrid, RhythmGrid, RhythmInfo, RhythmWritten, SavedSound, ScoreView, Snapshot, SoundReport, SoundSaveResult, SuggestResult, TreeLevel, WaveView,
 } from "./types.js";
-import type { AudioDevices, AudioKind } from "./types.js";
+import type { AudioDevices, AudioKind, HistoryView } from "./types.js";
 import { createMock } from "./mock.js";
 import { createWebLink } from "./web/host.js";
 
@@ -46,6 +46,23 @@ export interface Backend {
   execute(command: Command, merge?: boolean): Promise<Snapshot>;
   undo(): Promise<Snapshot>;
   redo(): Promise<Snapshot>;
+  /** Change history: the active variant's steps with key figures, the variants and checkpoints. */
+  historyView(): Promise<HistoryView>;
+  /** Jump to the state after a step (any number of undo/redo steps, also onto another variant). */
+  historyGoto(node: number): Promise<Snapshot>;
+  /** Name the current state (null: "Checkpoint n"). */
+  historyCheckpoint(name: string | null): Promise<HistoryView>;
+  historyCheckpointRename(id: number, name: string): Promise<HistoryView>;
+  /** Remove a checkpoint (its steps stay). */
+  historyCheckpointDelete(id: number): Promise<HistoryView>;
+  /** Start a variant at a step (null: the current one) – the project goes there, new steps go into the variant. */
+  historyVariantNew(name: string | null, node: number | null): Promise<Snapshot>;
+  historyVariantSwitch(id: number): Promise<Snapshot>;
+  historyVariantRename(id: number, name: string): Promise<HistoryView>;
+  /** Delete a variant with the steps only it has. */
+  historyVariantDelete(id: number): Promise<Snapshot>;
+  /** Forget all steps; the project stays as it is. */
+  historyClear(): Promise<Snapshot>;
   transport(action: TransportAction): Promise<void>;
   seek(seconds: number): Promise<void>;
   setMetronome(enabled: boolean): Promise<Snapshot>;
@@ -229,6 +246,16 @@ function coreBackend(link: CoreLink, platform: "desktop" | "web"): Backend {
     execute: (command, merge = false) => call("execute", { command, merge }),
     undo: () => call("undo"),
     redo: () => call("redo"),
+    historyView: () => call("history_view"),
+    historyGoto: (node) => call("history_goto", { node }),
+    historyCheckpoint: (name) => call("history_checkpoint", { name }),
+    historyCheckpointRename: (id, name) => call("history_checkpoint_rename", { id, name }),
+    historyCheckpointDelete: (id) => call("history_checkpoint_delete", { id }),
+    historyVariantNew: (name, node) => call("history_variant_new", { name, node }),
+    historyVariantSwitch: (id) => call("history_variant_switch", { id }),
+    historyVariantRename: (id, name) => call("history_variant_rename", { id, name }),
+    historyVariantDelete: (id) => call("history_variant_delete", { id }),
+    historyClear: () => call("history_clear"),
     transport: (action) => call("transport", { action }),
     seek: (seconds) => call("seek", { seconds }),
     setMetronome: (enabled) => call("set_metronome", { enabled }),

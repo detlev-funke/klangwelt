@@ -303,6 +303,97 @@ export interface Snapshot {
   agent: AgentInfo;
 }
 
+// ---------------------------------------------------------------- Change history
+
+/** Key figures of the project after a step. */
+export interface HistoryMetrics {
+  notes: number;
+  tracks: number;
+  clips: number;
+  audioClips: number;
+  /** End of the last clip. */
+  lengthBeats: number;
+  lengthSecs: number;
+  tempo: number;
+  beatsPerBar: number;
+  beatUnit: number;
+  /** Estimated key ("A minor"), only with enough notes. */
+  key: string | null;
+  /** Lowest and highest note (MIDI). */
+  pitchRange: [number, number] | null;
+}
+
+export interface HistoryRef {
+  id: number;
+  name: string;
+}
+
+/** A branch that leaves the line at a row. */
+export interface HistoryFork {
+  /** Its first step. */
+  node: number;
+  /** Its newest step. */
+  tip: number;
+  steps: number;
+  /** The variant that continues there – null: steps abandoned after an undo. */
+  variant: HistoryRef | null;
+}
+
+/** A step on the active variant's line. */
+export interface HistoryRow {
+  id: number;
+  index: number;
+  label: string;
+  /** Where, in words: tracks, bars, notes, tempo … */
+  detail: string;
+  /** Unix ms (0: unknown). */
+  time: number;
+  metrics: HistoryMetrics;
+  /** After the current step: can be redone. */
+  future: boolean;
+  current: boolean;
+  checkpoints: HistoryRef[];
+  forks: HistoryFork[];
+}
+
+export interface HistoryVariant {
+  id: number;
+  name: string;
+  head: number;
+  active: boolean;
+  /** Step where it leaves the other variants. */
+  fork: number;
+  /** Its own steps since then. */
+  steps: number;
+  time: number;
+  /** Label of its newest step. */
+  last: string;
+}
+
+export interface HistoryCheckpoint {
+  id: number;
+  name: string;
+  node: number;
+  time: number;
+  /** On the active variant's line. */
+  onLine: boolean;
+  /** Variant it lies on otherwise. */
+  variant: string | null;
+}
+
+export interface HistoryView {
+  rows: HistoryRow[];
+  current: number;
+  /** Active variant. */
+  active: number;
+  variants: HistoryVariant[];
+  checkpoints: HistoryCheckpoint[];
+  /** Steps in the whole tree (all variants, abandoned branches). */
+  total: number;
+  /** Steps kept at most. */
+  limit: number;
+}
+
 export interface LibraryInfo {
   /** Active library (null while it is being loaded at start). */
   id: string | null;

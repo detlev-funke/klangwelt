@@ -295,6 +295,69 @@ impl Command {
     pub fn is_view_only(&self) -> bool {
         matches!(self, Command::SetTrack { patch, .. } if patch.is_view_only())
     }
+
+    /// Tracks the command touches (for the history's "where" column).
+    /// Changes of the project itself (tempo, time signature) are not tracks.
+    pub fn touched_tracks(&self, out: &mut Vec<Id>) {
+        let id = match self {
+            Command::SetProject { .. } => return,
+            Command::AddTrack { track, .. } => track.id,
+            Command::RemoveTrack { track_id }
+            | Command::MoveTrack { track_id, .. }
+            | Command::SetTrack { track_id, .. }
+            | Command::AddClip { track_id, .. }
+            | Command::RemoveClip { track_id, .. }
+            | Command::SetClip { track_id, .. }
+            | Command::SetClipNotes { track_id, .. } => *track_id,
+            Command::Batch { commands, .. } => {
+                for c in commands {
+                    c.touched_tracks(out);
+                }
+                return;
+            }
+        };
+        if !out.contains(&id) {
+            out.push(id);
+        }
+    }
+
+    /// Does the command change the project itself (name, tempo, time signature)?
+    pub fn touches_project(&self) -> bool {
+        match self {
+            Command::SetProject { .. } => true,
+            Command::Batch { commands, .. } => commands.iter().any(Command::touches_project),
+            _ => false,
+        }
+    }
+
+    /// Gives new tracks and clips (`Id::NEW`) their IDs before they are applied.
+    /// The command then replays exactly the same way – the history needs that to go
+    /// forward again from any earlier state.
+    pub fn assign_ids(&mut self, project: &mut Project) {
+        match self {
+            Command::AddTrack { track, .. } => {
+                if track.id == Id::NEW {
+                    track.id = project.alloc_id();
+                }
+                for clip in &mut track.clips {
+                    if clip.id == Id::NEW {
+                        clip.id = project.alloc_id();
+                    }
+                }
+            }
+            Command::AddClip { clip, .. } => {
+                if clip.id == Id::NEW {
+                    clip.id = project.alloc_id();
+                }
+            }
+            Command::Batch { commands, .. } => {
+                for c in commands {
+                    c.assign_ids(project);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 fn validate_notes(notes: &[Note]) -> Result<(), CoreError> {

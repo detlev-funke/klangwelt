@@ -104,6 +104,16 @@ const panelTopics: Record<string, HelpTopic> = {
       t("**Generate song** writes the tracks; generating again replaces them – so you can quickly try out different structures."),
     ],
   },
+  historie: {
+    title: t("\"History\" window"),
+    text: [
+      t("Every change to the project as a table: when, what and where (tracks, bars), and the project's key figures afterwards – notes, length, tracks, clips, tempo and key. Changed figures are highlighted."),
+      t("A **click on a row** goes back to that state; the later rows stay and can be redone (Ctrl+Y or a click). The history is saved in the project file."),
+      t("A **checkpoint** names the current state. A **variant** is a branch: start one with \"New variant\" or ⑂ in a row, and the following changes go into it while the other variants stay as they are. The chips above the table switch between them."),
+      t("Editing after going back keeps the later steps too: they appear as a dashed ⑂ chip in the row and come back as a variant with a click."),
+    ],
+    keys: [[t("Click on a row"), t("Go to that state")], [t("Ctrl+Z / Ctrl+Y"), t("One step back / forward")], [t("Double-click a variant"), t("Rename, delete")]],
+  },
   bibliothek: {
     title: t("\"Library\" window"),
     text: [
@@ -282,6 +292,7 @@ const ENTRIES: Entry[] = [
   { sel: "kw-panel[tab=klang]", topic: panelTopics.klang },
   { sel: "kw-panel[tab=rhythmus]", topic: panelTopics.rhythmus },
   { sel: "kw-panel[tab=song]", topic: panelTopics.song },
+  { sel: "kw-panel[tab=historie]", topic: panelTopics.historie },
   { sel: "kw-panel[tab=bibliothek]", topic: panelTopics.bibliothek },
   { sel: "kw-panel[tab=fuge]", topic: panelTopics.fuge },
   { sel: "kw-panel[tab=harmonie]", topic: panelTopics.harmonie },

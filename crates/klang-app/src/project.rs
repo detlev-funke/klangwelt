@@ -4,12 +4,15 @@
 //! * `projekt.json` – project (tracks, clips, notes with expression, sounds)
 //!   and a list of the audio recordings,
 //! * `audio/<id>.wav` – each recording used, as WAV (32-bit float, mono,
-//!   lossless).
+//!   lossless),
+//! * `historie.json` – the change history with checkpoints and variants
+//!   ([`klang_core::HistoryFile`]): the oldest state kept and for every step
+//!   only its command. Older versions of Klangwelt ignore it.
 //!
 //! It is written to a temporary file first, which then replaces the old one: a
 //! crash while saving never destroys the last good project.
 
-use klang_core::{ClipSource, Project};
+use klang_core::{ClipSource, Command, HistoryFile, Project};
 use klang_i18n::tr;
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
@@ -57,6 +60,31 @@ pub fn used_assets(p: &Project) -> Vec<String> {
             _ => None,
         })
         .collect();
+    ids.sort();
+    ids.dedup();
+    ids
+}
+
+/// IDs of the recordings that earlier states in the history use (the first
+/// state and every step that adds a track or clip).
+pub fn history_assets(h: &HistoryFile) -> Vec<String> {
+    fn scan(c: &Command, out: &mut Vec<String>) {
+        let mut clip = |c: &klang_core::Clip| {
+            if let ClipSource::Audio { asset_id, .. } = &c.source {
+                out.push(asset_id.clone());
+            }
+        };
+        match c {
+            Command::AddTrack { track, .. } => track.clips.iter().for_each(&mut clip),
+            Command::AddClip { clip: c, .. } => clip(c),
+            Command::Batch { commands, .. } => commands.iter().for_each(|c| scan(c, out)),
+            _ => {}
+        }
+    }
+    let mut ids = used_assets(&h.root);
+    for c in h.steps.iter().filter_map(|s| s.forward.as_ref()) {
+        scan(c, &mut ids);
+    }
     ids.sort();
     ids.dedup();
     ids
@@ -121,8 +149,11 @@ pub fn read_wav(bytes: &[u8]) -> io::Result<(Vec<f32>, u32)> {
 
 // ---------------------------------------------------------------- File
 
+/// Name of the history in the container.
+const HISTORY: &str = "historie.json";
+
 /// Writes the ZIP container to `w` and returns the writer afterwards.
-fn write_zip<W: Write + io::Seek>(w: W, project: &Project, audio: &[AudioData]) -> io::Result<W> {
+fn write_zip<W: Write + io::Seek>(w: W, project: &Project, audio: &[AudioData], history: Option<&HistoryFile>) -> io::Result<W> {
     let mut zip = zip::ZipWriter::new(w);
     let json_opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
     let raw_opts = zip::write::SimpleFileOptions::default()
@@ -138,19 +169,29 @@ fn write_zip<W: Write + io::Seek>(w: W, project: &Project, audio: &[AudioData]) 
     let manifest = Manifest { format: FORMAT.into(), version: VERSION, project: project.clone(), assets: entries };
     zip.start_file("projekt.json", json_opts).map_err(io::Error::other)?;
     zip.write_all(&serde_json::to_vec_pretty(&manifest).map_err(io::Error::other)?)?;
+    if let Some(h) = history {
+        // compact: the steps repeat a lot, deflate shrinks them well
+        zip.start_file(HISTORY, json_opts).map_err(io::Error::other)?;
+        zip.write_all(&serde_json::to_vec(h).map_err(io::Error::other)?)?;
+    }
     zip.finish().map_err(io::Error::other)
 }
 
 /// Writes the project with its recordings to `path` (atomically via a temporary file).
-#[cfg(not(target_arch = "wasm32"))]
 pub fn save(path: &Path, project: &Project, audio: &[AudioData]) -> io::Result<()> {
+    save_with_history(path, project, audio, None)
+}
+
+/// Like [`save`], with the change history.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn save_with_history(path: &Path, project: &Project, audio: &[AudioData], history: Option<&HistoryFile>) -> io::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
     let part = path.with_extension(format!("{EXT}.teil"));
     let result = (|| -> io::Result<()> {
         let file = std::fs::File::create(&part)?;
-        let mut inner = write_zip(io::BufWriter::new(file), project, audio)?;
+        let mut inner = write_zip(io::BufWriter::new(file), project, audio, history)?;
         inner.flush()?;
         inner.into_inner().map_err(|e| e.into_error())?.sync_all()
     })();
@@ -166,22 +207,41 @@ pub fn save(path: &Path, project: &Project, audio: &[AudioData]) -> io::Result<(
 /// In the browser: the container is built in memory and ends up in the core's
 /// file tree (the web core backs it up in OPFS).
 #[cfg(target_arch = "wasm32")]
-pub fn save(path: &Path, project: &Project, audio: &[AudioData]) -> io::Result<()> {
-    let bytes = write_zip(io::Cursor::new(Vec::new()), project, audio)?.into_inner();
+pub fn save_with_history(path: &Path, project: &Project, audio: &[AudioData], history: Option<&HistoryFile>) -> io::Result<()> {
+    let bytes = write_zip(io::Cursor::new(Vec::new()), project, audio, history)?.into_inner();
     crate::vfs::write_atomic(path, &bytes, &format!("{EXT}.teil"))
 }
 
 /// Reads a project with its recordings.
 pub fn load(path: &Path) -> io::Result<(Project, Vec<AudioData>)> {
+    load_with_history(path).map(|l| (l.project, l.audio))
+}
+
+/// A project file with everything in it.
+pub struct Loaded {
+    pub project: Project,
+    pub audio: Vec<AudioData>,
+    /// The change history; `None` when the file has none or it can't be read
+    /// (the project opens all the same).
+    pub history: Option<HistoryFile>,
+}
+
+/// Reads a project with its recordings and its history.
+pub fn load_with_history(path: &Path) -> io::Result<Loaded> {
     #[cfg(not(target_arch = "wasm32"))]
     let source = io::BufReader::new(std::fs::File::open(path)?);
     #[cfg(target_arch = "wasm32")]
     let source = io::Cursor::new(crate::vfs::read(path)?);
-    read_zip(source)
+    read_zip_with_history(source)
 }
 
 /// Reads the ZIP container (project file as bytes, e.g. on import).
 pub fn read_zip<R: Read + io::Seek>(source: R) -> io::Result<(Project, Vec<AudioData>)> {
+    read_zip_with_history(source).map(|l| (l.project, l.audio))
+}
+
+/// Like [`read_zip`], with the history.
+pub fn read_zip_with_history<R: Read + io::Seek>(source: R) -> io::Result<Loaded> {
     let bad = |m: String| io::Error::new(io::ErrorKind::InvalidData, m);
     let mut zip = zip::ZipArchive::new(source).map_err(|e| bad(tr!("not a Klangwelt project file ({error})", error = e)))?;
     let manifest: Manifest = {
@@ -204,7 +264,12 @@ pub fn read_zip<R: Read + io::Seek>(source: R) -> io::Result<(Project, Vec<Audio
         let (samples, rate) = read_wav(&bytes)?;
         audio.push(AudioData { id: a.id.clone(), name: a.name.clone(), samples, sample_rate: rate });
     }
-    Ok((manifest.project, audio))
+    let history = zip.by_name(HISTORY).ok().and_then(|mut f| {
+        let mut s = String::new();
+        f.read_to_string(&mut s).ok()?;
+        serde_json::from_str(&s).ok()
+    });
+    Ok(Loaded { project: manifest.project, audio, history })
 }
 
 fn sanitize(s: &str) -> String {

@@ -46,7 +46,7 @@ export function holdLive(on: boolean): void {
   if (!on) followLive(status.peek());
 }
 /** Windows in the docking system. */
-export type PanelId = "spuren" | "clip" | "analyse" | "klang" | "rhythmus" | "song" | "agent" | "bibliothek" | "harmonie" | "fuge" | "hilfe";
+export type PanelId = "spuren" | "clip" | "analyse" | "klang" | "rhythmus" | "song" | "historie" | "agent" | "bibliothek" | "harmonie" | "fuge" | "hilfe";
 /** Request to show a window (each request is a new object, even for the same window). */
 export const panelRequest = signal<{ id: PanelId; seq: number } | null>(null);
 let panelSeq = 0;

@@ -1343,3 +1343,57 @@ kw-tracks.open .heads-toggle svg { transform: rotate(180deg); }
 .workspace.narrow .empty-hint h2 { font-size: 17px; }
 .workspace.narrow .empty-hint > div:not(.row) { display: none; }
 .workspace.narrow kw-timeline:has(.empty-hint:not([style*="none"])) .keys-hint { display: none; }
+
+/* ---------- History window ---------- */
+.history { display: flex; flex-direction: column; gap: 8px; height: 100%; min-height: 0; min-width: 0; }
+.hist-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.hist-top .btn.small svg { width: 14px; height: 14px; }
+.hist-variants { display: flex; align-items: center; gap: 5px; flex: 1; min-width: 0; flex-wrap: wrap; }
+.hist-var-lbl { font-size: 11.5px; margin: 0 2px 0 6px; }
+.hist-var { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--muted); font-size: 12px; cursor: pointer; max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hist-var i { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; }
+.hist-var small { color: var(--faint); font-size: 10.5px; }
+.hist-var:hover { color: var(--text); }
+.hist-var.on { color: var(--accent-2); border-color: rgba(110, 231, 216, .45); background: rgba(110, 231, 216, .08); }
+.hist-var.on i { background: var(--accent-2); }
+.menu.hist-menu { top: 32px; right: 0; min-width: 260px; max-height: 60vh; overflow: auto; z-index: 950; }
+.hist-menu .menu-item { justify-content: flex-start; align-items: center; gap: 8px; }
+.hist-menu .menu-item svg { width: 14px; height: 14px; color: var(--muted); flex: none; }
+.hist-menu .menu-item em { font-style: normal; flex: 1; }
+.hist-menu .menu-item small { color: var(--faint); font-size: 11px; }
+.hist-menu .check { width: 0; }
+.hist-scroll { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.hist-table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.hist-table th { position: sticky; top: 0; z-index: 1; background: var(--panel-2); color: var(--faint); font-weight: 600; font-size: 11px; text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line-2); white-space: nowrap; }
+.hist-table td { padding: 4px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; color: var(--muted); }
+.hist-table .n { text-align: right; }
+.hist-table td.idx { color: var(--faint); }
+.hist-table td.time { color: var(--faint); }
+.hist-row { cursor: pointer; }
+.hist-row:hover td { background: var(--panel-2); }
+.hist-row td.chg { color: var(--accent); }
+.hist-row td small { margin-left: 5px; font-size: 10.5px; }
+.hist-row td small.up { color: var(--ok); }
+.hist-row td small.down { color: var(--rec); }
+.hist-row.current td { background: rgba(255, 180, 84, .1); color: var(--text); }
+.hist-row.current td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.hist-row.current { cursor: default; }
+.hist-row.future td { opacity: .45; }
+.hist-row.future:hover td { opacity: .8; }
+.hist-change { display: flex; align-items: center; gap: 6px; min-width: 150px; }
+.hist-label { color: var(--text); }
+.hist-row.future .hist-label { color: var(--muted); }
+.hist-detail { max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+.hist-flag, .hist-fork { display: inline-flex; align-items: center; gap: 4px; height: 19px; padding: 0 7px; border-radius: 999px; font-size: 11px; cursor: pointer; white-space: nowrap; }
+.hist-flag svg, .hist-fork svg, .hist-branch-here svg { width: 12px; height: 12px; }
+.hist-flag { border: 1px solid rgba(255, 180, 84, .45); background: rgba(255, 180, 84, .12); color: var(--accent); }
+.hist-fork { border: 1px solid rgba(110, 231, 216, .4); background: rgba(110, 231, 216, .08); color: var(--accent-2); }
+.hist-fork.abandoned { border-style: dashed; border-color: var(--line-2); background: transparent; color: var(--faint); }
+.hist-branch-here { margin-left: auto; display: inline-flex; align-items: center; padding: 2px 4px; border: 0; border-radius: 5px; background: transparent; color: var(--faint); cursor: pointer; opacity: 0; }
+.hist-row:hover .hist-branch-here { opacity: 1; }
+.hist-branch-here:hover { color: var(--accent-2); background: var(--panel-3); }
+.hist-foot { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--muted); flex-wrap: wrap; }
+.hist-foot .hint { color: var(--faint); }
+@media (hover: none) {
+  .hist-branch-here { opacity: 1; }
+}

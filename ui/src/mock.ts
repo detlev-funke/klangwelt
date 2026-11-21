@@ -157,6 +157,28 @@ export function createMock(): Backend {
     },
     undo: () => { const p = undo.pop(); if (p) { redo.push(project); project = p; } lastMergeKey = null; return later(snap()); },
     redo: () => { const p = redo.pop(); if (p) { undo.push(project); project = p; } lastMergeKey = null; return later(snap()); },
+    // change history: the stand-in keeps none – one row with the current state
+    historyView: () => {
+      const notes = project.tracks.flatMap((tr) => tr.clips).reduce((n, c) => n + (c.source.type === "notes" ? c.source.notes.length : 0), 0);
+      const metrics = {
+        notes, tracks: project.tracks.length, clips: project.tracks.reduce((n, tr) => n + tr.clips.length, 0), audioClips: 0,
+        lengthBeats: 0, lengthSecs: 0, tempo: project.tempoBpm, beatsPerBar: project.beatsPerBar, beatUnit: project.beatUnit, key: null, pitchRange: null,
+      };
+      return later({
+        rows: [{ id: 1, index: 0, label: t("Start"), detail: "", time: Date.now(), metrics, future: false, current: true, checkpoints: [], forks: [] }],
+        current: 1, active: 1, checkpoints: [], total: 1, limit: 1000,
+        variants: [{ id: 1, name: t("Main version"), head: 1, active: true, fork: 1, steps: 0, time: 0, last: t("Start") }],
+      });
+    },
+    historyGoto: () => later(snap()),
+    historyCheckpoint: () => Promise.reject(t("Only available in the desktop app")),
+    historyCheckpointRename: () => Promise.reject(t("Only available in the desktop app")),
+    historyCheckpointDelete: () => Promise.reject(t("Only available in the desktop app")),
+    historyVariantNew: () => Promise.reject(t("Only available in the desktop app")),
+    historyVariantSwitch: () => later(snap()),
+    historyVariantRename: () => Promise.reject(t("Only available in the desktop app")),
+    historyVariantDelete: () => later(snap()),
+    historyClear: () => later(snap()),
     transport: (action) => {
       if (action === "play") playing = true;
       else if (action === "stop") playing = false;

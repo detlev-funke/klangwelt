@@ -288,6 +288,20 @@ fn attr(e: &BytesStart, name: &[u8]) -> Option<String> {
         .and_then(|a| a.unescape_value().ok().map(|v| v.into_owned()))
 }
 
+/// Length of a note type (MusicXML `type`, `beat-unit`) in quarters.
+fn note_type_quarters(t: &str) -> Option<f64> {
+    Some(match t.trim() {
+        "breve" => 8.0,
+        "whole" => 4.0,
+        "half" => 2.0,
+        "quarter" => 1.0,
+        "eighth" => 0.5,
+        "16th" => 0.25,
+        "32nd" => 0.125,
+        _ => return None,
+    })
+}
+
 fn step_semitone(c: u8) -> Option<u8> {
     Some(match c.to_ascii_uppercase() {
         b'C' => 0,
@@ -314,6 +328,9 @@ pub fn parse_musicxml(xml: &str) -> Result<Score, MusicError> {
     let mut part: Option<PartBuild> = None;
     let mut note: Option<NoteBuild> = None;
     let mut seen_root = false;
+    // tempo: from a <sound tempo> (then final) or a metronome mark (beat unit in quarters, dots)
+    let mut sound_tempo = false;
+    let (mut beat_unit, mut beat_dots) = (1.0f64, 0u32);
 
     loop {
         let ev = reader.read_event().map_err(|e| MusicError::Xml(e.to_string()))?;
@@ -367,11 +384,15 @@ pub fn parse_musicxml(xml: &str) -> Result<Score, MusicError> {
                             }
                         }
                     }
-                    b"sound" => {
-                        if score.tempo_bpm.is_none() {
-                            score.tempo_bpm = attr(e, b"tempo").and_then(|t| t.parse().ok());
+                    // the playback tempo in quarters per minute: the first one wins over a metronome mark
+                    b"sound" if !sound_tempo => {
+                        if let Some(t) = attr(e, b"tempo").and_then(|t| t.parse::<f64>().ok()).filter(|t| *t > 0.0) {
+                            score.tempo_bpm = Some(t);
+                            sound_tempo = true;
                         }
                     }
+                    b"metronome" => (beat_unit, beat_dots) = (1.0, 0),
+                    b"beat-unit-dot" => beat_dots += 1,
                     _ => {}
                 }
                 if is_empty {
@@ -430,7 +451,12 @@ pub fn parse_musicxml(xml: &str) -> Result<Score, MusicError> {
                             }
                         }
                     }
-                    b"per-minute" if score.tempo_bpm.is_none() => score.tempo_bpm = text.parse().ok(),
+                    b"beat-unit" => beat_unit = note_type_quarters(text).unwrap_or(1.0),
+                    // a metronome mark (e.g. dotted half = 66) in quarters per minute
+                    b"per-minute" if score.tempo_bpm.is_none() => {
+                        let dots = 2.0 - 0.5f64.powi(beat_dots as i32);
+                        score.tempo_bpm = text.parse::<f64>().ok().filter(|t| *t > 0.0).map(|t| t * beat_unit * dots);
+                    }
                     b"step" => {
                         if let Some(n) = note.as_mut() {
                             n.step = text.bytes().next().and_then(step_semitone);
@@ -662,6 +688,19 @@ pub(crate) mod tests {
         let plain = Score { time_signature: Some((3, 4)), parts: s.parts.clone(), ..Default::default() };
         assert!(!plain.has_pickup());
         assert_eq!((plain.bar_count(), plain.bar_at(3.0), plain.bar_start(2), plain.bar_start(0)), (3, 2, 3.0, 0.0));
+    }
+
+    #[test]
+    fn tempo_from_sound_wins_over_the_metronome_mark_which_counts_its_beat_unit() {
+        let doc = |dir: &str| format!("<score-partwise version=\"4.0\"><part-list><score-part id=\"P1\"><part-name>A</part-name></score-part></part-list><part id=\"P1\"><measure number=\"1\">{dir}<note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration></note></measure></part></score-partwise>");
+        let metro = |unit: &str, dot: bool, n: u32| format!("<direction><direction-type><metronome><beat-unit>{unit}</beat-unit>{}<per-minute>{n}</per-minute></metronome></direction-type>", if dot { "<beat-unit-dot/>" } else { "" });
+        // dotted half = 66, then <sound tempo="198"> (as MuseScore writes it): 198 quarters
+        let both = parse_musicxml(&doc(&format!("{}<sound tempo=\"198\"/></direction>", metro("half", true, 66)))).unwrap();
+        assert_eq!(both.tempo_bpm, Some(198.0));
+        // only the mark: converted into quarters
+        assert_eq!(parse_musicxml(&doc(&format!("{}</direction>", metro("half", true, 66)))).unwrap().tempo_bpm, Some(198.0));
+        assert_eq!(parse_musicxml(&doc(&format!("{}</direction>", metro("eighth", false, 120)))).unwrap().tempo_bpm, Some(60.0));
+        assert_eq!(parse_musicxml(&doc(&format!("{}</direction>", metro("quarter", false, 90)))).unwrap().tempo_bpm, Some(90.0));
     }
 
     #[test]

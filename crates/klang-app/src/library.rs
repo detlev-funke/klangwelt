@@ -1007,6 +1007,8 @@ pub struct VoiceRead {
     /// Number for choosing it (1-based).
     voice: usize,
     name: String,
+    /// The part (instrument) it belongs to – a part can have several voices (divisi, piano staves).
+    part: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     role: Option<String>,
     notes: usize,
@@ -1114,6 +1116,7 @@ pub fn read_score(st: &AppState, doc: u32, bars: Option<(u32, u32)>, picks: &[Vo
             VoiceRead {
                 voice: i + 1,
                 name: voice_name(p, v),
+                part: p.name.trim().to_string(),
                 role: analysis.voices.iter().find(|r| r.part == p.name && r.staff == v.staff && r.voice == v.voice).map(|r| r.role_label.clone()),
                 notes: v.notes.len(),
                 range: format!("{}–{}", crate::sound::note_name(low), crate::sound::note_name(high)),
@@ -1159,21 +1162,25 @@ pub fn read_score(st: &AppState, doc: u32, bars: Option<(u32, u32)>, picks: &[Vo
 pub struct ImportRequest {
     /// Indices into [`score_voices`].
     pub voices: Vec<usize>,
+    /// One track per part with all its chosen voices (divisi, piano staves) instead of one per voice.
+    pub by_part: bool,
     /// Only this excerpt (quarters), from its start.
     pub range: Option<(f64, f64)>,
     /// Quarters per minute it should sound at the project tempo; `None` = quarter = beat.
     pub tempo: Option<f64>,
     /// Where the clips begin (beats).
     pub start_beats: f64,
-    /// Per chosen voice an existing instrument track that gets the clip (`None` = a new track).
+    /// Per track to be made (part or voice, in the order of `voices`) an existing
+    /// instrument track that gets the clip instead (`None` = a new track).
     pub targets: Vec<Option<Id>>,
 }
 
-/// A voice that `import_voices` brought into the project.
+/// A part or voice that `import_voices` brought into the project.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportedTrack {
-    voice: usize,
+    /// The score's voices in it (numbers as `read_library_score` lists them).
+    voices: Vec<usize>,
     name: String,
     track_id: u64,
     clip_id: u64,
@@ -1217,20 +1224,36 @@ fn plan_import(st: &AppState, info: &klang_music::index::DocInfo, score: &Score,
     let bars = req.range.map(|(a, b)| (score.bar_at(a), score.bar_at((b - 1e-3).max(a))));
     let suffix = bars.map(|(a, b)| format!(" {}", tr!("(bars {from}–{to})", from = a, to = b))).unwrap_or_default();
     let title = if info.title.is_empty() { tr!("Library") } else { info.title.clone() };
-    // Several voices of the same part (e.g. piano upper/lower): include the voice label in the name
+    // One track per voice – or per part with its voices together
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    for &i in &req.voices {
+        let (p, _) = all.get(i).ok_or_else(|| format!("There is no voice {}", i + 1))?;
+        match groups.iter_mut().find(|g| req.by_part && std::ptr::eq(all[g[0]].0, *p)) {
+            Some(g) => g.push(i),
+            None => groups.push(vec![i]),
+        }
+    }
+    if !req.targets.is_empty() && req.targets.len() != groups.len() {
+        // agent only
+        let per = if req.by_part { "part" } else { "voice" };
+        return Err(format!("trackIds has {} entries for {} tracks – one per chosen {per}, in their order (0 = new track)", req.targets.len(), groups.len()));
+    }
+    // Several voices of the same part on tracks of their own (e.g. piano upper/lower): include the voice label in the name
     let shared_part = |part: &str| req.voices.iter().filter(|&&i| all.get(i).is_some_and(|(p, _)| p.name == part)).count() > 1;
     let start = req.start_beats.max(0.0);
     // Voices without notes in the range are skipped
     let mut planned = Vec::new();
     let mut skipped = Vec::new();
-    for (k, &i) in req.voices.iter().enumerate() {
-        let (p, v) = *all.get(i).ok_or_else(|| format!("There is no voice {}", i + 1))?;
-        let notes: Vec<Note> = excerpt_notes(v, from, to)
-            .into_iter()
-            .map(|(a, len, midi)| Note::new(midi, a * per_quarter, (len * per_quarter).max(0.05), 96))
-            .collect();
+    for (k, group) in groups.iter().enumerate() {
+        let (p, v) = all[group[0]];
+        let shown = if req.by_part && !p.name.trim().is_empty() { p.name.trim().to_string() } else { voice_name(p, v) };
+        let mut notes: Vec<(f64, f64, u8)> = group.iter().flat_map(|&i| excerpt_notes(all[i].1, from, to)).collect();
+        notes.sort_by(|a, b| a.0.total_cmp(&b.0).then(b.2.cmp(&a.2)).then(a.1.total_cmp(&b.1)));
+        // voices of one part in unison: each note once
+        notes.dedup_by(|b, a| a.2 == b.2 && (a.0 - b.0).abs() < 1e-9 && (a.1 - b.1).abs() < 1e-9);
+        let notes: Vec<Note> = notes.into_iter().map(|(a, len, midi)| Note::new(midi, a * per_quarter, (len * per_quarter).max(0.05), 96)).collect();
         if notes.is_empty() {
-            skipped.push(voice_name(p, v));
+            skipped.push(shown);
             continue;
         }
         let end = notes.iter().map(|n| n.start_beats + n.length_beats).fold(0.0, f64::max);
@@ -1238,10 +1261,10 @@ fn plan_import(st: &AppState, info: &klang_music::index::DocInfo, score: &Score,
         let kind = if mean < 48.0 { klang_core::InstrumentKind::Bass } else { klang_core::InstrumentKind::Pluck };
         let name = match p.name.trim() {
             "" => voice_label(v),
-            n if shared_part(&p.name) => format!("{n} {}", voice_label(v)),
+            n if !req.by_part && shared_part(&p.name) => format!("{n} {}", voice_label(v)),
             n => n.to_string(),
         };
-        planned.push((i, name, kind, end, notes, req.targets.get(k).copied().flatten()));
+        planned.push((group.iter().map(|i| i + 1).collect::<Vec<_>>(), shown, name, kind, end, notes, req.targets.get(k).copied().flatten()));
     }
     if planned.is_empty() {
         return Err(match (req.voices.len() == 1, req.range.is_some()) {
@@ -1256,13 +1279,12 @@ fn plan_import(st: &AppState, info: &klang_music::index::DocInfo, score: &Score,
     let mut commands = Vec::new();
     let mut tracks = Vec::new();
     let mut end_beats = start;
-    for (i, name, kind, end, notes, target) in planned {
+    for (voices, shown, name, kind, end, notes, target) in planned {
         let length = (end / bpb).ceil().max(1.0) * bpb;
         end_beats = end_beats.max(start + length);
         let count = notes.len();
         let clip = Clip { id: p.alloc_id(), name: format!("{title}{suffix}"), start_beats: start, source: ClipSource::Notes { length_beats: length, notes } };
         let clip_id = clip.id.0;
-        let (voice, shown) = (i + 1, voice_name(all[i].0, all[i].1));
         match target {
             // agent only: an existing track gets the clip
             Some(track_id) => {
@@ -1270,13 +1292,13 @@ fn plan_import(st: &AppState, info: &klang_music::index::DocInfo, score: &Score,
                 if t.kind != TrackKind::Instrument {
                     return Err(format!("Track {} (\"{}\") is not an instrument track", track_id.0, t.name));
                 }
-                tracks.push(ImportedTrack { voice, name: shown, track_id: track_id.0, clip_id, track: t.name.clone(), notes: count, new_track: false });
+                tracks.push(ImportedTrack { voices, name: shown, track_id: track_id.0, clip_id, track: t.name.clone(), notes: count, new_track: false });
                 commands.push(Command::AddClip { track_id, clip });
             }
             None => {
                 let mut track = Track::new(p.alloc_id(), format!("{title} – {name}{suffix}"), TrackKind::Instrument);
                 track.instrument = Some(crate::sound::default_instrument(kind));
-                tracks.push(ImportedTrack { voice, name: shown, track_id: track.id.0, clip_id, track: track.name.clone(), notes: count, new_track: true });
+                tracks.push(ImportedTrack { voices, name: shown, track_id: track.id.0, clip_id, track: track.name.clone(), notes: count, new_track: true });
                 track.clips.push(clip);
                 commands.push(Command::AddTrack { track, index: None });
             }

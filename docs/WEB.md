@@ -159,6 +159,12 @@ at build time, not only in the browser. Emscripten is not needed.
   by the same libopus as on the desktop (see "libopus in the browser").
 * Unsaved changes: the browser asks for confirmation when leaving the page.
 * Offline after the first load (service worker).
+* Installable as an app (Android "Install app", desktop Chrome/Edge, "Add to
+  Home Screen" on iPhone): `ui/static/manifest.webmanifest` with standalone
+  display and icons. The icons come from the logo – `node scripts/icons.mjs`
+  in `ui/` renders the PNGs (192/512, maskable, 180 for iOS) with a headless
+  Edge; the results are committed in `ui/static/icons/`.
+  `tests/web/install.test.mjs` asks Chrome itself (`Page.getInstallabilityErrors`).
 * Agent via the core's tools (see below).
 
 ## What's missing – and why

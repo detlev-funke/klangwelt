@@ -28,6 +28,8 @@ const types = {
   ".svg": "image/svg+xml",
   ".wasm": "application/wasm",
   ".json": "application/json",
+  ".webmanifest": "application/manifest+json",
+  ".png": "image/png",
 };
 const arg = (name) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 const port = Number(arg("port") ?? process.env.PORT ?? 1420);

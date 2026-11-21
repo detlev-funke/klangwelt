@@ -173,6 +173,10 @@ export function historyPanel(): { el: HTMLElement; update(): void } {
   }, icon("merge"), h("span", { class: "lbl" }, t("Combine…"))) as HTMLButtonElement;
   const top = h("div", { class: "hist-top" }, checkpointBtn, variantBtn, variantsBar, combineBtn, more);
   const el = h("div", { class: "history" }, top, scroll, foot);
+  // narrow window (phone, slim dock): icon buttons, fewer columns (styles.css ".history.narrow")
+  new ResizeObserver(() => {
+    if (el.clientWidth) el.classList.toggle("narrow", el.clientWidth < 620);
+  }).observe(el);
 
   // "Combine" replaces the table until it is done or cancelled
   let merge: ReturnType<typeof mergeView> | null = null;
@@ -196,7 +200,9 @@ export function historyPanel(): { el: HTMLElement; update(): void } {
     const m = r.metrics;
     const p = prev?.metrics;
     const chg = (a: unknown, b: unknown) => (p && a !== b ? " chg" : "");
-    const change = h("td", { class: "hist-change" }, h("span", { class: "hist-label" }, r.label));
+    // the step with its flags and branches; in a narrow window the "where" goes below it
+    const change = h("div", { class: "hist-change-in" }, h("span", { class: "hist-label" }, r.label));
+    const changeCell = h("td", { class: "hist-change" }, change, r.detail ? h("div", { class: "hist-sub" }, r.detail) : null);
     for (const c of r.checkpoints) {
       change.append(h("button", {
         class: "hist-flag",
@@ -237,7 +243,7 @@ export function historyPanel(): { el: HTMLElement; update(): void } {
     },
       cell(String(r.index), "n idx"),
       cell(timeText(r.time), "time", r.time ? new Date(r.time).toLocaleString(language()) : undefined),
-      change,
+      changeCell,
       cell(r.detail, "hist-detail", r.detail),
       notes,
       cell(num(bars), `n${chg(m.lengthBeats, p?.lengthBeats)}`),

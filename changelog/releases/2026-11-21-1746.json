@@ -1,0 +1,363 @@
+{
+  "version": "2026.11.21+1746",
+  "date": "2026-11-21T17:46+01:00",
+  "entries": [
+    {
+      "id": "autosave",
+      "type": "added",
+      "title": {
+        "en": "Save automatically",
+        "de": "Automatisch speichern",
+        "fr": "Enregistrer automatiquement",
+        "it": "Salva automaticamente",
+        "es": "Guardar automáticamente",
+        "nl": "Automatisch opslaan",
+        "pl": "Zapisuj automatycznie"
+      },
+      "text": {
+        "en": "every minute by default, adjustable in the gear menu. A project without a name goes into a recovery copy that comes back after a crash.",
+        "de": "standardmäßig jede Minute, einstellbar im Zahnrad-Menü. Ein Projekt ohne Namen landet in einer Wiederherstellungskopie, die nach einem Absturz zurückkommt.",
+        "fr": "chaque minute par défaut, réglable dans le menu de la roue dentée. Un projet sans nom va dans une copie de récupération qui revient après un plantage.",
+        "it": "ogni minuto per impostazione predefinita, regolabile nel menu dell'ingranaggio. Un progetto senza nome finisce in una copia di ripristino che torna dopo un crash.",
+        "es": "cada minuto por defecto, ajustable en el menú del engranaje. Un proyecto sin nombre va a una copia de recuperación que vuelve tras un cierre inesperado.",
+        "nl": "standaard elke minuut, in te stellen in het tandwielmenu. Een project zonder naam gaat naar een herstelkopie die na een crash terugkomt.",
+        "pl": "domyślnie co minutę, do ustawienia w menu z kołem zębatym. Projekt bez nazwy trafia do kopii odzyskiwania, która wraca po awarii."
+      },
+      "dev": "Core command project_autosave; the recovery copy lives next to the settings file (desktop) or in OPFS (browser)."
+    },
+    {
+      "id": "history-window",
+      "type": "added",
+      "title": {
+        "en": "History window",
+        "de": "Fenster Historie",
+        "fr": "Fenêtre Historique",
+        "it": "Finestra Cronologia",
+        "es": "Ventana Historial",
+        "nl": "Venster Geschiedenis",
+        "pl": "Okno Historia"
+      },
+      "text": {
+        "en": "every edit step with its key figures; a click jumps back to it. Checkpoints name a step, and editing after an undo starts a variant instead of losing the later steps.",
+        "de": "jeder Bearbeitungsschritt mit seinen Kennzahlen; ein Klick springt dorthin zurück. Checkpoints benennen einen Schritt, und Bearbeiten nach einem Rückgängig beginnt eine Variante, statt die späteren Schritte zu verlieren.",
+        "fr": "chaque étape de modification avec ses chiffres clés ; un clic y revient. Les points de contrôle nomment une étape, et modifier après une annulation crée une variante au lieu de perdre les étapes suivantes.",
+        "it": "ogni passo di modifica con i suoi dati chiave; un clic ci torna. I checkpoint danno un nome a un passo, e modificare dopo un annullamento crea una variante invece di perdere i passi successivi.",
+        "es": "cada paso de edición con sus cifras clave; un clic vuelve a él. Los puntos de control dan nombre a un paso, y editar tras deshacer crea una variante en lugar de perder los pasos posteriores.",
+        "nl": "elke bewerkingsstap met zijn kerncijfers; een klik springt ernaar terug. Checkpoints geven een stap een naam, en bewerken na ongedaan maken begint een variant in plaats van de latere stappen kwijt te raken.",
+        "pl": "każdy krok edycji z jego kluczowymi danymi; kliknięcie wraca do niego. Punkty kontrolne nadają krokowi nazwę, a edycja po cofnięciu zaczyna wariant zamiast tracić późniejsze kroki."
+      },
+      "image": "history-window.webp",
+      "dev": "The undo history is a tree (klang-core history.rs), saved in the project file as historie.json."
+    },
+    {
+      "id": "installable-web-app",
+      "type": "added",
+      "platform": "browser",
+      "title": {
+        "en": "Install as an app",
+        "de": "Als App installieren",
+        "fr": "Installer comme application",
+        "it": "Installabile come app",
+        "es": "Instalar como aplicación",
+        "nl": "Als app installeren",
+        "pl": "Instalacja jako aplikacja"
+      },
+      "text": {
+        "en": "The browser version can be installed as an app, on phones too, and then starts offline.",
+        "de": "Die Browser-Version lässt sich als App installieren, auch auf dem Handy, und startet dann ohne Netz.",
+        "fr": "La version navigateur peut s'installer comme une application, aussi sur téléphone, et démarre alors hors ligne.",
+        "it": "La versione per browser si può installare come app, anche sul telefono, e poi parte senza rete.",
+        "es": "La versión de navegador se puede instalar como aplicación, también en el móvil, y luego arranca sin conexión.",
+        "nl": "De browserversie is als app te installeren, ook op de telefoon, en start dan zonder netwerk.",
+        "pl": "Wersję przeglądarkową można zainstalować jako aplikację, także na telefonie, i wtedy działa bez sieci."
+      },
+      "dev": "Web app manifest and icons (scripts/icons.mjs renders them with a headless Edge)."
+    },
+    {
+      "id": "open-dialog-choose-file",
+      "type": "added",
+      "title": {
+        "en": "Open a project file",
+        "de": "Projektdatei öffnen",
+        "fr": "Ouvrir un fichier de projet",
+        "it": "Aprire un file di progetto",
+        "es": "Abrir un archivo de proyecto",
+        "nl": "Projectbestand openen",
+        "pl": "Otwieranie pliku projektu"
+      },
+      "text": {
+        "en": "“Choose file…” in the Open dialog loads a .klangwelt file through the system's file picker.",
+        "de": "„Datei auswählen …“ im Öffnen-Dialog lädt eine .klangwelt-Datei über die Dateiauswahl des Systems.",
+        "fr": "« Choisir un fichier … » dans la boîte de dialogue Ouvrir charge un fichier .klangwelt via le sélecteur de fichiers du système.",
+        "it": "«Scegli file …» nella finestra Apri carica un file .klangwelt tramite la selezione file del sistema.",
+        "es": "«Elegir archivo…» en el diálogo Abrir carga un archivo .klangwelt mediante el selector de archivos del sistema.",
+        "nl": "‘Bestand kiezen …’ in het venster Openen laadt een .klangwelt-bestand via de bestandskiezer van het systeem.",
+        "pl": "„Wybierz plik …” w oknie Otwórz wczytuje plik .klangwelt przez systemowe okno wyboru plików."
+      },
+      "dev": "New shell command project_pick: the native dialog on the desktop, an <input type=file> in the browser."
+    },
+    {
+      "id": "tuned-drums",
+      "type": "added",
+      "title": {
+        "en": "Drums play every note",
+        "de": "Schlagzeug spielt jede Note",
+        "fr": "La batterie joue chaque note",
+        "it": "La batteria suona ogni nota",
+        "es": "La batería toca cada nota",
+        "nl": "Drums spelen elke noot",
+        "pl": "Perkusja gra każdą nutę"
+      },
+      "text": {
+        "en": "off the drum keys a tuned drum sounds at the note's pitch. In the Sound window, “Keys: drum kit | pitch” turns every key into a tuned drum.",
+        "de": "Abseits der Drum-Tasten klingt eine gestimmte Trommel in der Tonhöhe der Note. Im Klang-Fenster macht „Tasten: Schlagzeug | Tonhöhe“ jede Taste zur gestimmten Trommel.",
+        "fr": "hors des touches de batterie, un tambour accordé sonne à la hauteur de la note. Dans la fenêtre Son, « Touches : batterie | hauteur » fait de chaque touche un tambour accordé.",
+        "it": "fuori dai tasti della batteria un tamburo accordato suona all'altezza della nota. Nella finestra Suono, «Tasti: batteria | altezza» rende ogni tasto un tamburo accordato.",
+        "es": "fuera de las teclas de batería suena un tambor afinado a la altura de la nota. En la ventana Sonido, «Teclas: batería | altura» convierte cada tecla en un tambor afinado.",
+        "nl": "buiten de drumtoetsen klinkt een gestemde trom op de toonhoogte van de noot. In het venster Klank maakt ‘Toetsen: drumstel | toonhoogte’ van elke toets een gestemde trom.",
+        "pl": "poza klawiszami perkusji brzmi strojony bęben na wysokości nuty. W oknie Brzmienie „Klawisze: zestaw | wysokość” zmienia każdy klawisz w strojony bęben."
+      },
+      "image": "tuned-drums.webp",
+      "dev": "voice_for picks the tuned drum by pitch range; the keys switch travels to the AudioWorklet as the patch's 17th number."
+    },
+    {
+      "id": "whats-new",
+      "type": "added",
+      "title": {
+        "en": "What's new",
+        "de": "Neuigkeiten",
+        "fr": "Nouveautés",
+        "it": "Novità",
+        "es": "Novedades",
+        "nl": "Wat is er nieuw",
+        "pl": "Nowości"
+      },
+      "text": {
+        "en": "the gear menu lists the changes of each version, bigger features with a screenshot, and after an update a note points to them.",
+        "de": "Das Zahnrad-Menü zeigt die Änderungen jeder Version, größere Neuerungen mit einem Bild, und nach einem Update weist ein Hinweis darauf hin.",
+        "fr": "le menu de la roue dentée liste les changements de chaque version, les nouveautés importantes avec une capture d'écran, et après une mise à jour un message les signale.",
+        "it": "il menu dell'ingranaggio elenca le modifiche di ogni versione, le novità più grandi con uno screenshot, e dopo un aggiornamento un avviso le segnala.",
+        "es": "el menú del engranaje muestra los cambios de cada versión, las novedades grandes con una captura de pantalla, y tras una actualización un aviso los señala.",
+        "nl": "het tandwielmenu toont de wijzigingen van elke versie, grotere vernieuwingen met een schermafbeelding, en na een update wijst een melding erop.",
+        "pl": "menu z kołem zębatym pokazuje zmiany każdej wersji, większe nowości ze zrzutem ekranu, a po aktualizacji wskazuje je komunikat."
+      },
+      "image": "whats-new.webp",
+      "dev": "Data from changelog/ built into ui/dist/changelog/<lang>.js with the screenshots from changelog/images/ (taken from the English UI by tests/web/changelog-shots.mjs); the last version seen is kept in localStorage."
+    },
+    {
+      "id": "combine-variants",
+      "type": "added",
+      "title": {
+        "en": "Combine variants (History window → Combine…)",
+        "de": "Varianten kombinieren (Fenster Historie → Kombinieren …)",
+        "fr": "Combiner des variantes (fenêtre Historique → Combiner…)",
+        "it": "Combina varianti (finestra Cronologia → Combina…)",
+        "es": "Combinar variantes (ventana Historial → Combinar…)",
+        "nl": "Varianten combineren (venster Geschiedenis → Combineren…)",
+        "pl": "Łączenie wariantów (okno Historia → Połącz…)"
+      },
+      "text": {
+        "en": "a timeline shows per track which bars each variant changed; choose per section which version goes into a new variant, decide where two variants clash, and listen before combining.",
+        "de": "Eine Zeitleiste zeigt pro Spur, welche Takte jede Variante geändert hat; du wählst pro Abschnitt, welche Fassung in eine neue Variante kommt, entscheidest, wo sich zwei Varianten widersprechen, und hörst vorher probe.",
+        "fr": "une frise montre, par piste, les mesures que chaque variante a modifiées ; choisissez par section quelle version va dans une nouvelle variante, tranchez là où deux variantes se contredisent, et écoutez avant de combiner.",
+        "it": "una linea del tempo mostra per ogni traccia quali battute ha cambiato ciascuna variante; scegli per sezione quale versione finisce in una nuova variante, decidi dove due varianti si contraddicono e ascolta prima di combinare.",
+        "es": "una línea de tiempo muestra por pista qué compases cambió cada variante; elige por sección qué versión va a una nueva variante, decide donde dos variantes chocan y escucha antes de combinar.",
+        "nl": "een tijdlijn toont per spoor welke maten elke variant heeft gewijzigd; kies per sectie welke versie in een nieuwe variant komt, beslis waar twee varianten botsen en luister vooraf.",
+        "pl": "oś czasu pokazuje dla każdej ścieżki, które takty zmienił każdy wariant; wybierasz dla sekcji, która wersja trafi do nowego wariantu, rozstrzygasz, gdzie dwa warianty się wykluczają, i odsłuchujesz przed połączeniem."
+      },
+      "image": "combine-variants.webp",
+      "dev": "Three-way merge against the variants' common origin (klang-core merge.rs): bar-rounded segments per track, conflicts only where contents differ, one undoable step in a new variant."
+    },
+    {
+      "id": "agent-history-tools",
+      "type": "added",
+      "title": {
+        "en": "The agent can use the change history",
+        "de": "Der Agent nutzt die Änderungshistorie",
+        "fr": "L'agent peut utiliser l'historique des modifications",
+        "it": "L'agente può usare la cronologia delle modifiche",
+        "es": "El agente puede usar el historial de cambios",
+        "nl": "De agent kan de wijzigingsgeschiedenis gebruiken",
+        "pl": "Agent korzysta z historii zmian"
+      },
+      "text": {
+        "en": "it sets a checkpoint before a bigger change, tries ideas in variants, jumps back to any step and combines variants – where two variants clash, it sees the notes of both and has to decide.",
+        "de": "Er setzt vor einer größeren Änderung einen Checkpoint, probiert Ideen in Varianten aus, springt zu jedem Schritt zurück und kombiniert Varianten – wo sich zwei Varianten widersprechen, sieht er die Noten beider und muss entscheiden.",
+        "fr": "il pose un checkpoint avant un changement important, essaie des idées dans des variantes, revient à n'importe quelle étape et combine des variantes – là où deux variantes se contredisent, il voit les notes des deux et doit trancher.",
+        "it": "imposta un checkpoint prima di una modifica importante, prova idee in varianti, torna a qualsiasi passo e combina varianti – dove due varianti si contraddicono vede le note di entrambe e deve decidere.",
+        "es": "pone un checkpoint antes de un cambio importante, prueba ideas en variantes, vuelve a cualquier paso y combina variantes; donde dos variantes chocan, ve las notas de ambas y tiene que decidir.",
+        "nl": "hij zet een checkpoint vóór een grotere wijziging, probeert ideeën uit in varianten, springt terug naar elke stap en combineert varianten – waar twee varianten botsen, ziet hij de noten van beide en moet hij kiezen.",
+        "pl": "przed większą zmianą ustawia checkpoint, wypróbowuje pomysły w wariantach, wraca do dowolnego kroku i łączy warianty – tam, gdzie dwa warianty się wykluczają, widzi nuty obu i musi zdecydować."
+      },
+      "dev": "MCP tools history, checkpoint, goto, variant_new/switch/list and combine {base, others, choices, dryRun} in klang-app agent.rs; open conflicts come back with their options instead of an error."
+    },
+    {
+      "id": "smooth-notes-from-recordings",
+      "type": "added",
+      "title": {
+        "en": "Smoothing notes from recordings",
+        "de": "Noten aus Aufnahmen glätten",
+        "fr": "Lissage des notes issues d'enregistrements",
+        "it": "Levigatura delle note dalle registrazioni",
+        "es": "Suavizar notas de grabaciones",
+        "nl": "Noten uit opnames gladstrijken",
+        "pl": "Wygładzanie nut z nagrań"
+      },
+      "text": {
+        "en": "when a recording becomes notes, unusually short fragments (scoops, octave slips, vibrato swings) go into the note next to them and a held note split in two becomes one again – a louder or accented note stays apart. Choose the strength in the gear menu or the analysis window; selected notes or a whole note clip can be smoothed afterwards with a right-click → Smooth.",
+        "de": "Wird eine Aufnahme zu Noten, gehen ungewöhnlich kurze Bruchstücke (Schleifer, Oktavsprünge, Vibrato-Ausschläge) in der Nachbarnote auf, und ein in zwei Teile zerfallener gehaltener Ton wird wieder einer – ein lauterer oder betonter Ton bleibt für sich. Die Stärke wählst du im Zahnrad oder im Fenster „Analyse“; markierte Noten oder einen ganzen Noten-Clip glättest du hinterher per Rechtsklick → Glätten.",
+        "fr": "quand un enregistrement devient des notes, les fragments inhabituellement courts (glissés, sauts d'octave, oscillations de vibrato) rejoignent la note voisine et une note tenue coupée en deux redevient une seule – une note plus forte ou accentuée reste à part. Choisissez l'intensité sous la roue dentée ou dans la fenêtre « Analyse » ; des notes sélectionnées ou tout un clip de notes se lissent après coup avec un clic droit → Lisser.",
+        "it": "quando una registrazione diventa note, i frammenti insolitamente brevi (scivolate, salti d'ottava, oscillazioni del vibrato) confluiscono nella nota vicina e una nota tenuta spezzata in due torna una sola – una nota più forte o accentata resta a sé. L'intensità la scegli nell'ingranaggio o nella finestra «Analisi»; note selezionate o un intero clip di note si levigano anche dopo con un clic destro → Leviga.",
+        "es": "cuando una grabación se convierte en notas, los fragmentos inusualmente cortos (deslizamientos, saltos de octava, oscilaciones del vibrato) pasan a la nota vecina y una nota sostenida partida en dos vuelve a ser una; una nota más fuerte o acentuada queda aparte. La intensidad la eliges en el engranaje o en la ventana «Análisis»; las notas seleccionadas o un clip de notas entero se suavizan después con un clic derecho → Suavizar.",
+        "nl": "wanneer een opname noten wordt, gaan ongewoon korte fragmenten (glijders, octaafsprongen, vibratouitslagen) op in de buurnoot en wordt een in tweeën gesplitste aangehouden noot weer één – een luidere of geaccentueerde noot blijft apart. De sterkte kies je via het tandwiel of in het venster “Analyse”; geselecteerde noten of een hele notenclip strijk je achteraf glad met een rechterklik → Gladstrijken.",
+        "pl": "gdy nagranie staje się nutami, nietypowo krótkie fragmenty (podjazdy, skoki o oktawę, wahnięcia wibrata) przechodzą do sąsiedniej nuty, a przytrzymany dźwięk rozbity na dwa znów staje się jednym – głośniejszy lub akcentowany dźwięk zostaje osobno. Siłę wybierzesz pod ikoną zębatki lub w oknie „Analiza”; zaznaczone nuty lub cały klip nutowy wygładzisz później prawym przyciskiem → Wygładź."
+      },
+      "image": "smooth-notes-from-recordings.webp",
+      "dev": "klang_core::smooth (plan/smooth_notes), AnalyzedNote.new_attack from expression::new_attacks; audio_to_notes/create_melody_track take smooth (off|light|medium|strong, default medium), new command and MCP tool smooth_notes."
+    },
+    {
+      "id": "several-voices-analysis",
+      "type": "added",
+      "title": {
+        "en": "Several voices at once",
+        "de": "Mehrere Stimmen zugleich",
+        "fr": "Plusieurs voix à la fois",
+        "it": "Più voci insieme",
+        "es": "Varias voces a la vez",
+        "nl": "Meerdere stemmen tegelijk",
+        "pl": "Kilka głosów naraz"
+      },
+      "text": {
+        "en": "next to the analysis of one line there is now \"Several voices\" for a choir, a piano or guitar with bass. It finds how many voices a recording has (or takes the number you choose), shows each voice in its color – live while recording, too – and converts the recording into one instrument track per voice.",
+        "de": "Neben der einstimmigen Analyse gibt es jetzt „Mehrstimmig“ für einen Chor, ein Klavier oder Gitarre mit Bass. Klangwelt findet heraus, wie viele Stimmen eine Aufnahme hat (oder nimmt die gewählte Zahl), zeigt jede Stimme in ihrer Farbe – auch live beim Aufnehmen – und wandelt die Aufnahme in eine Instrumentspur je Stimme um.",
+        "fr": "à côté de l'analyse d'une ligne, il y a désormais « Plusieurs voix » pour un chœur, un piano ou guitare et basse. Klangwelt détermine combien de voix contient un enregistrement (ou prend le nombre choisi), montre chaque voix dans sa couleur – aussi en direct pendant l'enregistrement – et convertit l'enregistrement en une piste d'instrument par voix.",
+        "it": "accanto all'analisi di una linea c'è ora «Più voci» per un coro, un pianoforte o chitarra con basso. Klangwelt scopre quante voci ha una registrazione (o usa il numero scelto), mostra ogni voce nel suo colore – anche dal vivo durante la registrazione – e converte la registrazione in una traccia strumento per voce.",
+        "es": "junto al análisis de una línea ahora está «Varias voces» para un coro, un piano o guitarra con bajo. Klangwelt averigua cuántas voces tiene una grabación (o toma el número que elijas), muestra cada voz en su color, también en vivo al grabar, y convierte la grabación en una pista de instrumento por voz.",
+        "nl": "naast de eenstemmige analyse is er nu “Meerstemmig” voor een koor, een piano of gitaar met bas. Klangwelt zoekt uit hoeveel stemmen een opname heeft (of neemt het gekozen aantal), toont elke stem in zijn kleur – ook live tijdens het opnemen – en zet de opname om in één instrumentspoor per stem.",
+        "pl": "obok analizy jednego głosu jest teraz „Wiele głosów” dla chóru, fortepianu albo gitary z basem. Klangwelt ustala, ile głosów ma nagranie (albo bierze wybraną liczbę), pokazuje każdy głos w jego kolorze – także na żywo podczas nagrywania – i zamienia nagranie na jedną ścieżkę instrumentu na głos."
+      },
+      "image": "several-voices-analysis.webp",
+      "dev": "klang_dsp::poly (STFT, HPSS, whitening, iterative harmonic subtraction, per-pitch Viterbi, voice count and assignment) carried over from the LED light organ analysis; klang-app voices.rs (analyze_voices, audio_to_voices, LiveVoices/record_live_voices); audio_to_notes/create_melody_track/record_start take mode and voices; MCP analyze_clip and audio_to_notes take mode 'poly'."
+    },
+    {
+      "id": "file-menu-slimmed",
+      "type": "changed",
+      "title": {
+        "en": "The File menu is shorter",
+        "de": "Das Datei-Menü ist kürzer",
+        "fr": "Le menu Fichier est plus court",
+        "it": "Il menu File è più corto",
+        "es": "El menú Archivo es más corto",
+        "nl": "Het menu Bestand is korter",
+        "pl": "Menu Plik jest krótsze"
+      },
+      "text": {
+        "en": "in the browser, downloading the project file is part of “Save as…”, and an empty project offers “Load demo”.",
+        "de": "Im Browser gehört das Herunterladen der Projektdatei zu „Speichern unter …“, und ein leeres Projekt bietet „Demo laden“ an.",
+        "fr": "dans le navigateur, le téléchargement du fichier du projet fait partie de « Enregistrer sous … », et un projet vide propose « Charger la démo ».",
+        "it": "nel browser lo scaricamento del file di progetto fa parte di «Salva con nome …», e un progetto vuoto offre «Carica demo».",
+        "es": "en el navegador, la descarga del archivo del proyecto forma parte de «Guardar como…», y un proyecto vacío ofrece «Cargar demo».",
+        "nl": "in de browser hoort het downloaden van het projectbestand bij ‘Opslaan als …’, en een leeg project biedt ‘Demo laden’ aan.",
+        "pl": "w przeglądarce pobieranie pliku projektu jest częścią „Zapisz jako …”, a pusty projekt proponuje „Wczytaj demo”."
+      }
+    },
+    {
+      "id": "language-switch-keeps-project",
+      "type": "changed",
+      "title": {
+        "en": "Switching the language",
+        "de": "Sprache umschalten",
+        "fr": "Changer de langue",
+        "it": "Cambiare lingua",
+        "es": "Cambiar de idioma",
+        "nl": "Taal wisselen",
+        "pl": "Zmiana języka"
+      },
+      "text": {
+        "en": "Klangwelt reloads in the new language with the open project, unsaved changes included.",
+        "de": "Klangwelt lädt in der neuen Sprache mit dem offenen Projekt neu, samt ungespeicherten Änderungen.",
+        "fr": "Klangwelt se recharge dans la nouvelle langue avec le projet ouvert, modifications non enregistrées comprises.",
+        "it": "Klangwelt si ricarica nella nuova lingua con il progetto aperto, comprese le modifiche non salvate.",
+        "es": "Klangwelt se recarga en el nuevo idioma con el proyecto abierto, incluidos los cambios sin guardar.",
+        "nl": "Klangwelt laadt opnieuw in de nieuwe taal met het open project, inclusief niet-opgeslagen wijzigingen.",
+        "pl": "Klangwelt przeładowuje się w nowym języku z otwartym projektem, łącznie z niezapisanymi zmianami."
+      }
+    },
+    {
+      "id": "stop-at-end-of-piece",
+      "type": "changed",
+      "title": {
+        "en": "Playback stops at the end",
+        "de": "Wiedergabe stoppt am Ende",
+        "fr": "La lecture s'arrête à la fin",
+        "it": "La riproduzione si ferma alla fine",
+        "es": "La reproducción se detiene al final",
+        "nl": "Afspelen stopt aan het eind",
+        "pl": "Odtwarzanie zatrzymuje się na końcu"
+      },
+      "text": {
+        "en": "Playback stops where the piece ends instead of running a bar into silence; the notes ring out, typed notes go on at the end, and Play there starts from the beginning.",
+        "de": "Die Wiedergabe hält am Ende des Stücks an, statt einen Takt in die Stille zu laufen; die Noten klingen aus, getippte Noten gehen am Ende weiter, und Abspielen dort beginnt von vorn.",
+        "fr": "La lecture s'arrête à la fin du morceau au lieu de continuer une mesure dans le silence ; les notes résonnent, les notes saisies continuent à la fin, et Lecture à cet endroit repart du début.",
+        "it": "La riproduzione si ferma alla fine del brano invece di proseguire per una battuta nel silenzio; le note si spengono naturalmente, le note digitate continuano alla fine, e Riproduci lì riparte dall'inizio.",
+        "es": "La reproducción se detiene donde termina la pieza en lugar de seguir un compás en silencio; las notas se apagan solas, las notas escritas continúan al final y Reproducir allí empieza desde el principio.",
+        "nl": "Het afspelen stopt waar het stuk eindigt in plaats van een maat stilte door te lopen; de noten klinken uit, getypte noten gaan aan het eind verder, en daar afspelen begint weer vooraan.",
+        "pl": "Odtwarzanie zatrzymuje się na końcu utworu, zamiast biec jeszcze takt w ciszę; nuty wybrzmiewają, wpisywane nuty dochodzą na końcu, a Odtwórz w tym miejscu zaczyna od początku."
+      },
+      "dev": "SongEnd gives the stop point (engine.endBeats); the renderer decides on Play whether to start over."
+    },
+    {
+      "id": "browser-import-keeps-stored-project",
+      "type": "fixed",
+      "platform": "browser",
+      "title": {
+        "en": "No overwriting on import",
+        "de": "Kein Überschreiben beim Hereinholen",
+        "fr": "Plus d'écrasement à l'import",
+        "it": "Nessuna sovrascrittura all'importazione",
+        "es": "Sin sobrescribir al importar",
+        "nl": "Niets overschreven bij het inlezen",
+        "pl": "Bez nadpisywania przy wczytywaniu"
+      },
+      "text": {
+        "en": "A project file brought into the browser no longer overwrites a stored project of the same name; it gets “-2”, “-3” and so on.",
+        "de": "Eine in den Browser geholte Projektdatei überschreibt kein gespeichertes Projekt gleichen Namens mehr; sie bekommt „-2“, „-3“ und so weiter.",
+        "fr": "Un fichier de projet importé dans le navigateur n'écrase plus un projet enregistré du même nom ; il reçoit « -2 », « -3 », etc.",
+        "it": "Un file di progetto portato nel browser non sovrascrive più un progetto salvato con lo stesso nome; riceve «-2», «-3» e così via.",
+        "es": "Un archivo de proyecto traído al navegador ya no sobrescribe un proyecto guardado con el mismo nombre; recibe «-2», «-3», etc.",
+        "nl": "Een projectbestand dat in de browser wordt gehaald, overschrijft geen opgeslagen project met dezelfde naam meer; het krijgt ‘-2’, ‘-3’ enzovoort.",
+        "pl": "Plik projektu wczytany do przeglądarki nie nadpisuje już zapisanego projektu o tej samej nazwie; dostaje „-2”, „-3” i tak dalej."
+      }
+    },
+    {
+      "id": "github-account-links",
+      "type": "internal",
+      "title": {
+        "en": "GitHub account"
+      },
+      "text": {
+        "en": "links point to the new account detlev-funke."
+      }
+    },
+    {
+      "id": "github-releases",
+      "type": "internal",
+      "title": {
+        "en": "Releases"
+      },
+      "text": {
+        "en": "one JSON file per change in changelog/; `npm run changelog -- release` makes a release named after its date and time and tags it, and a pushed tag becomes a GitHub release (the desktop app's with the .exe)."
+      }
+    },
+    {
+      "id": "pages-workflow-node-24",
+      "type": "internal",
+      "title": {
+        "en": "Pages workflow"
+      },
+      "text": {
+        "en": "actions on Node 24."
+      }
+    }
+  ]
+}

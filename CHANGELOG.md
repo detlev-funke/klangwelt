@@ -9,6 +9,54 @@ This file is generated from the JSON files in [changelog/](changelog/README.md),
 which also says how to add an entry. The app shows the same entries in its own
 language under the gear menu → What's new.
 
+## [2026.11.21+1746] - 2026-11-21 17:46
+
+### Added
+
+- **Save automatically:** every minute by default, adjustable in the gear menu. A project without a name goes into a recovery copy that comes back after a crash.
+  - Technical: Core command project_autosave; the recovery copy lives next to the settings file (desktop) or in OPFS (browser).
+- **History window:** every edit step with its key figures; a click jumps back to it. Checkpoints name a step, and editing after an undo starts a variant instead of losing the later steps.<br>
+  <img src="changelog/images/history-window.webp" alt="History window" width="640">
+  - Technical: The undo history is a tree (klang-core history.rs), saved in the project file as historie.json.
+- **Install as an app:** The browser version can be installed as an app, on phones too, and then starts offline. *(browser only)*
+  - Technical: Web app manifest and icons (scripts/icons.mjs renders them with a headless Edge).
+- **Open a project file:** “Choose file…” in the Open dialog loads a .klangwelt file through the system's file picker.
+  - Technical: New shell command project_pick: the native dialog on the desktop, an <input type=file> in the browser.
+- **Drums play every note:** off the drum keys a tuned drum sounds at the note's pitch. In the Sound window, “Keys: drum kit | pitch” turns every key into a tuned drum.<br>
+  <img src="changelog/images/tuned-drums.webp" alt="Drums play every note" width="640">
+  - Technical: voice_for picks the tuned drum by pitch range; the keys switch travels to the AudioWorklet as the patch's 17th number.
+- **What's new:** the gear menu lists the changes of each version, bigger features with a screenshot, and after an update a note points to them.<br>
+  <img src="changelog/images/whats-new.webp" alt="What's new" width="600">
+  - Technical: Data from changelog/ built into ui/dist/changelog/<lang>.js with the screenshots from changelog/images/ (taken from the English UI by tests/web/changelog-shots.mjs); the last version seen is kept in localStorage.
+- **Combine variants (History window → Combine…):** a timeline shows per track which bars each variant changed; choose per section which version goes into a new variant, decide where two variants clash, and listen before combining.<br>
+  <img src="changelog/images/combine-variants.webp" alt="Combine variants (History window → Combine…)" width="640">
+  - Technical: Three-way merge against the variants' common origin (klang-core merge.rs): bar-rounded segments per track, conflicts only where contents differ, one undoable step in a new variant.
+- **The agent can use the change history:** it sets a checkpoint before a bigger change, tries ideas in variants, jumps back to any step and combines variants – where two variants clash, it sees the notes of both and has to decide.
+  - Technical: MCP tools history, checkpoint, goto, variant_new/switch/list and combine {base, others, choices, dryRun} in klang-app agent.rs; open conflicts come back with their options instead of an error.
+- **Smoothing notes from recordings:** when a recording becomes notes, unusually short fragments (scoops, octave slips, vibrato swings) go into the note next to them and a held note split in two becomes one again – a louder or accented note stays apart. Choose the strength in the gear menu or the analysis window; selected notes or a whole note clip can be smoothed afterwards with a right-click → Smooth.<br>
+  <img src="changelog/images/smooth-notes-from-recordings.webp" alt="Smoothing notes from recordings" width="640">
+  - Technical: klang_core::smooth (plan/smooth_notes), AnalyzedNote.new_attack from expression::new_attacks; audio_to_notes/create_melody_track take smooth (off|light|medium|strong, default medium), new command and MCP tool smooth_notes.
+- **Several voices at once:** next to the analysis of one line there is now "Several voices" for a choir, a piano or guitar with bass. It finds how many voices a recording has (or takes the number you choose), shows each voice in its color – live while recording, too – and converts the recording into one instrument track per voice.<br>
+  <img src="changelog/images/several-voices-analysis.webp" alt="Several voices at once" width="640">
+  - Technical: klang_dsp::poly (STFT, HPSS, whitening, iterative harmonic subtraction, per-pitch Viterbi, voice count and assignment) carried over from the LED light organ analysis; klang-app voices.rs (analyze_voices, audio_to_voices, LiveVoices/record_live_voices); audio_to_notes/create_melody_track/record_start take mode and voices; MCP analyze_clip and audio_to_notes take mode 'poly'.
+
+### Changed
+
+- **The File menu is shorter:** in the browser, downloading the project file is part of “Save as…”, and an empty project offers “Load demo”.
+- **Switching the language:** Klangwelt reloads in the new language with the open project, unsaved changes included.
+- **Playback stops at the end:** Playback stops where the piece ends instead of running a bar into silence; the notes ring out, typed notes go on at the end, and Play there starts from the beginning.
+  - Technical: SongEnd gives the stop point (engine.endBeats); the renderer decides on Play whether to start over.
+
+### Fixed
+
+- **No overwriting on import:** A project file brought into the browser no longer overwrites a stored project of the same name; it gets “-2”, “-3” and so on. *(browser only)*
+
+### Internal
+
+- **GitHub account:** links point to the new account detlev-funke.
+- **Releases:** one JSON file per change in changelog/; `npm run changelog -- release` makes a release named after its date and time and tags it, and a pushed tag becomes a GitHub release (the desktop app's with the .exe).
+- **Pages workflow:** actions on Node 24.
+
 ## 2026.11.16+0845 - 2026-11-16 08:45
 
 ### Added
@@ -65,3 +113,5 @@ language under the gear menu → What's new.
 - **libopus:** the bundled libopus is marked as vendored code.
 - **English sources:** source code comments, agent texts and test titles are in English.
 - **README:** screenshots of the overview, piano roll, bass sound fields and circle of fifths.
+
+[2026.11.21+1746]: https://github.com/detlev-funke/klangwelt/releases/tag/v2026.11.21%2B1746

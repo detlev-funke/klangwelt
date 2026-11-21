@@ -123,7 +123,8 @@ test("gear menu → What's new: every release in German with bold titles and scr
     assert.equal(d.sections[0].unreleased, true);
     assert.equal(open[0].heading, `Seit Version ${want.releases[0].version}`);
     assert.deepEqual(open[0].entries.map((e) => e.id), want.unreleased.map((e) => e.id));
-    assert.ok(open[0].entries.some((e) => e.id === "installable-web-app"), "a browser-only entry is shown");
+    const browserOnly = want.unreleased.find((e) => e.platform === "browser");
+    if (browserOnly) assert.ok(open[0].entries.some((e) => e.id === browserOnly.id), `the browser-only entry ${browserOnly.id} is shown`);
   }
 
   // the screenshots load when scrolled into view and fit the window's width

@@ -87,7 +87,6 @@ interface StackView { el: HTMLElement; tabs: HTMLElement; stack: StackNode; win:
 
 const MIN_W = 180;
 const MIN_H = 110;
-const GUTTER = 5;
 const FLOAT_MIN_W = 240;
 const FLOAT_MIN_H = 150;
 const ROOT_SHARE = 0.28;
@@ -166,6 +165,9 @@ export class Dock {
   #badges = new Set<string>();
   #ghost: HTMLElement | null = null;
   #mode: DockMode = "dock";
+  /** Gutter width and margin around the layout in px (--dk-gutter, --dk-inset; density). */
+  #gap = 5;
+  #inset = 5;
   /** Small screen, but the free layout anyway (Windows menu). */
   #free = false;
   /** Stacks of the compact view – kept, so that the chosen tabs and the divider stay. */
@@ -200,6 +202,7 @@ export class Dock {
     document.body.append(this.#overlay);
 
     host.classList.add("dk-host");
+    this.#readSpacing();
     host.replaceChildren(this.#area, this.#floatLayer);
     this.#layout = this.#load() ?? o.defaults();
     this.#loadCompact();
@@ -216,6 +219,25 @@ export class Dock {
   }
 
   // ------------------------------------------------------------ public
+
+  /** The spacing changed (gear menu: tight, normal, airy): measure gutters and margins anew,
+   *  then the compact view on or off and the floating windows back inside. */
+  refit(): void {
+    this.#readSpacing();
+    if (this.#wantMode() !== this.#mode) this.#render();
+    for (const [w, el] of this.#floatEls) this.#place(el, w);
+  }
+
+  /** Gutter width and margin around the layout from the stylesheet (--dk-gutter, --dk-inset). */
+  #readSpacing(): void {
+    const cs = getComputedStyle(this.#host);
+    const px = (name: string, fallback: number) => {
+      const v = parseFloat(cs.getPropertyValue(name));
+      return Number.isFinite(v) ? v : fallback;
+    };
+    this.#gap = px("--dk-gutter", 5);
+    this.#inset = px("--dk-inset", 5);
+  }
 
   /** Show window: open (if closed), activate tab, bring to front. */
   show(id: string): void {
@@ -686,7 +708,7 @@ export class Dock {
     if (!W || !H) return this.#mode;
     if (this.#free || !this.#small()) return "dock";
     const root = this.#layout.root;
-    const inset = 2 * GUTTER;
+    const inset = 2 * this.#inset;
     if (!root || (W >= this.#minSize(root, true) + inset && H >= this.#minSize(root, false) + inset)) return "dock";
     return H >= SHEET_MIN_H ? "sheet" : "single";
   }
@@ -834,7 +856,7 @@ export class Dock {
   #minSize(n: DockNode, horiz: boolean): number {
     if (n.kind === "stack") return this.#stackMin(n, horiz);
     const mins = n.children.map((c) => this.#minSize(c, horiz));
-    return (n.dir === "row") === horiz ? total(mins) + GUTTER * (mins.length - 1) : Math.max(...mins);
+    return (n.dir === "row") === horiz ? total(mins) + this.#gap * (mins.length - 1) : Math.max(...mins);
   }
 
   #gutter(n: SplitNode, i: number, container: HTMLElement): HTMLElement {

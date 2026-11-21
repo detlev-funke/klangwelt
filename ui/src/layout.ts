@@ -9,6 +9,7 @@ import { dropdown, h, icon } from "./dom.js";
 import { t } from "./i18n.js";
 import { effect } from "./signals.js";
 import { chatUnread, libraryBusy, panelEmphasis, panelRequest, visiblePanels } from "./store.js";
+import { density } from "./uiprefs.js";
 
 function panel(tab: string): HTMLElement {
   const el = document.createElement("kw-panel");
@@ -91,6 +92,13 @@ export function initLayout(host: HTMLElement): void {
   effect(() => {
     const e = panelEmphasis.value;
     queueMicrotask(() => dock?.emphasize(e?.id ?? null, { minWidth: e?.minWidth }));
+  });
+  // spacing changed in the gear menu: gutters and margins measured anew
+  let firstDensity = true;
+  effect(() => {
+    density.value;
+    if (firstDensity) firstDensity = false;
+    else dock?.refit();
   });
   effect(() => dock?.setBadge("agent", chatUnread.value > 0));
   effect(() => dock?.setBadge("bibliothek", libraryBusy.value));

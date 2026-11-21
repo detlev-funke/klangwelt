@@ -1,0 +1,23 @@
+{
+  "type": "added",
+  "title": {
+    "en": "Spacing: tight, normal, airy",
+    "de": "Abstände: eng, normal, luftig",
+    "fr": "Espacement : serré, normal, aéré",
+    "it": "Spaziatura: compatta, normale, ariosa",
+    "es": "Espaciado: compacto, normal, amplio",
+    "nl": "Afstanden: compact, normaal, ruim",
+    "pl": "Odstępy: ciasno, normalnie, przestronnie"
+  },
+  "text": {
+    "en": "In the gear menu (Display) the gaps between the windows, the tab bars, the toolbar and the margins become narrower or wider, at once and on each device.",
+    "de": "Im Zahnrad-Menü (Ansicht) werden die Abstände zwischen den Fenstern, die Tab-Leisten, die Werkzeugleiste und die Ränder schmaler oder breiter, sofort und je Gerät.",
+    "fr": "Dans le menu de l'engrenage (Affichage), les espaces entre les fenêtres, les barres d'onglets, la barre d'outils et les marges deviennent plus étroits ou plus larges, immédiatement et pour chaque appareil.",
+    "it": "Nel menu dell'ingranaggio (Visualizzazione) gli spazi tra le finestre, le barre delle schede, la barra degli strumenti e i margini diventano più stretti o più ampi, subito e per ogni dispositivo.",
+    "es": "En el menú del engranaje (Visualización), los espacios entre las ventanas, las barras de pestañas, la barra de herramientas y los márgenes se vuelven más estrechos o más amplios, al instante y en cada dispositivo.",
+    "nl": "In het tandwielmenu (Weergave) worden de afstanden tussen de vensters, de tabbalken, de werkbalk en de marges smaller of breder, meteen en per apparaat.",
+    "pl": "W menu zębatki (Wygląd) odstępy między oknami, paski kart, pasek narzędzi i marginesy stają się węższe lub szersze, od razu i na każdym urządzeniu."
+  },
+  "image": "layout-spacing.webp",
+  "dev": "CSS custom properties under html[data-density]; dock.ts reads --dk-gutter and --dk-inset for the minimum sizes."
+}

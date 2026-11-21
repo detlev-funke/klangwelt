@@ -1,0 +1,23 @@
+{
+  "type": "changed",
+  "platform": "browser",
+  "title": {
+    "en": "Installed app in full screen",
+    "de": "Installierte App im Vollbild",
+    "fr": "Application installée en plein écran",
+    "it": "App installata a schermo intero",
+    "es": "Aplicación instalada a pantalla completa",
+    "nl": "Geïnstalleerde app op volledig scherm",
+    "pl": "Zainstalowana aplikacja na pełnym ekranie"
+  },
+  "text": {
+    "en": "On Android, Klangwelt installed from the browser opens without the status and navigation bar; the toolbar keeps clear of a notch. Already installed? Remove it and install it again once.",
+    "de": "Auf Android öffnet sich das aus dem Browser installierte Klangwelt ohne Status- und Navigationsleiste; die Werkzeugleiste bleibt frei von einer Kamera-Aussparung. Schon installiert? Einmal entfernen und neu installieren.",
+    "fr": "Sur Android, Klangwelt installé depuis le navigateur s'ouvre sans barre d'état ni barre de navigation ; la barre d'outils évite l'encoche de la caméra. Déjà installé ? Supprimez-le et installez-le à nouveau une fois.",
+    "it": "Su Android, Klangwelt installato dal browser si apre senza barra di stato e di navigazione; la barra degli strumenti resta libera dal notch. Già installato? Rimuovilo e installalo di nuovo una volta.",
+    "es": "En Android, Klangwelt instalado desde el navegador se abre sin barra de estado ni de navegación; la barra de herramientas deja libre el notch. ¿Ya lo tenías instalado? Quítalo y vuelve a instalarlo una vez.",
+    "nl": "Op Android opent de vanuit de browser geïnstalleerde Klangwelt zonder status- en navigatiebalk; de werkbalk blijft vrij van een camera-uitsparing. Al geïnstalleerd? Verwijder de app en installeer hem één keer opnieuw.",
+    "pl": "Na Androidzie Klangwelt zainstalowany z przeglądarki otwiera się bez paska stanu i nawigacji; pasek narzędzi omija wycięcie aparatu. Już zainstalowany? Usuń go i zainstaluj ponownie jeden raz."
+  },
+  "dev": "Manifest display: fullscreen (falls back to standalone on iOS and desktop); #app pads env(safe-area-inset-top), iOS status bar black-translucent."
+}

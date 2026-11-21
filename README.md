@@ -22,6 +22,9 @@ it follows your browser's language, and the gear menu switches it.
 It also works on phones and tablets: on a small screen the tracks stay on top
 and the other windows become tabs below them; fingers move and zoom the
 timeline, a long press opens the context menu, a double tap adds a note.
+The gear menu sets the interface size (40–200 %: smaller shows more at once, e.g.
+with a stylus) and the spacing of the layout (tight, normal, airy) for each device;
+installed from the browser, the app opens in full screen on Android.
 
 ## What you can do with it
 

@@ -1,0 +1,23 @@
+{
+  "type": "added",
+  "title": {
+    "en": "Interface size",
+    "de": "Größe der Oberfläche",
+    "fr": "Taille de l'interface",
+    "it": "Dimensione dell'interfaccia",
+    "es": "Tamaño de la interfaz",
+    "nl": "Grootte van de interface",
+    "pl": "Rozmiar interfejsu"
+  },
+  "text": {
+    "en": "A slider in the gear menu (Display) makes everything smaller or larger, from 40 to 200 %: smaller shows more at once, on a phone with a stylus for example. Remembered on each device; in a browser on a computer its own zoom does that (Ctrl + and Ctrl −).",
+    "de": "Ein Schieberegler im Zahnrad-Menü (Ansicht) macht alles kleiner oder größer, von 40 bis 200 %: Kleiner zeigt mehr auf einmal, etwa auf dem Handy mit Stift. Gilt je Gerät; im Browser am Computer macht das sein eigener Zoom (Strg + und Strg −).",
+    "fr": "Un curseur dans le menu de l'engrenage (Affichage) rend tout plus petit ou plus grand, de 40 à 200 % : plus petit, on voit davantage à la fois, par exemple sur un téléphone avec un stylet. Mémorisé sur chaque appareil ; dans un navigateur sur ordinateur, c'est son propre zoom qui s'en charge (Ctrl + et Ctrl −).",
+    "it": "Un cursore nel menu dell'ingranaggio (Visualizzazione) rende tutto più piccolo o più grande, dal 40 al 200%: più piccolo mostra più cose insieme, per esempio sul telefono con un pennino. Memorizzato su ogni dispositivo; in un browser sul computer se ne occupa il suo zoom (Ctrl + e Ctrl −).",
+    "es": "Un control deslizante en el menú del engranaje (Visualización) lo hace todo más pequeño o más grande, del 40 al 200 %: más pequeño muestra más a la vez, por ejemplo en el móvil con un lápiz. Se guarda en cada dispositivo; en un navegador en el ordenador lo hace su propio zoom (Ctrl + y Ctrl −).",
+    "nl": "Een schuifregelaar in het tandwielmenu (Weergave) maakt alles kleiner of groter, van 40 tot 200%: kleiner laat meer tegelijk zien, bijvoorbeeld op een telefoon met een stylus. Wordt per apparaat onthouden; in een browser op de computer doet zijn eigen zoom dat (Ctrl + en Ctrl −).",
+    "pl": "Suwak w menu zębatki (Wygląd) zmniejsza lub powiększa wszystko, od 40 do 200%: mniejszy pokazuje więcej naraz, na przykład na telefonie z rysikiem. Zapamiętywane na każdym urządzeniu; w przeglądarce na komputerze robi to jej własne powiększenie (Ctrl + i Ctrl −)."
+  },
+  "image": "interface-size.webp",
+  "dev": "Page zoom, not CSS zoom, so hit tests stay right: the webview's zoom on the desktop (lib.rs, applied before the window shows), the viewport meta on phones and tablets (web/viewport.ts, boot.ts)."
+}

@@ -12,6 +12,12 @@ import type {
 import type { AudioDevices, AudioKind, HistoryView, MergeChoices, MergeView } from "./types.js";
 import { createMock } from "./mock.js";
 import { createWebLink } from "./web/host.js";
+import { setWebUiScale, webUiScale, webUiScaleMax, webUiScaleWorks } from "./web/viewport.js";
+
+/** A web page in a new tab (browser version and mock). */
+async function openInBrowser(url: string): Promise<void> {
+  window.open(url, "_blank", "noopener,noreferrer");
+}
 
 interface TauriGlobal {
   core: { invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> };
@@ -237,6 +243,18 @@ export interface Backend {
   exportReveal(path: string): Promise<void>;
   /** Close the app, even with unsaved changes. */
   appClose(): Promise<void>;
+  /** Interface size of this device (1 = 100 %). Desktop: the shell zooms the webview (remembered
+   *  in its settings file, applied before the window shows); browser: the page zoom of phones and
+   *  tablets through the viewport (web/viewport.ts). */
+  uiScale(): Promise<number>;
+  /** Sets the interface size; answers the size that applies (1 where the browser can't zoom the page). */
+  setUiScale(scale: number): Promise<number>;
+  /** Can the interface size change here? (Not in a desktop browser: its own zoom does it.) */
+  uiScaleWorks(): boolean;
+  /** The largest interface size that still leaves a usable layout here (a phone held upright: about 130 %). */
+  uiScaleMax(): number;
+  /** Open a web page (https) in the system's browser. */
+  openUrl(url: string): Promise<void>;
   /** The window is about to close, but there are unsaved changes. */
   /** Closing halted: unsaved changes and/or running library work. */
   onCloseRequested(cb: (info: { dirty: boolean; busy: string | null }) => void): void;
@@ -399,6 +417,11 @@ function coreBackend(link: CoreLink, platform: "desktop" | "web"): Backend {
     exportRun: (options) => call("export_run", { options }),
     exportReveal: (path) => call("export_reveal", { path }),
     appClose: () => call("app_close"),
+    uiScale: () => (platform === "desktop" ? call<number>("ui_scale_get") : Promise.resolve(webUiScale())),
+    setUiScale: (scale) => (platform === "desktop" ? call<number>("ui_scale_set", { scale }) : setWebUiScale(scale)),
+    uiScaleWorks: () => platform === "desktop" || webUiScaleWorks(),
+    uiScaleMax: () => (platform === "desktop" ? 2 : webUiScaleMax()),
+    openUrl: (url) => (platform === "desktop" ? call("open_url", { url }) : openInBrowser(url)),
     onCloseRequested: (cb) => {
       listen<{ dirty: boolean; busy: string | null } | null>("close-requested", (p) => cb(p ?? { dirty: true, busy: null }));
     },

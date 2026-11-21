@@ -2,6 +2,7 @@
 // simplified logic, no audio.
 
 import type { Backend } from "./bridge.js";
+import { setWebUiScale, webUiScale, webUiScaleMax, webUiScaleWorks } from "./web/viewport.js";
 import { t } from "./i18n.js";
 import type { ChatMessage, Command, EngineStatus, Project, Snapshot, Track } from "./types.js";
 
@@ -352,6 +353,13 @@ export function createMock(): Backend {
     exportRun: async () => { throw new Error(t("Export is only available in the app.")); },
     exportReveal: async () => {},
     appClose: async () => {},
+    uiScale: async () => webUiScale(),
+    setUiScale: (scale: number) => setWebUiScale(scale),
+    uiScaleWorks: () => webUiScaleWorks(),
+    uiScaleMax: () => webUiScaleMax(),
+    openUrl: async (url: string) => {
+      window.open(url, "_blank", "noopener,noreferrer");
+    },
     onCloseRequested: () => {},
     onAgentActivity: () => {},
     onOpenFile: () => {},

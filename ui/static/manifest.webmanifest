@@ -5,7 +5,7 @@
   "description": "Make music in your browser: tracks and notes, sounds, rhythm, harmony – no installation, no account, no server.",
   "start_url": "./",
   "scope": "./",
-  "display": "standalone",
+  "display": "fullscreen",
   "orientation": "any",
   "background_color": "#0d0f14",
   "theme_color": "#0d0f14",

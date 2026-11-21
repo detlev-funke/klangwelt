@@ -577,7 +577,8 @@ The app speaks English, German, French, Italian, Spanish, Dutch and Polish.
   the song's key and chords and the melody search go back to German
   (`keyInput`, `chordsInput`). The chord track is created as "Chords" in the
   chosen language; "Akkorde" (older projects) is recognised as well.
-* **Switching** (settings menu, gear in the transport bar): store the choice
+* **Switching** (settings menu, gear in the transport bar – one entry with the
+  current language opens the list as a page of its own): store the choice
   and reload the UI. A reload is needed because every module translates while
   it loads, including tables and the panels' templates from the core. Before the
   reload, `switchLanguageKeepingProject` (`ui/src/autosave.ts`) saves the project
@@ -682,6 +683,24 @@ default layout.
   on the track headers scrolls them, dragging along the keys shifts the pitch
   range, a tap shows the help for what was tapped. With `(pointer: coarse)`
   everything to tap is at least about 40 px.
+* **Interface size** (gear menu → Display, 40–200 %, `ui/src/uiprefs.ts`): page zoom,
+  never CSS `zoom` or a transform – those would put pointer events, element boxes
+  and canvas sizes into different coordinate systems and break every hit test.
+  Desktop: the webview's zoom (`ui_scale_set` in klangwelt-desktop lib.rs), kept in
+  the shell's settings file and applied before the window shows. Browser on phones
+  and tablets: the viewport meta, a layout width of device width / scale at an
+  initial scale of `scale` (`ui/src/web/viewport.ts`); never a layout narrower than
+  300 px, so upright phones top out at about 130 %. Desktop browsers ignore the
+  viewport meta; the slider is off there and points to the browser's own zoom.
+  `ui/src/boot.ts` (a classic script in `<head>`) applies size and spacing before
+  the first layout.
+* **Spacing** (tight, normal, airy): CSS custom properties under
+  `html[data-density]` (margins and gutters of the dock, tab bars, toolbar, panel
+  padding); the dock reads `--dk-gutter` and `--dk-inset` for its minimum sizes.
+* **Installed app:** the manifest asks for `display: fullscreen` (Android hides status
+  and navigation bar; iOS and desktop fall back to a window of their own); `#app`
+  pads all four `env(safe-area-inset-*)`. Android picks up a changed manifest only
+  with its periodic update check – removing and installing again applies it at once.
 
 ## Project files
 

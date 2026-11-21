@@ -3008,6 +3008,26 @@ const dict: Dict = {
   "drum kit": "batteria",
   "pitch": "altezza",
   "How the keys play: 0 = drum kit (each drum key its drum, every other key a tuned drum), 1 = pitch (every key a tuned drum at its pitch). Tuned drums: kick drum below C3, tom up to B4, snare from C5": "Come suonano i tasti: 0 = batteria (ogni tasto della batteria il suo tamburo, tutti gli altri tasti un tamburo accordato), 1 = altezza (ogni tasto un tamburo accordato alla sua altezza). Tamburi accordati: cassa sotto C3, tom fino a B4, rullante da C5",
+
+  // ui/src/components/settings.ts – Display, language list, project page
+  "{n}%": "{n}%",
+  "Interface size": "Dimensione dell'interfaccia",
+  "Back to 100%": "Torna al 100%",
+  "Smaller shows more at once – handy on a phone. Remembered on this device.": "Più piccola mostra più cose insieme – comodo sul telefono. Memorizzato su questo dispositivo.",
+  "In this browser its own zoom does that: Ctrl + and Ctrl − (on a Mac ⌘ + and ⌘ −).": "In questo browser se ne occupa il suo zoom: Ctrl + e Ctrl − (su Mac ⌘ + e ⌘ −).",
+  "Narrow gaps and margins: the most room for the content": "Spazi e margini stretti: il massimo spazio per il contenuto",
+  "The usual gaps and margins": "Gli spazi e i margini consueti",
+  "Wide gaps and margins: calmer, and edges are easier to grab": "Spazi e margini ampi: più arioso, e i bordi si afferrano più facilmente",
+  "Tight": "Compatto",
+  "Normal": "Normale",
+  "Airy": "Arioso",
+  "Spacing": "Spaziatura",
+  "Display": "Visualizzazione",
+  "The page couldn't be opened: {error}": "Impossibile aprire la pagina: {error}",
+  "Klangwelt on GitHub": "Klangwelt su GitHub",
+
+  // klangwelt-desktop/app/src/lib.rs – opening the project page
+  "Not a web address: {url}": "Non è un indirizzo web: {url}",
 };
 
 export default dict;

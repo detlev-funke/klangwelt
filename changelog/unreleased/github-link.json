@@ -1,0 +1,22 @@
+{
+  "type": "added",
+  "title": {
+    "en": "Klangwelt on GitHub",
+    "de": "Klangwelt auf GitHub",
+    "fr": "Klangwelt sur GitHub",
+    "it": "Klangwelt su GitHub",
+    "es": "Klangwelt en GitHub",
+    "nl": "Klangwelt op GitHub",
+    "pl": "Klangwelt na GitHubie"
+  },
+  "text": {
+    "en": "The gear menu leads to the project page: source code, releases, questions and ideas.",
+    "de": "Das Zahnrad-Menü führt zur Projektseite: Quelltext, Versionen, Fragen und Ideen.",
+    "fr": "Le menu de l'engrenage mène à la page du projet : code source, versions, questions et idées.",
+    "it": "Il menu dell'ingranaggio porta alla pagina del progetto: codice sorgente, versioni, domande e idee.",
+    "es": "El menú del engranaje lleva a la página del proyecto: código fuente, versiones, preguntas e ideas.",
+    "nl": "Het tandwielmenu leidt naar de projectpagina: broncode, versies, vragen en ideeën.",
+    "pl": "Menu zębatki prowadzi do strony projektu: kod źródłowy, wydania, pytania i pomysły."
+  },
+  "dev": "The desktop app opens it in the system's browser (open_url in lib.rs, https only)."
+}

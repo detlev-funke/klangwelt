@@ -1,5 +1,5 @@
 // Installing the browser version as an app (Android "Install app", desktop
-// browsers): the page links a web app manifest – name, start, standalone
+// browsers): the page links a web app manifest – name, start, full-screen
 // display, colors, icons 192/512 px plus maskable ones – the icons are real PNGs
 // of the stated size, a service worker controls the page, and Chrome's own
 // check (Page.getInstallabilityErrors) finds nothing missing.
@@ -27,7 +27,7 @@ const pngSizes = (urls) =>
       return { url, status: res.status, type: res.headers.get("content-type"), png, w: png ? dv.getUint32(16) : 0, h: png ? dv.getUint32(20) : 0 };
     })), urls);
 
-test("manifest: name, start, standalone display, colors – and icons that are PNGs of their size", async () => {
+test("manifest: name, start, full-screen display, colors – and icons that are PNGs of their size", async () => {
   const r = await app.send("Page.getAppManifest");
   assert.deepEqual(r.errors, [], "the manifest parses without errors");
   assert.match(r.url, /\/manifest\.webmanifest$/);
@@ -35,7 +35,9 @@ test("manifest: name, start, standalone display, colors – and icons that are P
   assert.equal(m.name, "Klangwelt");
   assert.equal(m.short_name, "Klangwelt");
   assert.equal(m.start_url, "./");
-  assert.equal(m.display, "standalone");
+  // installed, the app opens in full screen (no status and navigation bar on Android);
+  // where that isn't possible (iOS, desktop), browsers fall back to a window of its own
+  assert.equal(m.display, "fullscreen");
   assert.equal(m.background_color, "#0d0f14");
   assert.equal(m.theme_color, "#0d0f14");
   const png = m.icons.filter((i) => i.type === "image/png");

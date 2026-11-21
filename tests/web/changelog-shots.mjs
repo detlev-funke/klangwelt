@@ -620,6 +620,52 @@ const SHOTS = {
     },
   },
 
+  /** A phone (412 × 915, touch) at 60 % interface size with a song: the gear menu open at Display. */
+  "interface-size": {
+    async run(app) {
+      await viewport(app, 412, 915, { mobile: true });
+      // load-time checks (touch, small screen) see the phone
+      await app.reload();
+      await viewport(app, 412, 915, { mobile: true });
+      await app.eval(async () => (await import("./uiprefs.js")).setUiScale(0.6));
+      await app.waitFor(() => Math.abs(innerWidth - 412 / 0.6) <= 2, { what: "60 %" });
+      await app.eval(() => T.st.act(T.backend.projectNew()));
+      await song(app);
+      await app.eval(async () => {
+        T.st.showPanel("song");
+        await T.sleep(300);
+        const p = T.st.snapshot.peek().project;
+        const end = Math.max(...p.tracks.flatMap((t) => t.clips.map((c) => c.startBeats + (c.source.lengthBeats ?? 0))), 16);
+        const width = document.querySelector("kw-timeline")?.clientWidth ?? 300;
+        T.st.viewport.value = { pxPerBeat: (width - 12) / end, scrollX: 0, scrollY: 0 };
+      });
+      await sleep(600);
+      await app.clickOn('[data-help="einstellungen"]');
+      await app.waitFor(() => !!document.querySelector(".set-menu.open .scale-slider"), { what: "gear menu" });
+      await sleep(400);
+      await shoot(app, "interface-size", null, { park: { x: 1, y: 900 } });
+    },
+  },
+
+  /** The airy spacing on a tablet held sideways (1280 × 800, touch) with a song, the gear menu open at Display. */
+  "layout-spacing": {
+    async run(app) {
+      await viewport(app, 1280, 800, { mobile: true });
+      await app.reload();
+      await viewport(app, 1280, 800, { mobile: true });
+      await app.eval(() => T.st.act(T.backend.projectNew()));
+      await song(app);
+      await app.eval(async () => {
+        T.st.showPanel("song");
+        await T.sleep(300);
+      });
+      await app.clickOn('[data-help="einstellungen"]');
+      await app.clickOn('.set-menu.open [data-density="air"]');
+      await sleep(800);
+      await shoot(app, "layout-spacing", null, { park: { x: 1, y: 799 } });
+    },
+  },
+
   /** What's new (gear menu → What's new), at the top. */
   "whats-new": {
     async run(app) {

@@ -114,17 +114,17 @@ function assertFlags(menu, current) {
   }
 }
 
-/** Open the settings menu and read the language entries. */
+/** Open the settings menu, then its language list (the entry with the current language). */
 async function openLanguageMenu() {
   await app.clickOn('[data-help="einstellungen"]');
+  await app.clickOn(".set-menu.open .lang-entry");
   await app.waitFor(() => document.querySelectorAll(".set-menu.open [data-lang]").length === 7, { what: "language menu" });
   return languageMenu();
 }
 
 /** Choose a language in the settings menu. */
 async function choose(code) {
-  await app.clickOn('[data-help="einstellungen"]');
-  await app.waitFor(() => document.querySelectorAll(".set-menu.open [data-lang]").length === 7, { what: "language menu" });
+  await openLanguageMenu();
   await app.clickOn(`.set-menu.open [data-lang="${code}"]`);
 }
 

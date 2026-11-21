@@ -81,6 +81,7 @@ async function openSettings() {
 
 async function chooseLanguage(code) {
   await openSettings();
+  await app.clickOn(".set-menu.open .lang-entry");
   await app.clickOn(`.set-menu.open [data-lang="${code}"]`);
   await app.afterReload();
 }

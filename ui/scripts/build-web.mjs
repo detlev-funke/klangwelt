@@ -48,9 +48,12 @@ const walk = (dir) => {
   }
 };
 walk(out);
-const cached = files.filter((f) => f !== "web/sw.js").sort();
+const all = files.filter((f) => f !== "web/sw.js").sort();
+// The changelog's screenshots stay out of the list: the worker caches each one when the
+// What's new window first shows it, instead of every visitor downloading all of them.
+const cached = all.filter((f) => !f.startsWith("changelog/images/"));
 const hash = createHash("sha256");
-for (const f of cached) hash.update(f).update(readFileSync(join(out, f)));
+for (const f of all) hash.update(f).update(readFileSync(join(out, f)));
 const version = hash.digest("hex").slice(0, 12);
 const sw = readFileSync(join(out, "web", "sw.js"), "utf8")
   .replace("__KLANGWELT_VERSION__", version)

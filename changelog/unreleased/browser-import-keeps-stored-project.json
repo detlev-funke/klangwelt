@@ -1,6 +1,15 @@
 {
   "type": "fixed",
   "platform": "browser",
+  "title": {
+    "en": "No overwriting on import",
+    "de": "Kein Überschreiben beim Hereinholen",
+    "fr": "Plus d'écrasement à l'import",
+    "it": "Nessuna sovrascrittura all'importazione",
+    "es": "Sin sobrescribir al importar",
+    "nl": "Niets overschreven bij het inlezen",
+    "pl": "Bez nadpisywania przy wczytywaniu"
+  },
   "text": {
     "en": "A project file brought into the browser no longer overwrites a stored project of the same name; it gets “-2”, “-3” and so on.",
     "de": "Eine in den Browser geholte Projektdatei überschreibt kein gespeichertes Projekt gleichen Namens mehr; sie bekommt „-2“, „-3“ und so weiter.",

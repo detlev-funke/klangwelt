@@ -43,16 +43,22 @@ sw.addEventListener("activate", (e) => {
 });
 
 // Cache first, otherwise the network; addresses with parameters (e.g. ?ohne-sw)
-// count as the page itself.
+// count as the page itself. The changelog's screenshots aren't in FILES: each one goes
+// into the cache when it is first loaded.
 sw.addEventListener("fetch", (e) => {
   const req = e.request;
-  if (req.method !== "GET" || new URL(req.url).origin !== location.origin) return;
+  const url = new URL(req.url);
+  if (req.method !== "GET" || url.origin !== location.origin) return;
   // Ranges of the score library: the worker caches them itself (web/remote.ts)
   if (req.headers.has("range")) return;
+  const onDemand = url.pathname.startsWith(new URL("changelog/images/", sw.registration.scope).pathname);
   e.respondWith(
     caches.open(CACHE).then(async (c) => {
       const hit = (await c.match(req, { ignoreSearch: req.mode === "navigate" })) ?? (req.mode === "navigate" ? await c.match(new URL("index.html", sw.registration.scope).href) : undefined);
-      return hit ?? fetch(req);
+      if (hit) return hit;
+      const res = await fetch(req);
+      if (onDemand && res.ok) await c.put(req, res.clone());
+      return res;
     }),
   );
 });

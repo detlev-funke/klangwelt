@@ -1,13 +1,23 @@
 {
   "type": "added",
-  "text": {
-    "en": "What's new: the gear menu lists the changes of each version, and after an update a note points to them.",
-    "de": "Neuigkeiten: Das Zahnrad-Menü zeigt die Änderungen jeder Version, und nach einem Update weist ein Hinweis darauf hin.",
-    "fr": "Nouveautés : le menu de la roue dentée liste les changements de chaque version, et après une mise à jour un message les signale.",
-    "it": "Novità: il menu dell'ingranaggio elenca le modifiche di ogni versione, e dopo un aggiornamento un avviso le segnala.",
-    "es": "Novedades: el menú del engranaje muestra los cambios de cada versión y, tras una actualización, un aviso los señala.",
-    "nl": "Wat is er nieuw: het tandwielmenu toont de wijzigingen van elke versie, en na een update wijst een melding erop.",
-    "pl": "Nowości: menu z kołem zębatym pokazuje zmiany każdej wersji, a po aktualizacji wskazuje je komunikat."
+  "title": {
+    "en": "What's new",
+    "de": "Neuigkeiten",
+    "fr": "Nouveautés",
+    "it": "Novità",
+    "es": "Novedades",
+    "nl": "Wat is er nieuw",
+    "pl": "Nowości"
   },
-  "dev": "Data from changelog/ built into ui/dist/changelog/<lang>.js; the last version seen is kept in localStorage."
+  "text": {
+    "en": "the gear menu lists the changes of each version, bigger features with a screenshot, and after an update a note points to them.",
+    "de": "Das Zahnrad-Menü zeigt die Änderungen jeder Version, größere Neuerungen mit einem Bild, und nach einem Update weist ein Hinweis darauf hin.",
+    "fr": "le menu de la roue dentée liste les changements de chaque version, les nouveautés importantes avec une capture d'écran, et après une mise à jour un message les signale.",
+    "it": "il menu dell'ingranaggio elenca le modifiche di ogni versione, le novità più grandi con uno screenshot, e dopo un aggiornamento un avviso le segnala.",
+    "es": "el menú del engranaje muestra los cambios de cada versión, las novedades grandes con una captura de pantalla, y tras una actualización un aviso los señala.",
+    "nl": "het tandwielmenu toont de wijzigingen van elke versie, grotere vernieuwingen met een schermafbeelding, en na een update wijst een melding erop.",
+    "pl": "menu z kołem zębatym pokazuje zmiany każdej wersji, większe nowości ze zrzutem ekranu, a po aktualizacji wskazuje je komunikat."
+  },
+  "image": "whats-new.webp",
+  "dev": "Data from changelog/ built into ui/dist/changelog/<lang>.js with the screenshots from changelog/images/ (taken from the English UI by tests/web/changelog-shots.mjs); the last version seen is kept in localStorage."
 }

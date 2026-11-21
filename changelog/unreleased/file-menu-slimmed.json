@@ -1,12 +1,21 @@
 {
   "type": "changed",
+  "title": {
+    "en": "The File menu is shorter",
+    "de": "Das Datei-Menü ist kürzer",
+    "fr": "Le menu Fichier est plus court",
+    "it": "Il menu File è più corto",
+    "es": "El menú Archivo es más corto",
+    "nl": "Het menu Bestand is korter",
+    "pl": "Menu Plik jest krótsze"
+  },
   "text": {
-    "en": "The File menu is shorter: in the browser, downloading the project file is part of “Save as…”, and an empty project offers “Load demo”.",
-    "de": "Das Datei-Menü ist kürzer: Im Browser gehört das Herunterladen der Projektdatei zu „Speichern unter …“, und ein leeres Projekt bietet „Demo laden“ an.",
-    "fr": "Le menu Fichier est plus court : dans le navigateur, le téléchargement du fichier du projet fait partie de « Enregistrer sous … », et un projet vide propose « Charger la démo ».",
-    "it": "Il menu File è più corto: nel browser lo scaricamento del file di progetto fa parte di «Salva con nome …», e un progetto vuoto offre «Carica demo».",
-    "es": "El menú Archivo es más corto: en el navegador, la descarga del archivo del proyecto forma parte de «Guardar como…», y un proyecto vacío ofrece «Cargar demo».",
-    "nl": "Het menu Bestand is korter: in de browser hoort het downloaden van het projectbestand bij ‘Opslaan als …’, en een leeg project biedt ‘Demo laden’ aan.",
-    "pl": "Menu Plik jest krótsze: w przeglądarce pobieranie pliku projektu jest częścią „Zapisz jako …”, a pusty projekt proponuje „Wczytaj demo”."
+    "en": "in the browser, downloading the project file is part of “Save as…”, and an empty project offers “Load demo”.",
+    "de": "Im Browser gehört das Herunterladen der Projektdatei zu „Speichern unter …“, und ein leeres Projekt bietet „Demo laden“ an.",
+    "fr": "dans le navigateur, le téléchargement du fichier du projet fait partie de « Enregistrer sous … », et un projet vide propose « Charger la démo ».",
+    "it": "nel browser lo scaricamento del file di progetto fa parte di «Salva con nome …», e un progetto vuoto offre «Carica demo».",
+    "es": "en el navegador, la descarga del archivo del proyecto forma parte de «Guardar como…», y un proyecto vacío ofrece «Cargar demo».",
+    "nl": "in de browser hoort het downloaden van het projectbestand bij ‘Opslaan als …’, en een leeg project biedt ‘Demo laden’ aan.",
+    "pl": "w przeglądarce pobieranie pliku projektu jest częścią „Zapisz jako …”, a pusty projekt proponuje „Wczytaj demo”."
   }
 }

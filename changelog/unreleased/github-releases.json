@@ -1,6 +1,9 @@
 {
   "type": "internal",
+  "title": {
+    "en": "Releases"
+  },
   "text": {
-    "en": "Releases: one JSON file per change in changelog/; `npm run changelog -- release` makes a release named after its date and time and tags it, and a pushed tag becomes a GitHub release (the desktop app's with the .exe)."
+    "en": "one JSON file per change in changelog/; `npm run changelog -- release` makes a release named after its date and time and tags it, and a pushed tag becomes a GitHub release (the desktop app's with the .exe)."
   }
 }

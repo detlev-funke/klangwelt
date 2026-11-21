@@ -17,7 +17,11 @@ export interface Change {
   id: string;
   type: ChangeType;
   platform: ChangePlatform;
+  /** Shown in bold before the text, with a colon. */
+  title: string;
   text: string;
+  /** Screenshot (from the English UI) next to index.html, e.g. changelog/images/history-window.webp */
+  image?: string;
 }
 export interface Release {
   version: string;
@@ -129,13 +133,22 @@ function formatDate(iso: string): string {
   }
 }
 
+/** "**Title:** text", and the screenshot below it (loaded only when scrolled near). */
+function changeBody(c: Change): HTMLElement {
+  return h(
+    "div",
+    { class: "whatsnew-body" },
+    h("p", { class: "whatsnew-line" }, h("b", { class: "whatsnew-title" }, t("{title}:", { title: c.title })), " ", h("span", { class: "whatsnew-text" }, c.text)),
+    // loading before src: set the other way round, the picture may load at once
+    c.image ? h("img", { class: "whatsnew-image", loading: "lazy", decoding: "async", alt: c.title, src: c.image }) : null,
+  );
+}
+
 function changeList(entries: Change[]): HTMLElement {
   return h(
     "ul",
     { class: "whatsnew-entries" },
-    ...entries.map((c) =>
-      h("li", { class: `whatsnew-entry ${c.type}`, "data-change": c.id }, h("span", { class: "whatsnew-type" }, t(LABELS[c.type])), h("span", { class: "whatsnew-text" }, c.text)),
-    ),
+    ...entries.map((c) => h("li", { class: `whatsnew-entry ${c.type}`, "data-change": c.id }, h("span", { class: "whatsnew-type" }, t(LABELS[c.type])), changeBody(c))),
   );
 }
 

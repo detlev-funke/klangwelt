@@ -1,12 +1,21 @@
 {
   "type": "changed",
+  "title": {
+    "en": "Switching the language",
+    "de": "Sprache umschalten",
+    "fr": "Changer de langue",
+    "it": "Cambiare lingua",
+    "es": "Cambiar de idioma",
+    "nl": "Taal wisselen",
+    "pl": "Zmiana języka"
+  },
   "text": {
-    "en": "Switching the language keeps the open project.",
-    "de": "Beim Umschalten der Sprache bleibt das offene Projekt erhalten.",
-    "fr": "Changer de langue conserve le projet ouvert.",
-    "it": "Cambiare lingua mantiene il progetto aperto.",
-    "es": "Cambiar de idioma conserva el proyecto abierto.",
-    "nl": "Bij het wisselen van taal blijft het open project behouden.",
-    "pl": "Zmiana języka zachowuje otwarty projekt."
+    "en": "Klangwelt reloads in the new language with the open project, unsaved changes included.",
+    "de": "Klangwelt lädt in der neuen Sprache mit dem offenen Projekt neu, samt ungespeicherten Änderungen.",
+    "fr": "Klangwelt se recharge dans la nouvelle langue avec le projet ouvert, modifications non enregistrées comprises.",
+    "it": "Klangwelt si ricarica nella nuova lingua con il progetto aperto, comprese le modifiche non salvate.",
+    "es": "Klangwelt se recarga en el nuevo idioma con el proyecto abierto, incluidos los cambios sin guardar.",
+    "nl": "Klangwelt laadt opnieuw in de nieuwe taal met het open project, inclusief niet-opgeslagen wijzigingen.",
+    "pl": "Klangwelt przeładowuje się w nowym języku z otwartym projektem, łącznie z niezapisanymi zmianami."
   }
 }

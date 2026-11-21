@@ -1,5 +1,14 @@
 {
   "type": "added",
+  "title": {
+    "en": "Open a project file",
+    "de": "Projektdatei öffnen",
+    "fr": "Ouvrir un fichier de projet",
+    "it": "Aprire un file di progetto",
+    "es": "Abrir un archivo de proyecto",
+    "nl": "Projectbestand openen",
+    "pl": "Otwieranie pliku projektu"
+  },
   "text": {
     "en": "“Choose file…” in the Open dialog loads a .klangwelt file through the system's file picker.",
     "de": "„Datei auswählen …“ im Öffnen-Dialog lädt eine .klangwelt-Datei über die Dateiauswahl des Systems.",

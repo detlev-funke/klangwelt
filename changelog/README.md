@@ -16,27 +16,46 @@ the topic: `changelog/unreleased/tuned-drums.json`.
 ```json
 {
   "type": "added",
-  "platform": "browser",
-  "text": {
-    "en": "The browser version can be installed as an app, on phones too, and then starts offline.",
-    "de": "Die Browser-Version lässt sich als App installieren, auch auf dem Handy, und startet dann ohne Netz.",
+  "title": {
+    "en": "History window",
+    "de": "Fenster Historie",
     "fr": "…", "it": "…", "es": "…", "nl": "…", "pl": "…"
   },
-  "dev": "Web app manifest and icons (scripts/icons.mjs renders them with a headless Edge)."
+  "text": {
+    "en": "every edit step with its key figures; a click jumps back to it.",
+    "de": "Jeder Bearbeitungsschritt mit seinen Kennzahlen; ein Klick springt dorthin zurück.",
+    "fr": "…", "it": "…", "es": "…", "nl": "…", "pl": "…"
+  },
+  "image": "history-window.webp",
+  "dev": "The undo history is a tree (klang-core history.rs)."
 }
 ```
 
+Everywhere it appears – CHANGELOG.md, GitHub and the app – an entry reads
+"**History window:** every edit step …", with the screenshot below it.
+
 * **`type`**: `added`, `changed`, `fixed` or `removed` – shown in the app.
   `internal` is for developers only (workflows, docs, refactoring): it appears only in
-  CHANGELOG.md and needs only the English text.
+  CHANGELOG.md and needs only the English title and text.
 * **`platform`** (optional): `browser` or `desktop` when only one of them is
   affected; left out, it concerns both. The app leaves out the other platform's
   entries, CHANGELOG.md marks them.
-* **`text`**: one line per language – `en`, `de`, `fr`, `it`, `es`, `nl`, `pl`. Write
-  for the people using Klangwelt: what they can do now, or what works differently.
-  Use the UI's own words for menus and windows (look them up in `ui/src/i18n/*.ts`)
-  and the same form of address as the UI (German "du", French "vous"). File and
-  function names belong in `dev`.
+* **`title`**: a short name for the change per language, shown in bold – a feature,
+  a window, or what now works differently ("Playback stops at the end"). At most 80
+  characters, without the colon: the layout adds it (in French with the space before).
+* **`text`**: one line per language – `en`, `de`, `fr`, `it`, `es`, `nl`, `pl` –
+  continuing after the title's colon, so it shouldn't repeat the title. Write for the
+  people using Klangwelt: what they can do now, or what works differently. Use the UI's
+  own words for menus and windows (look them up in `ui/src/i18n/*.ts`) and the same
+  form of address as the UI (German "du", French "vous"). File and function names
+  belong in `dev`.
+* **`image`** (optional): a screenshot of a bigger feature – a new window, a new
+  mode, a different layout – as a file name in `changelog/images/`. Screenshots come
+  from the **English** UI only (the app shows the same picture in every language) and
+  are generated, not drawn: add a shot named after the entry's id to
+  `tests/web/changelog-shots.mjs`, then run it (after `npm run build:web` in `ui/`):
+  `node tests/web/changelog-shots.mjs history-window` writes
+  `changelog/images/history-window.webp`. Commit the picture with the entry.
 * **`dev`** (optional): one technical line in English, shown under the entry in
   CHANGELOG.md.
 
@@ -85,8 +104,10 @@ commits that, and sets the same tag in klangwelt-desktop.
 
 **Publishing** happens when the tags are pushed (`git push --follow-tags`, klangwelt
 first, then klangwelt-desktop). Then `.github/workflows/release.yml` creates the GitHub
-release of klangwelt with the notes from the release file, and the one in
-klangwelt-desktop builds the exe on Windows and attaches it. The browser version is
+release of klangwelt with the notes from the release file (their screenshots point
+at the files in the tagged commit, so a release refuses entries whose picture isn't
+committed), and the one in klangwelt-desktop builds the exe on Windows and attaches
+it. The browser version is
 deployed on every push to main anyway; a release gives that state a name.
 
 If a push comes before a release, nothing is missing: the app shows unreleased
@@ -95,7 +116,11 @@ entries at the top under "Since version …".
 ## In the app
 
 `npm run build` writes `ui/dist/changelog/<lang>.js` (one ES module per language, no
-internal entries) next to the UI; `ui/src/components/whatsnew.ts` shows it. After an
+internal entries) next to the UI and copies the screenshots into
+`ui/dist/changelog/images/`; `ui/src/components/whatsnew.ts` shows it, each picture
+loaded only when it scrolls into view. The desktop app carries them inside the exe; the
+browser version's service worker leaves them out of its offline list and keeps each
+one once it was shown. After an
 update – a release newer than the one stored in `localStorage`
 (`klangwelt.changelog.seen`) – a note with a button and a dot on the gear point to
 the window until it is opened. A first start shows nothing.

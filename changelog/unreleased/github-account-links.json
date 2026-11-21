@@ -1,6 +1,9 @@
 {
   "type": "internal",
+  "title": {
+    "en": "GitHub account"
+  },
   "text": {
-    "en": "Links point to the new GitHub account detlev-funke."
+    "en": "links point to the new account detlev-funke."
   }
 }

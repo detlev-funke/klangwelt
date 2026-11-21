@@ -45,7 +45,15 @@ const dialog = () =>
         version: s.dataset.version ?? null,
         heading: s.querySelector(".whatsnew-date")?.textContent,
         fresh: !!s.querySelector(".whatsnew-fresh"),
-        entries: [...s.querySelectorAll(".whatsnew-entry")].map((e) => ({ id: e.dataset.change, label: e.querySelector(".whatsnew-type").textContent, text: e.querySelector(".whatsnew-text").textContent })),
+        entries: [...s.querySelectorAll(".whatsnew-entry")].map((e) => ({
+          id: e.dataset.change,
+          label: e.querySelector(".whatsnew-type").textContent,
+          title: e.querySelector(".whatsnew-title").textContent,
+          titleBold: Number(getComputedStyle(e.querySelector(".whatsnew-title")).fontWeight) >= 600,
+          line: e.querySelector(".whatsnew-line").textContent,
+          text: e.querySelector(".whatsnew-text").textContent,
+          image: e.querySelector("img.whatsnew-image")?.getAttribute("src") ?? null,
+        })),
       })),
     };
   });
@@ -68,7 +76,9 @@ test("first start: no note and no dot, the newest release is remembered quietly"
   assert.equal(s.note, null);
 });
 
-test("gear menu → What's new: every release in German, browser entries only, with the version", async () => {
+test("gear menu → What's new: every release in German with bold titles and screenshots, browser entries only, with the version", async () => {
+  // the service worker serves the screenshots below (and keeps them)
+  await app.waitFor(() => !!navigator.serviceWorker.controller, { timeout: 15000, what: "service worker active" });
   await app.clickOn('[data-help="einstellungen"]');
   await app.waitFor(() => /Version \S+/.test(document.querySelector(".set-menu.open [data-whatsnew]")?.textContent ?? ""), { what: "menu entry with version" });
   const item = await app.eval(() => {
@@ -90,6 +100,16 @@ test("gear menu → What's new: every release in German, browser entries only, w
   const releases = d.sections.filter((s) => !s.unreleased);
   assert.deepEqual(releases.map((s) => s.version), want.releases.map((r) => r.version));
   for (const [i, r] of want.releases.entries()) assert.deepEqual(releases[i].entries.map((e) => [e.id, e.text]), r.entries.map((e) => [e.id, e.text]), r.version);
+  // every entry: "**Title:** text", a screenshot where the entry has one
+  const shown = d.sections.flatMap((s) => s.entries);
+  const wanted = new Map([...want.releases.flatMap((r) => r.entries), ...want.unreleased].map((e) => [e.id, e]));
+  for (const e of shown) {
+    const w = wanted.get(e.id);
+    assert.equal(e.title, `${w.title}:`, e.id);
+    assert.ok(e.titleBold, `${e.id}: title in bold`);
+    assert.equal(e.line, `${w.title}: ${w.text}`, e.id);
+    assert.equal(e.image, w.image ?? null, `${e.id}: screenshot`);
+  }
   assert.ok(releases.every((s) => !s.fresh), "nothing is new for a first start");
   // dates in German, type labels translated
   assert.match(releases.at(-1).heading, /^14\. November 2026/);
@@ -105,6 +125,38 @@ test("gear menu → What's new: every release in German, browser entries only, w
     assert.deepEqual(open[0].entries.map((e) => e.id), want.unreleased.map((e) => e.id));
     assert.ok(open[0].entries.some((e) => e.id === "installable-web-app"), "a browser-only entry is shown");
   }
+
+  // the screenshots load when scrolled into view and fit the window's width
+  const pictures = await app.eval(async () => {
+    const out = [];
+    for (const img of document.querySelectorAll(".modal img.whatsnew-image")) {
+      img.scrollIntoView({ block: "center" });
+      const t0 = performance.now();
+      while (!(img.complete && img.naturalWidth) && performance.now() - t0 < 5000) await new Promise((r) => setTimeout(r, 50));
+      const list = img.closest(".whatsnew-list").getBoundingClientRect();
+      const r = img.getBoundingClientRect();
+      out.push({ src: img.getAttribute("src"), loaded: img.naturalWidth > 0, lazy: img.loading, alt: img.alt, fits: r.width > 0 && r.width <= list.width + 0.5 });
+    }
+    return out;
+  });
+  const withImage = shown.filter((e) => e.image);
+  assert.equal(pictures.length, withImage.length);
+  for (const p of pictures) {
+    assert.ok(p.loaded, `${p.src} loads`);
+    assert.equal(p.lazy, "lazy");
+    assert.ok(p.fits, `${p.src} fits the window`);
+    assert.equal(p.alt, wanted.get(withImage.find((e) => e.image === p.src).id).title, "alt text: the title");
+  }
+  // the service worker's offline list leaves them out; each one is kept once it was shown
+  const sw = await app.eval(async (srcs) => {
+    const key = (await caches.keys()).find((k) => k.startsWith("klangwelt-"));
+    const cache = await caches.open(key);
+    const kept = await Promise.all(srcs.map(async (s) => !!(await cache.match(new URL(s, location.href).href))));
+    const script = await (await fetch("sw.js", { cache: "no-store" })).text();
+    return { kept, listed: script.match(/"changelog\/images\/[^"]+"/g) ?? [] };
+  }, pictures.map((p) => p.src));
+  assert.deepEqual(sw.listed, [], "no screenshot in the list every visitor downloads");
+  assert.ok(sw.kept.every(Boolean), "shown screenshots are kept for offline use");
 
   await app.clickOn(".modal .modal-actions .btn", { text: "Schließen" });
   await app.waitFor(() => !document.querySelector(".modal"), { what: "window closed" });

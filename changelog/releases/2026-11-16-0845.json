@@ -6,32 +6,60 @@
     {
       "id": "phones-and-tablets",
       "type": "added",
+      "title": {
+        "en": "Usable on phones and tablets",
+        "de": "Auf Handy und Tablet nutzbar",
+        "fr": "Utilisable sur téléphone et tablette",
+        "it": "Utilizzabile su telefono e tablet",
+        "es": "Se puede usar en móviles y tabletas",
+        "nl": "Bruikbaar op telefoon en tablet",
+        "pl": "Działa na telefonach i tabletach"
+      },
       "text": {
-        "en": "Usable on phones and tablets: a compact window view, two fingers pan and zoom, a long press opens the context menu, a double tap adds a note.",
-        "de": "Auf Handy und Tablet nutzbar: kompakte Fensteransicht, zwei Finger verschieben und zoomen, langes Drücken öffnet das Kontextmenü, Doppeltippen setzt eine Note.",
-        "fr": "Utilisable sur téléphone et tablette : vue compacte des fenêtres, deux doigts pour déplacer et zoomer, un appui long ouvre le menu contextuel, un double tap ajoute une note.",
-        "it": "Utilizzabile su telefono e tablet: vista compatta delle finestre, due dita per spostare e zoomare, una pressione prolungata apre il menu contestuale, un doppio tocco aggiunge una nota.",
-        "es": "Se puede usar en móviles y tabletas: vista compacta de ventanas, dos dedos desplazan y hacen zoom, una pulsación larga abre el menú contextual y un doble toque añade una nota.",
-        "nl": "Bruikbaar op telefoon en tablet: compacte vensterweergave, met twee vingers schuiven en zoomen, lang drukken opent het contextmenu, dubbeltikken zet een noot.",
-        "pl": "Działa na telefonach i tabletach: kompaktowy widok okien, dwa palce przesuwają i powiększają, długie przytrzymanie otwiera menu kontekstowe, podwójne stuknięcie dodaje nutę."
-      }
+        "en": "a compact window view, two fingers pan and zoom, a long press opens the context menu, a double tap adds a note.",
+        "de": "kompakte Fensteransicht, zwei Finger verschieben und zoomen, langes Drücken öffnet das Kontextmenü, Doppeltippen setzt eine Note.",
+        "fr": "vue compacte des fenêtres, deux doigts pour déplacer et zoomer, un appui long ouvre le menu contextuel, un double tap ajoute une note.",
+        "it": "vista compatta delle finestre, due dita per spostare e zoomare, una pressione prolungata apre il menu contestuale, un doppio tocco aggiunge una nota.",
+        "es": "vista compacta de ventanas, dos dedos desplazan y hacen zoom, una pulsación larga abre el menú contextual y un doble toque añade una nota.",
+        "nl": "compacte vensterweergave, met twee vingers schuiven en zoomen, lang drukken opent het contextmenu, dubbeltikken zet een noot.",
+        "pl": "kompaktowy widok okien, dwa palce przesuwają i powiększają, długie przytrzymanie otwiera menu kontekstowe, podwójne stuknięcie dodaje nutę."
+      },
+      "image": "phones-and-tablets.webp"
     },
     {
       "id": "responsive-toolbar",
       "type": "added",
+      "title": {
+        "en": "The toolbar fits every window width",
+        "de": "Die Werkzeugleiste passt in jede Fensterbreite",
+        "fr": "La barre d'outils s'adapte à toute largeur de fenêtre",
+        "it": "La barra degli strumenti si adatta a ogni larghezza della finestra",
+        "es": "La barra de herramientas cabe en cualquier ancho de ventana",
+        "nl": "De werkbalk past in elke vensterbreedte",
+        "pl": "Pasek narzędzi mieści się w każdej szerokości okna"
+      },
       "text": {
-        "en": "The toolbar fits every window width: what has no room moves into the “⋯” menu, and the gear always stays.",
-        "de": "Die Werkzeugleiste passt in jede Fensterbreite: Was keinen Platz hat, wandert ins Menü „⋯“, das Zahnrad bleibt immer.",
-        "fr": "La barre d'outils s'adapte à toute largeur de fenêtre : ce qui ne tient pas passe dans le menu « ⋯ », et la roue dentée reste toujours.",
-        "it": "La barra degli strumenti si adatta a ogni larghezza della finestra: ciò che non ci sta passa nel menu «⋯», e l'ingranaggio resta sempre.",
-        "es": "La barra de herramientas cabe en cualquier ancho de ventana: lo que no cabe pasa al menú «⋯» y el engranaje siempre se queda.",
-        "nl": "De werkbalk past in elke vensterbreedte: wat geen plek heeft, gaat naar het menu ‘⋯’, en het tandwiel blijft altijd staan.",
-        "pl": "Pasek narzędzi mieści się w każdej szerokości okna: co się nie mieści, trafia do menu „⋯”, a koło zębate zostaje zawsze."
+        "en": "what has no room moves into the “⋯” menu, and the gear always stays.",
+        "de": "Was keinen Platz hat, wandert ins Menü „⋯“, das Zahnrad bleibt immer.",
+        "fr": "ce qui ne tient pas passe dans le menu « ⋯ », et la roue dentée reste toujours.",
+        "it": "ciò che non ci sta passa nel menu «⋯», e l'ingranaggio resta sempre.",
+        "es": "lo que no cabe pasa al menú «⋯» y el engranaje siempre se queda.",
+        "nl": "wat geen plek heeft, gaat naar het menu ‘⋯’, en het tandwiel blijft altijd staan.",
+        "pl": "co się nie mieści, trafia do menu „⋯”, a koło zębate zostaje zawsze."
       }
     },
     {
       "id": "expression-detection",
       "type": "added",
+      "title": {
+        "en": "Dynamics and articulation from recordings",
+        "de": "Dynamik und Artikulation aus Aufnahmen",
+        "fr": "Nuances et articulation depuis les enregistrements",
+        "it": "Dinamica e articolazione dalle registrazioni",
+        "es": "Dinámica y articulación de las grabaciones",
+        "nl": "Dynamiek en articulatie uit opnames",
+        "pl": "Dynamika i artykulacja z nagrań"
+      },
       "text": {
         "en": "The recording analysis detects dynamics, accents and sforzati, staccato and legato, and carries them into the notes.",
         "de": "Die Aufnahme-Analyse erkennt Dynamik, Akzente und Sforzati, Staccato und Legato und übernimmt sie in die Noten.",
@@ -46,33 +74,60 @@
     {
       "id": "language-flags",
       "type": "added",
+      "title": {
+        "en": "Flags in the language menu",
+        "de": "Flaggen im Sprachmenü",
+        "fr": "Drapeaux dans le menu des langues",
+        "it": "Bandiere nel menu delle lingue",
+        "es": "Banderas en el menú de idiomas",
+        "nl": "Vlaggen in het taalmenu",
+        "pl": "Flagi w menu języków"
+      },
       "text": {
-        "en": "Flags in the language menu.",
-        "de": "Flaggen im Sprachmenü.",
-        "fr": "Des drapeaux dans le menu des langues.",
-        "it": "Bandiere nel menu delle lingue.",
-        "es": "Banderas en el menú de idiomas.",
-        "nl": "Vlaggen in het taalmenu.",
-        "pl": "Flagi w menu języków."
+        "en": "each language is shown with its flag.",
+        "de": "Jede Sprache steht mit ihrer Flagge da.",
+        "fr": "chaque langue apparaît avec son drapeau.",
+        "it": "ogni lingua compare con la sua bandiera.",
+        "es": "cada idioma aparece con su bandera.",
+        "nl": "elke taal staat er met haar vlag bij.",
+        "pl": "każdy język ma przy sobie swoją flagę."
       },
       "dev": "Inline SVG (ui/src/flags.ts), because emoji flags show up as letters on Windows."
     },
     {
       "id": "export-in-file-menu",
       "type": "changed",
+      "title": {
+        "en": "Export is in the File menu (Ctrl+E)",
+        "de": "Exportieren steckt im Datei-Menü (Strg+E)",
+        "fr": "Exporter se trouve dans le menu Fichier (Ctrl+E)",
+        "it": "Esporta è nel menu File (Ctrl+E)",
+        "es": "Exportar está en el menú Archivo (Ctrl+E)",
+        "nl": "Exporteren zit in het menu Bestand (Ctrl+E)",
+        "pl": "Eksportuj jest w menu Plik (Ctrl+E)"
+      },
       "text": {
-        "en": "Export is in the File menu (Ctrl+E); Save is a disk with a dot for unsaved changes, and the project name has more room.",
-        "de": "Exportieren steckt im Datei-Menü (Strg+E); Speichern ist eine Diskette mit Punkt für ungesicherte Änderungen, und der Projektname hat mehr Platz.",
-        "fr": "Exporter se trouve dans le menu Fichier (Ctrl+E) ; Enregistrer est une disquette avec un point pour les modifications non enregistrées, et le nom du projet a plus de place.",
-        "it": "Esporta è nel menu File (Ctrl+E); Salva è un dischetto con un punto per le modifiche non salvate, e il nome del progetto ha più spazio.",
-        "es": "Exportar está en el menú Archivo (Ctrl+E); Guardar es un disquete con un punto para los cambios sin guardar, y el nombre del proyecto tiene más espacio.",
-        "nl": "Exporteren zit in het menu Bestand (Ctrl+E); Opslaan is een diskette met een stip voor niet-opgeslagen wijzigingen, en de projectnaam heeft meer ruimte.",
-        "pl": "Eksportuj jest w menu Plik (Ctrl+E); Zapisz to dyskietka z kropką przy niezapisanych zmianach, a nazwa projektu ma więcej miejsca."
+        "en": "Save is a disk with a dot for unsaved changes, and the project name has more room.",
+        "de": "Speichern ist eine Diskette mit Punkt für ungesicherte Änderungen, und der Projektname hat mehr Platz.",
+        "fr": "Enregistrer est une disquette avec un point pour les modifications non enregistrées, et le nom du projet a plus de place.",
+        "it": "Salva è un dischetto con un punto per le modifiche non salvate, e il nome del progetto ha più spazio.",
+        "es": "Guardar es un disquete con un punto para los cambios sin guardar, y el nombre del proyecto tiene más espacio.",
+        "nl": "Opslaan is een diskette met een stip voor niet-opgeslagen wijzigingen, en de projectnaam heeft meer ruimte.",
+        "pl": "Zapisz to dyskietka z kropką przy niezapisanych zmianach, a nazwa projektu ma więcej miejsca."
       }
     },
     {
       "id": "track-header-bar-fits",
       "type": "fixed",
+      "title": {
+        "en": "Track header bar",
+        "de": "Leiste über den Spurköpfen",
+        "fr": "Barre des en-têtes de piste",
+        "it": "Barra delle intestazioni delle tracce",
+        "es": "Barra de cabeceras de pista",
+        "nl": "Balk boven de spoorkoppen",
+        "pl": "Pasek nad nagłówkami ścieżek"
+      },
       "text": {
         "en": "The bar above the track headers no longer cuts off “+ Instrument” in any language.",
         "de": "Die Leiste über den Spurköpfen schneidet „+ Instrument“ in keiner Sprache mehr ab.",

@@ -754,6 +754,11 @@ body.dk-dragging, body.dk-dragging * { cursor: grabbing !important; user-select:
 .whatsnew-entry.changed .whatsnew-type { color: var(--accent); }
 .whatsnew-entry.fixed .whatsnew-type { color: #b9a4ff; }
 .whatsnew-entry.removed .whatsnew-type { color: var(--muted); }
+.whatsnew-body { min-width: 0; }
+.whatsnew-line { margin: 0; }
+.whatsnew-title { font-weight: 650; color: var(--text); }
+/* screenshot of a bigger feature (English UI), at most as wide as the text */
+.whatsnew-image { display: block; max-width: 100%; height: auto; margin: 6px 0 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel-2); }
 @media (max-width: 480px) { .whatsnew-entry { grid-template-columns: minmax(0, 1fr); gap: 0; } }
 .toast.has-action { display: flex; align-items: center; gap: 12px; pointer-events: auto; }
 .toast-action { height: 26px; flex: none; }

@@ -6,21 +6,34 @@
     {
       "id": "live-analysis",
       "type": "added",
+      "title": {
+        "en": "Live analysis while recording",
+        "de": "Live-Analyse während der Aufnahme",
+        "fr": "Analyse en direct pendant l'enregistrement",
+        "it": "Analisi dal vivo durante la registrazione",
+        "es": "Análisis en vivo durante la grabación",
+        "nl": "Live-analyse tijdens het opnemen",
+        "pl": "Analiza na żywo podczas nagrywania"
+      },
       "text": {
-        "en": "Live analysis while recording: the note you sing or play, the level, the key and the tempo as they come in.",
-        "de": "Live-Analyse während der Aufnahme: der gesungene oder gespielte Ton, der Pegel, die Tonart und das Tempo, während sie entstehen.",
-        "fr": "Analyse en direct pendant l'enregistrement : la note chantée ou jouée, le niveau, la tonalité et le tempo, au fur et à mesure.",
-        "it": "Analisi dal vivo durante la registrazione: la nota cantata o suonata, il livello, la tonalità e il tempo, man mano che arrivano.",
-        "es": "Análisis en vivo durante la grabación: la nota que cantas o tocas, el nivel, la tonalidad y el tempo a medida que llegan.",
-        "nl": "Live-analyse tijdens het opnemen: de gezongen of gespeelde toon, het niveau, de toonsoort en het tempo terwijl ze binnenkomen.",
-        "pl": "Analiza na żywo podczas nagrywania: śpiewany lub grany dźwięk, poziom, tonacja i tempo na bieżąco."
-      }
+        "en": "the note you sing or play, the level, the key and the tempo as they come in.",
+        "de": "der gesungene oder gespielte Ton, der Pegel, die Tonart und das Tempo, während sie entstehen.",
+        "fr": "la note chantée ou jouée, le niveau, la tonalité et le tempo, au fur et à mesure.",
+        "it": "la nota cantata o suonata, il livello, la tonalità e il tempo, man mano che arrivano.",
+        "es": "la nota que cantas o tocas, el nivel, la tonalidad y el tempo a medida que llegan.",
+        "nl": "de gezongen of gespeelde toon, het niveau, de toonsoort en het tempo terwijl ze binnenkomen.",
+        "pl": "śpiewany lub grany dźwięk, poziom, tonacja i tempo na bieżąco."
+      },
+      "image": "live-analysis.webp"
     },
     {
       "id": "readme-library-in-browser",
       "type": "internal",
+      "title": {
+        "en": "README"
+      },
       "text": {
-        "en": "README: the browser version has the score library too."
+        "en": "the browser version has the score library too."
       }
     }
   ]

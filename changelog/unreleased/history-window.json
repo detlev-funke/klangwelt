@@ -1,13 +1,23 @@
 {
   "type": "added",
-  "text": {
-    "en": "History window: every edit step with its key figures; a click jumps back to it. Checkpoints name a step, and editing after an undo starts a variant instead of losing the later steps.",
-    "de": "Fenster Historie: jeder Bearbeitungsschritt mit seinen Kennzahlen; ein Klick springt dorthin zurück. Checkpoints benennen einen Schritt, und Bearbeiten nach einem Rückgängig beginnt eine Variante, statt die späteren Schritte zu verlieren.",
-    "fr": "Fenêtre Historique : chaque étape de modification avec ses chiffres clés ; un clic y revient. Les points de contrôle nomment une étape, et modifier après une annulation crée une variante au lieu de perdre les étapes suivantes.",
-    "it": "Finestra Cronologia: ogni passo di modifica con i suoi dati chiave; un clic ci torna. I checkpoint danno un nome a un passo, e modificare dopo un annullamento crea una variante invece di perdere i passi successivi.",
-    "es": "Ventana Historial: cada paso de edición con sus cifras clave; un clic vuelve a él. Los puntos de control dan nombre a un paso, y editar tras deshacer crea una variante en lugar de perder los pasos posteriores.",
-    "nl": "Venster Geschiedenis: elke bewerkingsstap met zijn kerncijfers; een klik springt ernaar terug. Checkpoints geven een stap een naam, en bewerken na ongedaan maken begint een variant in plaats van de latere stappen kwijt te raken.",
-    "pl": "Okno Historia: każdy krok edycji z jego kluczowymi danymi; kliknięcie wraca do niego. Punkty kontrolne nadają krokowi nazwę, a edycja po cofnięciu zaczyna wariant zamiast tracić późniejsze kroki."
+  "title": {
+    "en": "History window",
+    "de": "Fenster Historie",
+    "fr": "Fenêtre Historique",
+    "it": "Finestra Cronologia",
+    "es": "Ventana Historial",
+    "nl": "Venster Geschiedenis",
+    "pl": "Okno Historia"
   },
+  "text": {
+    "en": "every edit step with its key figures; a click jumps back to it. Checkpoints name a step, and editing after an undo starts a variant instead of losing the later steps.",
+    "de": "jeder Bearbeitungsschritt mit seinen Kennzahlen; ein Klick springt dorthin zurück. Checkpoints benennen einen Schritt, und Bearbeiten nach einem Rückgängig beginnt eine Variante, statt die späteren Schritte zu verlieren.",
+    "fr": "chaque étape de modification avec ses chiffres clés ; un clic y revient. Les points de contrôle nomment une étape, et modifier après une annulation crée une variante au lieu de perdre les étapes suivantes.",
+    "it": "ogni passo di modifica con i suoi dati chiave; un clic ci torna. I checkpoint danno un nome a un passo, e modificare dopo un annullamento crea una variante invece di perdere i passi successivi.",
+    "es": "cada paso de edición con sus cifras clave; un clic vuelve a él. Los puntos de control dan nombre a un paso, y editar tras deshacer crea una variante en lugar de perder los pasos posteriores.",
+    "nl": "elke bewerkingsstap met zijn kerncijfers; een klik springt ernaar terug. Checkpoints geven een stap een naam, en bewerken na ongedaan maken begint een variant in plaats van de latere stappen kwijt te raken.",
+    "pl": "każdy krok edycji z jego kluczowymi danymi; kliknięcie wraca do niego. Punkty kontrolne nadają krokowi nazwę, a edycja po cofnięciu zaczyna wariant zamiast tracić późniejsze kroki."
+  },
+  "image": "history-window.webp",
   "dev": "The undo history is a tree (klang-core history.rs), saved in the project file as historie.json."
 }

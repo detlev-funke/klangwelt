@@ -1,13 +1,23 @@
 {
   "type": "added",
-  "text": {
-    "en": "Combine variants (History window → Combine…): a timeline shows per track which bars each variant changed; choose per section which version goes into a new variant, decide where two variants clash, and listen before combining.",
-    "de": "Varianten kombinieren (Fenster Historie → Kombinieren …): Eine Zeitleiste zeigt pro Spur, welche Takte jede Variante geändert hat; du wählst pro Abschnitt, welche Fassung in eine neue Variante kommt, entscheidest, wo sich zwei Varianten widersprechen, und hörst vorher probe.",
-    "fr": "Combiner des variantes (fenêtre Historique → Combiner…) : une frise montre, par piste, les mesures que chaque variante a modifiées ; choisissez par section quelle version va dans une nouvelle variante, tranchez là où deux variantes se contredisent, et écoutez avant de combiner.",
-    "it": "Combina varianti (finestra Cronologia → Combina…): una linea del tempo mostra per ogni traccia quali battute ha cambiato ciascuna variante; scegli per sezione quale versione finisce in una nuova variante, decidi dove due varianti si contraddicono e ascolta prima di combinare.",
-    "es": "Combinar variantes (ventana Historial → Combinar…): una línea de tiempo muestra por pista qué compases cambió cada variante; elige por sección qué versión va a una nueva variante, decide donde dos variantes chocan y escucha antes de combinar.",
-    "nl": "Varianten combineren (venster Geschiedenis → Combineren…): een tijdlijn toont per spoor welke maten elke variant heeft gewijzigd; kies per sectie welke versie in een nieuwe variant komt, beslis waar twee varianten botsen en luister vooraf.",
-    "pl": "Łączenie wariantów (okno Historia → Połącz…): oś czasu pokazuje dla każdej ścieżki, które takty zmienił każdy wariant; wybierasz dla sekcji, która wersja trafi do nowego wariantu, rozstrzygasz, gdzie dwa warianty się wykluczają, i odsłuchujesz przed połączeniem."
+  "title": {
+    "en": "Combine variants (History window → Combine…)",
+    "de": "Varianten kombinieren (Fenster Historie → Kombinieren …)",
+    "fr": "Combiner des variantes (fenêtre Historique → Combiner…)",
+    "it": "Combina varianti (finestra Cronologia → Combina…)",
+    "es": "Combinar variantes (ventana Historial → Combinar…)",
+    "nl": "Varianten combineren (venster Geschiedenis → Combineren…)",
+    "pl": "Łączenie wariantów (okno Historia → Połącz…)"
   },
+  "text": {
+    "en": "a timeline shows per track which bars each variant changed; choose per section which version goes into a new variant, decide where two variants clash, and listen before combining.",
+    "de": "Eine Zeitleiste zeigt pro Spur, welche Takte jede Variante geändert hat; du wählst pro Abschnitt, welche Fassung in eine neue Variante kommt, entscheidest, wo sich zwei Varianten widersprechen, und hörst vorher probe.",
+    "fr": "une frise montre, par piste, les mesures que chaque variante a modifiées ; choisissez par section quelle version va dans une nouvelle variante, tranchez là où deux variantes se contredisent, et écoutez avant de combiner.",
+    "it": "una linea del tempo mostra per ogni traccia quali battute ha cambiato ciascuna variante; scegli per sezione quale versione finisce in una nuova variante, decidi dove due varianti si contraddicono e ascolta prima di combinare.",
+    "es": "una línea de tiempo muestra por pista qué compases cambió cada variante; elige por sección qué versión va a una nueva variante, decide donde dos variantes chocan y escucha antes de combinar.",
+    "nl": "een tijdlijn toont per spoor welke maten elke variant heeft gewijzigd; kies per sectie welke versie in een nieuwe variant komt, beslis waar twee varianten botsen en luister vooraf.",
+    "pl": "oś czasu pokazuje dla każdej ścieżki, które takty zmienił każdy wariant; wybierasz dla sekcji, która wersja trafi do nowego wariantu, rozstrzygasz, gdzie dwa warianty się wykluczają, i odsłuchujesz przed połączeniem."
+  },
+  "image": "combine-variants.webp",
   "dev": "Three-way merge against the variants' common origin (klang-core merge.rs): bar-rounded segments per track, conflicts only where contents differ, one undoable step in a new variant."
 }

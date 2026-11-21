@@ -1,5 +1,14 @@
 {
   "type": "changed",
+  "title": {
+    "en": "Playback stops at the end",
+    "de": "Wiedergabe stoppt am Ende",
+    "fr": "La lecture s'arrête à la fin",
+    "it": "La riproduzione si ferma alla fine",
+    "es": "La reproducción se detiene al final",
+    "nl": "Afspelen stopt aan het eind",
+    "pl": "Odtwarzanie zatrzymuje się na końcu"
+  },
   "text": {
     "en": "Playback stops where the piece ends instead of running a bar into silence; the notes ring out, typed notes go on at the end, and Play there starts from the beginning.",
     "de": "Die Wiedergabe hält am Ende des Stücks an, statt einen Takt in die Stille zu laufen; die Noten klingen aus, getippte Noten gehen am Ende weiter, und Abspielen dort beginnt von vorn.",

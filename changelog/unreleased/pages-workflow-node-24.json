@@ -1,6 +1,9 @@
 {
   "type": "internal",
+  "title": {
+    "en": "Pages workflow"
+  },
   "text": {
-    "en": "Pages workflow: actions on Node 24."
+    "en": "actions on Node 24."
   }
 }

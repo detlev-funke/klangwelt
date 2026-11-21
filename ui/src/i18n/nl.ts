@@ -1319,6 +1319,7 @@ const dict: Dict = {
   "Klangwelt was updated: {n} changes in version {version}": { one: "Klangwelt is bijgewerkt: één wijziging in versie {version}", other: "Klangwelt is bijgewerkt: {n} wijzigingen in versie {version}" },
   "Show what's new": "Bekijk wat er nieuw is",
   "Since version {version}": "Sinds versie {version}",
+  "{title}:": "{title}:",
   "new for you": "nieuw voor jou",
   "Version {version} · build {build}": "Versie {version} · build {build}",
   "The list of changes could not be loaded.": "De lijst met wijzigingen kon niet worden geladen.",

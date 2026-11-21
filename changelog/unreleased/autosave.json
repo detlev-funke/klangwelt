@@ -1,13 +1,22 @@
 {
   "type": "added",
+  "title": {
+    "en": "Save automatically",
+    "de": "Automatisch speichern",
+    "fr": "Enregistrer automatiquement",
+    "it": "Salva automaticamente",
+    "es": "Guardar automáticamente",
+    "nl": "Automatisch opslaan",
+    "pl": "Zapisuj automatycznie"
+  },
   "text": {
-    "en": "Save automatically: every few minutes, chosen in the gear menu. A project without a name goes into a recovery copy that comes back after a crash.",
-    "de": "Automatisch speichern: alle paar Minuten, einstellbar im Zahnrad-Menü. Ein Projekt ohne Namen landet in einer Wiederherstellungskopie, die nach einem Absturz zurückkommt.",
-    "fr": "Enregistrer automatiquement : toutes les quelques minutes, au choix dans le menu de la roue dentée. Un projet sans nom va dans une copie de récupération qui revient après un plantage.",
-    "it": "Salva automaticamente: ogni pochi minuti, da scegliere nel menu dell'ingranaggio. Un progetto senza nome finisce in una copia di ripristino che torna dopo un crash.",
-    "es": "Guardar automáticamente: cada pocos minutos, a elegir en el menú del engranaje. Un proyecto sin nombre va a una copia de recuperación que vuelve tras un cierre inesperado.",
-    "nl": "Automatisch opslaan: om de paar minuten, in te stellen in het tandwielmenu. Een project zonder naam gaat naar een herstelkopie die na een crash terugkomt.",
-    "pl": "Zapisuj automatycznie: co kilka minut, do ustawienia w menu z kołem zębatym. Projekt bez nazwy trafia do kopii odzyskiwania, która wraca po awarii."
+    "en": "every minute by default, adjustable in the gear menu. A project without a name goes into a recovery copy that comes back after a crash.",
+    "de": "standardmäßig jede Minute, einstellbar im Zahnrad-Menü. Ein Projekt ohne Namen landet in einer Wiederherstellungskopie, die nach einem Absturz zurückkommt.",
+    "fr": "chaque minute par défaut, réglable dans le menu de la roue dentée. Un projet sans nom va dans une copie de récupération qui revient après un plantage.",
+    "it": "ogni minuto per impostazione predefinita, regolabile nel menu dell'ingranaggio. Un progetto senza nome finisce in una copia di ripristino che torna dopo un crash.",
+    "es": "cada minuto por defecto, ajustable en el menú del engranaje. Un proyecto sin nombre va a una copia de recuperación que vuelve tras un cierre inesperado.",
+    "nl": "standaard elke minuut, in te stellen in het tandwielmenu. Een project zonder naam gaat naar een herstelkopie die na een crash terugkomt.",
+    "pl": "domyślnie co minutę, do ustawienia w menu z kołem zębatym. Projekt bez nazwy trafia do kopii odzyskiwania, która wraca po awarii."
   },
   "dev": "Core command project_autosave; the recovery copy lives next to the settings file (desktop) or in OPFS (browser)."
 }

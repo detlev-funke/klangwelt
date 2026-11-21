@@ -267,6 +267,14 @@ test("playback stops right at the end of the piece: the mark follows and typing 
   await space();
   await app.waitFor(() => !T.st.status.peek().playing, { what: "paused" });
   assert.deepEqual(await entryNow(), { trackId, beat: 8 }, "a pause doesn't move the mark");
+  // past the end, with the seek right before Play: from the front, too
+  await app.eval(async (bpm) => {
+    await T.backend.seek((10 * 60) / bpm);
+    await T.backend.transport("play");
+  }, bpm);
+  await app.waitFor((bpm) => T.st.status.peek().playing && (T.st.status.peek().positionSecs * bpm) / 60 > 0.3, { what: "playing from the front after a seek past the end", timeout: 4000 }, bpm);
+  assert.ok((await beatNow()) < 4, `from the front: ${await beatNow()}`);
+  await app.eval(() => T.backend.transport("stop"));
   // loop on: at the end of the piece (whole bars: beat 8) back to the start, no stop
   await app.eval(async (bpm) => {
     await T.st.act(T.backend.setLoop(true));

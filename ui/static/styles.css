@@ -864,7 +864,6 @@ body.dk-dragging, body.dk-dragging * { cursor: grabbing !important; user-select:
 .scale-label { color: var(--muted); }
 .scale-value { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text); }
 .scale-slider { flex: 1; min-width: 0; }
-.scale-slider:disabled { opacity: .4; cursor: default; }
 .scale-reset { flex: none; }
 .scale-label.with-info { display: inline-flex; align-items: center; gap: 4px; }
 /* "Spacing" and its three options in one row: the options share the room next to the label */

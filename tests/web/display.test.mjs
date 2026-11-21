@@ -302,16 +302,16 @@ test("interface size on a phone: at 40 %, 70 % and 130 % a finger still hits the
   assert.deepEqual(app.errors, []);
 });
 
-test("interface size in a desktop browser: the slider stays at 100 % and points to the browser's own zoom", async () => {
+test("interface size in a desktop browser: no slider – the browser's own zoom does that; Display keeps the spacing", async () => {
   await viewport(1600, 1000);
   await openSettings();
-  const s = await app.eval(() => ({ works: T.backend.uiScaleWorks(), disabled: T.$(".set-menu.open .scale-slider").disabled, info: T.$(".set-menu.open .scale-label .info-btn").title }));
-  assert.equal(s.works, false);
-  assert.equal(s.disabled, true);
-  // why: behind the ⓘ next to "Interface size"
-  assert.match(s.info, /Strg \+/);
-  await app.clickOn(".set-menu.open .scale-label .info-btn");
-  assert.match(await app.eval(() => T.$('.set-menu.open .menu-more[data-help="einstellungen-groesse"]:not([hidden])')?.textContent ?? ""), /Strg \+/);
+  const s = await app.eval(() => ({
+    works: T.backend.uiScaleWorks(),
+    slider: T.$$(".set-menu.open .scale-slider, .set-menu.open .size-row, .set-menu.open [data-help=einstellungen-groesse]").length,
+    display: T.$$(".set-menu.open .menu-title").some((e) => e.textContent === "Ansicht"),
+    spacing: T.$$(".set-menu.open [data-density]").length,
+  }));
+  assert.deepEqual(s, { works: false, slider: 0, display: true, spacing: 3 });
   // asked anyway: the page doesn't follow, the size stays 100 %
   assert.equal(await app.eval(() => T.backend.setUiScale(0.8)), 1);
   assert.equal(await app.eval(() => [innerWidth, localStorage.getItem("klangwelt.uiScale")].join()), "1600,");
@@ -414,7 +414,7 @@ test("gear menu without descriptions: the explanations are tooltips, behind ⓘ 
   await openSettings();
   // no description lines in the menu – only explanations folded away behind ⓘ
   assert.deepEqual(await app.eval(() => T.$$(".set-menu.open .menu-hint").filter((e) => !e.hidden).map((e) => e.textContent)), []);
-  assert.equal(await app.eval(() => T.$$(".set-menu.open .info-btn").length), 4, "ⓘ at interface size, pitch axis, autosave, smoothing");
+  assert.equal(await app.eval(() => T.$$(".set-menu.open .info-btn").length), 3, "ⓘ at pitch axis, autosave, smoothing (no size slider in a desktop browser)");
   const a = await explained("einstellungen-autosave");
   assert.deepEqual({ title: a.title, expanded: a.expanded, more: a.more }, { title: "Automatisch speichern", expanded: "false", more: null });
   assert.equal(a.tooltip, AUTOSAVE_FULL);

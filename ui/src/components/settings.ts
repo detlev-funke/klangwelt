@@ -164,7 +164,9 @@ function languageEntry(open: () => void): HTMLElement {
   );
 }
 
-/** Interface size (slider) and spacing (tight, normal, airy) – per device, applied at once (uiprefs.ts). */
+/** Interface size (slider) and spacing (tight, normal, airy) – per device, applied at once (uiprefs.ts).
+ *  The size only where it can change: the desktop app, phones and tablets – not in a browser on a
+ *  computer, whose own zoom (Ctrl + / Ctrl −) does that (CSS zoom breaks hit tests, docs/ARCHITECTURE.md). */
 function displayOptions(): HTMLElement[] {
   const percent = (s: number) => t("{n}%", { n: Math.round(s * 100) });
   const value = h("span", { class: "scale-value" }, percent(uiScale.peek()));
@@ -177,22 +179,20 @@ function displayOptions(): HTMLElement[] {
     "aria-label": t("Interface size"),
   });
   const reset = h("button", { class: "btn small scale-reset", title: t("Back to 100%"), onclick: () => void apply(1) }, percent(1));
-  const { info, more } = infoToggle("einstellungen-groesse", "");
+  const about = t("Smaller shows more at once – handy on a phone. Remembered on this device.");
+  const { info, more } = infoToggle("einstellungen-groesse", about);
+  slider.title = about;
+  const sizeRows = [
+    h("div", { class: "scale-row size-row" }, h("span", { class: "scale-label with-info" }, t("Interface size"), info), value),
+    h("div", { class: "scale-row size-row" }, slider, reset),
+    more,
+  ];
   const show = () => {
     const s = uiScale.peek();
-    const works = backend.uiScaleWorks();
-    slider.disabled = !works;
-    reset.disabled = !works || s === 1;
+    reset.disabled = s === 1;
     setRange(slider, Math.round(s * 100));
     value.textContent = percent(s);
     slider.setAttribute("aria-valuetext", percent(s));
-    // the explanation (behind ⓘ): what the size does – or, in a desktop browser, which zoom does it there
-    const about = works
-      ? t("Smaller shows more at once – handy on a phone. Remembered on this device.")
-      : t("In this browser its own zoom does that: Ctrl + and Ctrl − (on a Mac ⌘ + and ⌘ −).");
-    info.title = about;
-    more.textContent = about;
-    slider.title = about;
   };
   const apply = async (s: number) => {
     try {
@@ -200,6 +200,8 @@ function displayOptions(): HTMLElement[] {
     } catch (e) {
       notify(errorText(e), "error");
     }
+    // the browser turned out not to follow (a touch screen on a computer): no slider here
+    if (!backend.uiScaleWorks()) for (const el of sizeRows) el.remove();
     show();
   };
   // live number while dragging; the size changes on release – zooming under the finger would move the slider
@@ -242,9 +244,7 @@ function displayOptions(): HTMLElement[] {
   );
   return [
     h("div", { class: "menu-title" }, t("Display")),
-    h("div", { class: "scale-row" }, h("span", { class: "scale-label with-info" }, t("Interface size"), info), value),
-    h("div", { class: "scale-row" }, slider, reset),
-    more,
+    ...(backend.uiScaleWorks() ? sizeRows : []),
     h("div", { class: "scale-row density-row" }, h("span", { class: "scale-label" }, t("Spacing")), densityGrid),
   ];
 }

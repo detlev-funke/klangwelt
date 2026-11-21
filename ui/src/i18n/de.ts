@@ -2886,7 +2886,6 @@ const dict: Dict = {
   "Interface size": "Größe der Oberfläche",
   "Back to 100%": "Zurück auf 100 %",
   "Smaller shows more at once – handy on a phone. Remembered on this device.": "Kleiner zeigt mehr auf einmal – praktisch auf dem Handy. Gilt für dieses Gerät.",
-  "In this browser its own zoom does that: Ctrl + and Ctrl − (on a Mac ⌘ + and ⌘ −).": "In diesem Browser macht das sein eigener Zoom: Strg + und Strg − (auf dem Mac ⌘ + und ⌘ −).",
   "Narrow gaps and margins: the most room for the content": "Schmale Abstände und Ränder: am meisten Platz für den Inhalt",
   "The usual gaps and margins": "Die gewohnten Abstände und Ränder",
   "Wide gaps and margins: calmer, and edges are easier to grab": "Breite Abstände und Ränder: ruhiger, und Kanten lassen sich leichter greifen",

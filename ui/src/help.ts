@@ -14,6 +14,12 @@ export interface HelpTopic {
   keys?: [string, string][];
 }
 
+/** Full explanations of two gear-menu settings: here in the help window, in the menu as tooltip and behind ⓘ. */
+export const AUTOSAVE_HELP = () =>
+  t("Only when something changed, and only after playback or recording. A project without a name goes into a recovery copy. Earlier states stay in the change history.");
+export const SMOOTH_HELP = () =>
+  t("When a recording becomes notes, unusually short fragments go into the note next to them and a held note split in two becomes one again. Selected notes can be smoothed afterwards with a right-click.");
+
 type Entry = { sel: string; topic: HelpTopic | ((el: Element, x: number, y: number) => HelpTopic) };
 
 const RULER_H = 32;
@@ -172,6 +178,8 @@ const ENTRIES: Entry[] = [
   { sel: "[data-help=rueckgaengig]", topic: { title: t("Undo"), text: [t("Takes back the last step – including changes made by the agent. The tooltip names the step.")], keys: [[t("Ctrl+Z"), t("undo")]] } },
   { sel: "[data-help=wiederherstellen]", topic: { title: t("Redo"), text: [t("Brings back an undone step.")], keys: [[t("Ctrl+Y / Ctrl+Shift+Z"), t("redo")]] } },
   { sel: "[data-help=fenster]", topic: { title: t("Windows"), text: [t("Shows and hides windows and resets the layout. Drag a window by its tab to move it elsewhere: dock it, group it as a tab or let it float freely.")] } },
+  { sel: "[data-help=einstellungen-autosave]", topic: () => ({ title: t("Save automatically"), text: [AUTOSAVE_HELP()] }) },
+  { sel: "[data-help=einstellungen-glaetten]", topic: () => ({ title: t("Smooth notes from recordings"), text: [SMOOTH_HELP()] }) },
   { sel: "[data-help=einstellungen]", topic: { title: t("Settings"), text: [t("Basic settings, e.g. the pitch axis: low notes at the top (like a piano turned sideways) or high notes at the top (like in sheet music)."), t("Save automatically: every few minutes a project with a file is saved into it, a project without a name into a recovery copy that comes back after a crash. \"Off\" saves only when you say so."), t("What's new lists the changes of every version; after an update a dot on the gear points to it.")] } },
   { sel: "canvas.meter", topic: { title: t("Level"), text: [t("Output on top, microphone below. Red means too loud – lower the track levels.")] } },
   { sel: ".chip.agent", topic: { title: t("Agent"), text: [

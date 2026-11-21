@@ -5,6 +5,7 @@ import { AUTOSAVE_CHOICES, autosaveSeconds, setAutosaveSeconds, switchLanguageKe
 import { backend } from "../bridge.js";
 import { dropdown, h, icon, setRange } from "../dom.js";
 import { flag } from "../flags.js";
+import { AUTOSAVE_HELP, SMOOTH_HELP } from "../help.js";
 import { LANGUAGES, language, t } from "../i18n.js";
 import { highOnTop, setHighOnTop } from "../pianoroll.js";
 import { SMOOTH_LEVELS, setSmoothLevel, smoothLabel, smoothLevel, smoothTitle } from "../smoothing.js";
@@ -113,6 +114,34 @@ function languageOptions(close: () => void): HTMLElement {
       ),
     ),
   );
+}
+
+/** A setting with a short hint; the full explanation is its tooltip and, behind an ⓘ button, a line to
+ *  unfold – tooltips never show for a finger. `help`: its entry in the help window (F1, help.ts). */
+function explained(help: string, title: string, options: HTMLElement, short: string, full: string): HTMLElement[] {
+  const more = h("div", { class: "menu-hint menu-more", hidden: true, "data-help": help }, full);
+  const info: HTMLButtonElement = h(
+    "button",
+    {
+      class: "info-btn",
+      title: full,
+      "aria-label": t("More about this"),
+      "aria-expanded": "false",
+      onclick: () => {
+        more.hidden = !more.hidden;
+        info.setAttribute("aria-expanded", more.hidden ? "false" : "true");
+      },
+    },
+    icon("help"),
+  );
+  options.dataset.help = help;
+  options.title = full;
+  return [
+    h("div", { class: "menu-title with-info", "data-help": help }, title, info),
+    options,
+    h("div", { class: "menu-hint", title: full, "data-help": help }, short),
+    more,
+  ];
 }
 
 /** "Language" is always shown in English, too – whoever ended up in a foreign language finds the way back. */
@@ -322,13 +351,9 @@ export function settingsMenu(): HTMLElement {
         option(true, t("High notes at the top"), t("as in sheet music and common piano rolls")),
         h("div", { class: "menu-hint" }, t("Applies to the piano roll, keyboard, analysis and library.")),
         h("div", { class: "menu-sep" }),
-        h("div", { class: "menu-title" }, t("Save automatically")),
-        autosaveOptions(close),
-        h("div", { class: "menu-hint" }, t("Only when something changed, and only after playback or recording. A project without a name goes into a recovery copy. Earlier states stay in the change history.")),
+        ...explained("einstellungen-autosave", t("Save automatically"), autosaveOptions(close), t("Only when something changed."), AUTOSAVE_HELP()),
         h("div", { class: "menu-sep" }),
-        h("div", { class: "menu-title" }, t("Smooth notes from recordings")),
-        smoothOptions(close),
-        h("div", { class: "menu-hint" }, t("When a recording becomes notes, unusually short fragments go into the note next to them and a held note split in two becomes one again. Selected notes can be smoothed afterwards with a right-click.")),
+        ...explained("einstellungen-glaetten", t("Smooth notes from recordings"), smoothOptions(close), t("Joins short fragments into notes."), SMOOTH_HELP()),
         h("div", { class: "menu-sep" }),
         projectLink(close),
         whatsNewMenuItem(close),

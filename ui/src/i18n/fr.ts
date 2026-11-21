@@ -3025,6 +3025,9 @@ const dict: Dict = {
   "Display": "Affichage",
   "The page couldn't be opened: {error}": "Impossible d'ouvrir la page : {error}",
   "Klangwelt on GitHub": "Klangwelt sur GitHub",
+  "Only when something changed.": "Seulement en cas de modification.",
+  "Joins short fragments into notes.": "Réunit les fragments courts en notes.",
+  "More about this": "En savoir plus",
 
   // klangwelt-desktop/app/src/lib.rs – opening the project page
   "Not a web address: {url}": "Ce n'est pas une adresse web : {url}",

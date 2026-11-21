@@ -840,6 +840,16 @@ body.dk-dragging, body.dk-dragging * { cursor: grabbing !important; user-select:
 .set-option b { font-weight: 600; color: var(--text); }
 .set-option small { font-size: 11px; color: var(--faint); }
 .menu-hint { padding: 4px 10px 6px; font-size: 11px; color: var(--faint); max-width: 230px; }
+/* a setting with its full explanation behind an ⓘ (tooltip; a tap unfolds it – settings.ts explained) */
+.menu-title.with-info { display: flex; align-items: center; gap: 4px; }
+.info-btn { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin: -4px 0; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--faint); cursor: pointer; }
+.info-btn:hover, .info-btn[aria-expanded="true"] { color: var(--accent); background: var(--panel-3); }
+.info-btn svg { width: 14px; height: 14px; }
+.menu-hint.menu-more { color: var(--muted); padding-top: 0; }
+@media (pointer: coarse) {
+  .info-btn { width: 36px; height: 36px; margin: -10px 0; }
+  .info-btn svg { width: 17px; height: 17px; }
+}
 .lang-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
 .lang-option { padding: 4px 10px 4px 6px; }
 /* the current language in the gear menu; it opens the list as a page of its own */

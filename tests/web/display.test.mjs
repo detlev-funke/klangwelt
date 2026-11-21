@@ -373,6 +373,75 @@ test("spacing on a phone: the compact view follows tight and airy too", async ()
   await viewport(1600, 1000);
 });
 
+// ---------------------------------------------------------------- short hints, full text behind ⓘ
+
+/** Title, short hint, tooltip and the unfolded explanation of a gear-menu setting (its help id). */
+const explained = (help) =>
+  app.eval((help) => {
+    const at = (sel) => T.$(`.set-menu.open ${sel}[data-help="${help}"]`);
+    const info = at(".menu-title").querySelector(".info-btn");
+    const more = at(".menu-more");
+    return {
+      title: at(".menu-title").textContent,
+      hint: at(".menu-hint:not(.menu-more)").textContent,
+      tooltip: info.title,
+      hintTooltip: at(".menu-hint:not(.menu-more)").title,
+      optionsTooltip: at("[role=group]").title,
+      expanded: info.getAttribute("aria-expanded"),
+      more: more.hidden ? null : more.textContent,
+      infoSize: Math.round(info.getBoundingClientRect().height),
+    };
+  }, help);
+
+const AUTOSAVE_FULL = "Nur wenn sich etwas geändert hat, und erst nach Wiedergabe oder Aufnahme. Ein Projekt ohne Namen kommt in eine Wiederherstellungskopie. Frühere Stände bleiben in der Änderungshistorie.";
+
+test("autosave and smoothing: a few words under each, the full explanation as tooltip, behind ⓘ and in the help window", async () => {
+  await viewport(1600, 1000);
+  await openSettings();
+  const a = await explained("einstellungen-autosave");
+  assert.deepEqual(
+    { title: a.title, hint: a.hint, expanded: a.expanded, more: a.more },
+    { title: "Automatisch speichern", hint: "Nur wenn sich etwas geändert hat.", expanded: "false", more: null },
+  );
+  assert.equal(a.tooltip, AUTOSAVE_FULL);
+  assert.equal(a.hintTooltip, AUTOSAVE_FULL);
+  assert.equal(a.optionsTooltip, AUTOSAVE_FULL);
+  const s = await explained("einstellungen-glaetten");
+  assert.equal(s.title, "Noten aus Aufnahmen glätten");
+  assert.equal(s.hint, "Fügt kurze Bruchstücke zu Noten zusammen.");
+  assert.match(s.tooltip, /^Wird eine Aufnahme zu Noten/);
+  // a click on ⓘ unfolds the explanation (the menu stays open), another one folds it again
+  await app.clickOn('.set-menu.open .menu-title[data-help="einstellungen-autosave"] .info-btn');
+  const open = await explained("einstellungen-autosave");
+  assert.deepEqual([open.expanded, open.more], ["true", AUTOSAVE_FULL]);
+  assert.equal(await app.eval(() => T.$(".set-menu").classList.contains("open")), true);
+  await app.clickOn('.set-menu.open .menu-title[data-help="einstellungen-autosave"] .info-btn');
+  assert.equal((await explained("einstellungen-autosave")).more, null);
+  // F1 over the setting: the help window explains it
+  const [hx, hy] = await center('.set-menu.open .menu-hint[data-help="einstellungen-glaetten"]');
+  await app.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: hx, y: hy });
+  await app.key("F1", { vk: 112 });
+  await app.waitFor(() => T.$("kw-help .help-title")?.textContent === "Noten aus Aufnahmen glätten", { what: "help for smoothing" });
+  assert.match(await app.eval(() => T.$("kw-help .help-text").textContent), /^Wird eine Aufnahme zu Noten/);
+  await app.key("F1", { vk: 112 });
+  await closeMenus();
+  assert.deepEqual(app.errors, []);
+});
+
+test("on a phone a tap on ⓘ unfolds the explanation – a finger-sized button", async () => {
+  await viewport(...PHONE, { touch: true });
+  await tapOn('kw-transport [data-help="einstellungen"]');
+  await app.waitFor(() => !!T.$(".set-menu.open .lang-entry"), { what: "settings menu" });
+  await tapOn('.set-menu.open .menu-title[data-help="einstellungen-glaetten"] .info-btn');
+  const s = await explained("einstellungen-glaetten");
+  assert.equal(s.expanded, "true");
+  assert.match(s.more, /^Wird eine Aufnahme zu Noten/);
+  assert.ok(s.infoSize >= 36, `ⓘ is ${s.infoSize} px high`);
+  assert.equal(await app.eval(() => T.$(".set-menu").classList.contains("open")), true, "the menu stays open");
+  await closeMenus();
+  await viewport(1600, 1000);
+});
+
 // ---------------------------------------------------------------- project page, full screen
 
 test("gear menu: Klangwelt on GitHub opens the project page in a new tab and closes the menu", async () => {

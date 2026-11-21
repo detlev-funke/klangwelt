@@ -692,6 +692,14 @@ default layout.
   initial scale of `scale` (`ui/src/web/viewport.ts`); never a layout narrower than
   300 px, so upright phones top out at about 130 %. Desktop browsers ignore the
   viewport meta; the slider is off there and points to the browser's own zoom.
+  CSS `zoom` on `<html>` was measured for desktop browsers (Edge 158, standardized
+  zoom) and doesn't hold: `getBoundingClientRect`, `clientX` and `offsetX` come in
+  zoomed pixels, `clientWidth`/`offsetWidth` and every `style.left` in unzoomed ones,
+  and `100vw`/`100dvh` scale with the zoom. At 70 % / 130 % the app filled 630 / 1170
+  of 900 px, a double-click in the piano roll set D4 on beat 1 / F♯4 on beat 3
+  instead of E4 on beat 2, context menus opened 100–200 px from the pointer and the
+  canvases drew at 0.77 px per pixel at 130 %. Making it work would mean converting
+  coordinates at every canvas, popup and viewport unit – and in every future one.
   `ui/src/boot.ts` (a classic script in `<head>`) applies size and spacing before
   the first layout.
 * **Spacing** (tight, normal, airy): CSS custom properties under

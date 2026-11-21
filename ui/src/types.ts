@@ -262,6 +262,9 @@ export interface EngineInfo {
   loopOn: boolean;
   /** Marked time range in beats: with `loopOn` the loop. */
   loopRange: [number, number] | null;
+  /** End of the piece in beats (where the last note or audio clip ends): without a loop
+   * and a range, playback stops there and leaves the playhead at that spot. */
+  endBeats: number;
 }
 
 /** Audio devices of the system including the choice (null = system default). */

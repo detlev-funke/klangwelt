@@ -89,6 +89,13 @@ command belongs in `crates/klang-app/src/commands.rs`, a new agent tool in
     This is recalculated after every project change.
   * On/off and range are in the snapshot (`engine.loopOn/loopRange`),
     not in the project.
+* **End of the piece:** Without a loop the engine stops at a stop point
+  (`RtMsg::StopAt`, in beats): the end of the selected range (the playhead
+  jumps back to its start), otherwise right where the last note or audio clip
+  ends (`SongEnd` in `state.rs`, in the snapshot as `engine.endBeats`). There
+  the playhead stays: the keyboard entry's mark follows it, so typing goes on
+  at the end, and the voices ring out on their own. Play from there (or from
+  past it) starts at the beginning again.
 * **Preview** (library, chords, notes) runs alongside the transport. The
   status reports `previewing` while it sounds; this turns the library's listen
   button into a stop button, which switches back afterwards.
@@ -123,7 +130,8 @@ command belongs in `crates/klang-app/src/commands.rs`, a new agent tool in
   * Starting or jumping into the middle of notes picks them up
     (`Live::chase`): envelopes continue at their place, plucked strings lose
     the energy they would have lost meanwhile; picked-up voices fade in over
-    4 ms. Stop, end of the piece and a loop jump let the voices fade out over 15 ms.
+    4 ms. Stop, a loop jump and the end of a selected range let the voices fade
+    out over 15 ms; at the end of the piece they ring out with their release.
   * The voices are the instruments' offline functions sample for sample
     (tests compare them: difference below 10⁻⁶, the chain below 10⁻⁴);
     previews, the wave view and the export (`render_offline` runs the same

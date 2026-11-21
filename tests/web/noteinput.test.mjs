@@ -1,7 +1,8 @@
 // Note entry in the browser version: double-click in the piano roll adds a note,
 // keyboard entry mode (switch next to the piano) adds notes with the letter keys and
 // with clicks on the piano (Shift keeps the position: chords), and the shortcut line
-// stays right below the last track.
+// stays right below the last track. Playback that ends at the end of the piece leaves
+// the mark there, so typing appends.
 import { before, after } from "node:test";
 import assert from "node:assert/strict";
 import { startWeb, makeTest, sleep } from "./harness.mjs";
@@ -225,6 +226,66 @@ test("keyboard entry: a click on the piano adds that note; L and R do nothing un
   await letter("l");
   await app.waitFor((b) => T.st.snapshot.peek().engine.loopOn !== b, { what: "L toggles loop again" }, loopBefore);
   await letter("l");
+});
+
+test("playback stops right at the end of the piece: the mark follows and typing appends there; Play from the end starts at the beginning; loop goes on as before", async () => {
+  // the piece: 72 over beat 7–7.5 (clip 4–8) – it ends at 7.5
+  await setup();
+  await app.eval(async () => {
+    await T.st.act(T.backend.setLoopRange(null));
+    await T.st.act(T.backend.setLoop(false));
+  });
+  assert.equal(await app.eval(() => T.st.snapshot.peek().engine.endBeats), 7.5, "end of the piece in the snapshot");
+  await switchOn();
+  assert.equal((await entryNow()).beat, 0, "starts at the playhead");
+  const bpm = await app.eval(() => T.st.snapshot.peek().project.tempoBpm);
+  const beatNow = () => app.eval((bpm) => (T.st.status.peek().positionSecs * bpm) / 60, bpm);
+  const space = () => app.key(" ", { code: "Space", vk: 32 });
+  await app.eval((bpm) => T.backend.seek((6 * 60) / bpm), bpm);
+  await space();
+  await app.waitFor(() => T.st.status.peek().playing, { what: "playing", timeout: 3000 });
+  await app.waitFor(() => !T.st.status.peek().playing, { what: "stopped at the end", timeout: 5000 });
+  const end = await beatNow();
+  assert.ok(Math.abs(end - 7.5) < 0.001, `the playhead stays at the end: ${end}`);
+  await sleep(400);
+  assert.equal(await beatNow(), end, "and doesn't move on");
+  assert.ok(await app.eval(async () => (await import("./dom.js")).icon("play").innerHTML === document.querySelector("kw-transport .btn.big.primary svg").innerHTML), "the transport shows Play again");
+  assert.deepEqual(await entryNow(), { trackId, beat: 7.5 }, "the mark follows to the end");
+  await letter("d");
+  await letter("f");
+  await idle();
+  assert.deepEqual(await notes(), ["64@7.5", "65@7.75", "72@7"], "the typed notes append to the piece");
+  assert.equal(await app.eval(() => T.st.snapshot.peek().engine.endBeats), 8, "the piece got longer");
+  // Play from the old end: plays what was typed and stops at the new end
+  await space();
+  await app.waitFor((bpm) => !T.st.status.peek().playing && Math.abs((T.st.status.peek().positionSecs * bpm) / 60 - 8) < 0.001, { what: "stopped at the new end", timeout: 5000 }, bpm);
+  assert.deepEqual(await entryNow(), { trackId, beat: 8 });
+  // Play at the end starts at the beginning; pausing in the middle leaves the mark where it is
+  await space();
+  await app.waitFor((bpm) => T.st.status.peek().playing && (T.st.status.peek().positionSecs * bpm) / 60 > 0.5, { what: "playing from the front", timeout: 4000 }, bpm);
+  assert.ok((await beatNow()) < 4, "from the front");
+  await space();
+  await app.waitFor(() => !T.st.status.peek().playing, { what: "paused" });
+  assert.deepEqual(await entryNow(), { trackId, beat: 8 }, "a pause doesn't move the mark");
+  // loop on: at the end of the piece (whole bars: beat 8) back to the start, no stop
+  await app.eval(async (bpm) => {
+    await T.st.act(T.backend.setLoop(true));
+    await T.backend.seek((7 * 60) / bpm);
+    await T.backend.transport("play");
+  }, bpm);
+  const seen = [];
+  for (let k = 0; k < 14; k++) {
+    await sleep(100);
+    seen.push(await beatNow());
+  }
+  const playing = await app.eval(() => T.st.status.peek().playing);
+  await app.eval(async () => {
+    await T.backend.transport("stop");
+    await T.st.act(T.backend.setLoop(false));
+  });
+  assert.ok(playing, "still playing after the end");
+  assert.ok(seen.every((b) => b < 8.1) && seen.some((b) => b < 2), `back to the start: ${seen.map((b) => b.toFixed(2))}`);
+  assert.deepEqual(app.errors, []);
 });
 
 test("the shortcut line stays visible right below the last track – at the bottom edge when the tracks go further", async () => {

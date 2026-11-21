@@ -6,8 +6,10 @@
 // the row above = black keys – and add the note at the entry position; a click on a
 // key of the piano does the same. After each note the entry position moves on by one
 // grid step, unless Shift is held: then it stays, for chords. Every note is
-// its own undo step. The keys are taken by their position on the keyboard (KeyboardEvent.code),
-// so the piano shape is the same on every layout; the piano shows each key's letter.
+// its own undo step. When playback stops at the end of the piece, the entry position
+// follows it there, so typing appends to the piece. The keys are taken by their
+// position on the keyboard (KeyboardEvent.code), so the piano shape is the same on
+// every layout; the piano shows each key's letter.
 
 import { backend } from "./bridge.js";
 import { noteName } from "./dom.js";
@@ -182,12 +184,26 @@ export function entryStep(): number {
   return noteGrid(viewport.peek().pxPerBeat, false) || 0.25;
 }
 
+/** The end of the piece when the playhead stands at it (playback without a range stops there), else null. */
+function endAt(beat: number): number | null {
+  const e = snapshot.peek()?.engine;
+  return e && e.endBeats > 0 && !e.loopRange && Math.abs(beat - e.endBeats) < 1e-3 ? e.endBeats : null;
+}
+
+/** Entry position for the playhead at `beat`: on the grid – at the end of the piece the first grid
+ * point not before it, so that typing appends instead of overlapping the last note. */
+function entryBeatAt(beat: number): number {
+  const step = entryStep();
+  const end = endAt(beat);
+  return Math.max(0, end !== null ? Math.ceil(end / step - 1e-6) * step : snapTo(beat, step));
+}
+
 /** Start of a new entry: the start of the selected time range, else the playhead – on the grid. */
 function startBeat(): number {
   const snap = snapshot.peek();
   const range = snap?.engine.loopRange;
-  const at = range ? range[0] : secondsToBeats(status.peek().positionSecs, snap?.project.tempoBpm ?? 120);
-  return Math.max(0, snapTo(at, entryStep()));
+  if (range) return Math.max(0, snapTo(range[0], entryStep()));
+  return entryBeatAt(secondsToBeats(status.peek().positionSecs, snap?.project.tempoBpm ?? 120));
 }
 
 /** Switch next to the piano: typing goes to this track (again: off). */
@@ -320,4 +336,16 @@ effect(() => {
   const key = range ? `${range[0]}` : null;
   if (key !== lastRange && range) playheadMoved(range[0]);
   lastRange = key;
+});
+
+// Playback that ran to the end of the piece stops there and leaves the playhead at that spot:
+// the entry position follows, so typing goes on right at the end.
+let wasPlaying = false;
+effect(() => {
+  const st = status.value;
+  const stopped = wasPlaying && !st.playing;
+  wasPlaying = st.playing;
+  if (!stopped || !entry.peek()) return;
+  const beat = secondsToBeats(st.positionSecs, snapshot.peek()?.project.tempoBpm ?? 120);
+  if (endAt(beat) !== null) setEntryPosition(entryBeatAt(beat));
 });

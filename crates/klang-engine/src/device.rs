@@ -147,7 +147,8 @@ impl Engine {
     }
 
     /// Ends playback without a loop at beat `stop` and sets the playhead
-    /// to beat `back` (e.g. end of the selected range → its start).
+    /// to beat `back` (e.g. end of the selected range → its start; at the end
+    /// of the piece both are the same).
     pub fn set_stop_at(&self, at: Option<(f64, f64)>) {
         self.send(Control::Rt(RtMsg::StopAt(at.filter(|(s, _)| *s > 0.0))));
     }

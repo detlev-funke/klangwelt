@@ -68,6 +68,8 @@ export function createMock(): Backend {
     engine: {
       available: false, error: t("Browser preview – no audio"), outputDevice: null, outputChoice, inputChoice, outputNotice: null, inputNotice: null,
       sampleRate: 48000, metronome, loopOn, loopRange,
+      endBeats: Math.max(0, ...project.tracks.flatMap((tr) => tr.clips.map((c) =>
+        c.startBeats + (c.source.type === "notes" ? Math.max(0, ...c.source.notes.map((n) => n.startBeats + n.lengthBeats)) : 0)))),
     },
     agent: { url: null, error: t("desktop app only"), library: null, libraryVoices: 0 },
   });

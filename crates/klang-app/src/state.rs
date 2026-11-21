@@ -189,6 +189,9 @@ pub struct EngineInfoDto {
     loop_on: bool,
     /// Selected time range in beats; with `loop_on` the loop, otherwise the whole piece.
     loop_range: Option<(f64, f64)>,
+    /// End of the piece in beats (where the last note or audio clip ends): without
+    /// a loop and a range, playback stops there and leaves the playhead at that spot.
+    end_beats: f64,
 }
 
 /// Repeat and selected time range (not part of the project).
@@ -326,6 +329,27 @@ mod hash_tests {
         assert!(!st.snapshot().unwrap().engine.metronome, "off by default");
         assert!(st.set_metronome(true).unwrap().engine.metronome);
         assert!(!st.set_metronome(false).unwrap().engine.metronome);
+    }
+
+    #[test]
+    fn the_piece_ends_where_its_last_sound_ends() {
+        let st = AppState::without_audio();
+        let run = |cmd: serde_json::Value| st.execute(serde_json::from_value(cmd).unwrap(), false).unwrap();
+        let end = |s: &Snapshot| (s.engine.end_beats, SongEnd::of(&s.project).clips);
+        assert_eq!(end(&st.snapshot().unwrap()), (0.0, 0.0), "empty project");
+        run(serde_json::json!({ "type": "addTrack", "track": { "id": 0, "name": "A", "kind": "instrument" } }));
+        let track = st.snapshot().unwrap().project.tracks[0].id;
+        // two bars of clip, the last note ends at beat 5.5
+        let notes = [(0.0, 1.0), (4.5, 1.0), (2.0, 0.5)].map(|(s, l)| serde_json::json!({ "pitch": 60, "startBeats": s, "lengthBeats": l, "velocity": 100 }));
+        let s = run(serde_json::json!({ "type": "addClip", "trackId": track, "clip": { "id": 0, "name": "N", "startBeats": 0.0, "source": { "type": "notes", "lengthBeats": 8.0, "notes": notes } } }));
+        assert_eq!(end(&s), (5.5, 8.0), "the last note's end, not the clip's");
+        // a note past the clip's end only sounds up to it
+        let late = [serde_json::json!({ "pitch": 62, "startBeats": 3.0, "lengthBeats": 4.0, "velocity": 100 })];
+        let s = run(serde_json::json!({ "type": "addClip", "trackId": track, "clip": { "id": 0, "name": "M", "startBeats": 2.0, "source": { "type": "notes", "lengthBeats": 4.0, "notes": late } } }));
+        assert_eq!(end(&s), (6.0, 8.0));
+        // an empty note clip counts with its whole length
+        let s = run(serde_json::json!({ "type": "addClip", "trackId": track, "clip": { "id": 0, "name": "E", "startBeats": 8.0, "source": { "type": "notes", "lengthBeats": 4.0, "notes": [] } } }));
+        assert_eq!(end(&s), (12.0, 12.0));
     }
 
     #[test]
@@ -526,6 +550,7 @@ impl AppState {
                 metronome: self.metronome.load(Ordering::Relaxed) && !self.metronome_muted.load(Ordering::Relaxed),
                 loop_on: looping.on,
                 loop_range: looping.range,
+                end_beats: SongEnd::of(&s.project).sound,
             },
             agent,
         })
@@ -847,28 +872,25 @@ impl AppState {
         self.snapshot()
     }
 
-    /// End of the piece (last clip) and length of a bar, in beats.
-    fn song_end(&self) -> CmdResult<(f64, f64)> {
-        let s = lock(&self.session)?;
-        let p = &s.project;
-        let end = p.tracks.iter().flat_map(|t| t.clips.iter()).map(|c| c.start_beats + c.length_beats(p.tempo_bpm)).fold(0.0, f64::max);
-        Ok((end, p.beats_per_bar.max(1) as f64))
+    fn song_end(&self) -> CmdResult<SongEnd> {
+        Ok(SongEnd::of(&lock(&self.session)?.project))
     }
 
     /// Loop and stop point to the engine. With repeat: the selected range,
     /// otherwise the whole piece (rounded up to whole bars). Without: stop
     /// at the end of the selected range (back to its start), otherwise
-    /// one bar after the end of the piece.
+    /// right at the end of the piece – the playhead stays there, so typing
+    /// can go on at that spot.
     fn apply_loop(&self) -> CmdResult<()> {
         let Some(engine) = &self.engine else { return Ok(()) };
         let l = *lock(&self.looping)?;
-        let (end, bar) = self.song_end()?;
+        let end = self.song_end()?;
         let (region, halt) = if l.on {
-            (l.range.or_else(|| (end > 0.0).then(|| (0.0, (end / bar - 1e-9).ceil() * bar))), None)
+            (l.range.or_else(|| (end.clips > 0.0).then(|| (0.0, (end.clips / end.bar - 1e-9).ceil() * end.bar))), None)
         } else {
             (None, match l.range {
                 Some((a, b)) => Some((b, a)),
-                None => (end > 0.0).then_some((end + bar, end + bar)),
+                None => (end.sound > 0.0).then_some((end.sound, end.sound)),
             })
         };
         engine.set_loop(region);
@@ -877,16 +899,16 @@ impl AppState {
     }
 
     /// Before the start: if the playhead is outside the selected range,
-    /// it begins at the range's start; if it is (without a range) past the
-    /// stop point at the end, back at the front.
+    /// it begins at the range's start; if it is (without a range) at or past
+    /// the end of the piece, back at the front.
     fn place_for_play(&self, engine: &Engine) -> CmdResult<()> {
         let l = *lock(&self.looping)?;
         let spb = engine.info().sample_rate as f64 * 60.0 / self.tempo();
         let pos = engine.status().position_frames as f64 / spb;
-        let (end, bar) = self.song_end()?;
+        let end = self.song_end()?;
         let to = match l.range {
             Some((a, b)) if pos < a - 1e-6 || pos >= b - 1e-6 => Some(a),
-            None if !l.on && end > 0.0 && pos >= end + bar - 1e-6 => Some(0.0),
+            None if !l.on && end.sound > 0.0 && pos >= end.sound - END_TOLERANCE => Some(0.0),
             _ => None,
         };
         if let Some(beat) = to {
@@ -1504,6 +1526,41 @@ struct Prerender {
     job: Option<(String, StepRender)>,
     /// Since when (ms) the mixer has needed more than `LOAD_HIGH` of its budget.
     over_since: Option<u64>,
+}
+
+/// A playhead this close to the end of the piece (beats) counts as standing at it
+/// (the stop point is rounded to whole frames).
+const END_TOLERANCE: f64 = 1e-3;
+
+/// Ends of the piece in beats.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct SongEnd {
+    /// End of the last clip (a repeat without a range loops up to there, in whole bars).
+    clips: f64,
+    /// End of what sounds last: a note (at most up to its clip's end), an
+    /// audio clip, or an empty note clip in its full length – playback without
+    /// a loop stops right there.
+    sound: f64,
+    /// Length of a bar.
+    bar: f64,
+}
+
+impl SongEnd {
+    fn of(p: &Project) -> Self {
+        let mut end = SongEnd { clips: 0.0, sound: 0.0, bar: p.beats_per_bar.max(1) as f64 };
+        for c in p.tracks.iter().flat_map(|t| t.clips.iter()) {
+            let len = c.length_beats(p.tempo_bpm);
+            let sounding = match &c.source {
+                ClipSource::Notes { notes, .. } if !notes.is_empty() => {
+                    notes.iter().map(|n| n.start_beats + n.length_beats).fold(0.0, f64::max).min(len)
+                }
+                _ => len,
+            };
+            end.clips = end.clips.max(c.start_beats + len);
+            end.sound = end.sound.max(c.start_beats + sounding);
+        }
+        end
+    }
 }
 
 /// For the export (see `AppState::export_source`).

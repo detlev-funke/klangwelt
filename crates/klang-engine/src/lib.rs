@@ -283,7 +283,8 @@ pub enum RtMsg {
     Metronome(bool),
     /// Loop [start, end) in beats; None = off.
     Loop(Option<(f64, f64)>),
-    /// Without a loop: stop at beat `.0` and jump to beat `.1`; None = play through.
+    /// Without a loop: stop at beat `.0` and jump to beat `.1` (the same beat: the
+    /// playhead stays at the end and the voices ring out); None = play through.
     StopAt(Option<(f64, f64)>),
     /// New arrangement, optionally with a new tempo (BPM, beats per bar) –
     /// both in one step, so that no block sounds with the new tempo but the old
@@ -509,6 +510,20 @@ impl Renderer {
         }
         self.live.kill_others(self.ctx, &mut self.garbage);
         self.live.release(self.ctx, level);
+    }
+
+    /// Playback reached the stop point. At the end of the piece (the playhead
+    /// stays) the notes are over: their voices ring out on their own – release
+    /// and effect tails – unless a crossfade is running right then. A jump back
+    /// (end of the selected range) cuts in like a stop.
+    fn halt(&mut self, back: u64) {
+        let ring_out = back == self.pos && self.fades.iter().all(Option::is_none);
+        if !ring_out {
+            self.drop_fades();
+        }
+        self.playing = false;
+        self.pos = back;
+        self.resync_click();
     }
 
     /// New tempo; during playback the position in beats is
@@ -775,7 +790,7 @@ impl Renderer {
                     n = n.min((e - self.pos) as usize);
                 }
             }
-            // without a loop: stop at the stop point (end of the range or one bar after the piece)
+            // without a loop: stop at the stop point (end of the range or of the piece)
             let spb = self.samples_per_beat();
             let halt = if self.playing && lp.is_none() {
                 self.stop_at.map(|(s, b)| ((s * spb).round() as u64, (b.max(0.0) * spb).round() as u64))
@@ -800,10 +815,7 @@ impl Renderer {
             }
             if let Some((s, back)) = halt {
                 if before < s && self.pos >= s {
-                    self.drop_fades();
-                    self.playing = false;
-                    self.pos = back;
-                    self.resync_click();
+                    self.halt(back);
                 }
             }
             for i in 0..n {
@@ -1686,6 +1698,49 @@ mod tests {
         assert!(max_step(&[&left[left.len() - BLOCK..], &after[..8 * BLOCK]].concat()) < 0.05, "no click at the stop");
         assert!(rms(&after[40 * BLOCK..]) < 1e-4, "silent after the fade");
         assert!(!r.live.sounding(), "voices and chains done");
+    }
+
+    #[test]
+    fn at_the_end_of_the_piece_the_playhead_stays_and_the_last_note_rings_out() {
+        // organ note over beat 0–1 (release 0.14 s); 1 beat = 24,000 frames
+        let after_stop = |back: f64| {
+            let clip = note_clip(1, 0.0, Patch::Organ(Default::default()), Shaping::default(), &[(0.0, 1.0, 60.0)], 4.0);
+            let (mut r, mut tx, mut grx) = renderer();
+            let _ = tx.push(RtMsg::Tempo { bpm: 120.0, beats_per_bar: 4 });
+            let _ = tx.push(arrangement_msg(live(vec![clip])));
+            let _ = tx.push(RtMsg::StopAt(Some((1.0, back))));
+            let _ = tx.push(RtMsg::Seek(12_000));
+            let _ = tx.push(RtMsg::Play);
+            let mut out = vec![0f32; 2 * BLOCK];
+            for _ in 0..200 {
+                r.process(&mut out);
+                while let Ok(g) = grx.pop() {
+                    drop(g);
+                }
+                if !r.playing {
+                    break;
+                }
+            }
+            assert!(!r.playing, "stopped");
+            let stopped_at = r.pos;
+            // left channel of the first 60 ms after the stop
+            let mut left = Vec::new();
+            for _ in 0..(0.06 * SR) as usize / BLOCK {
+                r.process(&mut out);
+                left.extend(out.iter().step_by(2));
+                while let Ok(g) = grx.pop() {
+                    drop(g);
+                }
+            }
+            (stopped_at, rms(&left[(0.02 * SR) as usize..]))
+        };
+        let (at, tail) = after_stop(1.0);
+        assert_eq!(at, 24_000, "stops right at the end and stays there");
+        assert!(tail > 1e-3, "the last note's release rings out after the stop: {tail}");
+        // end of a selected range (jump back): cut in like a stop, silent after the short fade
+        let (at, tail) = after_stop(0.5);
+        assert_eq!(at, 12_000, "back to the range's start");
+        assert!(tail < 1e-4, "faded out at the jump: {tail}");
     }
 
     #[test]

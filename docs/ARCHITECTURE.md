@@ -95,7 +95,8 @@ command belongs in `crates/klang-app/src/commands.rs`, a new agent tool in
   ends (`SongEnd` in `state.rs`, in the snapshot as `engine.endBeats`). There
   the playhead stays: the keyboard entry's mark follows it, so typing goes on
   at the end, and the voices ring out on their own. Play from there (or from
-  past it) starts at the beginning again.
+  past it) starts at the beginning again, behind a range at its start – the
+  renderer decides that on `Play`, so a seek sent right before counts.
 * **Preview** (library, chords, notes) runs alongside the transport. The
   status reports `previewing` while it sounds; this turns the library's listen
   button into a stop button, which switches back afterwards.

@@ -899,16 +899,14 @@ impl AppState {
     }
 
     /// Before the start: if the playhead is outside the selected range,
-    /// it begins at the range's start; if it is (without a range) at or past
-    /// the end of the piece, back at the front.
+    /// it begins at the range's start. (At or past the stop point the engine
+    /// itself starts over – at the end of the piece from the beginning.)
     fn place_for_play(&self, engine: &Engine) -> CmdResult<()> {
         let l = *lock(&self.looping)?;
         let spb = engine.info().sample_rate as f64 * 60.0 / self.tempo();
         let pos = engine.status().position_frames as f64 / spb;
-        let end = self.song_end()?;
         let to = match l.range {
             Some((a, b)) if pos < a - 1e-6 || pos >= b - 1e-6 => Some(a),
-            None if !l.on && end.sound > 0.0 && pos >= end.sound - END_TOLERANCE => Some(0.0),
             _ => None,
         };
         if let Some(beat) = to {
@@ -1527,10 +1525,6 @@ struct Prerender {
     /// Since when (ms) the mixer has needed more than `LOAD_HIGH` of its budget.
     over_since: Option<u64>,
 }
-
-/// A playhead this close to the end of the piece (beats) counts as standing at it
-/// (the stop point is rounded to whole frames).
-const END_TOLERANCE: f64 = 1e-3;
 
 /// Ends of the piece in beats.
 #[derive(Clone, Copy, Debug, PartialEq)]

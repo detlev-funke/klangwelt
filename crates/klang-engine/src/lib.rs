@@ -526,6 +526,27 @@ impl Renderer {
         self.resync_click();
     }
 
+    /// Stop point and jump target in frames at the current tempo.
+    fn stop_frames(&self) -> Option<(u64, u64)> {
+        let spb = self.samples_per_beat();
+        self.stop_at.map(|(s, b)| ((s * spb).round() as u64, (b.max(0.0) * spb).round() as u64))
+    }
+
+    /// Play at or behind the stop point (no loop): nothing is ahead, so it
+    /// starts at the jump target – the selected range's start – or, where the
+    /// playhead stays at the stop point (end of the piece), at the beginning.
+    /// Decided here, after a seek sent just before, not on a reported position.
+    fn start_before_the_stop_point(&mut self) {
+        if self.loop_frames().is_some() {
+            return;
+        }
+        if let Some((s, back)) = self.stop_frames() {
+            if self.pos >= s {
+                self.pos = if back == s { 0 } else { back };
+            }
+        }
+    }
+
     /// New tempo; during playback the position in beats is
     /// preserved (the jump in the signal is crossfaded).
     fn set_tempo(&mut self, bpm: f64, beats_per_bar: u32) {
@@ -561,6 +582,7 @@ impl Renderer {
                 RtMsg::Play => {
                     if !self.playing {
                         self.chase = true;
+                        self.start_before_the_stop_point();
                     }
                     self.playing = true;
                     self.resync_click();
@@ -791,12 +813,7 @@ impl Renderer {
                 }
             }
             // without a loop: stop at the stop point (end of the range or of the piece)
-            let spb = self.samples_per_beat();
-            let halt = if self.playing && lp.is_none() {
-                self.stop_at.map(|(s, b)| ((s * spb).round() as u64, (b.max(0.0) * spb).round() as u64))
-            } else {
-                None
-            };
+            let halt = if self.playing && lp.is_none() { self.stop_frames() } else { None };
             if let Some((s, _)) = halt {
                 if self.pos < s {
                     n = n.min(((s - self.pos) as usize).max(1));
@@ -1741,6 +1758,28 @@ mod tests {
         let (at, tail) = after_stop(0.5);
         assert_eq!(at, 12_000, "back to the range's start");
         assert!(tail < 1e-4, "faded out at the jump: {tail}");
+    }
+
+    #[test]
+    fn play_at_or_behind_the_stop_point_starts_over() {
+        // 1 beat = 24,000 frames; the seek arrives together with Play
+        let started = |stop: (f64, f64), seek: u64, looping: Option<(f64, f64)>| {
+            let (mut r, mut tx, _g) = renderer();
+            let _ = tx.push(RtMsg::Tempo { bpm: 120.0, beats_per_bar: 4 });
+            let _ = tx.push(RtMsg::Loop(looping));
+            let _ = tx.push(RtMsg::StopAt(Some(stop)));
+            let _ = tx.push(RtMsg::Seek(seek));
+            let _ = tx.push(RtMsg::Play);
+            let mut out = vec![0f32; 2 * 256];
+            r.process(&mut out);
+            assert!(r.playing);
+            r.pos - 256
+        };
+        assert_eq!(started((2.0, 2.0), 48_000, None), 0, "at the end of the piece: from the beginning");
+        assert_eq!(started((2.0, 2.0), 72_000, None), 0, "behind it, too");
+        assert_eq!(started((2.0, 2.0), 47_000, None), 47_000, "before it: from the playhead");
+        assert_eq!(started((3.0, 1.0), 80_000, None), 24_000, "behind a selected range: from its start");
+        assert_eq!(started((2.0, 2.0), 60_000, Some((0.0, 4.0))), 60_000, "a loop decides itself");
     }
 
     #[test]

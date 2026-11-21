@@ -12,6 +12,10 @@
 //! * Shaker  – short noise swish with a soft attack
 //!
 //! The key mapping follows the usual drum mapping (General MIDI).
+//!
+//! Every note sounds: notes off the drum keys – and all notes once the kit
+//! plays by pitch ([`DrumKit::pitched`]) – play a tuned drum at their own
+//! pitch ([`voice_for`]): bass drum below C3, tom up to B4, snare from C5.
 
 use crate::notes::midi_to_hz;
 use crate::synth::{Biquad, NoteSpec, Rng};
@@ -31,6 +35,13 @@ pub const CRASH: u8 = 49;
 pub const RIDE: u8 = 51;
 pub const COWBELL: u8 = 56;
 pub const SHAKER: u8 = 70;
+
+/// Tuned drums: from this key on (C3) a note plays the tom, below it the bass drum.
+pub const TUNED_TOM_FROM: u8 = 48;
+/// Tuned drums: from this key on (C5) a note plays the snare.
+pub const TUNED_SNARE_FROM: u8 = 72;
+/// Tuned drums never go below A0 (27.5 Hz) – lower a bass drum is only a click.
+const TUNED_LOWEST: f32 = 21.0;
 
 /// Name of the drum on a key (short form for the keyboard).
 pub fn piece_name(midi: u8) -> Option<(&'static str, &'static str)> {
@@ -106,6 +117,11 @@ pub struct DrumKit {
     pub clap: ClapParams,
     pub hat: HatParams,
     pub tom: TomParams,
+    /// Keys play by pitch: every note is a tuned drum at its pitch, also on
+    /// the drum keys. Off (the drum kit): a drum key plays its drum, only the
+    /// other keys play tuned drums.
+    #[serde(default)]
+    pub pitched: bool,
 }
 
 impl Default for DrumKit {
@@ -116,7 +132,32 @@ impl Default for DrumKit {
             clap: ClapParams { helligkeit: 0.5, laenge: 0.4 },
             hat: HatParams { helligkeit: 0.6, laenge: 0.3, offen: 0.5 },
             tom: TomParams { grundton: 43.0, laenge: 0.5 },
+            pitched: false,
         }
+    }
+}
+
+/// The drum a note plays and the kit tuned for it – never nothing. In the
+/// drum kit a drum key plays its drum unchanged; every other note (and every
+/// note when the kit plays by pitch) plays a tuned drum that settles on the
+/// note's pitch: bass drum below C3, tom up to B4, snare from C5. The tuned
+/// drum keeps the kit's character (punch, length, click, snare wires …).
+pub fn voice_for(kit: &DrumKit, midi: f32) -> (u8, DrumKit) {
+    let key = midi.round().clamp(0.0, 127.0) as u8;
+    if !kit.pitched && piece_name(key).is_some() {
+        return (key, *kit);
+    }
+    let pitch = midi.max(TUNED_LOWEST);
+    let mut k = *kit;
+    if key < TUNED_TOM_FROM {
+        k.kick.grundton = pitch;
+        (KICK, k)
+    } else if key < TUNED_SNARE_FROM {
+        k.tom.grundton = pitch;
+        (TOM_LOW, k)
+    } else {
+        k.snare.kessel = pitch;
+        (SNARE, k)
     }
 }
 
@@ -321,34 +362,40 @@ pub fn render_hit(kit: &DrumKit, midi: u8, velocity: f32, sr: f32, seed: u32) ->
     })
 }
 
+/// A single note: the drum on its key or a tuned drum at its pitch (see [`voice_for`]).
+pub fn render_note(kit: &DrumKit, midi: f32, velocity: f32, sr: f32, seed: u32) -> Vec<f32> {
+    let (key, k) = voice_for(kit, midi);
+    render_hit(&k, key, velocity, sr, seed).unwrap_or_default()
+}
+
+/// Whether a note is a hi-hat (chokes an open hi-hat before it).
+pub(crate) fn is_hat(kit: &DrumKit, midi: f32) -> bool {
+    matches!(voice_for(kit, midi).0, HAT_CLOSED | HAT_OPEN)
+}
+
+/// Brightness of a note: more click, sharpness and gloss (or less).
+pub(crate) fn brighten(k: &mut DrumKit, brightness: f32) {
+    if brightness == 0.0 {
+        return;
+    }
+    let b = 0.35 * brightness.clamp(-1.0, 1.0);
+    let c = |v: f32| v.clamp(0.0, 1.0);
+    k.kick.klick = c(k.kick.klick + b);
+    k.kick.waerme = c(k.kick.waerme - 0.5 * b);
+    k.snare.schaerfe = c(k.snare.schaerfe + b);
+    k.clap.helligkeit = c(k.clap.helligkeit + b);
+    k.hat.helligkeit = c(k.hat.helligkeit + b);
+}
+
 /// Renders drum notes (single hits, note length does not matter).
 /// An open hi-hat is choked by the next hi-hat – like with a real cymbal.
 pub fn render_drums(notes: &[NoteSpec], total_secs: f32, sr: f32, kit: &DrumKit) -> Vec<f32> {
     let mut out = vec![0f32; ((total_secs.max(0.0) + 1.2) * sr) as usize];
-    let hat_times: Vec<f32> = notes
-        .iter()
-        .filter(|n| matches!(n.midi.round() as u8, HAT_CLOSED | HAT_OPEN))
-        .map(|n| n.start_secs)
-        .collect();
+    let hat_times: Vec<f32> = notes.iter().filter(|n| is_hat(kit, n.midi)).map(|n| n.start_secs).collect();
     for (i, n) in notes.iter().enumerate() {
-        let midi = n.midi.round().clamp(0.0, 127.0) as u8;
-        // Brightness of the note: more click, sharpness and gloss (or less).
-        let bright;
-        let kit = if n.brightness != 0.0 {
-            let b = 0.35 * n.brightness.clamp(-1.0, 1.0);
-            let c = |v: f32| v.clamp(0.0, 1.0);
-            let mut k = *kit;
-            k.kick.klick = c(k.kick.klick + b);
-            k.kick.waerme = c(k.kick.waerme - 0.5 * b);
-            k.snare.schaerfe = c(k.snare.schaerfe + b);
-            k.clap.helligkeit = c(k.clap.helligkeit + b);
-            k.hat.helligkeit = c(k.hat.helligkeit + b);
-            bright = k;
-            &bright
-        } else {
-            kit
-        };
-        let Some(mut hit) = render_hit(kit, midi, n.velocity, sr, i as u32 * 7919 + 31) else { continue };
+        let (midi, mut k) = voice_for(kit, n.midi);
+        brighten(&mut k, n.brightness);
+        let Some(mut hit) = render_hit(&k, midi, n.velocity, sr, i as u32 * 7919 + 31) else { continue };
         if midi == HAT_OPEN {
             if let Some(&next) = hat_times.iter().find(|&&t| t > n.start_secs + 1e-4) {
                 let keep = ((next - n.start_secs) * sr) as usize;
@@ -407,17 +454,106 @@ mod tests {
     }
 
     #[test]
-    fn kit_renders_mapped_keys_and_ignores_others() {
+    fn kit_renders_mapped_keys_and_tunes_the_others() {
         let kit = DrumKit::default();
         let n = |midi: u8, t: f32| NoteSpec::new(t, 0.1, midi as f32, 0.9);
         let x = render_drums(&[n(KICK, 0.0), n(SNARE, 0.5), n(HAT_CLOSED, 0.25), n(60, 0.75)], 1.0, SR, &kit);
         assert!(x.iter().all(|v| v.is_finite()));
         assert!(peak(&x[..(0.2 * SR) as usize]) > 0.3);
-        // Key 60 is unmapped: after the snare decay it stays silent.
-        assert!(peak(&x[(0.78 * SR) as usize..(1.0 * SR) as usize]) < 0.05);
+        // Key 60 has no drum: it plays a tuned tom instead of staying silent.
+        assert!(peak(&x[(0.78 * SR) as usize..(1.0 * SR) as usize]) > 0.2);
         for m in [CLAP, TOM_LOW, TOM_MID, TOM_HIGH, HAT_OPEN, RIM, COWBELL, RIDE, CRASH, SHAKER] {
             assert!(render_hit(&kit, m, 1.0, SR, 1).map(|h| peak(&h) > 0.05).unwrap_or(false), "Taste {m}");
         }
+    }
+
+    /// Energy of `x` at frequency `f` (Goertzel over the first 0.25 s).
+    fn energy_at(x: &[f32], f: f32) -> f32 {
+        let (mut re, mut im) = (0.0f32, 0.0f32);
+        for (i, v) in x.iter().enumerate().take((0.25 * SR) as usize) {
+            let w = 2.0 * PI * f * i as f32 / SR;
+            re += v * w.cos();
+            im += v * w.sin();
+        }
+        (re * re + im * im).sqrt()
+    }
+
+    #[test]
+    fn drum_keys_of_the_kit_sound_exactly_as_before() {
+        // Rhythm grid and drum tracks: a drum key plays its drum with the kit untouched.
+        let kit = DrumKit { kick: KickParams { grundton: 30.0, ..DrumKit::default().kick }, ..DrumKit::default() };
+        for m in [KICK, RIM, SNARE, CLAP, TOM_LOW, HAT_CLOSED, TOM_MID, HAT_OPEN, TOM_HIGH, CRASH, RIDE, COWBELL, SHAKER] {
+            assert_eq!(voice_for(&kit, m as f32), (m, kit), "Taste {m}");
+            assert_eq!(render_note(&kit, m as f32, 0.8, SR, 5), render_hit(&kit, m, 0.8, SR, 5).unwrap(), "Taste {m}");
+        }
+    }
+
+    #[test]
+    fn every_key_sounds_in_both_modes() {
+        for pitched in [false, true] {
+            let kit = DrumKit { pitched, ..DrumKit::default() };
+            for m in 0..=127u8 {
+                let x = render_note(&kit, m as f32, 0.8, SR, 7);
+                assert!(x.iter().all(|v| v.is_finite()), "Taste {m}");
+                assert!(peak(&x) > 0.1 && peak(&x) < 2.5, "Taste {m} (nach Tonhöhe: {pitched}): {}", peak(&x));
+            }
+        }
+    }
+
+    #[test]
+    fn tuned_drums_split_the_keyboard_into_kick_tom_and_snare() {
+        let kit = DrumKit { pitched: true, ..DrumKit::default() };
+        let piece = |m: f32| voice_for(&kit, m).0;
+        assert_eq!(piece(28.0), KICK);
+        assert_eq!(piece(47.0), KICK);
+        assert_eq!(piece(48.0), TOM_LOW);
+        assert_eq!(piece(71.0), TOM_LOW);
+        assert_eq!(piece(72.0), SNARE);
+        assert_eq!(piece(96.0), SNARE);
+        // By pitch the drum keys are tuned drums too: no hi-hat, no cymbal.
+        assert_eq!(voice_for(&kit, HAT_OPEN as f32), (KICK, DrumKit { kick: KickParams { grundton: 46.0, ..kit.kick }, ..kit }));
+        assert_eq!(piece(CRASH as f32), TOM_LOW);
+        // The tuned drum keeps the kit's character, only its pitch follows the note.
+        let (_, k) = voice_for(&kit, 64.0);
+        assert_eq!(k.tom, TomParams { grundton: 64.0, ..kit.tom });
+        // In the drum kit the free keys play the same tuned drums.
+        let drum_kit = DrumKit::default();
+        assert_eq!(voice_for(&drum_kit, 60.0), (TOM_LOW, DrumKit { tom: TomParams { grundton: 60.0, ..drum_kit.tom }, ..drum_kit }));
+        assert_eq!(voice_for(&drum_kit, 30.0).0, KICK);
+        assert_eq!(voice_for(&drum_kit, 76.0).0, SNARE);
+    }
+
+    #[test]
+    fn tuned_drums_sound_at_the_pitch_of_the_note() {
+        let kit = DrumKit { pitched: true, ..DrumKit::default() };
+        for m in [28.0f32, 36.0, 43.0, 50.0, 57.0, 60.0, 64.0, 69.0, 74.0, 79.0] {
+            let x = render_note(&kit, m, 1.0, SR, 3);
+            let got = hit_pitches(&x, SR, &[0.0])[0].midi.unwrap_or(f32::NAN);
+            assert!((got - m).abs() < 1.0, "Ton {m} → gemessen {got}");
+        }
+    }
+
+    #[test]
+    fn pitch_moves_the_spectrum_of_tuned_drums() {
+        let kit = DrumKit { pitched: true, ..DrumKit::default() };
+        // One drum per zone, a fifth apart: each has its energy at its own pitch.
+        for (a, b) in [(31.0f32, 38.0f32), (55.0, 62.0), (74.0, 81.0)] {
+            let (xa, xb) = (render_note(&kit, a, 1.0, SR, 3), render_note(&kit, b, 1.0, SR, 3));
+            let (fa, fb) = (midi_to_hz(a), midi_to_hz(b));
+            assert!(energy_at(&xa, fa) > 2.0 * energy_at(&xa, fb), "{a}: {} vs {}", energy_at(&xa, fa), energy_at(&xa, fb));
+            assert!(energy_at(&xb, fb) > 2.0 * energy_at(&xb, fa), "{b}: {} vs {}", energy_at(&xb, fb), energy_at(&xb, fa));
+        }
+    }
+
+    #[test]
+    fn hats_by_pitch_are_not_choked() {
+        // By pitch keys 46/42 are tuned drums: the first one rings out.
+        let kit = DrumKit { pitched: true, ..DrumKit::default() };
+        let n = |midi: u8, t: f32| NoteSpec::new(t, 0.1, midi as f32, 1.0);
+        let alone = render_drums(&[n(HAT_OPEN, 0.0)], 1.0, SR, &kit);
+        let both = render_drums(&[n(HAT_OPEN, 0.0), n(HAT_CLOSED, 0.2)], 1.0, SR, &kit);
+        let tail = |x: &[f32]| peak(&x[(0.3 * SR) as usize..(0.4 * SR) as usize]);
+        assert!(tail(&both) > 0.5 * tail(&alone), "{} {}", tail(&both), tail(&alone));
     }
 
     #[test]

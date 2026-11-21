@@ -1914,7 +1914,7 @@ const dict: Dict = {
   "hard": "twarde",
   "Excitation: finger/felt at the middle of the string ↔ pick close to the bridge": "Pobudzenie: palec/filc bliżej środka struny ↔ kostka blisko mostka",
   "Drums": "Perkusja",
-  "Synthetic drum kit – each key is a drum (C1 kick drum, D1 snare, D♯1 clap, F♯1/A♯1 hi-hat, F1/A1/C2 toms)": "Syntetyczna perkusja – każdy klawisz to inny bęben (C1 stopa, D1 werbel, D♯1 clap, F♯1/A♯1 hi-hat, F1/A1/C2 tomy)",
+  "Synthetic drum kit – each key is a drum (C2 kick drum, D2 snare, D♯2 clap, F♯2/A♯2 hi-hat, F2/A2/C3 toms), every other key a tuned drum at its pitch": "Syntetyczna perkusja – każdy klawisz to inny bęben (C2 stopa, D2 werbel, D♯2 clap, F♯2/A♯2 hi-hat, F2/A2/C3 tomy), pozostałe klawisze to strojone bębny na swojej wysokości",
   "Fundamental": "Ton podstawowy",
   "Bassdrum": "Stopa",
   "Pitch the kick drum settles on – choose one that fits the key of the bass": "Dźwięk, do którego opada stopa – dobierz go do tonacji basu",
@@ -2732,6 +2732,21 @@ const dict: Dict = {
 
   // not used in this repo (e.g. the desktop shell, klangwelt-desktop/app/src)
   "There's no score library in the browser yet (downloading and indexing are missing) – see docs/WEB.md.": "W przeglądarce nie ma jeszcze biblioteki nut (brak pobierania i indeksowania) – zob. docs/WEB.md.",
+
+  // tuned drums (ui/src/components/sound.ts, timeline.ts, crates/klang-app/src/sound.rs)
+  "Drum kit": "Zestaw perkusyjny",
+  "Each drum key plays its drum (C2 kick drum, D2 snare, F♯2 hi-hat …); every other key plays a tuned drum": "Każdy klawisz perkusji gra swój bęben (C2 stopa, D2 werbel, F♯2 hi-hat …); wszystkie pozostałe klawisze grają strojony bęben",
+  "Every key plays a tuned drum at its pitch – for melodies and bass lines": "Każdy klawisz gra strojony bęben na swojej wysokości – do melodii i linii basu",
+  "Keys": "Klawisze",
+  "Every key is a tuned drum: below C3 kick drum, C3 to B4 tom, from C5 snare.": "Każdy klawisz to strojony bęben: poniżej C3 stopa, od C3 do H4 tom, od C5 werbel.",
+  "The drum keys play the kit; every other key plays a tuned drum (below C3 kick drum, C3 to B4 tom, from C5 snare).": "Klawisze perkusji grają zestaw; wszystkie pozostałe klawisze grają strojony bęben (poniżej C3 stopa, od C3 do H4 tom, od C5 werbel).",
+  "By pitch there are no claps and hi-hats": "Według wysokości nie ma clapów ani hi-hatów",
+  "By pitch the note sets the pitch": "Według wysokości to nuta ustala wysokość",
+  "Tom": "Tom",
+  "Tasten": "Klawisze",
+  "drum kit": "zestaw",
+  "pitch": "wysokość",
+  "How the keys play: 0 = drum kit (each drum key its drum, every other key a tuned drum), 1 = pitch (every key a tuned drum at its pitch). Tuned drums: kick drum below C3, tom up to B4, snare from C5": "Jak grają klawisze: 0 = zestaw perkusyjny (każdy klawisz perkusji swój bęben, pozostałe klawisze strojony bęben), 1 = wysokość (każdy klawisz strojony bęben na swojej wysokości). Strojone bębny: stopa poniżej C3, tom do H4, werbel od C5",
 };
 
 export default dict;

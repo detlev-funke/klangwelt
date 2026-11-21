@@ -1914,7 +1914,7 @@ const dict: Dict = {
   "hard": "hard",
   "Excitation: finger/felt at the middle of the string ↔ pick close to the bridge": "Aanslag: vinger/vilt naar het midden van de snaar ↔ plectrum dicht bij de kam",
   "Drums": "Drums",
-  "Synthetic drum kit – each key is a drum (C1 kick drum, D1 snare, D♯1 clap, F♯1/A♯1 hi-hat, F1/A1/C2 toms)": "Synthetische drums – elke toets een trom (C1 basdrum, D1 snare, D♯1 clap, F♯1/A♯1 hi-hat, F1/A1/C2 toms)",
+  "Synthetic drum kit – each key is a drum (C2 kick drum, D2 snare, D♯2 clap, F♯2/A♯2 hi-hat, F2/A2/C3 toms), every other key a tuned drum at its pitch": "Synthetische drums – elke toets een trom (C2 basdrum, D2 snare, D♯2 clap, F♯2/A♯2 hi-hat, F2/A2/C3 toms), alle andere toetsen een gestemde trom op hun toonhoogte",
   "Fundamental": "Grondtoon",
   "Bassdrum": "Basdrum",
   "Pitch the kick drum settles on – choose one that fits the key of the bass": "Toon waarop de basdrum uitklinkt – kies hem passend bij de toonsoort van de bas",
@@ -2732,6 +2732,21 @@ const dict: Dict = {
 
   // not used in this repo (e.g. the desktop shell, klangwelt-desktop/app/src)
   "There's no score library in the browser yet (downloading and indexing are missing) – see docs/WEB.md.": "In de browser is er nog geen partituurbibliotheek (downloaden en indexeren ontbreken) – zie docs/WEB.md.",
+
+  // tuned drums (ui/src/components/sound.ts, timeline.ts, crates/klang-app/src/sound.rs)
+  "Drum kit": "Drumstel",
+  "Each drum key plays its drum (C2 kick drum, D2 snare, F♯2 hi-hat …); every other key plays a tuned drum": "Elke drumtoets speelt zijn trom (C2 basdrum, D2 snare, F♯2 hi-hat …); alle andere toetsen spelen een gestemde trom",
+  "Every key plays a tuned drum at its pitch – for melodies and bass lines": "Elke toets speelt een gestemde trom op zijn toonhoogte – voor melodieën en baslijnen",
+  "Keys": "Toetsen",
+  "Every key is a tuned drum: below C3 kick drum, C3 to B4 tom, from C5 snare.": "Elke toets is een gestemde trom: onder C3 basdrum, C3 tot B4 tom, vanaf C5 snare.",
+  "The drum keys play the kit; every other key plays a tuned drum (below C3 kick drum, C3 to B4 tom, from C5 snare).": "De drumtoetsen spelen het drumstel; alle andere toetsen spelen een gestemde trom (onder C3 basdrum, C3 tot B4 tom, vanaf C5 snare).",
+  "By pitch there are no claps and hi-hats": "Op toonhoogte zijn er geen claps en hi-hats",
+  "By pitch the note sets the pitch": "Op toonhoogte bepaalt de noot de toonhoogte",
+  "Tom": "Tom",
+  "Tasten": "Toetsen",
+  "drum kit": "drumstel",
+  "pitch": "toonhoogte",
+  "How the keys play: 0 = drum kit (each drum key its drum, every other key a tuned drum), 1 = pitch (every key a tuned drum at its pitch). Tuned drums: kick drum below C3, tom up to B4, snare from C5": "Hoe de toetsen spelen: 0 = drumstel (elke drumtoets zijn trom, alle andere toetsen een gestemde trom), 1 = toonhoogte (elke toets een gestemde trom op zijn toonhoogte). Gestemde trommen: basdrum onder C3, tom tot B4, snare vanaf C5",
 };
 
 export default dict;

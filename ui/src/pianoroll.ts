@@ -59,6 +59,20 @@ export function maxScrollY(tracks: Track[]): number {
 
 export const isBlack = (pitch: number) => [1, 3, 6, 8, 10].includes(((pitch % 12) + 12) % 12);
 
+// ---------- Drums: drum kit or by pitch ----------
+
+/** Control of the drums: 0 = drum kit (each drum key its drum), 1 = every key by pitch. */
+export const KEYS_MODE = "tasten";
+/** Tuned drums: from C3 the tom, from C5 the snare, below C3 the kick drum (as in the core). */
+export const TUNED_TOM_FROM = 48;
+export const TUNED_SNARE_FROM = 72;
+
+/** How a track's keys play: "kit" = drum per drum key, "pitch" = tuned drums, null = no drums. */
+export function drumMode(t: Track | undefined): "kit" | "pitch" | null {
+  if (t?.kind !== "instrument" || t.instrument?.kind !== "drums") return null;
+  return (t.instrument.params[KEYS_MODE] ?? 0) >= 0.5 ? "pitch" : "kit";
+}
+
 // ---------- visible pitch range per track ----------
 
 /** Visible pitch range of a note row: lowest note and number of semitones. */
@@ -128,7 +142,7 @@ function fitView(pitches: number[]): PitchView {
 function contentPitches(t: Track): number[] | null {
   if (t.kind === "instrument") {
     const pitches = t.clips.flatMap((c) => (c.source.type === "notes" ? c.source.notes.map((n) => n.pitch) : []));
-    if (t.instrument?.kind === "drums") return [...pitches, 35, 49]; // all drums visible
+    if (drumMode(t) === "kit") return [...pitches, 35, 49]; // all drums visible
     if (!pitches.length && t.instrument?.kind === "bass") return [28, 48];
     return pitches;
   }
@@ -152,15 +166,26 @@ function contentPitches(t: Track): number[] | null {
  * first query comes from drawing, from the keyboard or from a mouse click.
  */
 export function viewFor(t: Track): PitchView {
+  // Drums switched between drum kit and pitch (or became/stopped being drums): fit again –
+  // the drum kit shows its drums, by pitch the notes like any melody.
+  const mode = drumMode(t);
+  if (fittedFor.has(t.id) && fittedFor.get(t.id) !== mode) {
+    fittedFor.delete(t.id);
+    if (pitchViews.peek()[t.id]) refitPitch(t.id);
+  }
   const stored = pitchViews.peek()[t.id];
   if (stored) return stored;
   const pitches = contentPitches(t);
   const view = fitView(pitches ?? []);
   if (pitches !== null && t.view === "notes") {
+    fittedFor.set(t.id, mode);
     pitchViews.update((m) => ({ ...m, [t.id]: view }));
   }
   return view;
 }
+
+/** Drum mode a track's pinned pitch range was fitted for. */
+const fittedFor = new Map<number, "kit" | "pitch" | null>();
 
 /** Shifts the pitch range (semitones, positive = higher). */
 export function scrollPitch(trackId: number, delta: number, current: PitchView): void {

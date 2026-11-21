@@ -4,7 +4,7 @@ import { backend } from "../bridge.js";
 import { fitCanvas, h, icon, noteName, setRange } from "../dom.js";
 import {
   EXPR_H, NOTES_TOP, RHYTHM_H, type NoteGeo, geoFor, heightDraft, highOnTop, isBlack, maxScrollY, pitchAt, pitchOfLane, pitchViews,
-  refitPitch, rowHeight, scrollPitch, viewFor, wheelPitchStep, zoomPitch,
+  refitPitch, rowHeight, scrollPitch, viewFor, wheelPitchStep, zoomPitch, drumMode,
 } from "../pianoroll.js";
 import { EXPRS, type ExprKey, exprKeysFor, exprLanes, exprShown, laneKeyFor, setLaneKey, toggleExprLane } from "../expression.js";
 import { t } from "../i18n.js";
@@ -75,6 +75,12 @@ function drawKeys(canvas: HTMLCanvasElement, g: NoteGeo, drumKeys?: Map<number, 
     }
   }
 
+  // Drum kit: keys without a drum are dimmed – they play tuned drums, not drums of the kit.
+  if (drumKeys) {
+    ctx.fillStyle = "rgba(14, 17, 23, 0.5)";
+    for (let k = 0; k < LANE_SPAN; k++) if (!drumKeys.has(pitchOf(k))) ctx.fillRect(0, k * LANE_H, w, LANE_H);
+  }
+
   // Label at the front (left) on the white key: C notes, or for drums the drum sounds.
   ctx.font = `600 ${Math.max(5.5, Math.min(7.5, LANE_H - 0.5)).toFixed(1)}px system-ui`;
   ctx.textAlign = "left";
@@ -115,9 +121,9 @@ function drawKeys(canvas: HTMLCanvasElement, g: NoteGeo, drumKeys?: Map<number, 
   }
 }
 
-/** Short names of the drums of a drum track (key → "BD", "SD" …). */
+/** Short names of the drums of a drum track in the drum kit (key → "BD", "SD" …). */
 export function drumKeyNames(t: Track): Map<number, string> | undefined {
-  if (t.instrument?.kind !== "drums") return undefined;
+  if (drumMode(t) !== "kit") return undefined;
   const keys = specFor(t.instrument)?.keys ?? [];
   return new Map(keys.map((k) => [k.midi, k.short]));
 }

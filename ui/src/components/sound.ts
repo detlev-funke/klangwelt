@@ -7,6 +7,7 @@ import { backend } from "../bridge.js";
 import { fitCanvas, h, icon, noteName, setRange } from "../dom.js";
 import { language, plural, t } from "../i18n.js";
 import { act, errorText, findTrack, instrumentSpecs, notify, project, run, savedSounds, showPanel, snapshot, specFor } from "../store.js";
+import { KEYS_MODE, refitPitch } from "../pianoroll.js";
 import type { CurvePoint, FieldSpec, Instrument, InstrumentSpec, ParamSpec, PreviewPattern, SavedSound, VerlaufSpec, WaveView } from "../types.js";
 
 export interface SoundPanel {
@@ -683,8 +684,30 @@ export function soundPanel(trackId: number): SoundPanel {
     );
   }
 
+  // Drums: how the keys play – drum kit (a drum per drum key) or every key by pitch
+  const keysBtns = spec.kind === "drums"
+    ? ([
+        [0, t("Drum kit"), t("Each drum key plays its drum (C2 kick drum, D2 snare, F♯2 hi-hat …); every other key plays a tuned drum")],
+        [1, t("Pitch"), t("Every key plays a tuned drum at its pitch – for melodies and bass lines")],
+      ] as const).map(([v, label, title]) => {
+        const b = h("button", { class: "seg-btn", title }, label);
+        b.dataset.keys = String(v);
+        b.addEventListener("click", () => {
+          if (b.classList.contains("on")) return;
+          void setParams({ [KEYS_MODE]: v }, base().preset, false).then((ok) => {
+            if (!ok) return;
+            refitPitch(trackId); // the track shows its drums or its notes
+            autoPreview();
+          });
+        });
+        return b;
+      })
+    : [];
+  const keysHint = h("div", { class: "hint snd-keys-hint" });
+  const keysBox = keysBtns.length ? h("div", { class: "prop snd-keys" }, h("label", {}, t("Keys")), h("div", { class: "seg mini" }, ...keysBtns), keysHint) : null;
+
   // Fine-tuning: all sliders
-  const sliders: Array<{ p: ParamSpec; input: HTMLInputElement; val: HTMLElement }> = [];
+  const sliders: Array<{ p: ParamSpec; input: HTMLInputElement; val: HTMLElement; row: HTMLElement }> = [];
   const makeSlider = (p: ParamSpec) => {
     const input = h("input", { type: "range", min: p.min, max: p.max, step: p.note ? 1 : 0.01 }) as HTMLInputElement;
     const val = h("b");
@@ -700,21 +723,24 @@ export function soundPanel(trackId: number): SoundPanel {
       if (spec.kind === "drums" && pv) setTimeout(() => void preview(pv), 120);
     });
     input.addEventListener("keydown", (e) => e.stopPropagation());
-    sliders.push({ p, input, val });
-    return h(
+    const row = h(
       "div",
       { class: "slider", title: p.meaning },
       h("label", {}, h("span", {}, p.label), val),
       input,
       h("div", { class: "scale" }, h("span", {}, p.note ? noteName(p.min) : p.left), h("span", {}, p.note ? noteName(p.max) : p.right)),
     );
+    sliders.push({ p, input, val, row });
+    return row;
   };
   const groups = new Map<string, ParamSpec[]>();
   for (const p of spec.params.filter((p) => !p.hidden)) groups.set(p.group, [...(groups.get(p.group) ?? []), p]);
   const groupEls = [...groups].map(([name, ps]) => {
     const pv = spec.kind === "drums" ? GROUP_PREVIEW[name] : undefined;
     const head = h("h4", {}, t(name), pv ? h("button", { class: "btn ghost small", title: t("Play {name}", { name: t(name) }), onclick: () => preview(pv) }, icon("play")) : null);
-    return h("div", { class: "pgroup" }, head, h("div", { class: "sliders" }, ...ps.map(makeSlider)));
+    const g = h("div", { class: "pgroup" }, head, h("div", { class: "sliders" }, ...ps.map(makeSlider)));
+    g.dataset.group = name;
+    return g;
   });
   const fine = h("details", { class: "snd-fine", open: prefs.feinschliff }, h("summary", {}, t("Fine-tuning – all controls")), ...groupEls) as HTMLDetailsElement;
   fine.addEventListener("toggle", () => setViewPref("feinschliff", fine.open));
@@ -783,6 +809,7 @@ export function soundPanel(trackId: number): SoundPanel {
       fine),
     h("div", { class: "sound-side" },
       libBox,
+      keysBox,
       h("div", { class: "prop" }, h("label", {}, t("Preview")), listen),
       h("div", { class: "prop snd-insert" }, insert,
         spec.kind === "drums" ? h("button", { class: "btn small", title: t("Genre patterns and step grid in the \"Rhythm\" window"), onclick: () => showPanel("rhythmus") }, icon("grid"), t("Genre patterns…")) : null),
@@ -823,7 +850,21 @@ export function soundPanel(trackId: number): SoundPanel {
           : f.presets.find((p) => Math.abs(p.x - x) < 0.005 && Math.abs(p.y - y) < 0.005)?.name ?? null;
         view.set(x, y, active);
       }
+      // By pitch the note gives the pitch, and there are no claps and hi-hats: those controls rest.
+      const byPitch = spec.kind === "drums" && prm(KEYS_MODE, 0) >= 0.5;
+      for (const b of keysBtns) b.classList.toggle("on", Number(b.dataset.keys) === (byPitch ? 1 : 0));
+      keysHint.textContent = byPitch
+        ? t("Every key is a tuned drum: below C3 kick drum, C3 to B4 tom, from C5 snare.")
+        : t("The drum keys play the kit; every other key plays a tuned drum (below C3 kick drum, C3 to B4 tom, from C5 snare).");
+      for (const g of groupEls) {
+        const idle = byPitch && (g.dataset.group === "Clap" || g.dataset.group === "Hi-Hat");
+        g.classList.toggle("idle", idle);
+        g.title = idle ? t("By pitch there are no claps and hi-hats") : "";
+      }
       for (const s of sliders) {
+        s.row.classList.toggle("idle", byPitch && s.p.note);
+        if (byPitch && s.p.note) s.row.title = t("By pitch the note sets the pitch");
+        else s.row.title = s.p.meaning;
         const v = inst.params[s.p.key] ?? s.p.default;
         s.input.style.setProperty("--c", color);
         setRange(s.input, v);

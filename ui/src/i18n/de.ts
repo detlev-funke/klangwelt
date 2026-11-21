@@ -1877,7 +1877,7 @@ const dict: Dict = {
   "hard": "hart",
   "Excitation: finger/felt at the middle of the string ↔ pick close to the bridge": "Anregung: Finger/Filz zur Saitenmitte ↔ Plektrum nah am Steg",
   "Drums": "Schlagzeug",
-  "Synthetic drum kit – each key is a drum (C1 kick drum, D1 snare, D♯1 clap, F♯1/A♯1 hi-hat, F1/A1/C2 toms)": "Synthetisches Schlagzeug – jede Taste eine Trommel (C1 Bassdrum, D1 Snare, D♯1 Clap, F♯1/A♯1 Hi-Hat, F1/A1/C2 Toms)",
+  "Synthetic drum kit – each key is a drum (C2 kick drum, D2 snare, D♯2 clap, F♯2/A♯2 hi-hat, F2/A2/C3 toms), every other key a tuned drum at its pitch": "Synthetisches Schlagzeug – jede Taste eine Trommel (C2 Bassdrum, D2 Snare, D♯2 Clap, F♯2/A♯2 Hi-Hat, F2/A2/C3 Toms), alle anderen Tasten gestimmte Trommeln in ihrer Tonhöhe",
   "Fundamental": "Grundton",
   "Pitch the kick drum settles on – choose one that fits the key of the bass": "Ton, auf den die Bassdrum ausklingt – passend zur Tonart des Basses wählen",
   "Punch": "Punch",
@@ -2600,6 +2600,20 @@ const dict: Dict = {
 
   // not used in this repo (e.g. the desktop shell, klangwelt-desktop/app/src)
   "There's no score library in the browser yet (downloading and indexing are missing) – see docs/WEB.md.": "Im Browser gibt es noch keine Notenbibliothek (Herunterladen und Indizieren fehlen) – siehe docs/WEB.md.",
+
+  // tuned drums (ui/src/components/sound.ts, timeline.ts, crates/klang-app/src/sound.rs)
+  "Drum kit": "Schlagzeug",
+  "Each drum key plays its drum (C2 kick drum, D2 snare, F♯2 hi-hat …); every other key plays a tuned drum": "Jede Schlagzeug-Taste spielt ihre Trommel (C2 Bassdrum, D2 Snare, F♯2 Hi-Hat …); alle anderen Tasten spielen eine gestimmte Trommel",
+  "Every key plays a tuned drum at its pitch – for melodies and bass lines": "Jede Taste spielt eine gestimmte Trommel in ihrer Tonhöhe – für Melodien und Basslinien",
+  "Keys": "Tasten",
+  "Every key is a tuned drum: below C3 kick drum, C3 to B4 tom, from C5 snare.": "Jede Taste ist eine gestimmte Trommel: unter C3 Bassdrum, C3 bis H4 Tom, ab C5 Snare.",
+  "The drum keys play the kit; every other key plays a tuned drum (below C3 kick drum, C3 to B4 tom, from C5 snare).": "Die Schlagzeug-Tasten spielen das Set; alle anderen Tasten spielen eine gestimmte Trommel (unter C3 Bassdrum, C3 bis H4 Tom, ab C5 Snare).",
+  "By pitch there are no claps and hi-hats": "Nach Tonhöhe gibt es keine Clap und keine Hi-Hats",
+  "By pitch the note sets the pitch": "Nach Tonhöhe bestimmt die Note die Tonhöhe",
+  "Tom": "Tom",
+  "drum kit": "Schlagzeug",
+  "pitch": "Tonhöhe",
+  "How the keys play: 0 = drum kit (each drum key its drum, every other key a tuned drum), 1 = pitch (every key a tuned drum at its pitch). Tuned drums: kick drum below C3, tom up to B4, snare from C5": "Wie die Tasten spielen: 0 = Schlagzeug (jede Schlagzeug-Taste ihre Trommel, alle anderen Tasten gestimmte Trommeln), 1 = Tonhöhe (jede Taste eine gestimmte Trommel in ihrer Tonhöhe). Gestimmte Trommeln: Bassdrum unter C3, Tom bis H4, Snare ab C5",
 };
 
 export default dict;

@@ -31,7 +31,7 @@ pub fn is_chord_track(name: &str) -> bool {
 const MAX_CHORDS: usize = 64;
 
 fn melodic(t: &Track) -> bool {
-    t.kind == TrackKind::Instrument && sound::transposes(t.instrument.as_ref())
+    t.kind == TrackKind::Instrument && sound::kind_of(t.instrument.as_ref()) != InstrumentKind::Drums
 }
 
 fn shift_of(t: &Track) -> i32 {

@@ -24,7 +24,7 @@ import { MOOD_COLORS, MOOD_LABELS, chordIndexAt, harmonyFocus, harmonyLaneOn, ha
 import {
   NOTES_TOP, RHYTHM_H, type NoteGeo, analysisFor, analysisState, contentHeight, geoFor, heightDraft, highOnTop, inView, isBlack, laneY,
   maxScrollY, noteGrid, noteKey, noteSel, offViewAtTop, pitchAt, pitchDelta, pitchOfLane, pitchViews, rowHeight, rowTops,
-  scrollPitch, viewFor, wheelPitchStep, exprAt, exprY,
+  scrollPitch, viewFor, wheelPitchStep, exprAt, exprY, drumMode, TUNED_TOM_FROM, TUNED_SNARE_FROM, type PitchView,
 } from "../pianoroll.js";
 import { plural, t } from "../i18n.js";
 import { effect } from "../signals.js";
@@ -38,6 +38,37 @@ const WAVE_BUCKETS = 2400;
 const waves = new Map<string, Float32Array | "loading">();
 /** Length of the most recently placed note (new notes adopt it). */
 let lastNoteLength = 1;
+
+/** Diagonal hatching for keys without a drum (drum kit), one pattern per canvas. */
+const hatches = new WeakMap<CanvasRenderingContext2D, CanvasPattern | string>();
+function hatch(ctx: CanvasRenderingContext2D): CanvasPattern | string {
+  let p = hatches.get(ctx);
+  if (!p) {
+    const tile = document.createElement("canvas");
+    tile.width = tile.height = 8;
+    const c = tile.getContext("2d");
+    if (c) {
+      c.strokeStyle = "#1c2230";
+      c.lineWidth = 1;
+      c.beginPath();
+      c.moveTo(-1, 9);
+      c.lineTo(9, -1);
+      c.stroke();
+    }
+    p = ctx.createPattern(tile, "repeat") ?? "transparent";
+    hatches.set(ctx, p);
+  }
+  return p;
+}
+
+/** By pitch: name of the tuned drum on the lowest visible key of its range, else undefined. */
+function tunedZoneStart(g: { view: PitchView }, pitch: number): string | undefined {
+  const zones: Array<[number, number, string]> = [[0, TUNED_TOM_FROM, t("Kick drum")], [TUNED_TOM_FROM, TUNED_SNARE_FROM, t("Tom")], [TUNED_SNARE_FROM, 128, t("Snare")]];
+  for (const [lo, hi, name] of zones) {
+    if (pitch === Math.max(lo, g.view.low) && pitch < hi) return name;
+  }
+  return undefined;
+}
 
 function rgba(hex: string, a: number): string {
   const n = parseInt(hex.slice(1), 16);
@@ -1695,18 +1726,42 @@ class KwTimeline extends HTMLElement {
     const RHYTHM_TOP = g.rhythmTop;
     ctx.fillStyle = "#0f1219";
     ctx.fillRect(0, y, w, NOTES_TOP);
-    // Drums: highlight occupied keys (drums)
-    const drumKeys = t.instrument?.kind === "drums" ? new Set(specFor(t.instrument)?.keys.map((k) => k.midi)) : null;
+    // Drum kit: the drum keys are lit rows with their names; the other keys are hatched –
+    // there they play tuned drums. By pitch: lines where kick drum, tom and snare change.
+    const mode = drumMode(t);
+    const drums = mode === "kit" ? new Map(specFor(t.instrument)?.keys.map((k) => [k.midi, k.name])) : null;
     const up = highOnTop.peek();
     for (let k = 0; k < LANE_SPAN; k++) {
       const pitch = pitchOfLane(g.view, k);
       const ly = y + NOTES_TOP + k * LANE_H;
-      ctx.fillStyle = drumKeys?.has(pitch) ? "#181d28" : isBlack(pitch) ? "#0b0d12" : "#11141b";
+      ctx.fillStyle = drums?.has(pitch) ? "#1a2030" : drums ? "#0c0e13" : isBlack(pitch) ? "#0b0d12" : "#11141b";
       ctx.fillRect(0, ly, w, LANE_H);
+      if (drums && !drums.has(pitch)) {
+        ctx.fillStyle = hatch(ctx);
+        ctx.fillRect(0, ly, w, LANE_H);
+      }
       if (pitch % 12 === 0) {
         // Octave boundary between B and C (B is above or below depending on direction)
         ctx.fillStyle = "#283041";
         ctx.fillRect(0, up ? ly + LANE_H - 1 : ly, w, 1);
+      }
+      if (mode === "pitch" && (pitch === TUNED_TOM_FROM || pitch === TUNED_SNARE_FROM)) {
+        ctx.fillStyle = "rgba(255, 180, 84, 0.45)";
+        ctx.fillRect(0, up ? ly + LANE_H - 1 : ly, w, 1);
+      }
+    }
+    // Names stay at the left edge of the visible area, quiet behind the notes.
+    const label = Math.min(11, LANE_H - 1);
+    if (label >= 7) {
+      ctx.font = `600 ${label.toFixed(1)}px system-ui`;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      for (let k = 0; k < LANE_SPAN; k++) {
+        const pitch = pitchOfLane(g.view, k);
+        const text = drums ? drums.get(pitch) : mode === "pitch" ? tunedZoneStart(g, pitch) : undefined;
+        if (!text) continue;
+        ctx.fillStyle = drums ? "rgba(255, 180, 84, 0.55)" : "rgba(255, 180, 84, 0.4)";
+        ctx.fillText(text, 6, y + NOTES_TOP + k * LANE_H + LANE_H / 2 + 0.5);
       }
     }
     // Rhythm strip below the pitch lanes.

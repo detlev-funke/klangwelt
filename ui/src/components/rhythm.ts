@@ -10,6 +10,7 @@ import { backend } from "../bridge.js";
 import { h, icon, setRange } from "../dom.js";
 import { plural, t } from "../i18n.js";
 import { act, errorText, notify, project, run, selection, showPanel, snapshot, status } from "../store.js";
+import { drumMode } from "../pianoroll.js";
 import type { Clip, RhythmGenre, RhythmGrid, RhythmInfo, RhythmPattern, RhythmRow, Track } from "../types.js";
 
 const STEPS = 16;
@@ -62,7 +63,8 @@ function sameGrid(a: RhythmGrid, b: RhythmGrid): boolean {
   return true;
 }
 
-const isDrums = (t: Track | undefined): t is Track => t?.kind === "instrument" && t.instrument?.kind === "drums";
+/** Drum tracks in the drum kit: the grid writes and reads drum keys (by pitch they would be tuned drums). */
+const isDrums = (t: Track | undefined): t is Track => drumMode(t) === "kit";
 
 /**
  * Quick start "Start with a beat": creates a drum track with four bars

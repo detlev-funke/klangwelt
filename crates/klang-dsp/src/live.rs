@@ -97,6 +97,7 @@ impl Patch {
                     k.hat.offen,
                     k.tom.grundton,
                     k.tom.laenge,
+                    if k.pitched { 1.0 } else { 0.0 },
                 ],
             ),
             Patch::Bass(p) => put(3.0, &[p.wellenform, p.filter, p.resonanz, p.anschlag, p.abklingen, p.sub, p.biss, p.glide]),
@@ -124,15 +125,16 @@ impl Patch {
             }
             2 => {
                 use crate::drums::{ClapParams, HatParams, KickParams, SnareParams, TomParams};
-                let v = take(16)?;
+                let v = take(17)?;
                 let kit = DrumKit {
                     kick: KickParams { grundton: v[0], punch: v[1], laenge: v[2], klick: v[3], waerme: v[4] },
                     snare: SnareParams { kessel: v[5], teppich: v[6], laenge: v[7], schaerfe: v[8] },
                     clap: ClapParams { helligkeit: v[9], laenge: v[10] },
                     hat: HatParams { helligkeit: v[11], laenge: v[12], offen: v[13] },
                     tom: TomParams { grundton: v[14], laenge: v[15] },
+                    pitched: v[16] >= 0.5,
                 };
-                (Patch::Drums(kit), 17)
+                (Patch::Drums(kit), 18)
             }
             3 => {
                 let v = take(8)?;
@@ -232,12 +234,11 @@ fn plan(patch: &Patch, notes: &[(f32, f32, f32)]) -> Vec<Plan> {
         Patch::Organ(_) => seeded(&|i| i + 1),
         Patch::Harpsichord(_) => seeded(&|i| i * 31 + 5),
         Patch::Synth(..) => seeded(&|i| i * 7919 + 31),
-        Patch::Drums(_) => {
+        Patch::Drums(kit) => {
             let mut plans = seeded(&|i| i * 7919 + 31);
-            let is_hat = |m: f32| matches!(m.round() as u8, drums::HAT_CLOSED | drums::HAT_OPEN);
-            let hat_times: Vec<f32> = notes.iter().filter(|n| is_hat(n.2)).map(|n| n.0).collect();
+            let hat_times: Vec<f32> = notes.iter().filter(|n| drums::is_hat(kit, n.2)).map(|n| n.0).collect();
             for (p, n) in plans.iter_mut().zip(notes) {
-                if n.2.round().clamp(0.0, 127.0) as u8 == drums::HAT_OPEN {
+                if drums::voice_for(kit, n.2).0 == drums::HAT_OPEN {
                     if let Some(&next) = hat_times.iter().find(|&&t| t > n.0 + 1e-4) {
                         p.cut = next - n.0;
                     }
@@ -1098,7 +1099,7 @@ impl Pad {
     }
 }
 
-/// One drum hit (see `drums::render_hit`), an open hi-hat choked by the next one.
+/// One drum hit (see `drums::render_note`), an open hi-hat choked by the next one.
 struct Drum {
     piece: Piece,
     n: usize,
@@ -1125,18 +1126,9 @@ const CYMBAL_PARTIALS: [f32; 6] = [205.3, 304.4, 369.6, 522.7, 540.0, 800.0];
 
 impl Drum {
     fn start(kit: &DrumKit, n: &NoteSpec, sr: f32, seed: u32, cut_secs: f32) -> Drum {
-        let midi = n.midi.round().clamp(0.0, 127.0) as u8;
-        // brightness of the note: more click, sharpness and gloss (or less)
-        let mut k = *kit;
-        if n.brightness != 0.0 {
-            let b = 0.35 * n.brightness.clamp(-1.0, 1.0);
-            let c = |v: f32| v.clamp(0.0, 1.0);
-            k.kick.klick = c(k.kick.klick + b);
-            k.kick.waerme = c(k.kick.waerme - 0.5 * b);
-            k.snare.schaerfe = c(k.snare.schaerfe + b);
-            k.clap.helligkeit = c(k.clap.helligkeit + b);
-            k.hat.helligkeit = c(k.hat.helligkeit + b);
-        }
+        // the drum on the key, or a tuned drum at the note's pitch
+        let (midi, mut k) = drums::voice_for(kit, n.midi);
+        drums::brighten(&mut k, n.brightness);
         let rng = Rng(seed | 1);
         let (piece, n_len) = match midi {
             drums::KICK => {
@@ -1801,6 +1793,17 @@ mod tests {
         let kit = DrumKit::default();
         let beat = beat();
         assert!(max_diff(&render_mono(&Patch::Drums(kit), &beat, 3.0, SR, 0.5), &drums::render_drums(&beat, 3.0, SR, &kit)) < 1e-6);
+        // tuned drums: a melody across all three zones (also on drum keys and between them), in both modes
+        let tune: Vec<NoteSpec> = [30.0f32, 38.0, 42.0, 46.0, 49.0, 55.0, 60.0, 64.5, 70.0, 74.0, 79.0]
+            .iter()
+            .enumerate()
+            .map(|(k, &m)| with_expression(NoteSpec::new(k as f32 * 0.22, 0.2, m, 0.8), k))
+            .collect();
+        for pitched in [false, true] {
+            let kit = DrumKit { pitched, ..DrumKit::default() };
+            let live = render_mono(&Patch::Drums(kit), &tune, 3.0, SR, 0.5);
+            assert!(max_diff(&live, &drums::render_drums(&tune, 3.0, SR, &kit)) < 1e-6, "tuned drums, by pitch: {pitched}");
+        }
     }
 
     #[test]

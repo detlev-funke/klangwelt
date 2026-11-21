@@ -329,6 +329,7 @@ mod tests {
             Patch::Organ(klang_dsp::keys::OrganParams { mixtur: 0.4, ..Default::default() }),
             Patch::Synth(klang_dsp::pad::SynthParams::default(), klang_dsp::pad::Verlauf { puls: 2, ..Default::default() }),
             Patch::Drums(klang_dsp::drums::DrumKit::default()),
+            Patch::Drums(klang_dsp::drums::DrumKit { pitched: true, ..Default::default() }),
             Patch::Bass(klang_dsp::bass::BassParams { glide: 0.4, ..Default::default() }),
         ] {
             let live = Arc::new(LiveNotes::new(patch.clone(), shaping, &notes, 3.0, sr));

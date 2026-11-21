@@ -189,6 +189,9 @@ const dict: Dict = {
   "Klassik, analysiert": "Classical, analyzed",
   "Romantik, analysiert": "Romantic, analyzed",
   "Um 1900 und 20. Jahrhundert, analysiert": "Around 1900 and 20th century, analyzed",
+
+  // tuned drums (ui/src/components/sound.ts, timeline.ts, crates/klang-app/src/sound.rs)
+  "Tasten": "Keys",
 };
 
 export default dict;

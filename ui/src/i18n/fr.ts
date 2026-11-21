@@ -1914,7 +1914,7 @@ const dict: Dict = {
   "hard": "dur",
   "Excitation: finger/felt at the middle of the string ↔ pick close to the bridge": "Excitation : doigt/feutre vers le milieu de la corde ↔ médiator près du chevalet",
   "Drums": "Batterie",
-  "Synthetic drum kit – each key is a drum (C1 kick drum, D1 snare, D♯1 clap, F♯1/A♯1 hi-hat, F1/A1/C2 toms)": "Batterie synthétique – chaque touche une percussion (C1 grosse caisse, D1 caisse claire, D♯1 clap, F♯1/A♯1 charleston, F1/A1/C2 toms)",
+  "Synthetic drum kit – each key is a drum (C2 kick drum, D2 snare, D♯2 clap, F♯2/A♯2 hi-hat, F2/A2/C3 toms), every other key a tuned drum at its pitch": "Batterie synthétique – chaque touche une percussion (C2 grosse caisse, D2 caisse claire, D♯2 clap, F♯2/A♯2 charleston, F2/A2/C3 toms), toutes les autres touches un fût accordé à leur hauteur",
   "Fundamental": "Fondamentale",
   "Bassdrum": "Grosse caisse",
   "Pitch the kick drum settles on – choose one that fits the key of the bass": "Note sur laquelle la grosse caisse s'éteint – à choisir selon la tonalité de la basse",
@@ -2732,6 +2732,21 @@ const dict: Dict = {
 
   // not used in this repo (e.g. the desktop shell, klangwelt-desktop/app/src)
   "There's no score library in the browser yet (downloading and indexing are missing) – see docs/WEB.md.": "Le navigateur n'a pas encore de bibliothèque de partitions (téléchargement et indexation manquants) – voir docs/WEB.md.",
+
+  // tuned drums (ui/src/components/sound.ts, timeline.ts, crates/klang-app/src/sound.rs)
+  "Drum kit": "Batterie",
+  "Each drum key plays its drum (C2 kick drum, D2 snare, F♯2 hi-hat …); every other key plays a tuned drum": "Chaque touche de batterie joue sa percussion (C2 grosse caisse, D2 caisse claire, F♯2 charleston …) ; toutes les autres touches jouent un fût accordé",
+  "Every key plays a tuned drum at its pitch – for melodies and bass lines": "Chaque touche joue un fût accordé à sa hauteur – pour des mélodies et des lignes de basse",
+  "Keys": "Touches",
+  "Every key is a tuned drum: below C3 kick drum, C3 to B4 tom, from C5 snare.": "Chaque touche est un fût accordé : sous C3 grosse caisse, de C3 à B4 tom, à partir de C5 caisse claire.",
+  "The drum keys play the kit; every other key plays a tuned drum (below C3 kick drum, C3 to B4 tom, from C5 snare).": "Les touches de batterie jouent le kit ; toutes les autres touches jouent un fût accordé (sous C3 grosse caisse, de C3 à B4 tom, à partir de C5 caisse claire).",
+  "By pitch there are no claps and hi-hats": "Par hauteur, il n'y a ni clap ni charleston",
+  "By pitch the note sets the pitch": "Par hauteur, la note fixe la hauteur",
+  "Tom": "Tom",
+  "Tasten": "Touches",
+  "drum kit": "batterie",
+  "pitch": "hauteur",
+  "How the keys play: 0 = drum kit (each drum key its drum, every other key a tuned drum), 1 = pitch (every key a tuned drum at its pitch). Tuned drums: kick drum below C3, tom up to B4, snare from C5": "Comment jouent les touches : 0 = batterie (chaque touche de batterie sa percussion, toutes les autres touches un fût accordé), 1 = hauteur (chaque touche un fût accordé à sa hauteur). Fûts accordés : grosse caisse sous C3, tom jusqu'à B4, caisse claire à partir de C5",
 };
 
 export default dict;

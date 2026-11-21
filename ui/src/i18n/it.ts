@@ -1914,7 +1914,7 @@ const dict: Dict = {
   "hard": "duro",
   "Excitation: finger/felt at the middle of the string ↔ pick close to the bridge": "Eccitazione: dito/feltro verso il centro della corda ↔ plettro vicino al ponte",
   "Drums": "Batteria",
-  "Synthetic drum kit – each key is a drum (C1 kick drum, D1 snare, D♯1 clap, F♯1/A♯1 hi-hat, F1/A1/C2 toms)": "Batteria sintetica – ogni tasto un tamburo (C1 cassa, D1 rullante, D♯1 clap, F♯1/A♯1 hi-hat, F1/A1/C2 tom)",
+  "Synthetic drum kit – each key is a drum (C2 kick drum, D2 snare, D♯2 clap, F♯2/A♯2 hi-hat, F2/A2/C3 toms), every other key a tuned drum at its pitch": "Batteria sintetica – ogni tasto un tamburo (C2 cassa, D2 rullante, D♯2 clap, F♯2/A♯2 hi-hat, F2/A2/C3 tom), tutti gli altri tasti un tamburo accordato alla loro altezza",
   "Fundamental": "Fondamentale",
   "Bassdrum": "Cassa",
   "Pitch the kick drum settles on – choose one that fits the key of the bass": "Nota su cui si spegne la cassa – sceglila in base alla tonalità del basso",
@@ -2732,6 +2732,21 @@ const dict: Dict = {
 
   // not used in this repo (e.g. the desktop shell, klangwelt-desktop/app/src)
   "There's no score library in the browser yet (downloading and indexing are missing) – see docs/WEB.md.": "Nel browser non c'è ancora una libreria di partiture (mancano download e indicizzazione) – vedi docs/WEB.md.",
+
+  // tuned drums (ui/src/components/sound.ts, timeline.ts, crates/klang-app/src/sound.rs)
+  "Drum kit": "Batteria",
+  "Each drum key plays its drum (C2 kick drum, D2 snare, F♯2 hi-hat …); every other key plays a tuned drum": "Ogni tasto della batteria suona il suo tamburo (C2 cassa, D2 rullante, F♯2 hi-hat …); tutti gli altri tasti suonano un tamburo accordato",
+  "Every key plays a tuned drum at its pitch – for melodies and bass lines": "Ogni tasto suona un tamburo accordato alla sua altezza – per melodie e linee di basso",
+  "Keys": "Tasti",
+  "Every key is a tuned drum: below C3 kick drum, C3 to B4 tom, from C5 snare.": "Ogni tasto è un tamburo accordato: sotto C3 cassa, da C3 a B4 tom, da C5 rullante.",
+  "The drum keys play the kit; every other key plays a tuned drum (below C3 kick drum, C3 to B4 tom, from C5 snare).": "I tasti della batteria suonano il kit; tutti gli altri tasti suonano un tamburo accordato (sotto C3 cassa, da C3 a B4 tom, da C5 rullante).",
+  "By pitch there are no claps and hi-hats": "Per altezza non ci sono clap né hi-hat",
+  "By pitch the note sets the pitch": "Per altezza è la nota a stabilire l'altezza",
+  "Tom": "Tom",
+  "Tasten": "Tasti",
+  "drum kit": "batteria",
+  "pitch": "altezza",
+  "How the keys play: 0 = drum kit (each drum key its drum, every other key a tuned drum), 1 = pitch (every key a tuned drum at its pitch). Tuned drums: kick drum below C3, tom up to B4, snare from C5": "Come suonano i tasti: 0 = batteria (ogni tasto della batteria il suo tamburo, tutti gli altri tasti un tamburo accordato), 1 = altezza (ogni tasto un tamburo accordato alla sua altezza). Tamburi accordati: cassa sotto C3, tom fino a B4, rullante da C5",
 };
 
 export default dict;

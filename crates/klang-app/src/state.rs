@@ -1232,7 +1232,7 @@ impl AppState {
     /// Inserts one bar of the sample pattern after the track's last clip.
     pub fn insert_pattern(&self, track_id: Id) -> CmdResult<Snapshot> {
         let track = self.instrument_track(track_id)?;
-        let kind = sound::kind_of(track.instrument.as_ref());
+        let inst = track.instrument.as_ref();
         let (bpb, bpm) = {
             let s = lock(&self.session)?;
             (s.project.beats_per_bar as f64, s.project.tempo_bpm)
@@ -1243,7 +1243,7 @@ impl AppState {
             id: Id::NEW,
             name: tr!("Pattern"),
             start_beats: start,
-            source: ClipSource::Notes { length_beats: 4.0, notes: sound::pattern(kind) },
+            source: ClipSource::Notes { length_beats: 4.0, notes: sound::pattern_for(inst) },
         };
         self.execute(Command::AddClip { track_id, clip }, false)
     }

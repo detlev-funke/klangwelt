@@ -454,6 +454,23 @@ fn karte(kind: InstrumentKind) -> Vec<ParamSpec> {
     vec![a, b]
 }
 
+/// Drums: how the keys play (no slider – a switch of its own in the Sound window).
+pub const KEYS_MODE: &str = "tasten";
+
+fn keys_mode() -> ParamSpec {
+    let mut p = p(
+        KEYS_MODE,
+        tk!("Keys"),
+        tid!("Tasten"),
+        0.0,
+        tk!("drum kit"),
+        tk!("pitch"),
+        tk!("How the keys play: 0 = drum kit (each drum key its drum, every other key a tuned drum), 1 = pitch (every key a tuned drum at its pitch). Tuned drums: kick drum below C3, tom up to B4, snare from C5"),
+    );
+    p.hidden = true;
+    p
+}
+
 fn hidden(key: &'static str, label: &'static str, min: f32, max: f32, default: f32, meaning: &'static str) -> ParamSpec {
     ParamSpec { key, label, group: tid!("Verlauf"), min, max, default, left: "", right: "", note: false, meaning, hidden: true }
 }
@@ -479,8 +496,9 @@ fn base_spec(kind: InstrumentKind) -> InstrumentSpec {
         ),
         InstrumentKind::Drums => (
             tk!("Drums"),
-            tk!("Synthetic drum kit – each key is a drum (C1 kick drum, D1 snare, D♯1 clap, F♯1/A♯1 hi-hat, F1/A1/C2 toms)"),
+            tk!("Synthetic drum kit – each key is a drum (C2 kick drum, D2 snare, D♯2 clap, F♯2/A♯2 hi-hat, F2/A2/C3 toms), every other key a tuned drum at its pitch"),
             [
+                keys_mode(),
                 pn("kick.grundton", tk!("Fundamental"), tid!("Bassdrum"), 24.0, 52.0, 33.0, tk!("Pitch the kick drum settles on – choose one that fits the key of the bass")),
                 p("kick.punch", tk!("Punch"), tid!("Bassdrum"), 0.6, tk!("soft"), tk!("punchy"), tk!("Amount and speed of the pitch drop")),
                 p("kick.laenge", tk!("Length"), tid!("Bassdrum"), 0.5, tk!("short"), tk!("long"), tk!("Decay time")),
@@ -700,7 +718,13 @@ pub fn drum_kit(inst: Option<&Instrument>) -> DrumKit {
         clap: ClapParams { helligkeit: v("clap.helligkeit", d.clap.helligkeit), laenge: v("clap.laenge", d.clap.laenge) },
         hat: HatParams { helligkeit: v("hat.helligkeit", d.hat.helligkeit), laenge: v("hat.laenge", d.hat.laenge), offen: v("hat.offen", d.hat.offen) },
         tom: TomParams { grundton: v("tom.grundton", d.tom.grundton), laenge: v("tom.laenge", d.tom.laenge) },
+        pitched: drums_pitched(inst),
     }
+}
+
+/// Whether a drum track plays every key by pitch (instead of a drum per drum key).
+pub fn drums_pitched(inst: Option<&Instrument>) -> bool {
+    kind_of(inst) == InstrumentKind::Drums && param(inst, KEYS_MODE, 0.0) >= 0.5
 }
 
 pub fn bass_params(inst: Option<&Instrument>) -> BassParams {
@@ -778,9 +802,10 @@ pub fn kind_of(inst: Option<&Instrument>) -> InstrumentKind {
     inst.map(|i| i.kind).unwrap_or_default()
 }
 
-/// Whether the track transposition changes the pitch (for drums the key selects the drum).
+/// Whether the track transposition changes the pitch (for the drum kit the key
+/// selects the drum; drums played by pitch transpose).
 pub fn transposes(inst: Option<&Instrument>) -> bool {
-    kind_of(inst) != InstrumentKind::Drums
+    kind_of(inst) != InstrumentKind::Drums || drums_pitched(inst)
 }
 
 /// Value of a sound-shaping control (if missing, the instrument's default applies).
@@ -921,6 +946,22 @@ pub fn pattern(kind: InstrumentKind) -> Vec<Note> {
     }
 }
 
+/// One bar for drums played by pitch: an 808 bass line, a tom melody and two
+/// high snares (C minor) – all three ranges of the tuned drums.
+pub fn tuned_drum_pattern() -> Vec<Note> {
+    let n = |pitch: u8, start: f64, vel: u8| Note::new(pitch, start, 0.25, vel);
+    vec![
+        n(36, 0.0, 120), n(36, 0.75, 95), n(43, 1.5, 110), n(39, 2.5, 105), n(34, 3.25, 100),
+        n(60, 0.5, 90), n(63, 1.0, 95), n(67, 2.0, 95), n(70, 3.0, 100), n(67, 3.5, 85),
+        n(72, 1.0, 105), n(75, 3.0, 110),
+    ]
+}
+
+/// One bar to try out for a track's instrument (drums by pitch: [`tuned_drum_pattern`]).
+pub fn pattern_for(inst: Option<&Instrument>) -> Vec<Note> {
+    if drums_pitched(inst) { tuned_drum_pattern() } else { pattern(kind_of(inst)) }
+}
+
 /// Pattern repeated over several bars (for new tracks). The synth plays
 /// a chord progression (Am – F – C – G), one chord per bar.
 pub fn pattern_bars(kind: InstrumentKind, bars: usize, beats_per_bar: f64) -> Vec<Note> {
@@ -972,6 +1013,19 @@ pub fn preview_notes(inst: Option<&Instrument>, key: &str, bpm: f64, shift: f32)
                     (steps.iter().enumerate().map(|(i, &iv)| n(i as f32 * 0.25, 0.3, iv, 0.8)).collect(), 2.6)
                 }
                 _ => (vec![n(0.0, 1.8, 0.0, 0.9)], 2.4),
+            }
+        }
+        // By pitch: kick drum, snare and toms in their ranges of the keyboard, the beat as a tuned riff.
+        InstrumentKind::Drums if drums_pitched(inst) => {
+            let n = |start: f32, m: f32| NoteSpec::new(start, 0.25, m + shift, 0.9);
+            match key {
+                "kick" => (vec![n(0.0, 36.0)], 1.2),
+                "snare" => (vec![n(0.0, 74.0)], 0.8),
+                "toms" => (vec![n(0.0, 67.0), n(0.3, 64.0), n(0.6, 60.0)], 1.8),
+                _ => {
+                    let riff: Vec<Note> = (0..2).flat_map(|b| tuned_drum_pattern().into_iter().map(move |x| Note { start_beats: x.start_beats + b as f64 * 4.0, ..x })).collect();
+                    (notes_to_specs(&riff, spb, shift), 8.0 * spb + 1.2)
+                }
             }
         }
         InstrumentKind::Drums => match key {
@@ -1316,6 +1370,41 @@ mod tests {
         let r = report(&inst);
         assert_eq!(r.beschreibung["Kick pitch"], "G1", "{:?}", r.anzeige);
         assert_eq!(r.beschreibung["Snare shell"], "F#3");
+    }
+
+    #[test]
+    fn melody_on_drums_is_heard_and_the_keys_switch_plays_by_pitch() {
+        let melody: Vec<NoteSpec> = [60.0f32, 64.0, 67.0, 72.0].iter().enumerate().map(|(k, &m)| NoteSpec::new(k as f32 * 0.5, 0.4, m, 0.8)).collect();
+        let level = |inst: &Instrument| {
+            let r = render_track(Some(inst), &melody, 2.0, 48_000.0, 0.5);
+            klang_dsp::util::peak(&r.mid)
+        };
+        // Drum kit (default, rhythm grid and older projects): the melody plays tuned drums instead of silence.
+        let mut inst = default_instrument(InstrumentKind::Drums);
+        assert!(!drums_pitched(Some(&inst)) && !drum_kit(Some(&inst)).pitched && !transposes(Some(&inst)));
+        assert!(level(&inst) > 0.1, "{}", level(&inst));
+        // By pitch: the switch reaches the synthesis and the track transposes.
+        inst.params.insert(KEYS_MODE.into(), 1.0);
+        assert!(drums_pitched(Some(&inst)) && drum_kit(Some(&inst)).pitched && transposes(Some(&inst)));
+        assert!(level(&inst) > 0.1);
+        // The switch is a control of the drums (hidden: it has a switch of its own) and only theirs.
+        let spec = spec(InstrumentKind::Drums);
+        assert!(spec.params.iter().any(|p| p.key == KEYS_MODE && p.hidden && p.default == 0.0));
+        assert!(validate_params(InstrumentKind::Drums, &[(KEYS_MODE.to_string(), 1.0)].into_iter().collect()).is_ok());
+        assert!(validate_params(InstrumentKind::Bass, &[(KEYS_MODE.to_string(), 1.0)].into_iter().collect()).is_err());
+        let mut bass = default_instrument(InstrumentKind::Bass);
+        bass.params.insert(KEYS_MODE.into(), 1.0);
+        assert!(!drums_pitched(Some(&bass)));
+        // By pitch the pattern and the previews use the three ranges of the tuned drums …
+        let zones = |ps: &[f32]| [ps.iter().any(|&m| m < 48.0), ps.iter().any(|&m| (48.0..72.0).contains(&m)), ps.iter().any(|&m| m >= 72.0)];
+        let riff: Vec<f32> = pattern_for(Some(&inst)).iter().map(|n| n.pitch as f32).collect();
+        assert_eq!(zones(&riff), [true, true, true]);
+        assert!(preview_notes(Some(&inst), "snare", 120.0, 0.0).0.iter().all(|n| n.midi >= 72.0));
+        assert!(preview_notes(Some(&inst), "beat", 120.0, 2.0).0.iter().any(|n| n.midi == 38.0), "transposed riff");
+        // … the drum kit keeps its beat on the drum keys.
+        let kit = default_instrument(InstrumentKind::Drums);
+        assert_eq!(pattern_for(Some(&kit)), pattern(InstrumentKind::Drums));
+        assert!(preview_notes(Some(&kit), "snare", 120.0, 0.0).0.iter().all(|n| n.midi == drums::SNARE as f32));
     }
 
     #[test]

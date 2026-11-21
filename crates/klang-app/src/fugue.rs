@@ -15,7 +15,7 @@ use klang_music::theory::{estimate_key_from_histogram, Key};
 use serde::{Deserialize, Serialize};
 
 fn melodic(t: &Track) -> bool {
-    t.kind == TrackKind::Instrument && sound::transposes(t.instrument.as_ref())
+    t.kind == TrackKind::Instrument && sound::kind_of(t.instrument.as_ref()) != InstrumentKind::Drums
 }
 
 fn shift_of(t: &Track) -> i32 {

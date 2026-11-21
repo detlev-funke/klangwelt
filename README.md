@@ -156,6 +156,13 @@ browser version – including publishing to GitHub Pages – is in
 [docs/WEB.md](docs/WEB.md), and how the score library package is built,
 published and read is in [docs/LIBRARY.md](docs/LIBRARY.md).
 
+**Changelog and releases:** [CHANGELOG.md](CHANGELOG.md) lists what changed in
+each version; the app shows the same in its own language under the gear menu →
+What's new. Every user-facing change brings one small JSON file in
+`changelog/unreleased/`, and `npm run changelog -- release` turns them into a
+release named after its date and time (`2026.11.21+1430`). How to write an
+entry and how a release reaches GitHub: [changelog/README.md](changelog/README.md).
+
 ## License
 
 Klangwelt is free software under the [MIT License](LICENSE): free of charge

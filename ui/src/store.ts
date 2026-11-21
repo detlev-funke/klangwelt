@@ -67,16 +67,22 @@ export const libraryBusy = signal(false);
 export const counterpointMarks = signal<Array<{ start: number; end: number; severity: "fehler" | "warnung" | "hinweis"; trackIds: number[]; message: string }>>([]);
 export const viewport = signal({ pxPerBeat: 44, scrollX: 0, scrollY: 0 });
 export type MessageKind = "info" | "error" | "agent";
-export const message = signal<{ text: string; kind: MessageKind; id: number } | null>(null);
+/** A button in a note, e.g. "Show what's new". */
+export interface MessageAction {
+  label: string;
+  run: () => void;
+}
+export const message = signal<{ text: string; kind: MessageKind; id: number; action?: MessageAction } | null>(null);
 /** Counts project changes made by the agent (for brief highlights). */
 export const agentPulse = signal(0);
 
 let msgId = 0;
 let msgTimer: number | undefined;
-export function notify(text: string, kind: MessageKind = "info"): void {
-  message.value = { text, kind, id: ++msgId };
+export function notify(text: string, kind: MessageKind = "info", action?: MessageAction): void {
+  message.value = { text, kind, id: ++msgId, action };
   clearTimeout(msgTimer);
-  msgTimer = window.setTimeout(() => (message.value = null), kind === "error" ? 6000 : 3500);
+  // a note with a button stays longer, so there is time to reach it
+  msgTimer = window.setTimeout(() => (message.value = null), action ? 10000 : kind === "error" ? 6000 : 3500);
 }
 
 export function errorText(e: unknown): string {

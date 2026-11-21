@@ -5,8 +5,8 @@
   "type": "module",
   "description": "Klangwelt user interface: TypeScript without runtime dependencies",
   "scripts": {
-    "build": "tsc -p . && node scripts/copy-static.mjs",
-    "watch": "node scripts/copy-static.mjs && tsc -p . --watch",
+    "build": "tsc -p . && node scripts/copy-static.mjs && node scripts/changelog.mjs build",
+    "watch": "node scripts/copy-static.mjs && node scripts/changelog.mjs build && tsc -p . --watch",
     "serve": "node scripts/serve.mjs",
     "check": "tsc -p . --noEmit",
     "test:unit": "npm run build && node --test \"../tests/unit/*.test.mjs\"",
@@ -15,6 +15,7 @@
     "serve:web": "node scripts/serve.mjs --web",
     "test:web": "node --test --test-concurrency=1 \"../tests/web/*.test.mjs\"",
     "mcp:web": "node scripts/web-mcp.mjs",
+    "changelog": "node scripts/changelog.mjs",
     "licenses": "node scripts/third-party-licenses.mjs --target=wasm32-unknown-unknown"
   },
   "devDependencies": {

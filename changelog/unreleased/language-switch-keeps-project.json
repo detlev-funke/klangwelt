@@ -1,0 +1,12 @@
+{
+  "type": "changed",
+  "text": {
+    "en": "Switching the language keeps the open project.",
+    "de": "Beim Umschalten der Sprache bleibt das offene Projekt erhalten.",
+    "fr": "Changer de langue conserve le projet ouvert.",
+    "it": "Cambiare lingua mantiene il progetto aperto.",
+    "es": "Cambiar de idioma conserva el proyecto abierto.",
+    "nl": "Bij het wisselen van taal blijft het open project behouden.",
+    "pl": "Zmiana języka zachowuje otwarty projekt."
+  }
+}

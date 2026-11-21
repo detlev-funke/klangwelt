@@ -1,0 +1,13 @@
+{
+  "type": "added",
+  "text": {
+    "en": "What's new: the gear menu lists the changes of each version, and after an update a note points to them.",
+    "de": "Neuigkeiten: Das Zahnrad-Menü zeigt die Änderungen jeder Version, und nach einem Update weist ein Hinweis darauf hin.",
+    "fr": "Nouveautés : le menu de la roue dentée liste les changements de chaque version, et après une mise à jour un message les signale.",
+    "it": "Novità: il menu dell'ingranaggio elenca le modifiche di ogni versione, e dopo un aggiornamento un avviso le segnala.",
+    "es": "Novedades: el menú del engranaje muestra los cambios de cada versión y, tras una actualización, un aviso los señala.",
+    "nl": "Wat is er nieuw: het tandwielmenu toont de wijzigingen van elke versie, en na een update wijst een melding erop.",
+    "pl": "Nowości: menu z kołem zębatym pokazuje zmiany każdej wersji, a po aktualizacji wskazuje je komunikat."
+  },
+  "dev": "Data from changelog/ built into ui/dist/changelog/<lang>.js; the last version seen is kept in localStorage."
+}

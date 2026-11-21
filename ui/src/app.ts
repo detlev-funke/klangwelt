@@ -12,6 +12,7 @@ import { backend } from "./bridge.js";
 import { initLibrary } from "./components/library.js";
 import { initFileDrop } from "./filedrop.js";
 import { initAutosave, resumeProject } from "./autosave.js";
+import { checkWhatsNew } from "./components/whatsnew.js";
 import { t } from "./i18n.js";
 import { agentPulse, chat, chatUnread, errorText, followLive, instrumentSpecs, libraryBusy, notify, savedSounds, snapshot, status, visiblePanels } from "./store.js";
 
@@ -136,6 +137,8 @@ async function boot(): Promise<void> {
   });
   if (!backend.native) notify(t("Browser preview: interface without audio. The full app starts with cargo run."));
   if (backend.platform === "web") webNotice();
+  // after an update: a note pointing to "What's new" (a first start shows nothing)
+  void checkWhatsNew();
 }
 
 void boot();

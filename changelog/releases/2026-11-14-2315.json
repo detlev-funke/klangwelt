@@ -1,0 +1,124 @@
+{
+  "version": "2026.11.14+2315",
+  "date": "2026-11-14T23:15+01:00",
+  "tagged": false,
+  "entries": [
+    {
+      "id": "first-version",
+      "type": "added",
+      "text": {
+        "en": "Klangwelt in the browser and as a desktop app, both with the same core: tracks and notes, a sound workshop, rhythm and song, harmony, fugue, recording with melody detection, and export.",
+        "de": "Klangwelt im Browser und als Desktop-App, beide mit demselben Kern: Spuren und Noten, Klangwerkstatt, Rhythmus und Song, Harmonie, Fuge, Aufnahme mit Melodieerkennung und Export.",
+        "fr": "Klangwelt dans le navigateur et en application de bureau, avec le même cœur : pistes et notes, atelier sonore, rythme et chanson, harmonie, fugue, enregistrement avec détection de mélodie, et export.",
+        "it": "Klangwelt nel browser e come app desktop, entrambe con lo stesso nucleo: tracce e note, laboratorio del suono, ritmo e canzone, armonia, fuga, registrazione con riconoscimento della melodia ed esportazione.",
+        "es": "Klangwelt en el navegador y como aplicación de escritorio, ambas con el mismo núcleo: pistas y notas, taller de sonido, ritmo y canción, armonía, fuga, grabación con detección de melodía y exportación.",
+        "nl": "Klangwelt in de browser en als desktop-app, beide met dezelfde kern: sporen en noten, klankwerkplaats, ritme en song, harmonie, fuga, opnemen met melodieherkenning, en export.",
+        "pl": "Klangwelt w przeglądarce i jako aplikacja desktopowa, obie z tym samym rdzeniem: ścieżki i nuty, warsztat brzmienia, rytm i piosenka, harmonia, fuga, nagrywanie z rozpoznawaniem melodii oraz eksport."
+      },
+      "dev": "Rust core with its own DSP, TypeScript UI without runtime libraries, Tauri 2 shell; the browser runs the core as WebAssembly."
+    },
+    {
+      "id": "seven-languages",
+      "type": "added",
+      "text": {
+        "en": "Seven languages: English, German, French, Italian, Spanish, Dutch and Polish. Klangwelt follows the system language, and the gear menu switches it.",
+        "de": "Sieben Sprachen: Englisch, Deutsch, Französisch, Italienisch, Spanisch, Niederländisch und Polnisch. Klangwelt folgt der Systemsprache, das Zahnrad-Menü schaltet um.",
+        "fr": "Sept langues : anglais, allemand, français, italien, espagnol, néerlandais et polonais. Klangwelt suit la langue du système, et le menu de la roue dentée permet d'en changer.",
+        "it": "Sette lingue: inglese, tedesco, francese, italiano, spagnolo, olandese e polacco. Klangwelt segue la lingua del sistema e il menu dell'ingranaggio la cambia.",
+        "es": "Siete idiomas: inglés, alemán, francés, italiano, español, neerlandés y polaco. Klangwelt sigue el idioma del sistema y el menú del engranaje lo cambia.",
+        "nl": "Zeven talen: Engels, Duits, Frans, Italiaans, Spaans, Nederlands en Pools. Klangwelt volgt de systeemtaal, en het tandwielmenu wisselt van taal.",
+        "pl": "Siedem języków: angielski, niemiecki, francuski, włoski, hiszpański, niderlandzki i polski. Klangwelt używa języka systemu, a menu z kołem zębatym go zmienia."
+      },
+      "dev": "Keys are the English texts, dictionaries in ui/src/i18n/; the core's messages follow through set_language."
+    },
+    {
+      "id": "library-in-browser",
+      "type": "added",
+      "text": {
+        "en": "The score library in the browser too: more than 76,000 free scores, searchable by title, composer or melody.",
+        "de": "Die Notenbibliothek auch im Browser: über 76.000 freie Noten, durchsuchbar nach Titel, Komponist oder Melodie.",
+        "fr": "La bibliothèque de partitions aussi dans le navigateur : plus de 76 000 partitions libres, à rechercher par titre, compositeur ou mélodie.",
+        "it": "La biblioteca di spartiti anche nel browser: oltre 76.000 spartiti liberi, ricercabili per titolo, compositore o melodia.",
+        "es": "La biblioteca de partituras también en el navegador: más de 76.000 partituras libres, con búsqueda por título, compositor o melodía.",
+        "nl": "De bladmuziekbibliotheek ook in de browser: meer dan 76.000 vrije partituren, doorzoekbaar op titel, componist of melodie.",
+        "pl": "Biblioteka nut także w przeglądarce: ponad 76 000 wolnych partytur, z wyszukiwaniem po tytule, kompozytorze lub melodii."
+      },
+      "dev": "KWIX04 index read by HTTP range from Zenodo; package builder for own scores."
+    },
+    {
+      "id": "note-entry",
+      "type": "added",
+      "text": {
+        "en": "Note entry: a double-click adds a note, and notes can be typed on the keyboard, with Shift for chords.",
+        "de": "Noteneingabe: Ein Doppelklick setzt eine Note, und Noten lassen sich über die Tastatur eingeben, mit Umschalt für Akkorde.",
+        "fr": "Saisie des notes : un double-clic ajoute une note, et les notes se saisissent au clavier, avec Maj pour les accords.",
+        "it": "Inserimento delle note: un doppio clic aggiunge una nota, e le note si possono digitare sulla tastiera, con Maiusc per gli accordi.",
+        "es": "Entrada de notas: un doble clic añade una nota, y las notas se pueden escribir con el teclado, con Mayús para los acordes.",
+        "nl": "Noten invoeren: dubbelklikken zet een noot, en noten zijn met het toetsenbord in te voeren, met Shift voor akkoorden.",
+        "pl": "Wprowadzanie nut: dwuklik dodaje nutę, a nuty można wpisywać z klawiatury, z Shiftem dla akordów."
+      }
+    },
+    {
+      "id": "note-clips-live",
+      "type": "added",
+      "text": {
+        "en": "Note clips play live; when playback can't keep up, they are prepared in the background.",
+        "de": "Notenclips spielen live; kommt die Wiedergabe nicht hinterher, werden sie im Hintergrund vorbereitet.",
+        "fr": "Les clips de notes jouent en direct ; si la lecture ne suit pas, ils sont préparés en arrière-plan.",
+        "it": "Le clip di note suonano dal vivo; se la riproduzione non tiene il passo, vengono preparate in background.",
+        "es": "Los clips de notas suenan en vivo; si la reproducción no da abasto, se preparan en segundo plano.",
+        "nl": "Notenclips spelen live; als het afspelen het niet bijhoudt, worden ze op de achtergrond voorbereid.",
+        "pl": "Klipy nutowe grają na żywo; gdy odtwarzanie nie nadąża, są przygotowywane w tle."
+      },
+      "dev": "Pre-rendering in the background under load."
+    },
+    {
+      "id": "agent-tools",
+      "type": "added",
+      "text": {
+        "en": "Tools for AI agents: an agent can reserve tasks from the chat, show a preview, stop, and work in batches.",
+        "de": "Werkzeuge für KI-Agenten: Ein Agent kann Aufträge aus dem Chat reservieren, einen Zwischenstand zeigen, anhalten und in Stapeln arbeiten.",
+        "fr": "Outils pour agents IA : un agent peut réserver des tâches depuis le chat, montrer un aperçu, s'arrêter et travailler par lots.",
+        "it": "Strumenti per agenti IA: un agente può prenotare compiti dalla chat, mostrare un'anteprima, fermarsi e lavorare a blocchi.",
+        "es": "Herramientas para agentes de IA: un agente puede reservar tareas del chat, mostrar una vista previa, detenerse y trabajar por lotes.",
+        "nl": "Gereedschap voor AI-agents: een agent kan opdrachten uit de chat reserveren, een tussenstand tonen, stoppen en in batches werken.",
+        "pl": "Narzędzia dla agentów AI: agent może rezerwować zadania z czatu, pokazywać podgląd, zatrzymać się i pracować partiami."
+      },
+      "dev": "MCP tools: reserve, peek, stop, revision, placeholders, batch, compact notes."
+    },
+    {
+      "id": "metronome-off-by-default",
+      "type": "changed",
+      "text": {
+        "en": "The metronome is off by default and stays silent at the start of a recording; switched on, it can be heard.",
+        "de": "Das Metronom ist anfangs aus und bleibt beim Start einer Aufnahme stumm; eingeschaltet ist es zu hören.",
+        "fr": "Le métronome est désactivé par défaut et reste muet au début d'un enregistrement ; activé, il est audible.",
+        "it": "Il metronomo è spento all'inizio e resta muto quando parte una registrazione; se acceso, si sente.",
+        "es": "El metrónomo está apagado por defecto y no suena al empezar una grabación; encendido, se oye.",
+        "nl": "De metronoom staat standaard uit en blijft stil aan het begin van een opname; ingeschakeld is hij te horen.",
+        "pl": "Metronom jest domyślnie wyłączony i milczy na początku nagrania; po włączeniu jest słyszalny."
+      }
+    },
+    {
+      "id": "libopus-vendored",
+      "type": "internal",
+      "text": {
+        "en": "The bundled libopus is marked as vendored code."
+      }
+    },
+    {
+      "id": "english-sources",
+      "type": "internal",
+      "text": {
+        "en": "Source code comments, agent texts and test titles are in English."
+      }
+    },
+    {
+      "id": "readme-screenshots",
+      "type": "internal",
+      "text": {
+        "en": "README: screenshots of the overview, piano roll, bass sound fields and circle of fifths."
+      }
+    }
+  ]
+}

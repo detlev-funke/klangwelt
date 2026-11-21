@@ -5,6 +5,8 @@ import { dropdown, h, icon } from "../dom.js";
 import { flag } from "../flags.js";
 import { LANGUAGES, language, t } from "../i18n.js";
 import { highOnTop, setHighOnTop } from "../pianoroll.js";
+import { effect } from "../signals.js";
+import { whatsNewMenuItem, whatsNewUnread } from "./whatsnew.js";
 
 /** Small sketch of a keyboard with the chosen direction (h = high notes on top). */
 function axisSketch(high: boolean): SVGSVGElement {
@@ -82,6 +84,8 @@ function languageOptions(close: () => void): HTMLElement {
 
 export function settingsMenu(): HTMLElement {
   const btn = h("button", { class: "btn icon", "data-help": "einstellungen", title: t("Settings") }, icon("gear"));
+  // a dot after an update, until "What's new" was opened
+  effect(() => btn.classList.toggle("unread", whatsNewUnread.value));
   return dropdown(btn, "set-menu", (menu, close) => {
     const option = (high: boolean, title: string, sub: string) =>
       h(
@@ -110,6 +114,8 @@ export function settingsMenu(): HTMLElement {
       h("div", { class: "menu-title" }, t("Save automatically")),
       autosaveOptions(close),
       h("div", { class: "menu-hint" }, t("Only when something changed, and only after playback or recording. A project without a name goes into a recovery copy. Earlier states stay in the change history.")),
+      h("div", { class: "menu-sep" }),
+      whatsNewMenuItem(close),
     );
   });
 }

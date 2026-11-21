@@ -1158,6 +1158,20 @@ const dict: Dict = {
   "Recording device: {device}": "Dispositivo di registrazione: {device}",
   "Click to choose a different microphone.": "Un clic sceglie un altro microfono.",
 
+  // ui/src/components/whatsnew.ts
+  "New": "Nuovo",
+  "Changed": "Modificato",
+  "Fixed": "Corretto",
+  "Removed": "Rimosso",
+  "Klangwelt was updated: {n} changes in version {version}": { one: "Klangwelt è stato aggiornato: una modifica nella versione {version}", other: "Klangwelt è stato aggiornato: {n} modifiche nella versione {version}" },
+  "Show what's new": "Mostra le novità",
+  "Since version {version}": "Dalla versione {version}",
+  "new for you": "nuovo per te",
+  "Version {version} · build {build}": "Versione {version} · build {build}",
+  "The list of changes could not be loaded.": "Impossibile caricare l'elenco delle modifiche.",
+  "What's new": "Novità",
+  "What's new lists the changes of every version; after an update a dot on the gear points to it.": "Novità elenca le modifiche di ogni versione; dopo un aggiornamento un punto sull'ingranaggio lo segnala.",
+
   // ui/src/dock.ts
   "All windows are floating – drag a tab onto the marker in the middle to dock it here.": "Tutte le finestre sono fluttuanti – trascina una linguetta sul segno al centro per agganciarla qui.",
   "{title} – drag to move or dock": "{title} – trascina per spostare o agganciare",

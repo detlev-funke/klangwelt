@@ -1,0 +1,27 @@
+{
+  "version": "2026.11.15+2036",
+  "date": "2026-11-15T20:36+01:00",
+  "tagged": false,
+  "entries": [
+    {
+      "id": "live-analysis",
+      "type": "added",
+      "text": {
+        "en": "Live analysis while recording: the note you sing or play, the level, the key and the tempo as they come in.",
+        "de": "Live-Analyse während der Aufnahme: der gesungene oder gespielte Ton, der Pegel, die Tonart und das Tempo, während sie entstehen.",
+        "fr": "Analyse en direct pendant l'enregistrement : la note chantée ou jouée, le niveau, la tonalité et le tempo, au fur et à mesure.",
+        "it": "Analisi dal vivo durante la registrazione: la nota cantata o suonata, il livello, la tonalità e il tempo, man mano che arrivano.",
+        "es": "Análisis en vivo durante la grabación: la nota que cantas o tocas, el nivel, la tonalidad y el tempo a medida que llegan.",
+        "nl": "Live-analyse tijdens het opnemen: de gezongen of gespeelde toon, het niveau, de toonsoort en het tempo terwijl ze binnenkomen.",
+        "pl": "Analiza na żywo podczas nagrywania: śpiewany lub grany dźwięk, poziom, tonacja i tempo na bieżąco."
+      }
+    },
+    {
+      "id": "readme-library-in-browser",
+      "type": "internal",
+      "text": {
+        "en": "README: the browser version has the score library too."
+      }
+    }
+  ]
+}

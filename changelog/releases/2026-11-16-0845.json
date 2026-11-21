@@ -1,0 +1,87 @@
+{
+  "version": "2026.11.16+0845",
+  "date": "2026-11-16T08:45+01:00",
+  "tagged": false,
+  "entries": [
+    {
+      "id": "phones-and-tablets",
+      "type": "added",
+      "text": {
+        "en": "Usable on phones and tablets: a compact window view, two fingers pan and zoom, a long press opens the context menu, a double tap adds a note.",
+        "de": "Auf Handy und Tablet nutzbar: kompakte Fensteransicht, zwei Finger verschieben und zoomen, langes Drücken öffnet das Kontextmenü, Doppeltippen setzt eine Note.",
+        "fr": "Utilisable sur téléphone et tablette : vue compacte des fenêtres, deux doigts pour déplacer et zoomer, un appui long ouvre le menu contextuel, un double tap ajoute une note.",
+        "it": "Utilizzabile su telefono e tablet: vista compatta delle finestre, due dita per spostare e zoomare, una pressione prolungata apre il menu contestuale, un doppio tocco aggiunge una nota.",
+        "es": "Se puede usar en móviles y tabletas: vista compacta de ventanas, dos dedos desplazan y hacen zoom, una pulsación larga abre el menú contextual y un doble toque añade una nota.",
+        "nl": "Bruikbaar op telefoon en tablet: compacte vensterweergave, met twee vingers schuiven en zoomen, lang drukken opent het contextmenu, dubbeltikken zet een noot.",
+        "pl": "Działa na telefonach i tabletach: kompaktowy widok okien, dwa palce przesuwają i powiększają, długie przytrzymanie otwiera menu kontekstowe, podwójne stuknięcie dodaje nutę."
+      }
+    },
+    {
+      "id": "responsive-toolbar",
+      "type": "added",
+      "text": {
+        "en": "The toolbar fits every window width: what has no room moves into the “⋯” menu, and the gear always stays.",
+        "de": "Die Werkzeugleiste passt in jede Fensterbreite: Was keinen Platz hat, wandert ins Menü „⋯“, das Zahnrad bleibt immer.",
+        "fr": "La barre d'outils s'adapte à toute largeur de fenêtre : ce qui ne tient pas passe dans le menu « ⋯ », et la roue dentée reste toujours.",
+        "it": "La barra degli strumenti si adatta a ogni larghezza della finestra: ciò che non ci sta passa nel menu «⋯», e l'ingranaggio resta sempre.",
+        "es": "La barra de herramientas cabe en cualquier ancho de ventana: lo que no cabe pasa al menú «⋯» y el engranaje siempre se queda.",
+        "nl": "De werkbalk past in elke vensterbreedte: wat geen plek heeft, gaat naar het menu ‘⋯’, en het tandwiel blijft altijd staan.",
+        "pl": "Pasek narzędzi mieści się w każdej szerokości okna: co się nie mieści, trafia do menu „⋯”, a koło zębate zostaje zawsze."
+      }
+    },
+    {
+      "id": "expression-detection",
+      "type": "added",
+      "text": {
+        "en": "The recording analysis detects dynamics, accents and sforzati, staccato and legato, and carries them into the notes.",
+        "de": "Die Aufnahme-Analyse erkennt Dynamik, Akzente und Sforzati, Staccato und Legato und übernimmt sie in die Noten.",
+        "fr": "L'analyse de l'enregistrement détecte les nuances, les accents et sforzandos, le staccato et le legato, et les reporte dans les notes.",
+        "it": "L'analisi della registrazione riconosce dinamica, accenti e sforzati, staccato e legato, e li riporta nelle note.",
+        "es": "El análisis de la grabación detecta la dinámica, los acentos y sforzatos, el staccato y el legato, y los traslada a las notas.",
+        "nl": "De opname-analyse herkent dynamiek, accenten en sforzati, staccato en legato, en neemt ze over in de noten.",
+        "pl": "Analiza nagrania rozpoznaje dynamikę, akcenty i sforzata, staccato i legato oraz przenosi je do nut."
+      },
+      "dev": "Velocity from the note's level relative to the recording; accents as a higher velocity and a brighter attack."
+    },
+    {
+      "id": "language-flags",
+      "type": "added",
+      "text": {
+        "en": "Flags in the language menu.",
+        "de": "Flaggen im Sprachmenü.",
+        "fr": "Des drapeaux dans le menu des langues.",
+        "it": "Bandiere nel menu delle lingue.",
+        "es": "Banderas en el menú de idiomas.",
+        "nl": "Vlaggen in het taalmenu.",
+        "pl": "Flagi w menu języków."
+      },
+      "dev": "Inline SVG (ui/src/flags.ts), because emoji flags show up as letters on Windows."
+    },
+    {
+      "id": "export-in-file-menu",
+      "type": "changed",
+      "text": {
+        "en": "Export is in the File menu (Ctrl+E); Save is a disk with a dot for unsaved changes, and the project name has more room.",
+        "de": "Exportieren steckt im Datei-Menü (Strg+E); Speichern ist eine Diskette mit Punkt für ungesicherte Änderungen, und der Projektname hat mehr Platz.",
+        "fr": "Exporter se trouve dans le menu Fichier (Ctrl+E) ; Enregistrer est une disquette avec un point pour les modifications non enregistrées, et le nom du projet a plus de place.",
+        "it": "Esporta è nel menu File (Ctrl+E); Salva è un dischetto con un punto per le modifiche non salvate, e il nome del progetto ha più spazio.",
+        "es": "Exportar está en el menú Archivo (Ctrl+E); Guardar es un disquete con un punto para los cambios sin guardar, y el nombre del proyecto tiene más espacio.",
+        "nl": "Exporteren zit in het menu Bestand (Ctrl+E); Opslaan is een diskette met een stip voor niet-opgeslagen wijzigingen, en de projectnaam heeft meer ruimte.",
+        "pl": "Eksportuj jest w menu Plik (Ctrl+E); Zapisz to dyskietka z kropką przy niezapisanych zmianach, a nazwa projektu ma więcej miejsca."
+      }
+    },
+    {
+      "id": "track-header-bar-fits",
+      "type": "fixed",
+      "text": {
+        "en": "The bar above the track headers no longer cuts off “+ Instrument” in any language.",
+        "de": "Die Leiste über den Spurköpfen schneidet „+ Instrument“ in keiner Sprache mehr ab.",
+        "fr": "La barre au-dessus des en-têtes de piste ne coupe plus « + Instrument », quelle que soit la langue.",
+        "it": "La barra sopra le intestazioni delle tracce non taglia più «+ Strumento» in nessuna lingua.",
+        "es": "La barra sobre las cabeceras de pista ya no corta «+ Instrumento» en ningún idioma.",
+        "nl": "De balk boven de spoorkoppen snijdt ‘+ Instrument’ in geen enkele taal meer af.",
+        "pl": "Pasek nad nagłówkami ścieżek nie ucina już „+ Instrument” w żadnym języku."
+      }
+    }
+  ]
+}

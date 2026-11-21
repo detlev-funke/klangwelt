@@ -727,6 +727,28 @@ body.dk-dragging, body.dk-dragging * { cursor: grabbing !important; user-select:
 .modal .modal-input { flex: none; width: 100%; height: 32px; min-height: 32px; font-size: 13px; }
 .modal-hint { font-size: 11.5px; color: var(--faint); overflow-wrap: anywhere; }
 .modal-hint.warn { color: var(--accent); }
+/* What's new (components/whatsnew.ts): dot on the gear, menu entry, window; notes with a button */
+.btn.unread { position: relative; }
+.btn.unread::after { content: ""; position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--panel-2); }
+.set-option.whatsnew-item { width: 100%; }
+.whatsnew-item .whatsnew-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: transparent; }
+.whatsnew-item.unread .whatsnew-dot { background: var(--accent); }
+.modal:has(.whatsnew-list) { width: min(600px, calc(100vw - 32px)); }
+.whatsnew-build { font-size: 11.5px; color: var(--faint); font-family: var(--mono); }
+.whatsnew-list { display: flex; flex-direction: column; gap: 16px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; user-select: text; }
+.whatsnew-release h3 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin: 0 0 6px; font-size: 13px; font-weight: 650; }
+.whatsnew-ver { font-family: var(--mono); font-size: 11px; font-weight: 400; color: var(--faint); }
+.whatsnew-fresh { font-size: 10.5px; font-weight: 600; color: #1b1408; background: var(--accent); padding: 1px 7px; border-radius: 999px; }
+.whatsnew-entries { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.whatsnew-entry { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 8px; line-height: 1.45; }
+.whatsnew-type { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; padding-top: 2px; }
+.whatsnew-entry.added .whatsnew-type { color: var(--accent-2); }
+.whatsnew-entry.changed .whatsnew-type { color: var(--accent); }
+.whatsnew-entry.fixed .whatsnew-type { color: #b9a4ff; }
+.whatsnew-entry.removed .whatsnew-type { color: var(--muted); }
+@media (max-width: 480px) { .whatsnew-entry { grid-template-columns: minmax(0, 1fr); gap: 0; } }
+.toast.has-action { display: flex; align-items: center; gap: 12px; pointer-events: auto; }
+.toast-action { height: 26px; flex: none; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 /* Export dialog */
 .export-modal .modal-body { gap: 10px; }

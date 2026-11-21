@@ -276,7 +276,7 @@ pub struct AppState {
     /// File of the open project (None = never saved).
     pub project_file: Mutex<Option<std::path::PathBuf>>,
     /// Checksum of the project at the last save/open (for "unsaved").
-    saved_hash: Mutex<u64>,
+    pub(crate) saved_hash: Mutex<u64>,
     /// Close the window despite unsaved changes (after asking).
     pub force_close: AtomicBool,
     /// Tracks last created by the song builder (creating again replaces them); applies only to the open project.
@@ -298,7 +298,7 @@ pub struct AppState {
 /// Checksum for "unsaved": the content without the internal counter for new
 /// IDs – it keeps growing when a step is undone (e.g. the demo after the
 /// intro tour), and the project is unchanged all the same.
-fn project_hash(p: &Project) -> u64 {
+pub(crate) fn project_hash(p: &Project) -> u64 {
     let mut v = serde_json::to_value(p).unwrap_or_default();
     if let Some(o) = v.as_object_mut() {
         o.remove("nextId");

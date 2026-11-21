@@ -19,6 +19,7 @@
 pub mod agent;
 pub mod analysis;
 pub mod audiofile;
+pub mod autosave;
 pub mod chat;
 pub mod clock;
 pub mod commands;

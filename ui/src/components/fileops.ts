@@ -1,10 +1,12 @@
 // Save, open and create projects – "Save" button (with a dot for
-// unsaved changes) and "File" menu. The dialogs are our own
+// unsaved changes: not yet in the file; with autosave on that's at most until
+// the next autosave, see autosave.ts) and "File" menu. The dialogs are our own
 // (not system dialogs): projects live in Dokumente/Klangwelt/Projekte,
 // other locations go via a path or – when opening – the system's file
 // picker (browser: a file from the computer into the browser's storage).
 
 import { backend } from "../bridge.js";
+import { autosaveOn } from "../autosave.js";
 import { exportDialog } from "./export.js";
 import { endTour, tourRunning } from "./tour.js";
 import { dropdown, h, icon, modal } from "../dom.js";
@@ -113,6 +115,9 @@ const DISCARD_QUESTION = {
 export async function confirmDiscard(action: keyof typeof DISCARD_QUESTION): Promise<boolean> {
   const snap = snapshot.peek();
   if (!snap?.dirty) return true;
+  // Autosave on: a project with a file is saved without asking, as the autosave
+  // would do a moment later (earlier states are in the history)
+  if (snap.file && autosaveOn()) return saveProject();
   const name = fileName(snap.file) ?? projectLabel(snap.project.name);
   const choice = await modal(t("Unsaved changes"), [
     h("p", {}, t(DISCARD_QUESTION[action], { name })),

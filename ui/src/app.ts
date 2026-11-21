@@ -11,6 +11,7 @@ import { handleEntryKey } from "./noteinput.js";
 import { backend } from "./bridge.js";
 import { initLibrary } from "./components/library.js";
 import { initFileDrop } from "./filedrop.js";
+import { initAutosave, resumeProject } from "./autosave.js";
 import { t } from "./i18n.js";
 import { agentPulse, chat, chatUnread, errorText, followLive, instrumentSpecs, libraryBusy, notify, savedSounds, snapshot, status, visiblePanels } from "./store.js";
 
@@ -87,6 +88,8 @@ async function boot(): Promise<void> {
   try {
     // (the core got the UI's language in main.ts, before the layout was built)
     snapshot.value = await backend.getState();
+    // the project from before a language switch (or a recovery copy left behind)
+    await resumeProject();
     // remembered audio device is missing: Klangwelt takes the system default – give a short notice
     const e = snapshot.peek()?.engine;
     const missing = [e?.outputNotice, e?.inputNotice].filter(Boolean).join(" ");
@@ -94,6 +97,7 @@ async function boot(): Promise<void> {
   } catch (e) {
     notify(t("Connection to the core failed: {error}", { error: errorText(e) }), "error");
   }
+  initAutosave();
   backend.instrumentSpecs().then((s) => (instrumentSpecs.value = s)).catch(() => {});
   backend.soundsList().then((s) => (savedSounds.value = s)).catch(() => (savedSounds.value = []));
   backend.onSoundsChanged((s) => (savedSounds.value = s));

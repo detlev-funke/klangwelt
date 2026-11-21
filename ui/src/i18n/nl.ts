@@ -737,6 +737,16 @@ const dict: Dict = {
   "High notes at the top": "Hoge tonen boven",
   "as in sheet music and common piano rolls": "zoals in bladmuziek en gangbare pianorollen",
   "Applies to the piano roll, keyboard, analysis and library.": "Geldt voor pianorol, klavier, analyse en bibliotheek.",
+  "Save automatically": "Automatisch opslaan",
+  "Off": "Uit",
+  "{n} min": "{n} min",
+  "Only when something changed, and only after playback or recording. A project without a name goes into a recovery copy. Earlier states stay in the change history.": "Alleen als er iets is veranderd, en pas na het afspelen of opnemen. Een project zonder naam gaat naar een herstelkopie. Eerdere stadia blijven in de wijzigingsgeschiedenis.",
+
+  // ui/src/autosave.ts
+  "Autosave failed: {error}": "Automatisch opslaan mislukt: {error}",
+  "The project couldn't be saved. Switch the language anyway? Unsaved changes may be lost.": "Het project kon niet worden opgeslagen. Toch van taal wisselen? Niet-opgeslagen wijzigingen kunnen verloren gaan.",
+  "Switch anyway": "Toch wisselen",
+  "Restored the unsaved project from the last session.": "Het niet-opgeslagen project van de vorige sessie is hersteld.",
 
   // ui/src/components/song.ts
   "Intro": "Intro",
@@ -1226,6 +1236,7 @@ const dict: Dict = {
   "Windows": "Vensters",
   "Shows and hides windows and resets the layout. Drag a window by its tab to move it elsewhere: dock it, group it as a tab or let it float freely.": "Toont en verbergt vensters en zet de indeling terug. Vensters sleep je aan hun tab naar een andere plek: vastzetten, als tabs groeperen of vrij laten zweven.",
   "Basic settings, e.g. the pitch axis: low notes at the top (like a piano turned sideways) or high notes at the top (like in sheet music).": "Basisinstellingen, bijv. de toonas: lage tonen boven (zoals bij een gedraaid klavier) of hoge tonen boven (zoals in bladmuziek).",
+  "Save automatically: every few minutes a project with a file is saved into it, a project without a name into a recovery copy that comes back after a crash. \"Off\" saves only when you say so.": "Automatisch opslaan: om de paar minuten wordt een project met een bestand in dat bestand opgeslagen, een project zonder naam in een herstelkopie die na een crash terugkomt. „Uit” slaat alleen op als jij dat zegt.",
   "Output on top, microphone below. Red means too loud – lower the track levels.": "Boven de uitgang, onder de microfoon. Rood betekent: te luid – verlaag dan het niveau van de sporen.",
   "Shows whether an AI agent (e.g. Claude Code) is connected to Klangwelt:": "Toont of er een AI-agent (bijv. Claude Code) met Klangwelt verbonden is:",
   "**Agent listening** – it picks up tasks from the chat right away. **Agent working on #n** – a task is in progress, or the agent called a tool within the last minute. **Agent ready** – an agent is connected but quiet. **No agent connected** – nothing for more than a minute; the app's endpoint is waiting. **Agent off** – the endpoint couldn't start.": "**Agent luistert** – hij haalt opdrachten meteen uit de chat. **Agent werkt aan #n** – er loopt een opdracht, of de agent heeft in de laatste minuut een tool aangeroepen. **Agent gereed** – er is een agent verbonden, maar die is stil. **Geen agent verbonden** – al meer dan een minuut niets; het eindpunt van de app wacht. **Agent uit** – het eindpunt kon niet starten.",

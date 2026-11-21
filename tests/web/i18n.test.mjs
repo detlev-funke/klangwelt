@@ -201,9 +201,11 @@ test("switch the language in the settings menu; the choice survives a reload", a
   assertFlags(await openLanguageMenu(), "de");
   await app.click(5, 500);
 
-  // unsaved change: the browser asks before reloading (the harness confirms)
-  await app.eval(async () => {
+  // an unsaved project goes along: kept apart before the reload and opened again
+  // afterwards – so the browser doesn't ask "Leave page?" (ui/src/autosave.ts)
+  const demo = await app.eval(async () => {
     await T.st.act(T.backend.createDemo());
+    return T.st.snapshot.peek().project.tracks.map((t) => t.name);
   });
   await choose("en");
   await app.afterReload();
@@ -211,10 +213,14 @@ test("switch the language in the settings menu; the choice survives a reload", a
   assert.equal(u.lang, "en");
   assert.equal(u.settings, "Settings");
   assert.equal(u.stored, "en");
-  assert.ok(app.dialogs.includes("beforeunload"), `expected a question before reloading, got: ${JSON.stringify(app.dialogs)}`);
+  assert.deepEqual(app.dialogs, [], "no question before reloading");
+  const back = await app.waitFor(() => T.st.snapshot.peek().project.tracks.length && T.st.snapshot.peek(), { what: "the demo back" });
+  assert.deepEqual(back.project.tracks.map((t) => t.name), demo);
+  assert.equal(back.dirty, true, "still unsaved");
   assert.equal((await coreError()).text, "Track 424242 not found");
 
-  // remembered: English after an ordinary reload, too
+  // remembered: English after an ordinary reload, too (a new project first – nothing to keep)
+  await app.eval(() => T.st.act(T.backend.projectNew()));
   await app.reload();
   u = await ui();
   assert.equal(u.lang, "en");

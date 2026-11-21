@@ -1,8 +1,9 @@
 // Settings (gear in the transport bar). Stored in localStorage.
 
+import { AUTOSAVE_CHOICES, autosaveSeconds, setAutosaveSeconds, switchLanguageKeepingProject } from "../autosave.js";
 import { dropdown, h, icon } from "../dom.js";
 import { flag } from "../flags.js";
-import { LANGUAGES, language, switchLanguage, t } from "../i18n.js";
+import { LANGUAGES, language, t } from "../i18n.js";
 import { highOnTop, setHighOnTop } from "../pianoroll.js";
 
 /** Small sketch of a keyboard with the chosen direction (h = high notes on top). */
@@ -27,7 +28,32 @@ function axisSketch(high: boolean): SVGSVGElement {
   return el;
 }
 
-/** Language choice: every language with its flag and in its own name; switching reloads the UI. */
+/** Autosave interval: off or every few minutes (see autosave.ts). */
+function autosaveOptions(close: () => void): HTMLElement {
+  const now = autosaveSeconds.peek();
+  return h(
+    "div",
+    { class: "autosave-grid", role: "group", "aria-label": t("Save automatically") },
+    ...AUTOSAVE_CHOICES.map((s) =>
+      h(
+        "button",
+        {
+          class: `dev-option autosave-option${s === now ? " on" : ""}`,
+          "data-autosave": String(s),
+          "aria-pressed": s === now ? "true" : "false",
+          onclick: () => {
+            close();
+            setAutosaveSeconds(s);
+          },
+        },
+        s === 0 ? t("Off") : t("{n} min", { n: s / 60 }),
+      ),
+    ),
+  );
+}
+
+/** Language choice: every language with its flag and in its own name; switching reloads
+ *  the UI – the open project is saved first and opened again (autosave.ts). */
 function languageOptions(close: () => void): HTMLElement {
   const now = language();
   return h(
@@ -43,7 +69,7 @@ function languageOptions(close: () => void): HTMLElement {
           "aria-current": l.code === now ? "true" : null,
           onclick: () => {
             close();
-            if (l.code !== now) switchLanguage(l.code);
+            if (l.code !== now) void switchLanguageKeepingProject(l.code);
           },
         },
         h("span", { class: "dev-check" }, l.code === now ? icon("check") : null),
@@ -80,6 +106,10 @@ export function settingsMenu(): HTMLElement {
       option(false, t("Low notes at the top"), t("like a keyboard turned sideways, played from the left")),
       option(true, t("High notes at the top"), t("as in sheet music and common piano rolls")),
       h("div", { class: "menu-hint" }, t("Applies to the piano roll, keyboard, analysis and library.")),
+      h("div", { class: "menu-sep" }),
+      h("div", { class: "menu-title" }, t("Save automatically")),
+      autosaveOptions(close),
+      h("div", { class: "menu-hint" }, t("Only when something changed, and only after playback or recording. A project without a name goes into a recovery copy. Earlier states stay in the change history.")),
     );
   });
 }

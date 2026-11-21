@@ -159,7 +159,7 @@ const ENTRIES: Entry[] = [
   { sel: "[data-help=rueckgaengig]", topic: { title: t("Undo"), text: [t("Takes back the last step – including changes made by the agent. The tooltip names the step.")], keys: [[t("Ctrl+Z"), t("undo")]] } },
   { sel: "[data-help=wiederherstellen]", topic: { title: t("Redo"), text: [t("Brings back an undone step.")], keys: [[t("Ctrl+Y / Ctrl+Shift+Z"), t("redo")]] } },
   { sel: "[data-help=fenster]", topic: { title: t("Windows"), text: [t("Shows and hides windows and resets the layout. Drag a window by its tab to move it elsewhere: dock it, group it as a tab or let it float freely.")] } },
-  { sel: "[data-help=einstellungen]", topic: { title: t("Settings"), text: [t("Basic settings, e.g. the pitch axis: low notes at the top (like a piano turned sideways) or high notes at the top (like in sheet music).")] } },
+  { sel: "[data-help=einstellungen]", topic: { title: t("Settings"), text: [t("Basic settings, e.g. the pitch axis: low notes at the top (like a piano turned sideways) or high notes at the top (like in sheet music)."), t("Save automatically: every few minutes a project with a file is saved into it, a project without a name into a recovery copy that comes back after a crash. \"Off\" saves only when you say so.")] } },
   { sel: "canvas.meter", topic: { title: t("Level"), text: [t("Output on top, microphone below. Red means too loud – lower the track levels.")] } },
   { sel: ".chip.agent", topic: { title: t("Agent"), text: [
     t("Shows whether an AI agent (e.g. Claude Code) is connected to Klangwelt:"),

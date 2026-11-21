@@ -15,6 +15,10 @@
 import type { CoreLink } from "../bridge.js";
 import { t } from "../i18n.js";
 
+/** sessionStorage key of a reload that keeps the project (`RESUME_KEY` in autosave.ts –
+ *  not imported: autosave.ts needs the bridge, which loads this shell). */
+const RESUME_KEY = "klangwelt.resume";
+
 /** Answer of the worker to a command. */
 type Reply = { id: number; ok: true; json?: string; bytes?: ArrayBuffer } | { id: number; ok: false; error: string };
 type FromWorker = Reply | { ev: string; payload: string } | { ready: true } | { failed: string };
@@ -221,9 +225,16 @@ export function createWebLink(): CoreLink {
   window.addEventListener("pointerdown", resume, true);
   window.addEventListener("keydown", resume, true);
 
-  // Unsaved changes: the browser asks when leaving
+  // Unsaved changes: the browser asks when leaving – not for a reload that keeps
+  // the project (language switch: saved first, opened again, see autosave.ts)
   window.addEventListener("beforeunload", (e) => {
-    if (dirty) e.preventDefault();
+    let resuming = false;
+    try {
+      resuming = sessionStorage.getItem(RESUME_KEY) != null;
+    } catch {
+      /* no storage: ask */
+    }
+    if (dirty && !resuming) e.preventDefault();
   });
 
   /** Put a file from the computer into the core's file tree (projects into the

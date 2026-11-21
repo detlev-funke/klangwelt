@@ -5,7 +5,7 @@
 // UI work: `?attrappe` in the address.
 
 import type {
-  AgentActivity, Analysis, CatalogEntry, CheckView, ExportInfo, ExportOptions, ExportResult, Chord, ChordInfo, ChatView, Command, Countersubject, Dimension, EngineStatus, FugueOptions,
+  AgentActivity, Analysis, AutosaveResult, CatalogEntry, CheckView, ExportInfo, ExportOptions, ExportResult, Chord, ChordInfo, ChatView, Command, Countersubject, Dimension, EngineStatus, FugueOptions,
   FuguePlan, HarmonyView, InstrumentKind, InstrumentSpec, SubjectView, TransformSpec, VNote,
   AddResult, ConvertResult, ConvertTarget, ImportResult, QuantizeResult, KeySpec, LibEntry, LibHit, LibraryInfo, ListenResult, OwnScore, PlacedChord, PlayInfo, PreviewPattern, ProjectFile, RecordResult, LiveCursor, LiveView, HarmonyLine, SongPlan, SongWritten, ClipGrid, RhythmGrid, RhythmInfo, RhythmWritten, SavedSound, ScoreView, Snapshot, SoundReport, SoundSaveResult, SuggestResult, TreeLevel, WaveView,
 } from "./types.js";
@@ -191,6 +191,14 @@ export interface Backend {
   /** The system's file picker for a .klangwelt file; the path to open it with (null: cancelled).
    *  Desktop: the native dialog; browser: the file goes into the browser's storage first. */
   projectPick(): Promise<string | null>;
+  /** Autosave: changes into the project's file, a project without a file into the
+   *  recovery copy (`recoveryOnly`: a project with a file, too – its file stays
+   *  untouched); without changes an old recovery copy is removed. */
+  projectAutosave(recoveryOnly: boolean): Promise<AutosaveResult>;
+  /** Open the recovery copy (unsaved, with the file it belongs to, if any); null: there is none. */
+  projectRecover(): Promise<Snapshot | null>;
+  /** Wait until every file the core wrote is stored for good (browser: OPFS; desktop: at once). */
+  syncStorage(): Promise<void>;
   projectNew(): Promise<Snapshot>;
   /** [project folder, projects in it (newest first)] */
   projectList(): Promise<[string, ProjectFile[]]>;
@@ -334,6 +342,11 @@ function coreBackend(link: CoreLink, platform: "desktop" | "web"): Backend {
     projectSave: (path) => call("project_save", { path }),
     projectOpen: (path) => call("project_open", { path }),
     projectPick: () => call("project_pick"),
+    projectAutosave: (recoveryOnly) => call("project_autosave", { recoveryOnly }),
+    projectRecover: () => call("project_recover"),
+    syncStorage: async () => {
+      if (platform === "web") await call("web_sync");
+    },
     projectNew: () => call("project_new"),
     projectList: () => call("project_list"),
     exportInfo: () => call("export_info"),

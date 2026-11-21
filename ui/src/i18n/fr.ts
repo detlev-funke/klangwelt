@@ -737,6 +737,16 @@ const dict: Dict = {
   "High notes at the top": "Notes aiguës en haut",
   "as in sheet music and common piano rolls": "comme sur une partition et dans les piano rolls habituels",
   "Applies to the piano roll, keyboard, analysis and library.": "S'applique au piano roll, au clavier, à l'analyse et à la bibliothèque.",
+  "Save automatically": "Enregistrer automatiquement",
+  "Off": "Désactivé",
+  "{n} min": "{n} min",
+  "Only when something changed, and only after playback or recording. A project without a name goes into a recovery copy. Earlier states stay in the change history.": "Uniquement en cas de modification, et seulement après la lecture ou l'enregistrement. Un projet sans nom va dans une copie de récupération. Les états précédents restent dans l'historique des modifications.",
+
+  // ui/src/autosave.ts
+  "Autosave failed: {error}": "Échec de l'enregistrement automatique : {error}",
+  "The project couldn't be saved. Switch the language anyway? Unsaved changes may be lost.": "Le projet n'a pas pu être enregistré. Changer de langue quand même ? Les modifications non enregistrées risquent d'être perdues.",
+  "Switch anyway": "Changer quand même",
+  "Restored the unsaved project from the last session.": "Le projet non enregistré de la dernière session a été restauré.",
 
   // ui/src/components/song.ts
   "Intro": "Intro",
@@ -1226,6 +1236,7 @@ const dict: Dict = {
   "Windows": "Fenêtres",
   "Shows and hides windows and resets the layout. Drag a window by its tab to move it elsewhere: dock it, group it as a tab or let it float freely.": "Affiche et masque les fenêtres et réinitialise la disposition. Faites glisser une fenêtre par son onglet ailleurs : l'ancrer, la grouper en onglet ou la laisser flotter librement.",
   "Basic settings, e.g. the pitch axis: low notes at the top (like a piano turned sideways) or high notes at the top (like in sheet music).": "Réglages de base, p. ex. l'axe des hauteurs : notes graves en haut (comme sur un piano tourné) ou notes aiguës en haut (comme sur une partition).",
+  "Save automatically: every few minutes a project with a file is saved into it, a project without a name into a recovery copy that comes back after a crash. \"Off\" saves only when you say so.": "Enregistrer automatiquement : toutes les quelques minutes, un projet avec fichier est enregistré dans ce fichier, un projet sans nom dans une copie de récupération qui revient après un plantage. « Désactivé » n'enregistre que lorsque vous le demandez.",
   "Output on top, microphone below. Red means too loud – lower the track levels.": "En haut la sortie, en bas le micro. Rouge signifie : trop fort – baissez alors le niveau des pistes.",
   "Shows whether an AI agent (e.g. Claude Code) is connected to Klangwelt:": "Indique si un agent IA (p. ex. Claude Code) est connecté à Klangwelt :",
   "**Agent listening** – it picks up tasks from the chat right away. **Agent working on #n** – a task is in progress, or the agent called a tool within the last minute. **Agent ready** – an agent is connected but quiet. **No agent connected** – nothing for more than a minute; the app's endpoint is waiting. **Agent off** – the endpoint couldn't start.": "**L'agent écoute** – il récupère tout de suite les demandes du chat. **L'agent travaille sur #n** – une demande est en cours, ou l'agent a appelé un outil dans la dernière minute. **Agent prêt** – un agent est connecté mais calme. **Aucun agent connecté** – rien depuis plus d'une minute ; le point d'accès de l'app attend. **Agent désactivé** – le point d'accès n'a pas pu démarrer.",

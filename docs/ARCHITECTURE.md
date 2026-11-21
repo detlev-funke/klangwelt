@@ -472,10 +472,16 @@ The app speaks English, German, French, Italian, Spanish, Dutch and Polish.
   (`keyInput`, `chordsInput`). The chord track is created as "Chords" in the
   chosen language; "Akkorde" (older projects) is recognised as well.
 * **Switching** (settings menu, gear in the transport bar): store the choice
-  and reload the UI. Desktop: the core keeps its state (only labels created
-  earlier, e.g. old undo steps, stay in the previous language). Browser: the
-  core lives in the web worker and is restarted; with unsaved changes the
-  existing `beforeunload` question appears first.
+  and reload the UI. A reload is needed because every module translates while
+  it loads, including tables and the panels' templates from the core. Before the
+  reload, `switchLanguageKeepingProject` (`ui/src/autosave.ts`) saves the project
+  like the autosave does. With autosave off, a project with a file goes into
+  the recovery copy too, so its file stays untouched. It then notes the file in
+  `sessionStorage["klangwelt.resume"]`, which also skips the `beforeunload`
+  question. Desktop: the core keeps its state, undo included (only labels
+  created earlier, e.g. old undo steps, stay in the previous language).
+  Browser: the core lives in the web worker and is restarted; at start
+  `resumeProject` opens the recovery copy or the noted file again.
 * **Key list:** `ui/scripts/i18n-keys.mjs` reads every `t`/`plural`/`tk`/`tid`
   call in `ui/src` and every `tr!`/`trn!`/`tk!`/`tid!` in `crates/` (keys must
   be string literals). `--missing=fr --out=todo.json` lists what a language
@@ -588,6 +594,24 @@ default layout.
 * Closing: `on_window_event(CloseRequested)` prevents closing when there are
   unsaved changes and sends `close-requested` to the UI;
   the UI asks and calls `app_close` (sets `force_close`, quits the app).
+* **Autosave** (`ui/src/autosave.ts`, `crates/klang-app/src/autosave.rs`): a
+  timer in the UI (gear menu: off, 1/2/5/10 minutes; one minute by default;
+  `localStorage["klangwelt.autosave"]` in seconds) calls `project_autosave`.
+  It waits while playing or recording and during the intro tour, and saves
+  right after. Changes of a project with a file go into that file through
+  `save_project` (the same atomic write as Save, serialized with it by
+  `autosave::writing()`), so the dot means "not yet in the file". A project
+  without a file goes into the **recovery copy** `Wiederherstellung.klangwelt`
+  next to the settings file (desktop: the app's local data folder, in tests
+  under `KLANGWELT_BIBLIOTHEK`; browser: `/Klangwelt` in OPFS). A small
+  `Wiederherstellung.json` beside it holds the project's file and the hash at
+  its last save, so the project comes back unsaved and with the same "dirty"
+  state. An unchanged project isn't written again. Without changes, or after
+  Save, Open, New or a normal close (desktop shell: `clear_recovery`), the copy
+  is removed. At start, if the core is empty, `project_recover` opens a
+  leftover copy (crash, closed tab) with a notice. With autosave on, a project
+  with a file is saved without asking before New, Open or closing. Projects
+  without a name are still asked about.
 * Dialogs (`ui/src/components/fileops.ts`, `modal()` in `dom.ts`) are custom
   HTML dialogs, not system dialogs, and therefore need no dialog plugin.
 

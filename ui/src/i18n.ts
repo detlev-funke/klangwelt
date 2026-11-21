@@ -92,8 +92,9 @@ export function storeLanguage(code: string): void {
   }
 }
 
-/** Switch language: remember it and reload the UI (the browser asks first
- *  if unsaved changes would be lost). */
+/** Switch language: remember it and reload the UI. The settings menu saves the
+ *  open project first and opens it again afterwards (`switchLanguageKeepingProject`
+ *  in autosave.ts). */
 export function switchLanguage(code: string): void {
   if (!supported(code)) return;
   storeLanguage(code);

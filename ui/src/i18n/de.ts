@@ -737,6 +737,16 @@ const dict: Dict = {
   "High notes at the top": "Hohe Töne oben",
   "as in sheet music and common piano rolls": "wie in Noten und üblichen Pianorollen",
   "Applies to the piano roll, keyboard, analysis and library.": "Gilt für Notenansicht, Klaviatur, Analyse und Bibliothek.",
+  "Save automatically": "Automatisch speichern",
+  "Off": "Aus",
+  "{n} min": "{n} Min.",
+  "Only when something changed, and only after playback or recording. A project without a name goes into a recovery copy. Earlier states stay in the change history.": "Nur wenn sich etwas geändert hat, und erst nach Wiedergabe oder Aufnahme. Ein Projekt ohne Namen kommt in eine Wiederherstellungskopie. Frühere Stände bleiben in der Änderungshistorie.",
+
+  // ui/src/autosave.ts
+  "Autosave failed: {error}": "Automatisches Speichern fehlgeschlagen: {error}",
+  "The project couldn't be saved. Switch the language anyway? Unsaved changes may be lost.": "Das Projekt konnte nicht gespeichert werden. Die Sprache trotzdem wechseln? Ungespeicherte Änderungen können verloren gehen.",
+  "Switch anyway": "Trotzdem wechseln",
+  "Restored the unsaved project from the last session.": "Das ungespeicherte Projekt der letzten Sitzung wurde wiederhergestellt.",
 
   // ui/src/components/song.ts
   "Intro": "Intro",
@@ -1223,6 +1233,7 @@ const dict: Dict = {
   "Windows": "Fenster",
   "Shows and hides windows and resets the layout. Drag a window by its tab to move it elsewhere: dock it, group it as a tab or let it float freely.": "Blendet Fenster ein und aus und setzt das Layout zurück. Fenster ziehst du an ihrem Reiter woandershin: andocken, als Reiter gruppieren oder frei schweben lassen.",
   "Basic settings, e.g. the pitch axis: low notes at the top (like a piano turned sideways) or high notes at the top (like in sheet music).": "Grundeinstellungen, z. B. die Tonachse: tiefe Töne oben (wie an einem gedrehten Klavier) oder hohe Töne oben (wie in Noten).",
+  "Save automatically: every few minutes a project with a file is saved into it, a project without a name into a recovery copy that comes back after a crash. \"Off\" saves only when you say so.": "Automatisch speichern: alle paar Minuten kommt ein Projekt mit Datei in diese Datei, ein Projekt ohne Namen in eine Wiederherstellungskopie, die nach einem Absturz zurückkommt. „Aus“ speichert nur, wenn du es sagst.",
   "Output on top, microphone below. Red means too loud – lower the track levels.": "Oben der Ausgang, unten das Mikrofon. Rot heißt: zu laut – dann Pegel der Spuren senken.",
   "Shows whether an AI agent (e.g. Claude Code) is connected to Klangwelt:": "Zeigt, ob ein KI-Agent (z. B. Claude Code) mit Klangwelt verbunden ist:",
   "**Agent listening** – it picks up tasks from the chat right away. **Agent working on #n** – a task is in progress, or the agent called a tool within the last minute. **Agent ready** – an agent is connected but quiet. **No agent connected** – nothing for more than a minute; the app's endpoint is waiting. **Agent off** – the endpoint couldn't start.": "**Agent hört zu** – er holt Aufträge aus dem Chat sofort ab. **Agent arbeitet an #n** – ein Auftrag läuft, oder der Agent hat in der letzten Minute ein Werkzeug aufgerufen. **Agent bereit** – ein Agent ist verbunden, aber ruhig. **Kein Agent verbunden** – seit über einer Minute nichts; der Endpunkt der App wartet. **Agent aus** – der Endpunkt konnte nicht starten.",

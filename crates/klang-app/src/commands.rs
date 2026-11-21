@@ -12,7 +12,7 @@
 //! libraries …) are handled by the respective shell itself.
 
 use crate::state::{AppState, CmdResult};
-use crate::{export, fugue, harmony, library, project, rhythm, song, sound, sound_library};
+use crate::{autosave, export, fugue, harmony, library, project, rhythm, song, sound, sound_library};
 use klang_core::{Command, Id, InstrumentKind};
 use klang_i18n::{tr, trn};
 use klang_music::counterpoint::VNote;
@@ -69,6 +69,8 @@ pub const COMMANDS: &[&str] = &[
     "project_open",
     "project_new",
     "project_list",
+    "project_autosave",
+    "project_recover",
     "library_info",
     "library_dimensions",
     "library_tree",
@@ -322,23 +324,43 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
                 Some(p) => project::resolve(p, &st.host().projects_dir()),
                 None => crate::lock(&st.project_file)?.clone().ok_or_else(|| tr!("No file name yet – please use \"Save as\"."))?,
             };
-            st.save_project(&target)?;
+            {
+                let _w = autosave::writing();
+                st.save_project(&target)?;
+            }
+            // (saved under a name: no recovery copy needed any more – same for open and new)
+            autosave::clear_recovery(st);
             json(st.snapshot()?)
         }
         "project_open" => {
             let (path,) = args!(a; path: String);
             let target = project::resolve(&path, &st.host().projects_dir());
             st.open_project(&target)?;
+            autosave::clear_recovery(st);
             json(changed(st)?)
         }
         "project_new" => {
             st.new_project()?;
+            autosave::clear_recovery(st);
             json(changed(st)?)
         }
         // [project folder, projects in it (newest first)]
         "project_list" => {
             let dir = st.host().projects_dir();
             json((dir.display().to_string(), project::list(&dir)))
+        }
+        // Autosave (timer in the UI): into the file, or into the recovery copy (autosave.rs)
+        "project_autosave" => {
+            let (recovery_only,) = args!(a; recovery_only: Option<bool>);
+            json(autosave::autosave(st, recovery_only.unwrap_or(false))?)
+        }
+        // Open the recovery copy again (start, reload); null: there is none
+        "project_recover" => {
+            if autosave::recover(st)? {
+                json(changed(st)?)
+            } else {
+                json(Value::Null)
+            }
         }
 
         // ------------------------------------------------ Library (queries)

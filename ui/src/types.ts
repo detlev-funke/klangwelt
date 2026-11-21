@@ -398,6 +398,16 @@ export interface ProjectFile {
   bytes: number;
 }
 
+/** What an autosave did: into the project's file, into the recovery copy (a
+ *  project without a file, or kept apart for a reload), or nothing (no changes). */
+export interface AutosaveResult {
+  saved: "file" | "recovery" | null;
+  /** The project's file afterwards (a recovery copy doesn't change it). */
+  file: string | null;
+  /** Changes not yet in the project's file (a recovery copy keeps the project unsaved). */
+  dirty: boolean;
+}
+
 /** Level of the tree view. */
 export interface Dimension {
   key: string;

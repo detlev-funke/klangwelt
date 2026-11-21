@@ -277,8 +277,10 @@ async function ready(app) {
  *  `library`: folder of a score library package (klang-libbuild), served under
  *  /library/ like Zenodo (ranges, CORS) – see docs/LIBRARY.md. Without it the
  *  app gets no package (never the Zenodo record from ui/static/library.json).
- *  `fakeMic`: WAV file the substitute microphone plays (in a loop) instead of its beep. */
-export async function startWeb({ languages = "de-DE,de", library = null, fakeMic = null } = {}) {
+ *  `fakeMic`: WAV file the substitute microphone plays (in a loop) instead of its beep.
+ *  `autosave`: seconds between autosaves (ui/src/autosave.ts) – off by default, so it never
+ *  saves (and clears "unsaved changes") in the middle of other tests; null keeps the app's default. */
+export async function startWeb({ languages = "de-DE,de", library = null, fakeMic = null, autosave = 0 } = {}) {
   if (!existsSync(join(ROOT, "ui", "dist-web", "klang_web.wasm"))) throw new Error("ui/dist-web fehlt – erst „npm run build:web“ in ui/");
   if (!existsSync(EDGE)) throw new Error(`Edge nicht gefunden: ${EDGE} (KLANGWELT_EDGE setzen)`);
   const tmp = mkdtempSync(join(tmpdir(), "klangwelt-web-"));
@@ -331,6 +333,13 @@ export async function startWeb({ languages = "de-DE,de", library = null, fakeMic
   await app.send("Page.enable");
   await app.send("Emulation.setFocusEmulationEnabled", { enabled: true });
   await app.send("Emulation.setDeviceMetricsOverride", { width: 1600, height: 1000, deviceScaleFactor: 1, mobile: false });
+  // before the app reads it – and only while nothing is stored, so a test's own choice survives reloads
+  if (autosave != null) {
+    const value = JSON.stringify(String(autosave));
+    await app.send("Page.addScriptToEvaluateOnNewDocument", {
+      source: `try { if (localStorage.getItem("klangwelt.autosave") === null) localStorage.setItem("klangwelt.autosave", ${value}); } catch {}`,
+    });
+  }
   await app.send("Page.navigate", { url });
   await ready(app);
   return app;

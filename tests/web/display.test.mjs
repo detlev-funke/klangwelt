@@ -305,10 +305,13 @@ test("interface size on a phone: at 40 %, 70 % and 130 % a finger still hits the
 test("interface size in a desktop browser: the slider stays at 100 % and points to the browser's own zoom", async () => {
   await viewport(1600, 1000);
   await openSettings();
-  const s = await app.eval(() => ({ works: T.backend.uiScaleWorks(), disabled: T.$(".set-menu.open .scale-slider").disabled, hint: T.$(".set-menu.open .scale-hint").textContent }));
+  const s = await app.eval(() => ({ works: T.backend.uiScaleWorks(), disabled: T.$(".set-menu.open .scale-slider").disabled, info: T.$(".set-menu.open .scale-label .info-btn").title }));
   assert.equal(s.works, false);
   assert.equal(s.disabled, true);
-  assert.match(s.hint, /Strg \+/);
+  // why: behind the ⓘ next to "Interface size"
+  assert.match(s.info, /Strg \+/);
+  await app.clickOn(".set-menu.open .scale-label .info-btn");
+  assert.match(await app.eval(() => T.$('.set-menu.open .menu-more[data-help="einstellungen-groesse"]:not([hidden])')?.textContent ?? ""), /Strg \+/);
   // asked anyway: the page doesn't follow, the size stays 100 %
   assert.equal(await app.eval(() => T.backend.setUiScale(0.8)), 1);
   assert.equal(await app.eval(() => [innerWidth, localStorage.getItem("klangwelt.uiScale")].join()), "1600,");
@@ -319,6 +322,17 @@ test("interface size in a desktop browser: the slider stays at 100 % and points 
 });
 
 // ---------------------------------------------------------------- spacing
+
+/** "Spacing" and its three options on one line: the distance between their vertical middles. */
+const spacingRowOffset = () =>
+  app.eval(() => {
+    const mid = (el) => {
+      const r = el.getBoundingClientRect();
+      return (r.top + r.bottom) / 2;
+    };
+    const label = mid(T.$(".set-menu.open .density-row .scale-label"));
+    return Math.max(...T.$$(".set-menu.open [data-density]").map((b) => Math.abs(mid(b) - label)));
+  });
 
 /** Measured spacing: margin around the layout, gutter, tab bar, toolbar, panel padding. */
 const spacing = () =>
@@ -341,6 +355,7 @@ test("spacing: tight, normal and airy change margins, gutters, tab bars and tool
   await openSettings();
   const normal = await spacing();
   assert.deepEqual(normal, { density: "normal", inset: 5, gutter: 5, tabs: 33, bar: 64, pressed: ["normal"] }, "normal is the look from before");
+  assert.ok((await spacingRowOffset()) < 3, "“Spacing” and its options on one line");
   await app.clickOn('.set-menu.open [data-density="tight"]');
   assert.deepEqual(await spacing(), { density: "tight", inset: 2, gutter: 2, tabs: 29, bar: 54, pressed: ["tight"] });
   assert.equal(await app.eval(() => T.$(".set-menu").classList.contains("open")), true, "the menu stays open to compare");
@@ -362,6 +377,7 @@ test("spacing: tight, normal and airy change margins, gutters, tab bars and tool
 test("spacing on a phone: the compact view follows tight and airy too", async () => {
   await viewport(...PHONE, { touch: true });
   await openSettings();
+  assert.ok((await spacingRowOffset()) < 3, "“Spacing” and its options on one line on a phone, too");
   for (const [d, inset] of [["tight", 1], ["air", 6], ["normal", 3]]) {
     await app.eval((d) => T.$(`.set-menu.open [data-density="${d}"]`).click(), d);
     const s = await app.eval(() => ({ mode: T.$("#dock").dataset.mode, inset: Math.round(T.$("#dock .dk-area").getBoundingClientRect().left - T.$("#dock").getBoundingClientRect().left), page: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) }));
@@ -373,9 +389,9 @@ test("spacing on a phone: the compact view follows tight and airy too", async ()
   await viewport(1600, 1000);
 });
 
-// ---------------------------------------------------------------- short hints, full text behind ⓘ
+// ---------------------------------------------------------------- no descriptions, the full text behind ⓘ
 
-/** Title, short hint, tooltip and the unfolded explanation of a gear-menu setting (its help id). */
+/** Title, tooltip and the unfolded explanation of a gear-menu setting (its help id). */
 const explained = (help) =>
   app.eval((help) => {
     const at = (sel) => T.$(`.set-menu.open ${sel}[data-help="${help}"]`);
@@ -383,10 +399,8 @@ const explained = (help) =>
     const more = at(".menu-more");
     return {
       title: at(".menu-title").textContent,
-      hint: at(".menu-hint:not(.menu-more)").textContent,
       tooltip: info.title,
-      hintTooltip: at(".menu-hint:not(.menu-more)").title,
-      optionsTooltip: at("[role=group]").title,
+      optionsTooltip: at("[role=group]")?.title ?? null,
       expanded: info.getAttribute("aria-expanded"),
       more: more.hidden ? null : more.textContent,
       infoSize: Math.round(info.getBoundingClientRect().height),
@@ -395,21 +409,22 @@ const explained = (help) =>
 
 const AUTOSAVE_FULL = "Nur wenn sich etwas geändert hat, und erst nach Wiedergabe oder Aufnahme. Ein Projekt ohne Namen kommt in eine Wiederherstellungskopie. Frühere Stände bleiben in der Änderungshistorie.";
 
-test("autosave and smoothing: a few words under each, the full explanation as tooltip, behind ⓘ and in the help window", async () => {
+test("gear menu without descriptions: the explanations are tooltips, behind ⓘ and in the help window", async () => {
   await viewport(1600, 1000);
   await openSettings();
+  // no description lines in the menu – only explanations folded away behind ⓘ
+  assert.deepEqual(await app.eval(() => T.$$(".set-menu.open .menu-hint").filter((e) => !e.hidden).map((e) => e.textContent)), []);
+  assert.equal(await app.eval(() => T.$$(".set-menu.open .info-btn").length), 4, "ⓘ at interface size, pitch axis, autosave, smoothing");
   const a = await explained("einstellungen-autosave");
-  assert.deepEqual(
-    { title: a.title, hint: a.hint, expanded: a.expanded, more: a.more },
-    { title: "Automatisch speichern", hint: "Nur wenn sich etwas geändert hat.", expanded: "false", more: null },
-  );
+  assert.deepEqual({ title: a.title, expanded: a.expanded, more: a.more }, { title: "Automatisch speichern", expanded: "false", more: null });
   assert.equal(a.tooltip, AUTOSAVE_FULL);
-  assert.equal(a.hintTooltip, AUTOSAVE_FULL);
   assert.equal(a.optionsTooltip, AUTOSAVE_FULL);
   const s = await explained("einstellungen-glaetten");
   assert.equal(s.title, "Noten aus Aufnahmen glätten");
-  assert.equal(s.hint, "Fügt kurze Bruchstücke zu Noten zusammen.");
   assert.match(s.tooltip, /^Wird eine Aufnahme zu Noten/);
+  const p = await explained("einstellungen-tonachse");
+  assert.equal(p.title, "Tonachse");
+  assert.equal(p.tooltip, "Gilt für Notenansicht, Klaviatur, Analyse und Bibliothek.");
   // a click on ⓘ unfolds the explanation (the menu stays open), another one folds it again
   await app.clickOn('.set-menu.open .menu-title[data-help="einstellungen-autosave"] .info-btn');
   const open = await explained("einstellungen-autosave");
@@ -418,7 +433,7 @@ test("autosave and smoothing: a few words under each, the full explanation as to
   await app.clickOn('.set-menu.open .menu-title[data-help="einstellungen-autosave"] .info-btn');
   assert.equal((await explained("einstellungen-autosave")).more, null);
   // F1 over the setting: the help window explains it
-  const [hx, hy] = await center('.set-menu.open .menu-hint[data-help="einstellungen-glaetten"]');
+  const [hx, hy] = await center('.set-menu.open [data-smooth="light"]');
   await app.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: hx, y: hy });
   await app.key("F1", { vk: 112 });
   await app.waitFor(() => T.$("kw-help .help-title")?.textContent === "Noten aus Aufnahmen glätten", { what: "help for smoothing" });

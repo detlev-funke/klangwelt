@@ -116,9 +116,9 @@ function languageOptions(close: () => void): HTMLElement {
   );
 }
 
-/** A setting with a short hint; the full explanation is its tooltip and, behind an ⓘ button, a line to
- *  unfold – tooltips never show for a finger. `help`: its entry in the help window (F1, help.ts). */
-function explained(help: string, title: string, options: HTMLElement, short: string, full: string): HTMLElement[] {
+/** An ⓘ button and the explanation it unfolds below a setting: the text is also the button's
+ *  tooltip, but tooltips never show for a finger. `help`: the help window's entry (F1, help.ts). */
+function infoToggle(help: string, full: string): { info: HTMLButtonElement; more: HTMLElement } {
   const more = h("div", { class: "menu-hint menu-more", hidden: true, "data-help": help }, full);
   const info: HTMLButtonElement = h(
     "button",
@@ -134,14 +134,19 @@ function explained(help: string, title: string, options: HTMLElement, short: str
     },
     icon("help"),
   );
-  options.dataset.help = help;
-  options.title = full;
-  return [
-    h("div", { class: "menu-title with-info", "data-help": help }, title, info),
-    options,
-    h("div", { class: "menu-hint", title: full, "data-help": help }, short),
-    more,
-  ];
+  return { info, more };
+}
+
+/** A setting without a visible description: its title with an ⓘ, the options (the explanation as their
+ *  tooltip) and the explanation to unfold. */
+function explained(help: string, title: string, options: HTMLElement | HTMLElement[], full: string): HTMLElement[] {
+  const { info, more } = infoToggle(help, full);
+  const list = [options].flat();
+  for (const o of list) {
+    o.dataset.help = help;
+    if (!o.title) o.title = full;
+  }
+  return [h("div", { class: "menu-title with-info", "data-help": help }, title, info), ...list, more];
 }
 
 /** "Language" is always shown in English, too – whoever ended up in a foreign language finds the way back. */
@@ -172,7 +177,7 @@ function displayOptions(): HTMLElement[] {
     "aria-label": t("Interface size"),
   });
   const reset = h("button", { class: "btn small scale-reset", title: t("Back to 100%"), onclick: () => void apply(1) }, percent(1));
-  const hint = h("div", { class: "menu-hint scale-hint" });
+  const { info, more } = infoToggle("einstellungen-groesse", "");
   const show = () => {
     const s = uiScale.peek();
     const works = backend.uiScaleWorks();
@@ -181,9 +186,13 @@ function displayOptions(): HTMLElement[] {
     setRange(slider, Math.round(s * 100));
     value.textContent = percent(s);
     slider.setAttribute("aria-valuetext", percent(s));
-    hint.textContent = works
+    // the explanation (behind ⓘ): what the size does – or, in a desktop browser, which zoom does it there
+    const about = works
       ? t("Smaller shows more at once – handy on a phone. Remembered on this device.")
       : t("In this browser its own zoom does that: Ctrl + and Ctrl − (on a Mac ⌘ + and ⌘ −).");
+    info.title = about;
+    more.textContent = about;
+    slider.title = about;
   };
   const apply = async (s: number) => {
     try {
@@ -233,11 +242,10 @@ function displayOptions(): HTMLElement[] {
   );
   return [
     h("div", { class: "menu-title" }, t("Display")),
-    h("div", { class: "scale-row" }, h("span", { class: "scale-label" }, t("Interface size")), value),
+    h("div", { class: "scale-row" }, h("span", { class: "scale-label with-info" }, t("Interface size"), info), value),
     h("div", { class: "scale-row" }, slider, reset),
-    hint,
-    h("div", { class: "scale-label density-label" }, t("Spacing")),
-    densityGrid,
+    more,
+    h("div", { class: "scale-row density-row" }, h("span", { class: "scale-label" }, t("Spacing")), densityGrid),
   ];
 }
 
@@ -346,14 +354,19 @@ export function settingsMenu(): HTMLElement {
         h("div", { class: "menu-sep" }),
         ...displayOptions(),
         h("div", { class: "menu-sep" }),
-        h("div", { class: "menu-title" }, t("Pitch axis")),
-        option(false, t("Low notes at the top"), t("like a keyboard turned sideways, played from the left")),
-        option(true, t("High notes at the top"), t("as in sheet music and common piano rolls")),
-        h("div", { class: "menu-hint" }, t("Applies to the piano roll, keyboard, analysis and library.")),
+        ...explained(
+          "einstellungen-tonachse",
+          t("Pitch axis"),
+          [
+            option(false, t("Low notes at the top"), t("like a keyboard turned sideways, played from the left")),
+            option(true, t("High notes at the top"), t("as in sheet music and common piano rolls")),
+          ],
+          t("Applies to the piano roll, keyboard, analysis and library."),
+        ),
         h("div", { class: "menu-sep" }),
-        ...explained("einstellungen-autosave", t("Save automatically"), autosaveOptions(close), t("Only when something changed."), AUTOSAVE_HELP()),
+        ...explained("einstellungen-autosave", t("Save automatically"), autosaveOptions(close), AUTOSAVE_HELP()),
         h("div", { class: "menu-sep" }),
-        ...explained("einstellungen-glaetten", t("Smooth notes from recordings"), smoothOptions(close), t("Joins short fragments into notes."), SMOOTH_HELP()),
+        ...explained("einstellungen-glaetten", t("Smooth notes from recordings"), smoothOptions(close), SMOOTH_HELP()),
         h("div", { class: "menu-sep" }),
         projectLink(close),
         whatsNewMenuItem(close),

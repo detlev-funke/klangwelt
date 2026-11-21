@@ -866,7 +866,11 @@ body.dk-dragging, body.dk-dragging * { cursor: grabbing !important; user-select:
 .scale-slider { flex: 1; min-width: 0; }
 .scale-slider:disabled { opacity: .4; cursor: default; }
 .scale-reset { flex: none; }
-.density-label { padding: 4px 10px 0; }
+.scale-label.with-info { display: inline-flex; align-items: center; gap: 4px; }
+/* "Spacing" and its three options in one row: the options share the room next to the label */
+.scale-row.density-row { padding-right: 0; }
+.density-row .density-grid { flex: 1 1 0; min-width: 0; }
+.density-row .density-option { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .density-grid { grid-template-columns: repeat(3, 1fr); }
 a.set-option { color: var(--muted); text-decoration: none; }
 .github-icon { display: inline-flex; width: 18px; justify-content: center; color: var(--muted); flex: none; }

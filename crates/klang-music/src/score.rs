@@ -29,6 +29,12 @@ pub struct Score {
     /// automatic detection.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub harmony: Vec<LabeledChord>,
+    /// Start of bar 1, 2, 3 … in quarter notes, numbered as printed: a pickup
+    /// and other measures marked implicit don't count (a pickup lies before
+    /// the first). Empty if the source doesn't tell – then bars follow the
+    /// time signature (see [`Score::bar_start`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bars: Vec<f64>,
 }
 
 /// A chord from an analysis by experts.
@@ -82,6 +88,53 @@ impl Score {
 
     pub fn note_count(&self) -> usize {
         self.parts.iter().flat_map(|p| &p.voices).map(|v| v.notes.len()).sum()
+    }
+
+    /// Length of a bar in quarters by the (first) time signature.
+    fn bar_quarters(&self) -> f64 {
+        let (num, den) = self.time_signature.unwrap_or((4, 4));
+        (num.max(1) as f64 * 4.0 / den.max(1) as f64).max(0.25)
+    }
+
+    /// Number of bars (as printed, without a pickup).
+    pub fn bar_count(&self) -> u32 {
+        if self.bars.is_empty() {
+            ((self.duration_quarters() / self.bar_quarters()) - 1e-6).ceil().max(1.0) as u32
+        } else {
+            self.bars.len() as u32
+        }
+    }
+
+    /// Start of bar `n` in quarters (0 = the pickup, i.e. the start of the
+    /// piece). `bar_start(n + 1)` is the end of bar `n`; after the last bar
+    /// that is where all notes have ended.
+    pub fn bar_start(&self, n: u32) -> f64 {
+        let len = self.bar_quarters();
+        let Some(&last) = self.bars.last() else { return n.saturating_sub(1) as f64 * len };
+        let count = self.bars.len() as u32;
+        match n {
+            0 => 0.0,
+            n if n <= count => self.bars[n as usize - 1],
+            n => {
+                // the last bar is as long as the one before it – or reaches to the last note
+                let last_len = if count >= 2 { last - self.bars[count as usize - 2] } else { len };
+                let end = (last + last_len.max(1e-3)).max(self.duration_quarters());
+                end + (n - count - 1) as f64 * len
+            }
+        }
+    }
+
+    /// Bar in which quarter `q` lies (0 = in the pickup).
+    pub fn bar_at(&self, q: f64) -> u32 {
+        if self.bars.is_empty() {
+            return (q.max(0.0) / self.bar_quarters() + 1e-9).floor() as u32 + 1;
+        }
+        self.bars.partition_point(|&b| b <= q + 1e-6) as u32
+    }
+
+    /// Does the piece start with a pickup (notes before bar 1)?
+    pub fn has_pickup(&self) -> bool {
+        self.bars.first().is_some_and(|&b| b > 1e-6)
     }
 }
 
@@ -280,6 +333,14 @@ pub fn parse_musicxml(xml: &str) -> Result<Score, MusicError> {
                     b"part" => {
                         let id = attr(e, b"id").unwrap_or_default();
                         part = Some(PartBuild { id, divisions: 1.0, ..Default::default() });
+                    }
+                    // bars are counted in the first part (all parts share them); a pickup
+                    // is marked implicit or numbered 0
+                    b"measure" if score.parts.is_empty() => {
+                        let implicit = attr(e, b"implicit").is_some_and(|v| v == "yes") || attr(e, b"number").is_some_and(|n| n.trim() == "0");
+                        if !implicit {
+                            score.bars.push(part.as_ref().map(|p| p.time).unwrap_or(0.0));
+                        }
                     }
                     b"note" => note = Some(NoteBuild { voice: 1, staff: 1, ..Default::default() }),
                     b"rest" => {
@@ -576,6 +637,31 @@ pub(crate) mod tests {
         let n = &s.parts[0].voices[0].notes;
         assert_eq!(n.len(), 2);
         assert_eq!(n[1], ScoreNote { onset: 2.0, duration: 2.0, midi: 61 });
+    }
+
+    #[test]
+    fn bars_are_counted_as_printed_with_pickup_and_fallback() {
+        // pickup of one quarter (implicit), then two bars of 3/4, one of them split by a repeat
+        let note = |d: u32| format!("<note><pitch><step>C</step><octave>4</octave></pitch><duration>{d}</duration><voice>1</voice></note>");
+        let xml = format!(
+            "<score-partwise version=\"4.0\"><part-list><score-part id=\"P1\"><part-name>A</part-name></score-part><score-part id=\"P2\"><part-name>B</part-name></score-part></part-list>\
+             <part id=\"P1\"><measure number=\"0\" implicit=\"yes\"><attributes><divisions>1</divisions><time><beats>3</beats><beat-type>4</beat-type></time></attributes>{q}</measure>\
+             <measure number=\"1\">{h}{q}</measure><measure number=\"2\">{q}</measure><measure number=\"\" implicit=\"yes\">{q}{q}</measure></part>\
+             <part id=\"P2\"><measure number=\"0\"><attributes><divisions>1</divisions></attributes>{q}</measure><measure number=\"1\">{h}{q}</measure></part></score-partwise>",
+            q = note(1),
+            h = note(2)
+        );
+        let s = parse_musicxml(&xml).unwrap();
+        assert_eq!(s.bars, vec![1.0, 4.0], "only the first part counts, implicit measures don't");
+        assert!(s.has_pickup());
+        assert_eq!(s.bar_count(), 2);
+        assert_eq!((s.bar_at(0.5), s.bar_at(1.0), s.bar_at(3.9), s.bar_at(4.0), s.bar_at(6.5)), (0, 1, 1, 2, 2));
+        assert_eq!((s.bar_start(0), s.bar_start(1), s.bar_start(2)), (0.0, 1.0, 4.0));
+        assert_eq!(s.bar_start(3), 7.0, "end of the last bar: at least where the notes end");
+        // without measures (kern, tables): by the time signature
+        let plain = Score { time_signature: Some((3, 4)), parts: s.parts.clone(), ..Default::default() };
+        assert!(!plain.has_pickup());
+        assert_eq!((plain.bar_count(), plain.bar_at(3.0), plain.bar_start(2), plain.bar_start(0)), (3, 2, 3.0, 0.0));
     }
 
     #[test]

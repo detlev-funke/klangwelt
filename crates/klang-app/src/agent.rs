@@ -146,6 +146,12 @@ exactly one index; only the active one is searched (normally \"Standard\"). `lis
 research quality 'kern-barock' (Bach), 'kern-klassik' (Mozart, Beethoven, Haydn), 'kern-romantik', 'kern-20jh', with harmonic analysis 'dcml-…'; runs in the \
 background – check with `library_status`). `add_to_library` adds MusicXML/MXL files (or folders) to the active library. `browse_library` organizes the library by genre, composer, mood, instrumentation, key, etc. \
 (e.g. for \"show me calm piano pieces in minor\").\n\
+Scores from the library – the person's own included, on the desktop and in the browser alike – are addressed by their `doc`, never by a file path: \
+`search_library` finds them by title, composer or instruments (one hit per score; `browse_library` and `search_melody` give a doc too), \
+`read_library_score` shows the voices (number, name, role, range), bars, key, tempo and – with fromBar/toBar – the notes of a bar range, \
+`import_library_score` brings chosen voices (and bars) into the project as instrument tracks in ONE undo step. To put several movements one after \
+another on the same tracks, import the first, then the next with trackIds (the tracks of the first, same voice order) and startBeats = endBeats of the \
+previous import. `analyze_score` takes a doc as well.\n\
 Harmony (circle-of-fifths window \"Harmony\"): `analyze_harmony` reads the key and chord progression (scale degrees, functions), `suggest_chords` \
 suggests continuations and cadences, `preview_chords` plays a progression, `write_chords` voices it in four parts and writes it \
 as notes (track \"Chords\" or trackId). Chords with German note names (H = English B, B = English B♭; minor in lower case: a, fis) or as \
@@ -306,6 +312,10 @@ fn tools(packs: &[&'static str]) -> Vec<Tool> {
         "description": "pluck = plucked strings, drums = drum kit, bass = bass synth, organ = pipe organ, harpsichord, synth = synth for pads" });
     let key_arg = json!({ "type": "string", "description": "Key in German notation, e.g. \"C-Dur\" (C major), \"a-Moll\" (A minor), \"Es-Dur\" (E♭ major), \"fis-Moll\" (F♯ minor); omit = estimated from the notes" });
     let instrument_kind = json!({ "enum": ["organ", "harpsichord", "pluck"], "description": "Sound of the new tracks (default organ)" });
+    let doc = json!({ "type": "integer", "minimum": 0, "description": "A score of the library: the doc of any of its voices (search_library, browse_library, search_melody)" });
+    let bar = json!({ "type": "integer", "minimum": 0, "description": "Bar number as printed (0 = pickup)" });
+    let voice_picks = json!({ "type": "array", "items": { "type": ["integer", "string"] }, "minItems": 1,
+        "description": "Voices by number (from read_library_score) or name (part, e.g. \"Violin 1\"; a part name takes all its voices)" });
     let chords_arg = json!({ "type": "array", "items": { "type": "string" }, "maxItems": 64,
         "description": "Chords as symbols with German note names (C, a = A minor, G7, fis7, h°, Hø7, gis°7, Cmaj7, Dsus4, C/E; lower case = minor, -is = ♯, -es = ♭, B = English B♭, H = English B) \
                         or as scale degrees in the key (I, ii6, I64, V7, vii°7, V7/V, V7/vi, N6, ♭VI, iv6)" });
@@ -654,8 +664,40 @@ fn tools(packs: &[&'static str]) -> Vec<Tool> {
              leaps. Returns the spots with bar, track IDs and explanation – to fix them, change the notes with execute/setClipNotes.",
             schema(json!({ "trackIds": { "type": "array", "items": id.clone() } }), &[]), true),
         tool("analyze_score", "Analyze score",
-            "Analyzes a MusicXML/MXL file: key, mood (valence/arousal), voice functions (main theme, counter-melody, inner voice, accompaniment figure, ostinato, bass) and cadences.",
-            schema(json!({ "path": { "type": "string" } }), &["path"]), true),
+            "Analyzes a score: key, mood (valence/arousal), voice functions (main theme, counter-melody, inner voice, accompaniment figure, ostinato, bass) and cadences. \
+             doc = a score of the library (from search_library, browse_library or search_melody – works in the browser too and for the person's own scores), \
+             or path = a MusicXML/MXL file (desktop only).",
+            schema(json!({ "doc": doc.clone(), "path": { "type": "string", "description": "MusicXML/MXL file (desktop)" } }), &[]), true),
+        tool("search_library", "Search library",
+            "Finds scores in the active library by words from title, composer, instruments, genre, key or mood (every word must occur, any case) – \
+             the person's own scores included (origin 'own' in the browser, 'remote' = the package on the server). One hit per score: doc, title, composer, file. \
+             Pass the doc to read_library_score, import_library_score or analyze_score. Composers are spelled as in the score, often in English \
+             (Tchaikovsky, Mussorgsky) – try that spelling or a word of the title if nothing comes up. For a melody use search_melody, to browse by genre or \
+             composer browse_library; their doc works the same.",
+            schema(json!({ "text": { "type": "string", "minLength": 1 }, "limit": { "type": "integer", "minimum": 1, "maximum": 100, "description": "Default 20" } }), &["text"]), true),
+        tool("read_library_score", "Read library score",
+            "Reads a score of the library by its doc (from search_library, browse_library or search_melody) – no file path needed, works in the browser and for \
+             the person's own scores. Returns title, key (German notation as in the other tools), time signature, tempo (quarters per minute), number of bars \
+             (as printed; pickup = bar 0), cadences and the voices: number, name (part), role, note count, range and the first/last bar in which each plays. \
+             With fromBar/toBar also the notes of those bars for the chosen voices (voices: numbers or names, default all) in compact notation \
+             \"pitch length @start\" – lengths and starts in quarters from the start of fromBar, exactly what import_library_score would bring in at the default \
+             tempo (one quarter = one beat). At most 400 notes per voice – read long pieces a few dozen bars at a time. notes: true without bars = the whole piece.",
+            schema(json!({ "doc": doc.clone(), "fromBar": bar.clone(), "toBar": bar.clone(), "voices": voice_picks.clone(),
+                "notes": { "type": "boolean", "description": "Notes without fromBar/toBar: of the whole piece" } }), &["doc"]), true),
+        tool("import_library_score", "Import from library",
+            "Brings voices of a library score into the project as instrument tracks – one track per voice with one note clip, all ONE undo step (undo reverts it). \
+             doc from search_library, browse_library or search_melody – no file path needed, works in the browser and for the person's own scores. \
+             voices: numbers or names from read_library_score (a part name takes all its voices; default all). fromBar/toBar: only those bars (as printed, \
+             0 = pickup; one of them alone = from the start / to the end). startBeats: where the clips begin (default 0). trackIds: per chosen voice an existing \
+             instrument track (same order; 0 = new track) that gets the voice as an additional clip – e.g. the next movement after the first on the same tracks, \
+             with startBeats = endBeats of the earlier import. tempo: quarters per minute it should sound at under the project tempo (the notes are stretched); \
+             default one quarter = one beat (x/8: one eighth = one beat). Voices without notes in the range are left out (skipped). Returns per voice trackId, \
+             clipId, the track's name and the note count, and endBeats.",
+            schema(json!({ "doc": doc, "voices": voice_picks, "fromBar": bar.clone(), "toBar": bar,
+                "startBeats": { "type": "number", "minimum": 0, "description": "Start of the clips in beats (default 0)" },
+                "trackIds": { "type": "array", "items": { "type": "integer", "minimum": 0 }, "description": "Per chosen voice an existing instrument track, 0 = new track" },
+                "tempo": { "type": "number", "minimum": 10, "maximum": 400, "description": "Quarters per minute at the project tempo; default quarter = beat" },
+                "ifRevision": { "type": "integer", "description": "Only if the project is still at this revision" } }), &["doc"]), false),
     ]
 }
 
@@ -1215,6 +1257,68 @@ impl<S: AgentShell> Agent<S> {
         let hits = lib.index.search(&query, limit);
         self.activity("search_melody", trn!(hits.len(), "Melody search: {n} match", "Melody search: {n} matches"));
         Ok(json!({ "query": query.iter().map(|n| note_name(n.midi)).collect::<Vec<_>>(), "hits": hits }))
+    }
+}
+
+// ---------------------------------------------------------------- Library scores
+
+/// A doc (voice entry of the library) from an argument.
+fn doc_arg(doc: u64) -> Result<u32, String> {
+    u32::try_from(doc).map_err(|_| format!("doc {doc} doesn't exist"))
+}
+
+/// fromBar/toBar: one of them alone = from the start / to the end.
+fn bars_arg(a: &Value) -> Result<Option<(u32, u32)>, String> {
+    let bar = |k: &str| match a.get(k) {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => v.as_u64().and_then(|n| u32::try_from(n).ok()).map(Some).ok_or_else(|| format!("\"{k}\" must be a bar number (0 = pickup)")),
+    };
+    Ok(match (bar("fromBar")?, bar("toBar")?) {
+        (None, None) => None,
+        (from, to) => Some((from.unwrap_or(0), to.unwrap_or(u32::MAX))),
+    })
+}
+
+/// voices: numbers (1-based) or names.
+fn voice_picks(a: &Value) -> Result<Vec<crate::library::VoicePick>, String> {
+    use crate::library::VoicePick;
+    let Some(list) = a.get("voices").filter(|v| !v.is_null()) else { return Ok(Vec::new()) };
+    let list = list.as_array().ok_or("\"voices\" must be a list of voice numbers or names")?;
+    list.iter()
+        .map(|v| match v {
+            Value::Number(n) => n.as_u64().map(|n| VoicePick::Number(n as usize)).ok_or_else(|| format!("voice {n}: a number from 1")),
+            Value::String(s) => Ok(s.trim().parse::<usize>().map(VoicePick::Number).unwrap_or_else(|_| VoicePick::Name(s.clone()))),
+            other => Err(format!("voice {other}: a number or a name")),
+        })
+        .collect()
+}
+
+impl<S: AgentShell> Agent<S> {
+    fn import_library_score(&self, args: &Value) -> Result<Value, String> {
+        let st = self.st();
+        let doc = doc_arg(u64_arg(args, "doc")?)?;
+        let (info, score) = crate::library::doc_and_score(st, doc)?;
+        let voices = crate::library::pick_voices(&score, &voice_picks(args)?)?;
+        let range = bars_arg(args)?.map(|(a, b)| crate::library::bars_range(&score, a, b)).transpose()?;
+        let targets: Vec<Option<Id>> = match args.get("trackIds").filter(|v| !v.is_null()) {
+            None => Vec::new(),
+            Some(t) => t.as_array().ok_or("\"trackIds\" must be a list of track IDs")?.iter().map(|v| v.as_u64().filter(|&id| id > 0).map(Id)).collect(),
+        };
+        if !targets.is_empty() && targets.len() != voices.len() {
+            return Err(format!("trackIds has {} entries for {} voices – one per chosen voice (0 = new track)", targets.len(), voices.len()));
+        }
+        let req = crate::library::ImportRequest {
+            voices,
+            range,
+            tempo: args.get("tempo").and_then(Value::as_f64),
+            start_beats: args.get("startBeats").and_then(Value::as_f64).unwrap_or(0.0),
+            targets,
+        };
+        let done = crate::library::import_voices(st, &info, &score, &req, args.get("ifRevision").and_then(Value::as_u64))?;
+        let v = serde_json::to_value(&done).map_err(|e| e.to_string())?;
+        let n = v["tracks"].as_array().map_or(0, Vec::len);
+        self.changed("import_library_score", if n > 1 { trn!(n, "Import {n} voice from library", "Import {n} voices from library") } else { tr!("Import from library") });
+        Ok(v)
     }
 }
 
@@ -2482,13 +2586,36 @@ impl<S: AgentShell> Agent<S> {
                 }))
             }
             "analyze_score" => {
-                let path = str_arg(&args, "path")?;
-                let score = load_score(Path::new(path)).map_err(|e| e.to_string())?;
+                let score = match (args.get("doc").and_then(Value::as_u64), args.get("path").and_then(Value::as_str)) {
+                    (Some(doc), _) => crate::library::doc_and_score(st, doc_arg(doc)?)?.1,
+                    (None, Some(path)) if cfg!(target_arch = "wasm32") => {
+                        let data = crate::vfs::read(Path::new(path)).map_err(|e| format!("{path}: {e} – in the browser give the doc of a library score"))?;
+                        klang_music::score::load_score_bytes(path, &data).map_err(|e| e.to_string())?
+                    }
+                    (None, Some(path)) => load_score(Path::new(path)).map_err(|e| e.to_string())?,
+                    (None, None) => return Err("Give doc (a library score from search_library) or path (a MusicXML/MXL file)".into()),
+                };
                 let mut v = serde_json::to_value(analyze_score(&score)).map_err(|e| e.to_string())?;
                 v["titel"] = json!(score.title);
                 v["komponist"] = json!(score.composer);
                 Ok(v)
             }
+            "search_library" => {
+                let limit = args.get("limit").and_then(Value::as_u64).unwrap_or(20) as usize;
+                let hits = crate::library::find_scores(st, str_arg(&args, "text")?, limit.min(100))?;
+                self.activity("search_library", trn!(hits.len(), "Library search: {n} scores", "Library search: {n} scores"));
+                Ok(json!({ "hits": hits }))
+            }
+            "read_library_score" => {
+                let doc = doc_arg(u64_arg(&args, "doc")?)?;
+                let bars = bars_arg(&args)?;
+                let picks = voice_picks(&args)?;
+                let read = crate::library::read_score(st, doc, bars, &picks, args.get("notes").and_then(Value::as_bool).unwrap_or(false))?;
+                let v = serde_json::to_value(&read).map_err(|e| e.to_string())?;
+                self.activity("read_library_score", tr!("Reading score: {title}", title = v["title"].as_str().unwrap_or_default()));
+                Ok(v)
+            }
+            "import_library_score" => self.import_library_score(&args),
             other => Err(format!("Unknown tool: {other}")),
         }
     }
@@ -2813,6 +2940,131 @@ mod tests {
         let e = Handler::call(&a, "batch", json!({ "calls": [{ "tool": "checkpoint", "args": {} }] })).unwrap_err();
         assert!(e.contains("not allowed"), "{e}");
         assert_eq!(call(&a, "batch", json!({ "calls": [{ "tool": "history", "args": { "limit": 1 } }] }))["results"][0]["steps"].as_array().unwrap().len(), 1);
+    }
+
+    /// A trio with a pickup (Violin, Viola with two voices, Cello) as a score file and a library of its voices.
+    fn agent_with_library() -> (Agent<TestShell>, std::path::PathBuf) {
+        let n = |step: &str, oct: u8, d: u32, voice: u32| format!("<note><pitch><step>{step}</step><octave>{oct}</octave></pitch><duration>{d}</duration><voice>{voice}</voice></note>");
+        let xml = format!(
+            "<score-partwise version=\"4.0\"><work><work-title>Kleines Trio</work-title></work><identification><creator type=\"composer\">Test Composer</creator></identification>\
+             <part-list><score-part id=\"P1\"><part-name>Violin</part-name></score-part><score-part id=\"P2\"><part-name>Viola</part-name></score-part>\
+             <score-part id=\"P3\"><part-name>Cello</part-name></score-part></part-list>\
+             <part id=\"P1\"><measure number=\"0\" implicit=\"yes\"><attributes><divisions>1</divisions><time><beats>3</beats><beat-type>4</beat-type></time></attributes>{p}</measure>\
+             <measure number=\"1\">{a}{b}{c}</measure><measure number=\"2\">{d}{e}</measure><measure number=\"3\">{f}{f}{f}</measure><measure number=\"4\">{g}</measure></part>\
+             <part id=\"P2\"><measure number=\"0\" implicit=\"yes\"><attributes><divisions>1</divisions></attributes><forward><duration>1</duration></forward></measure>\
+             <measure number=\"1\">{v1}<backup><duration>3</duration></backup>{v2}</measure><measure number=\"2\">{v3}</measure></part>\
+             <part id=\"P3\"><measure number=\"0\" implicit=\"yes\"><attributes><divisions>1</divisions></attributes><forward><duration>1</duration></forward></measure>\
+             <measure number=\"1\">{c1}</measure><measure number=\"2\">{c2}</measure></part></score-partwise>",
+            p = n("G", 4, 1, 1),
+            a = n("C", 5, 1, 1),
+            b = n("E", 5, 1, 1),
+            c = n("G", 5, 1, 1),
+            d = n("F", 5, 2, 1),
+            e = n("E", 5, 1, 1),
+            f = n("D", 5, 1, 1),
+            g = n("C", 5, 3, 1),
+            v1 = n("E", 4, 3, 1),
+            v2 = n("C", 4, 3, 2),
+            v3 = n("D", 4, 3, 1),
+            c1 = n("C", 3, 3, 1),
+            c2 = n("G", 2, 3, 1)
+        );
+        let dir = std::env::temp_dir().join(format!("klangwelt-agent-lib-{}-{:?}", std::process::id(), std::thread::current().id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("kleines-trio.musicxml");
+        std::fs::write(&path, xml).unwrap();
+        let score = load_score(&path).unwrap();
+        let mut idx = klang_music::index::MelodyIndex::new();
+        // only the violin is long enough for the melody index – one voice entry stands for the score
+        assert_eq!(idx.add_score(&score, &path.display().to_string()), 1);
+        let a = agent();
+        *lock(&a.st().library).unwrap() = Some(crate::state::Library {
+            id: "test".into(),
+            name: "Test".into(),
+            path: String::new(),
+            index: klang_music::diskindex::AnyIndex::Mem(idx),
+            packs: Vec::new(),
+            has_meta: true,
+        });
+        (a, dir)
+    }
+
+    #[test]
+    fn library_scores_are_searched_read_and_imported_by_doc() {
+        let (a, dir) = agent_with_library();
+        // search: one hit per score, by words of the title
+        let hits = call(&a, "search_library", json!({ "text": "trio kleines" }))["hits"].clone();
+        assert_eq!(hits.as_array().unwrap().len(), 1, "{hits}");
+        assert_eq!(hits[0]["title"], "Kleines Trio");
+        assert_eq!(hits[0]["file"], "kleines-trio.musicxml");
+        let doc = hits[0]["doc"].as_u64().unwrap();
+        assert!(call(&a, "search_library", json!({ "text": "Quartett" }))["hits"].as_array().unwrap().is_empty());
+
+        // overview: voices with numbers and names, bars as printed (pickup = bar 0)
+        let r = call(&a, "read_library_score", json!({ "doc": doc }));
+        let names: Vec<&str> = r["voices"].as_array().unwrap().iter().map(|v| v["name"].as_str().unwrap()).collect();
+        assert_eq!(names, vec!["Violin", "Viola System 1 · Stimme 1", "Viola System 1 · Stimme 2", "Cello"]);
+        assert_eq!((r["bars"].as_u64(), r["pickup"].as_bool(), r["timeSignature"].as_str()), (Some(4), Some(true), Some("3/4")));
+        assert_eq!(r["voices"][0]["bars"], json!([0, 4]));
+        assert_eq!(r["voices"][3]["bars"], json!([1, 2]));
+        assert_eq!(r["voices"][3]["range"], "G2–C3");
+        assert!(r["voices"][0].get("excerpt").is_none() && r.get("excerpt").is_none(), "no notes without bars");
+
+        // a bar range: the notes in compact notation, quarters from the start of the bar
+        let r = call(&a, "read_library_score", json!({ "doc": doc, "fromBar": 2, "toBar": 2, "voices": ["violin", 4] }));
+        assert_eq!(r["excerpt"], json!({ "fromBar": 2, "toBar": 2, "startQuarter": 4.0, "endQuarter": 7.0 }));
+        assert_eq!(r["voices"][0]["excerpt"], "F5 2 · E5 1");
+        assert_eq!(r["voices"][3]["excerpt"], "G2 3");
+        assert!(r["voices"][1].get("excerpt").is_none(), "only the chosen voices");
+        let e = Handler::call(&a, "read_library_score", json!({ "doc": doc, "voices": ["Tuba"] })).unwrap_err();
+        assert!(e.contains("1 Violin") && e.contains("4 Cello"), "{e}");
+        assert!(Handler::call(&a, "read_library_score", json!({ "doc": doc, "fromBar": 5 })).unwrap_err().contains("bars 0–4"));
+
+        // import: one track per voice, a part name takes all its voices, one undo step
+        let r = call(&a, "import_library_score", json!({ "doc": doc, "voices": ["Viola", "Cello"], "fromBar": 1 }));
+        let tracks = r["tracks"].as_array().unwrap().clone();
+        assert_eq!(tracks.len(), 3, "{r}");
+        assert_eq!(tracks[0]["track"], "Kleines Trio – Viola System 1 · Stimme 1 (bars 1–4)");
+        assert_eq!(tracks[2]["track"], "Kleines Trio – Cello (bars 1–4)");
+        assert_eq!((r["startBeats"].as_f64(), r["endBeats"].as_f64(), r["bars"].clone()), (Some(0.0), Some(8.0), json!([1, 4])));
+        assert_eq!(r["created"]["tracks"].as_array().unwrap().len(), 3);
+        assert!(r["change"].as_str().unwrap().contains("3 voices"), "{r}");
+        let cello = tracks[2]["trackId"].as_u64().unwrap();
+        {
+            let s = lock(&a.st().session).unwrap();
+            assert_eq!(s.undo_label(), Some("Import 3 voices from library"));
+            let t = s.project.tracks.iter().find(|t| t.id.0 == cello).unwrap();
+            let ClipSource::Notes { notes, .. } = &t.clips[0].source else { panic!() };
+            assert_eq!(notes.iter().map(|n| (n.pitch, n.start_beats, n.length_beats)).collect::<Vec<_>>(), vec![(48, 0.0, 3.0), (43, 3.0, 3.0)]);
+        }
+        // the next "movement" after it on the same tracks
+        let ids: Vec<u64> = tracks.iter().map(|t| t["trackId"].as_u64().unwrap()).collect();
+        let r = call(&a, "import_library_score", json!({ "doc": doc, "voices": [2, 3, 4], "trackIds": ids, "startBeats": 8, "toBar": 1 }));
+        assert!(r["tracks"].as_array().unwrap().iter().all(|t| t["newTrack"] == false), "{r}");
+        assert!(r.get("created").and_then(|c| c.get("tracks")).is_none(), "no new tracks: {r}");
+        assert_eq!(tracks_of(&a), 3);
+        {
+            let s = lock(&a.st().session).unwrap();
+            let t = s.project.tracks.iter().find(|t| t.id.0 == cello).unwrap();
+            assert_eq!((t.clips.len(), t.clips[1].start_beats), (2, 8.0));
+        }
+        call(&a, "undo", json!({}));
+        call(&a, "undo", json!({}));
+        assert_eq!(tracks_of(&a), 0);
+        // mistakes say what's wrong
+        assert!(Handler::call(&a, "import_library_score", json!({ "doc": doc, "voices": [1], "trackIds": [1, 2] })).unwrap_err().contains("one per chosen voice"));
+        assert!(Handler::call(&a, "import_library_score", json!({ "doc": doc, "voices": [1], "trackIds": [999] })).unwrap_err().contains("999"));
+        assert!(Handler::call(&a, "read_library_score", json!({ "doc": 4242 })).is_err());
+
+        // analyze_score takes the doc too
+        let v = call(&a, "analyze_score", json!({ "doc": doc }));
+        assert_eq!(v["titel"], "Kleines Trio");
+        assert_eq!(v["voices"].as_array().unwrap().len(), 4);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    fn tracks_of(a: &Agent<TestShell>) -> usize {
+        tracks(a)
     }
 
     #[test]

@@ -85,9 +85,94 @@ pub fn expand(v: &mut serde_json::Value) -> Result<(), String> {
     }
 }
 
+/// A number as the notation writes it, and the value `parse` reads back: exact
+/// decimals for binary values (`.5`, `.125`), fractions for triplets and
+/// sextuplets (`1/3`, `5/6`), otherwise rounded to three places.
+fn number_text(x: f64) -> (String, f64) {
+    let trim = |s: String| if s.contains('.') { s.trim_end_matches('0').trim_end_matches('.').to_string() } else { s };
+    for den in [1.0, 2.0, 4.0, 8.0, 16.0, 32.0] {
+        if (x * den - (x * den).round()).abs() < 1e-6 {
+            let v = (x * den).round() / den;
+            return (trim(format!("{v:.5}")), v);
+        }
+    }
+    for den in [3u32, 6, 12, 24] {
+        let k = x * den as f64;
+        if (k - k.round()).abs() < 1e-6 {
+            let (mut k, mut d) = (k.round() as u64, den as u64);
+            let g = gcd(k, d);
+            (k, d) = (k / g, d / g);
+            return (format!("{k}/{d}"), k as f64 / d as f64);
+        }
+    }
+    let v = (x * 1000.0).round() / 1000.0;
+    (trim(format!("{v:.3}")), v)
+}
+
+fn gcd(a: u64, b: u64) -> u64 {
+    if b == 0 { a.max(1) } else { gcd(b, a % b) }
+}
+
+/// Notes in the compact notation – the counterpart of [`parse`]: (start,
+/// length, MIDI) with start and length in beats. Notes with the same start and
+/// length become a chord; a length is written on the first note and where it
+/// changes, a start (`@`) only where the note doesn't follow the previous one;
+/// velocity is left out.
+pub fn format(notes: &[(f64, f64, u8)]) -> String {
+    let mut sorted: Vec<(f64, f64, u8)> = notes.iter().copied().filter(|n| n.1 > 0.0).collect();
+    sorted.sort_by(|a, b| a.0.total_cmp(&b.0).then(b.2.cmp(&a.2)));
+    let mut items: Vec<String> = Vec::new();
+    // what `parse` will have read so far: position after the previous note, current length (none yet)
+    let (mut cursor, mut length) = (0.0f64, f64::NAN);
+    let mut i = 0;
+    while i < sorted.len() {
+        let (start, len, _) = sorted[i];
+        let mut j = i + 1;
+        while j < sorted.len() && (sorted[j].0 - start).abs() < 1e-9 && (sorted[j].1 - len).abs() < 1e-9 {
+            j += 1;
+        }
+        let mut item = sorted[i..j].iter().map(|n| crate::sound::note_name(n.2)).collect::<Vec<_>>().join("+");
+        let (len_text, len_read) = number_text(len);
+        if length.is_nan() || (len_read - length).abs() > 1e-9 {
+            item += &format!(" {len_text}");
+            length = len_read;
+        }
+        let mut at = cursor;
+        if (start - cursor).abs() > 1e-6 {
+            let (start_text, start_read) = number_text(start);
+            item += &format!(" @{start_text}");
+            at = start_read;
+        }
+        cursor = at + length;
+        items.push(item);
+        i = j;
+    }
+    items.join(" · ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn format_writes_what_parse_reads_back() {
+        // chord, rest, triplets, a note under a held one, an off-grid start
+        let notes = vec![
+            (0.0, 2.0, 60), (0.0, 2.0, 64), (0.0, 2.0, 67),
+            (3.0, 1.0 / 3.0, 62), (3.0 + 1.0 / 3.0, 1.0 / 3.0, 63), (3.0 + 2.0 / 3.0, 1.0 / 3.0, 65),
+            (4.0, 0.5, 70), (4.0, 4.0, 48), (4.5, 0.5, 71), (9.1234, 0.25, 72),
+        ];
+        let text = format(&notes);
+        assert_eq!(text, "G4+E4+C4 2 · D4 1/3 @3 · Eb4 · F4 · Bb4 0.5 · C3 4 @4 · H4 0.5 @4.5 · C5 0.25 @9.123");
+        let back: Vec<(f64, f64, u8)> = parse(&text).unwrap().iter().map(|n| (n.start_beats, n.length_beats, n.pitch)).collect();
+        let mut want = notes.clone();
+        want.sort_by(|a, b| a.0.total_cmp(&b.0).then(b.2.cmp(&a.2)));
+        assert_eq!(back.len(), want.len());
+        for (b, w) in back.iter().zip(&want) {
+            assert!((b.0 - w.0).abs() < 1e-3 && (b.1 - w.1).abs() < 1e-9 && b.2 == w.2, "{b:?} vs {w:?}");
+        }
+        assert_eq!(format(&[]), "");
+    }
 
     fn short(n: &[Note]) -> Vec<(u8, f64, f64, u8)> {
         n.iter().map(|n| (n.pitch, n.start_beats, n.length_beats, n.velocity)).collect()

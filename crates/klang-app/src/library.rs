@@ -15,7 +15,7 @@ use klang_music::facets::{dimension, Dimension, TreeLevel, DIMENSIONS};
 use klang_music::index::MIN_QUERY_NOTES;
 use klang_music::library::voice_label;
 use klang_music::melody::{skyline, MelodyNote};
-use klang_music::score::{load_score, load_score_bytes, Score};
+use klang_music::score::{load_score, load_score_bytes, Part, Score, Voice};
 use serde::Serialize;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -847,89 +847,454 @@ pub fn to_track(
     tempo: Option<f64>,
 ) -> CmdResult<Snapshot> {
     let (info, score) = doc_and_score(st, doc)?;
-    if voices.is_empty() {
+    let all = score_voices(&score);
+    let picked = voices
+        .iter()
+        .map(|(part, label)| {
+            all.iter()
+                .position(|(p, v)| p.name == *part && voice_label(v) == *label)
+                .ok_or_else(|| tr!("Voice \"{part} {voice}\" not found", part = part, voice = label))
+        })
+        .collect::<CmdResult<Vec<usize>>>()?;
+    let req = ImportRequest { voices: picked, range, tempo, ..Default::default() };
+    let (cmd, _) = plan_import(st, &info, &score, &req)?;
+    st.execute(cmd, false)
+}
+
+// ---------------------------------------------------------------- Scores for the agent
+//
+// The agent addresses a score by the `doc` of any of its voice entries (from
+// `search_library`, `browse_library` or a melody hit) instead of a file path –
+// so the same works on the desktop, for the package the browser reads by range
+// and for the person's own scores. Texts here are for the agent (English, not
+// translated), like the other agent texts.
+
+/// The voices of a score in its order (part by part).
+pub fn score_voices(score: &Score) -> Vec<(&Part, &Voice)> {
+    score.parts.iter().flat_map(|p| p.voices.iter().map(move |v| (p, v))).collect()
+}
+
+/// Name of a voice: its part – with the voice label if the part has several
+/// voices (piano staves, divisi).
+pub fn voice_name(part: &Part, v: &Voice) -> String {
+    match (part.name.trim(), part.voices.len()) {
+        ("", _) => voice_label(v),
+        (name, 1) => name.to_string(),
+        (name, _) => format!("{name} {}", voice_label(v)),
+    }
+}
+
+/// A voice chosen by its number (1-based, as `read_library_score` lists them) or its name.
+#[derive(Clone, Debug, PartialEq)]
+pub enum VoicePick {
+    Number(usize),
+    Name(String),
+}
+
+/// Indices of the chosen voices in the order given, each once; nothing chosen = all.
+/// A name matches a voice's name or its part (then all voices of the part),
+/// ignoring case; failing that, every voice whose name contains it.
+pub fn pick_voices(score: &Score, picks: &[VoicePick]) -> Result<Vec<usize>, String> {
+    let all = score_voices(score);
+    if picks.is_empty() {
+        return Ok((0..all.len()).collect());
+    }
+    let listing = || all.iter().enumerate().map(|(i, (p, v))| format!("{} {}", i + 1, voice_name(p, v))).collect::<Vec<_>>().join(", ");
+    let matching = |f: &dyn Fn(&Part, &Voice) -> bool| all.iter().enumerate().filter(|(_, (p, v))| f(p, v)).map(|(i, _)| i).collect::<Vec<_>>();
+    let mut out = Vec::new();
+    for pick in picks {
+        let found = match pick {
+            VoicePick::Number(n) if (1..=all.len()).contains(n) => vec![n - 1],
+            VoicePick::Number(n) => return Err(format!("There is no voice {n} – the voices are: {}", listing())),
+            VoicePick::Name(name) => {
+                let want = name.trim().to_lowercase();
+                let mut f = matching(&|p, v| voice_name(p, v).to_lowercase() == want);
+                if f.is_empty() {
+                    f = matching(&|p, _| p.name.trim().to_lowercase() == want);
+                }
+                if f.is_empty() && !want.is_empty() {
+                    f = matching(&|p, v| voice_name(p, v).to_lowercase().contains(&want));
+                }
+                if f.is_empty() {
+                    return Err(format!("No voice \"{name}\" – the voices are: {}", listing()));
+                }
+                f
+            }
+        };
+        for i in found {
+            if !out.contains(&i) {
+                out.push(i);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Bars `from`…`to` (inclusive, as printed; 0 = pickup) as quarters [start, end).
+pub fn bars_range(score: &Score, from: u32, to: u32) -> Result<(f64, f64), String> {
+    let count = score.bar_count();
+    let first = if score.has_pickup() { 0 } else { 1 };
+    if from > to {
+        return Err(format!("fromBar ({from}) is after toBar ({to})"));
+    }
+    if from > count || to < first {
+        return Err(format!("The score has bars {first}–{count}"));
+    }
+    let (from, to) = (from.max(first), to.min(count));
+    Ok((score.bar_start(from), score.bar_start(to + 1)))
+}
+
+fn file_name(source: &str) -> String {
+    source.rsplit(['/', '\\']).next().unwrap_or(source).to_string()
+}
+
+/// A score found by `search_library`.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScoreHit {
+    /// A voice entry of the score – any of its voices stands for the score.
+    doc: u32,
+    title: String,
+    composer: String,
+    file: String,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    origin: &'static str,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    collection: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    license: String,
+}
+
+/// Text search for scores (title, composer, instruments, genre …) – one hit per score.
+pub fn find_scores(st: &AppState, text: &str, limit: usize) -> Result<Vec<ScoreHit>, String> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Err("Give a search text (words from the title, composer or instruments).".into());
+    }
+    let limit = limit.clamp(1, 200);
+    let lib = lock(&st.library)?;
+    let lib = lib.as_ref().ok_or("No library loaded – it is loaded at startup; check with library_status.")?;
+    // depending on the index a hit is a score or a single voice: one per score
+    let group = |raw: Vec<(u32, klang_music::index::DocInfo)>| {
+        let mut seen = std::collections::HashSet::new();
+        raw.into_iter()
+            .filter(|(_, i)| seen.insert((i.source.clone(), i.zip)))
+            .map(|(doc, i)| ScoreHit {
+                doc,
+                title: if i.title.trim().is_empty() { "(untitled)".into() } else { i.title.trim().to_string() },
+                composer: i.composer,
+                file: file_name(&i.source),
+                origin: origin(&lib.index, doc),
+                collection: i.collection,
+                license: i.license,
+            })
+            .collect::<Vec<_>>()
+    };
+    let raw = lib.index.search_text(text, limit);
+    let more = raw.len() >= limit;
+    let mut hits = group(raw);
+    if more && hits.len() < limit {
+        hits = group(lib.index.search_text(text, limit * 8));
+    }
+    hits.truncate(limit);
+    Ok(hits)
+}
+
+/// A voice as `read_library_score` lists it.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceRead {
+    /// Number for choosing it (1-based).
+    voice: usize,
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    role: Option<String>,
+    notes: usize,
+    /// Lowest – highest note.
+    range: String,
+    /// First and last bar in which it plays.
+    bars: (u32, u32),
+    /// Notes of the excerpt, compact; start positions in quarters from the excerpt's start.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    excerpt: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExcerptRead {
+    from_bar: u32,
+    to_bar: u32,
+    /// Where the excerpt lies in the score (quarters).
+    start_quarter: f64,
+    end_quarter: f64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CadenceRead {
+    bar: u32,
+    kind: String,
+}
+
+/// A library score for the agent: voices, bars, key – and the notes of an excerpt.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScoreRead {
+    doc: u32,
+    title: String,
+    composer: String,
+    file: String,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    origin: &'static str,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    collection: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    license: String,
+    /// Estimated key in the German notation of the other tools ("Es-Dur", "a-Moll").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    time_signature: Option<String>,
+    /// Notated tempo in quarters per minute.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tempo: Option<f64>,
+    /// Number of bars (as printed) and whether a pickup (bar 0) comes before bar 1.
+    bars: u32,
+    pickup: bool,
+    quarters: f64,
+    mood: String,
+    voices: Vec<VoiceRead>,
+    cadences: Vec<CadenceRead>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    excerpt: Option<ExcerptRead>,
+}
+
+/// At most this many notes per voice in an excerpt.
+const READ_MAX_NOTES: usize = 400;
+
+/// Notes of a voice in [from, to), trimmed at the edges, from `from`: (start, length, MIDI) in quarters.
+fn excerpt_notes(v: &Voice, from: f64, to: f64) -> Vec<(f64, f64, u8)> {
+    v.notes
+        .iter()
+        .filter_map(|n| {
+            let (a, b) = (n.onset.max(from), (n.onset + n.duration).min(to));
+            (b - a > 1e-6).then_some((a - from, b - a, n.midi))
+        })
+        .collect()
+}
+
+/// Reads a score: overview of all voices and – with `bars` or `notes` – the
+/// notes of the chosen voices (`picks`, nothing = all) in that bar range.
+pub fn read_score(st: &AppState, doc: u32, bars: Option<(u32, u32)>, picks: &[VoicePick], notes: bool) -> Result<ScoreRead, String> {
+    let (info, score) = doc_and_score(st, doc)?;
+    let range = bars.map(|(a, b)| bars_range(&score, a, b)).transpose()?;
+    let chosen = pick_voices(&score, picks)?;
+    let analysis = analyze_score(&score);
+    let with_notes = notes || bars.is_some();
+    let (from, to) = range.unwrap_or((0.0, f64::MAX));
+    let voices = score_voices(&score)
+        .into_iter()
+        .enumerate()
+        .map(|(i, (p, v))| {
+            let low = v.notes.iter().map(|n| n.midi).min().unwrap_or(0);
+            let high = v.notes.iter().map(|n| n.midi).max().unwrap_or(0);
+            let first = v.notes.first().map(|n| score.bar_at(n.onset)).unwrap_or(0);
+            let last = v.notes.iter().map(|n| n.onset).fold(0.0, f64::max);
+            let excerpt = (with_notes && chosen.contains(&i)).then(|| {
+                let all = excerpt_notes(v, from, to);
+                if all.is_empty() {
+                    return "(rests)".to_string();
+                }
+                let mut text = crate::notation::format(&all[..all.len().min(READ_MAX_NOTES)]);
+                if all.len() > READ_MAX_NOTES {
+                    text += &format!(" · … +{} more notes – read fewer bars", all.len() - READ_MAX_NOTES);
+                }
+                text
+            });
+            VoiceRead {
+                voice: i + 1,
+                name: voice_name(p, v),
+                role: analysis.voices.iter().find(|r| r.part == p.name && r.staff == v.staff && r.voice == v.voice).map(|r| r.role_label.clone()),
+                notes: v.notes.len(),
+                range: format!("{}–{}", crate::sound::note_name(low), crate::sound::note_name(high)),
+                bars: (first, score.bar_at(last)),
+                excerpt,
+            }
+        })
+        .collect();
+    let excerpt = match (with_notes, range) {
+        (true, Some((a, b))) => Some(ExcerptRead { from_bar: score.bar_at(a), to_bar: score.bar_at((b - 1e-3).max(a)), start_quarter: a, end_quarter: b }),
+        (true, None) => Some(ExcerptRead {
+            from_bar: if score.has_pickup() { 0 } else { 1 },
+            to_bar: score.bar_count(),
+            start_quarter: 0.0,
+            end_quarter: score.duration_quarters(),
+        }),
+        _ => None,
+    };
+    let origin = lock(&st.library)?.as_ref().map(|l| origin(&l.index, doc)).unwrap_or("");
+    Ok(ScoreRead {
+        doc,
+        title: if info.title.trim().is_empty() { "(untitled)".into() } else { info.title.trim().to_string() },
+        composer: info.composer,
+        file: file_name(&info.source),
+        origin,
+        collection: info.collection,
+        license: info.license,
+        key: analysis.key_name.clone(),
+        time_signature: score.time_signature.map(|(n, d)| format!("{n}/{d}")),
+        tempo: score.tempo_bpm,
+        bars: score.bar_count(),
+        pickup: score.has_pickup(),
+        quarters: analysis.duration_quarters,
+        mood: klang_i18n::translate(analysis.mood.label),
+        voices,
+        cadences: analysis.cadences.iter().take(60).map(|c| CadenceRead { bar: score.bar_at(c.onset), kind: c.label.to_string() }).collect(),
+        excerpt,
+    })
+}
+
+/// Which voices of a score go into the project, and how.
+#[derive(Clone, Debug, Default)]
+pub struct ImportRequest {
+    /// Indices into [`score_voices`].
+    pub voices: Vec<usize>,
+    /// Only this excerpt (quarters), from its start.
+    pub range: Option<(f64, f64)>,
+    /// Quarters per minute it should sound at the project tempo; `None` = quarter = beat.
+    pub tempo: Option<f64>,
+    /// Where the clips begin (beats).
+    pub start_beats: f64,
+    /// Per chosen voice an existing instrument track that gets the clip (`None` = a new track).
+    pub targets: Vec<Option<Id>>,
+}
+
+/// A voice that `import_voices` brought into the project.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportedTrack {
+    voice: usize,
+    name: String,
+    track_id: u64,
+    clip_id: u64,
+    track: String,
+    notes: usize,
+    new_track: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Imported {
+    title: String,
+    tracks: Vec<ImportedTrack>,
+    /// Chosen voices without notes in the range (not imported).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    skipped: Vec<String>,
+    start_beats: f64,
+    end_beats: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bars: Option<(u32, u32)>,
+    /// Project beats per quarter of the score.
+    beats_per_quarter: f64,
+}
+
+/// The command that takes the chosen voices over (one undo step) and what it brings in.
+fn plan_import(st: &AppState, info: &klang_music::index::DocInfo, score: &Score, req: &ImportRequest) -> CmdResult<(Command, Imported)> {
+    if req.voices.is_empty() {
         return Err(tr!("No voice selected."));
     }
+    let all = score_voices(score);
     let (bpb, per_quarter) = {
         let s = lock(&st.session)?;
         let p = &s.project;
-        (p.beats_per_bar as f64, beats_per_quarter(tempo, p.tempo_bpm, p.beat_unit as f64))
+        (p.beats_per_bar as f64, beats_per_quarter(req.tempo, p.tempo_bpm, p.beat_unit as f64))
     };
     // Excerpt: notes in the range, trimmed at the edges, from 0
-    let (from, to) = match range {
+    let (from, to) = match req.range {
         Some((a, b)) if b > a => (a.max(0.0), b),
         _ => (0.0, f64::MAX),
     };
-    let bars = range.map(|(a, b)| {
-        let (num, den) = score.time_signature.unwrap_or((4, 4));
-        let bar_q = (num.max(1) as f64 * 4.0 / den.max(1) as f64).max(0.25);
-        let (first, last) = ((a / bar_q).floor() as i64 + 1, ((b / bar_q) - 1e-6).ceil() as i64);
-        format!(" {}", tr!("(bars {from}–{to})", from = first, to = last))
-    });
-    let suffix = bars.unwrap_or_default();
+    let bars = req.range.map(|(a, b)| (score.bar_at(a), score.bar_at((b - 1e-3).max(a))));
+    let suffix = bars.map(|(a, b)| format!(" {}", tr!("(bars {from}–{to})", from = a, to = b))).unwrap_or_default();
     let title = if info.title.is_empty() { tr!("Library") } else { info.title.clone() };
     // Several voices of the same part (e.g. piano upper/lower): include the voice label in the name
-    let shared_part = |part: &str| voices.iter().filter(|(p, _)| p == part).count() > 1;
+    let shared_part = |part: &str| req.voices.iter().filter(|&&i| all.get(i).is_some_and(|(p, _)| p.name == part)).count() > 1;
+    let start = req.start_beats.max(0.0);
     // Voices without notes in the range are skipped
-    let mut tracks = Vec::new();
-    for (part, label) in &voices {
-        let v = score
-            .parts
-            .iter()
-            .filter(|p| p.name == *part)
-            .flat_map(|p| p.voices.iter())
-            .find(|v| voice_label(v) == *label)
-            .ok_or_else(|| tr!("Voice \"{part} {voice}\" not found", part = part, voice = label))?;
-        let notes: Vec<Note> = v
-            .notes
-            .iter()
-            .filter_map(|n| {
-                let (a, b) = (n.onset.max(from), (n.onset + n.duration).min(to));
-                (b - a > 1e-6).then(|| Note::new(n.midi, (a - from) * per_quarter, ((b - a) * per_quarter).max(0.05), 96))
-            })
+    let mut planned = Vec::new();
+    let mut skipped = Vec::new();
+    for (k, &i) in req.voices.iter().enumerate() {
+        let (p, v) = *all.get(i).ok_or_else(|| format!("There is no voice {}", i + 1))?;
+        let notes: Vec<Note> = excerpt_notes(v, from, to)
+            .into_iter()
+            .map(|(a, len, midi)| Note::new(midi, a * per_quarter, (len * per_quarter).max(0.05), 96))
             .collect();
         if notes.is_empty() {
+            skipped.push(voice_name(p, v));
             continue;
         }
         let end = notes.iter().map(|n| n.start_beats + n.length_beats).fold(0.0, f64::max);
         let mean = notes.iter().map(|n| n.pitch as f64).sum::<f64>() / notes.len() as f64;
         let kind = if mean < 48.0 { klang_core::InstrumentKind::Bass } else { klang_core::InstrumentKind::Pluck };
-        let name = if shared_part(part) { format!("{part} {label}") } else { part.clone() };
-        tracks.push((name, kind, end, notes));
+        let name = match p.name.trim() {
+            "" => voice_label(v),
+            n if shared_part(&p.name) => format!("{n} {}", voice_label(v)),
+            n => n.to_string(),
+        };
+        planned.push((i, name, kind, end, notes, req.targets.get(k).copied().flatten()));
     }
-    if tracks.is_empty() {
-        return Err(match (voices.len() == 1, range.is_some()) {
+    if planned.is_empty() {
+        return Err(match (req.voices.len() == 1, req.range.is_some()) {
             (true, true) => tr!("This voice has no notes in the selected range."),
             (true, false) => tr!("This voice has no notes."),
             (false, true) => tr!("The selected voices have no notes in the selected range."),
             (false, false) => tr!("The selected voices have no notes."),
         });
     }
-    let cmd = {
-        let mut s = lock(&st.session)?;
-        let p = &mut s.project;
-        let commands = tracks
-            .into_iter()
-            .map(|(name, kind, end, notes)| {
+    let mut s = lock(&st.session)?;
+    let p = &mut s.project;
+    let mut commands = Vec::new();
+    let mut tracks = Vec::new();
+    let mut end_beats = start;
+    for (i, name, kind, end, notes, target) in planned {
+        let length = (end / bpb).ceil().max(1.0) * bpb;
+        end_beats = end_beats.max(start + length);
+        let count = notes.len();
+        let clip = Clip { id: p.alloc_id(), name: format!("{title}{suffix}"), start_beats: start, source: ClipSource::Notes { length_beats: length, notes } };
+        let clip_id = clip.id.0;
+        let (voice, shown) = (i + 1, voice_name(all[i].0, all[i].1));
+        match target {
+            // agent only: an existing track gets the clip
+            Some(track_id) => {
+                let t = p.tracks.iter().find(|t| t.id == track_id).ok_or_else(|| format!("Track {} doesn't exist", track_id.0))?;
+                if t.kind != TrackKind::Instrument {
+                    return Err(format!("Track {} (\"{}\") is not an instrument track", track_id.0, t.name));
+                }
+                tracks.push(ImportedTrack { voice, name: shown, track_id: track_id.0, clip_id, track: t.name.clone(), notes: count, new_track: false });
+                commands.push(Command::AddClip { track_id, clip });
+            }
+            None => {
                 let mut track = Track::new(p.alloc_id(), format!("{title} – {name}{suffix}"), TrackKind::Instrument);
                 track.instrument = Some(crate::sound::default_instrument(kind));
-                track.clips.push(Clip {
-                    id: p.alloc_id(),
-                    name: format!("{title}{suffix}"),
-                    start_beats: 0.0,
-                    source: ClipSource::Notes { length_beats: (end / bpb).ceil().max(1.0) * bpb, notes },
-                });
-                Command::AddTrack { track, index: None }
-            })
-            .collect();
-        let label = if voices.len() > 1 {
-            trn!(voices.len(), "Import {n} voice from library", "Import {n} voices from library")
-        } else {
-            tr!("Import from library")
-        };
-        Command::Batch { label, commands }
-    };
-    st.execute(cmd, false)
+                tracks.push(ImportedTrack { voice, name: shown, track_id: track.id.0, clip_id, track: track.name.clone(), notes: count, new_track: true });
+                track.clips.push(clip);
+                commands.push(Command::AddTrack { track, index: None });
+            }
+        }
+    }
+    let n = tracks.len();
+    let label = if n > 1 { trn!(n, "Import {n} voice from library", "Import {n} voices from library") } else { tr!("Import from library") };
+    let out = Imported { title, tracks, skipped, start_beats: start, end_beats, bars, beats_per_quarter: per_quarter };
+    Ok((Command::Batch { label, commands }, out))
+}
+
+/// Takes the chosen voices of a library score (from [`doc_and_score`]) into the
+/// project – one undo step; with `if_revision` only if nobody changed the
+/// project in the meantime.
+pub fn import_voices(st: &AppState, info: &klang_music::index::DocInfo, score: &Score, req: &ImportRequest, if_revision: Option<u64>) -> CmdResult<Imported> {
+    let (cmd, out) = plan_import(st, info, score, req)?;
+    st.execute_if(cmd, if_revision)?;
+    Ok(out)
 }
 
 #[cfg(test)]

@@ -220,7 +220,11 @@ the browser just the same. There are two ways to reach them:
 
    To the agent this looks the same as on the desktop: the same tools, the
    same responses. Tools that don't exist in the browser (downloading and
-   managing the library) report that.
+   managing the library) report that. Scores of the library – the package on
+   the server and the person's own – are addressed by their `doc`, not by a
+   path (`search_library`, `read_library_score`, `import_library_score`,
+   `analyze_score {doc}`); a tool that needs ranges of the package returns
+   status 2 from `kw_mcp`, the worker fetches them and asks again.
 
 Changes made by the agent appear immediately in the UI (as on the desktop via
 the `project-changed` event).

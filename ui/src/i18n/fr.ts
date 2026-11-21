@@ -1692,6 +1692,8 @@ const dict: Dict = {
   "Change sound": "Modifier le son",
   "Sound \"{name}\": {words}": "Son « {name} » : {words}",
   "Melody search: {n} matches": { one: "Recherche de mélodie : {n} résultat", other: "Recherche de mélodie : {n} résultats" },
+  "Library search: {n} scores": { one: "Recherche dans la bibliothèque : {n} partition", other: "Recherche dans la bibliothèque : {n} partitions" },
+  "Reading score: {title}": "Lecture de la partition : {title}",
   "Undone: {label}": "Annulé : {label}",
   "Redone: {label}": "Rétabli : {label}",
   "Open project: {file}": "Ouvrir le projet : {file}",

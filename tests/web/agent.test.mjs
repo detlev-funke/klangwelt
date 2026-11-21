@@ -42,7 +42,8 @@ test("in the page: same tools as on the desktop, changes appear immediately", as
   const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
   assert.equal(init.result.serverInfo.name, "klangwelt");
   const tools = (await rpc("tools/list")).result.tools.map((t) => t.name);
-  for (const t of ["get_project", "execute", "create_instrument_track", "write_chords", "write_song", "analyze_harmony", "chat_poll"]) assert.ok(tools.includes(t), `Werkzeug ${t} fehlt`);
+  for (const t of ["get_project", "execute", "create_instrument_track", "write_chords", "write_song", "analyze_harmony", "chat_poll",
+    "history", "checkpoint", "goto", "variant_new", "variant_switch", "variant_list", "combine"]) assert.ok(tools.includes(t), `Werkzeug ${t} fehlt`);
   const r = await rpc("tools/call", { name: "create_instrument_track", arguments: { kind: "synth" } });
   assert.ok(!r.result.isError, JSON.stringify(r.result));
   // "project-changed" from the core: the UI shows the track without having called anything itself
@@ -289,4 +290,41 @@ test("batch: several tools as one undo step, reverted at the first error", async
   assert.match(e, /Call 2 \(execute\)/);
   await sleep(200);
   assert.equal(await app.eval(() => T.st.snapshot.peek().project.tracks.length), before);
+});
+
+test("change history: checkpoint, variant, combine with a conflict to decide, goto – the History window follows", async () => {
+  // one note per bar (8 bars); `changed` replaces some of them
+  const bars = (changed = {}) => [0, 1, 2, 3, 4, 5, 6, 7].map((i) => `${changed[i] ?? "C4"} 1 @${i * 4}`).join(" · ");
+  const r = await call("execute", { label: "Lead", commands: [{ type: "addTrack", track: { ref: "$lead", name: "Lead", kind: "instrument",
+    clips: [{ ref: "$a", startBeats: 0, source: { type: "notes", lengthBeats: 32, notes: bars() } }] } }] });
+  const [lead, clip] = [r.ids.$lead, r.ids.$a];
+  const setNotes = (changed) => call("execute", { commands: [{ type: "setClipNotes", trackId: lead, clipId: clip, notes: bars(changed) }] });
+  const pitches = (want) => app.waitFor((id, w) => T.st.snapshot.peek().project.tracks.find((t) => t.id === id)?.clips[0].source.notes.map((n) => n.pitch).join() === w,
+    { what: `Lead-Noten ${want}` }, lead, want);
+  const activeVariant = (name) => app.waitFor((n) => T.$(".hist-var.on")?.childNodes[1].textContent === n, { what: `Variante „${name}“ aktiv` }, name);
+
+  await app.eval(() => T.st.showPanel("historie"));
+  const cp = await call("checkpoint", { name: "Vor dem Refrain" });
+  await app.waitFor(() => T.$(".hist-row.current .hist-flag")?.textContent.trim() === "Vor dem Refrain", { what: "Checkpoint des Agenten in der Historie" });
+  await setNotes({ 4: "D4", 5: "D4" });
+  const main = (await call("history")).variant;
+  const v = await call("variant_new", { name: "Refrain", checkpoint: cp.checkpoint.id });
+  assert.equal(v.step, cp.step);
+  await activeVariant("Refrain");
+  await pitches("60,60,60,60,60,60,60,60");
+  await setNotes({ 5: "G4", 6: "G4", 7: "G4" });
+
+  // the conflict in bar 6 comes back open; "*" decides it for the main version
+  const c = await call("combine", { others: [main.id] });
+  assert.deepEqual([c.combined, c.open], [false, [`track ${lead} bar 6`]]);
+  const done = await call("combine", { others: [main.name], choices: { "*": main.id } });
+  assert.deepEqual([done.combined, done.variant.name], [true, `Refrain + ${main.name}`]);
+  await activeVariant(done.variant.name);
+  await pitches("60,60,60,60,62,62,67,67");
+
+  await call("goto", { checkpoint: "Vor dem Refrain" });
+  await pitches("60,60,60,60,60,60,60,60");
+  await call("goto", { step: done.step });
+  await pitches("60,60,60,60,62,62,67,67");
+  assert.match(await callError("batch", { calls: [{ tool: "combine", args: { others: [main.id] } }] }), /not allowed/);
 });

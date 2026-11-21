@@ -1277,6 +1277,16 @@ then runs `cargo build --release -p klangwelt --features tauri/custom-protocol`.
     `Session::squash` merges all undo steps since then into one, `Session::rollback` reverts
     them at the first error, redo included. `"$0.trackId"` takes a field of an earlier result; placeholders
     of an `execute` stay valid for the following calls.
+  * **Change history**: `history` (the table of `history::view`, compact: tempo, meter and key
+    only where they change, flags only when set, at most `limit` rows around the current step),
+    `checkpoint`, `goto {step | checkpoint}`, `variant_new {name, step | checkpoint}`,
+    `variant_switch`, `variant_list`. Variants and checkpoints are found by ID or name (shown or
+    stored, any case). `combine {base, others, choices, dryRun}` turns `history_merge_plan` into
+    decisions with IDs ("tempo", "track 12", "track 12 bars 5-6"); conflict options carry the
+    notes of each version in those bars. Without a choice for every conflict nothing changes and
+    the response lists `open`; otherwise `history_merge_apply`. `"*": variant` decides every
+    conflict that variant is part of. The tools that move or mark the history are refused
+    inside `batch` (its squash/rollback only knows its own steps).
 * **Chat** (`crates/klang-app/src/chat.rs`): the UI writes tasks
   (`chat_send`), the agent picks them up with `chat_poll` – a long poll over
   `Mutex` + `Condvar` that waits up to `timeoutSeconds` and returns

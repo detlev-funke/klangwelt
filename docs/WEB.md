@@ -323,7 +323,8 @@ page and via the stdio bridge, agent window with prompt (roles, Playwright varia
 (a task from the chat wakes it, timeout, each task delivered only once), reserving and
 offering again after the lease, `chat_peek`, stop button and `cancelRequested`, the agent
 indicator (listening and working), `revision`/`ifRevision`, placeholders, compact notes,
-`get_project` filters and `batch` as one undo step.
+`get_project` filters, `batch` as one undo step, and the change history tools (checkpoint,
+variant, `combine` with a conflict to decide, `goto`) with the History window following.
 
 ## Performance
 

@@ -13,13 +13,15 @@
 //! manage libraries) it provides through [`AgentShell`].
 
 use crate::harmony::{self, KeyInfo};
+use crate::history::{MergeRequest, MergeView};
 use crate::sound::{self, note_name};
 use crate::rhythm;
 use crate::song;
 use crate::sound_library;
 use crate::state::{lock, AppState};
-use klang_core::{ClipSource, Command, Id, Instrument, InstrumentKind, TrackPatch};
-use klang_i18n::{tr, trn};
+use klang_core::merge::{Choices, SegmentChoice, Source, ORIGIN};
+use klang_core::{ClipSource, Command, History, Id, Instrument, InstrumentKind, NodeId, TrackPatch};
+use klang_i18n::{tr, translate, trn};
 use klang_mcp::{Handler, Prompt, ServerInfo, Tool};
 use klang_music::analysis::analyze_score;
 use klang_music::chordstats::GROUPS;
@@ -62,6 +64,8 @@ if someone changed the project in the meantime, read again and retry.\n\
 - Write in few calls: `execute` with placeholders (ref \"$bass\" for new tracks/clips, then trackId \"$bass\"), notes compact \
 (\"C4 1 · E4 .5 v100 · G4 .5\"), several tools at once with `batch` (one undo step). Write responses return new IDs and the revision.\n\
 - Only touch your track(s). Project-wide changes (tempo, delete_range, write_song) only if the task asks for them.\n\
+- Before a bigger change (a whole section, several tracks, write_song) set a `checkpoint` named after the task, so the person can go back \
+to it; to offer alternatives, build each in its own variant (`variant_new`) and say which one is active.\n\
 - Report progress with `chat_reply` (replyTo = task id, done=false), finish with done=true: one or two sentences in the person's \
 language on what you changed.\n\
 - If a tool response contains cancelRequested with your task id, stop at once and reply done=true (\"Stopped.\"). Between steps \
@@ -93,6 +97,15 @@ overwriting: execute with ifRevision fails if someone changed the project in the
 in a row as one undo step (stops and reverts at the first error; \"$0.trackId\" uses a result of an earlier call). \
 Every writing tool returns the new `revision`, `change` and the IDs it created. Notes can also be written compactly: \
 \"C4 1 · E4 .5 v100 · G4 .5\" (pitch, length in beats, v = velocity; + for chords, r = rest; German note names H = B, B = B♭).\n\
+Change history (window \"History\"; saved in the project file): every change is a step in a tree. `history` shows the steps of the \
+active variant compactly (step IDs, labels, where they changed something, key figures), `goto` jumps to any step or checkpoint – the later \
+steps stay and can be redone. Before a bigger change (rewriting a section, write_song, delete_range, reworking several tracks) set a \
+`checkpoint` with a telling name, so you and the person can go back to it. To try ideas side by side: `variant_new` (named after the idea) \
+starts a branch from the current state or a step – work in it; `variant_switch` goes back and forth, `variant_list` lists them. `combine` \
+(base, others) brings variants together into a NEW variant: per track and bar section it takes what only one variant changed; where \
+several changed the same bars, sound or tempo differently, it changes nothing and returns `open` conflicts with their options (incl. the \
+notes) – decide each with `choices` ({id: variant ID or name, 0 = origin}) and call it again. Tell the person which variant is active \
+afterwards. These tools don't run inside batch.\n\
 {ROLES}\n\
 Audio clips with `warp: true` play at the project tempo; `sourceBpm` is the tempo they were recorded at.\n\
 Audio and ranges: `import_audio` inserts audio files (WAV, AIFF, FLAC, Opus; no MP3) as tracks. `audio_to_notes` converts a recording \
@@ -306,7 +319,8 @@ fn tools(packs: &[&'static str]) -> Vec<Tool> {
             "Runs several tool calls in a row as ONE undo step and stops at the first error – then everything before it is reverted too \
              (except effects outside the project such as saved sounds, exports or chat messages). Saves a round per call. \
              In args, \"$0.trackId\" uses a field of the result of call 0 (\"$2.trackIds.1\" = second entry), \"$bass\" a placeholder declared with ref in an execute before. \
-             Not allowed inside: batch, chat_poll, undo, redo, open_project. Results come back in order (execute without the project).",
+             Not allowed inside: batch, chat_poll, undo, redo, open_project and the history tools that move or mark the history (checkpoint, goto, \
+             variant_new, variant_switch, combine). Results come back in order (execute without the project).",
             schema(json!({
                 "calls": { "type": "array", "minItems": 1, "maxItems": 50, "items": { "type": "object", "properties": {
                     "tool": { "type": "string" }, "args": { "type": "object" } }, "required": ["tool"] } },
@@ -314,6 +328,49 @@ fn tools(packs: &[&'static str]) -> Vec<Tool> {
                 "ifRevision": { "type": "integer", "description": "Only if the project is still at this revision" } }), &["calls"]), false),
         tool("undo", "Undo", "Reverts the last step (including changes made in the interface).", schema(json!({}), &[]), false),
         tool("redo", "Redo", "Restores the most recently reverted step.", schema(json!({}), &[]), false),
+        tool("history", "Change history",
+            "The change history as a compact table: the steps of the active variant, oldest first – step (ID for goto), label, detail (where: tracks, \
+             bars, notes, tempo), key figures after the step (tracks, notes, length in beats; tempo, meter and key only where they change), \
+             current = the project's state now, redo = steps after it that can be redone, checkpoints on the step, branches = other variants or \
+             set-aside steps that leave the line there. Plus the variants and checkpoints. limit: rows at most (default 40, around the current step).",
+            schema(json!({ "limit": { "type": "integer", "minimum": 1, "maximum": 1000 } }), &[]), true),
+        tool("checkpoint", "Set checkpoint",
+            "Names the current state – before a bigger change, so you and the person can find it and go back to it (goto with checkpoint). \
+             Doesn't change the project; appears as a flag in the History window. Without a name: \"Checkpoint 1\", \"Checkpoint 2\" …",
+            schema(json!({ "name": { "type": "string", "minLength": 1, "maxLength": 80 } }), &[]), false),
+        tool("goto", "Go to a state",
+            "Puts the project to the state after a step – like undo/redo across many steps at once; the later steps stay and can be redone. \
+             step: ID from history; or checkpoint: its ID or name. A step on another variant switches to that variant; a step among set-aside \
+             steps (edited after an undo) brings them back as a new variant.",
+            schema(json!({ "step": { "type": "integer", "minimum": 1 }, "checkpoint": { "type": ["integer", "string"], "description": "Checkpoint ID or name" } }), &[]), false),
+        tool("variant_new", "New variant",
+            "Starts a variant – a branch of the history – at the current state, or at step/checkpoint (the project goes there). The following \
+             changes go into the new variant, the other variants stay as they are. To try an idea without losing the current version: variant_new \
+             named after the idea, change, compare with variant_switch, bring the good parts together with combine.",
+            schema(json!({ "name": { "type": "string", "minLength": 1, "maxLength": 80, "description": "Default \"Variant 2\" …" },
+                "step": { "type": "integer", "minimum": 1 }, "checkpoint": { "type": ["integer", "string"], "description": "Checkpoint ID or name" } }), &[]), false),
+        tool("variant_switch", "Switch variant",
+            "Switches to a variant (ID or name): the project goes to its newest state, new changes go into it.",
+            schema(json!({ "variant": { "type": ["integer", "string"], "description": "Variant ID or name" } }), &["variant"]), false),
+        tool("variant_list", "List variants",
+            "All variants: ID, name, active, newest step (head) and its label, where it branches off the others (fork) and its own steps since then.",
+            schema(json!({}), &[]), true),
+        tool("combine", "Combine variants",
+            "Combines variants into a NEW variant (one step; the variants themselves stay) and switches to it. Three-way merge against their \
+             common origin: per track the bars each variant changed (rounded to whole bars), the track itself (sound, mix, name, added or \
+             removed) and tempo/time signature. What only one variant changed is taken from it; where several changed the same thing \
+             differently there is a conflict. If a conflict has no choice, nothing changes: the response lists the decisions (id, by, take) \
+             and in open the conflicts, each with its options (variant, name, the notes in those bars as \"pitch length @beat\"). Then call again \
+             with choices {id: variant ID or name, 0 = origin}; \"*\": variant decides every conflict that variant is part of. A choice may also \
+             override a decision without conflict (0 = keep the origin there). base: the variant the result builds on (track order, name; default \
+             the active one); others: the variants to bring in. dryRun: only show the decisions.",
+            schema(json!({
+                "base": { "type": ["integer", "string"], "description": "Variant ID or name; default the active variant" },
+                "others": { "type": "array", "minItems": 1, "items": { "type": ["integer", "string"] }, "description": "Variant IDs or names" },
+                "choices": { "type": "object", "additionalProperties": { "type": ["integer", "string"] },
+                    "description": "Decision id (from open/decisions) → variant ID or name, 0 or \"origin\" = as in the common origin; \"*\" = every conflict that variant is part of" },
+                "name": { "type": "string", "maxLength": 80, "description": "Name of the new variant; default \"A + B\"" },
+                "dryRun": { "type": "boolean", "description": "Only show the decisions, change nothing" } }), &["others"]), false),
         tool("transport", "Control playback", "Starts/stops playback or jumps to a position.",
             schema(json!({ "action": { "enum": ["play", "stop", "toggle", "rewind"] }, "positionBeats": { "type": "number", "minimum": 0 } }), &[]), false),
         tool("set_metronome", "Metronome", "Turns the metronome on or off.", schema(json!({ "enabled": { "type": "boolean" } }), &["enabled"]), false),
@@ -906,7 +963,7 @@ impl<S: AgentShell> Agent<S> {
         for (i, call) in calls.iter().enumerate() {
             let tool = call.get("tool").and_then(Value::as_str).unwrap_or_default();
             let mut run = || -> Result<Value, String> {
-                if matches!(tool, "batch" | "chat_poll" | "undo" | "redo" | "open_project") {
+                if matches!(tool, "batch" | "chat_poll" | "undo" | "redo" | "open_project") || HISTORY_MOVES.contains(&tool) {
                     return Err(format!("{tool} is not allowed inside batch"));
                 }
                 if !Handler::tools(self).iter().any(|t| t.name == tool) {
@@ -1120,6 +1177,467 @@ impl<S: AgentShell> Agent<S> {
     }
 }
 
+// ---------------------------------------------------------------- Change history
+
+/// History tools that move or mark the history – not inside `batch`, whose
+/// squash and rollback only know the steps the batch made itself.
+const HISTORY_MOVES: [&str; 5] = ["checkpoint", "goto", "variant_new", "variant_switch", "combine"];
+
+/// Same text, ignoring case and surrounding spaces.
+fn same_name(a: &str, b: &str) -> bool {
+    a.trim().to_lowercase() == b.trim().to_lowercase()
+}
+
+fn variant_names(h: &History) -> String {
+    h.variants().iter().map(|x| format!("{} \"{}\"", x.id, translate(&x.name))).collect::<Vec<_>>().join(", ")
+}
+
+/// A variant from an argument: its ID or its name (as shown or as stored).
+fn variant_arg(h: &History, v: &Value) -> Result<u32, String> {
+    let id = match v {
+        Value::Number(n) => n.as_u64().and_then(|x| u32::try_from(x).ok()),
+        Value::String(s) => s.trim().parse::<u32>().ok().or_else(|| h.variants().iter().find(|x| same_name(&translate(&x.name), s) || same_name(&x.name, s)).map(|x| x.id)),
+        _ => None,
+    };
+    match id {
+        Some(id) if h.variant(id).is_some() => Ok(id),
+        _ => Err(format!("Variant {v} doesn't exist – the variants are: {}", variant_names(h))),
+    }
+}
+
+/// The step of a checkpoint given by ID or name.
+fn checkpoint_arg(h: &History, v: &Value) -> Result<NodeId, String> {
+    let by_id = |id: u64| h.checkpoints().iter().find(|c| u64::from(c.id) == id);
+    let found = match v {
+        Value::Number(n) => n.as_u64().and_then(by_id),
+        Value::String(s) => h.checkpoints().iter().find(|c| same_name(&c.name, s)).or_else(|| s.trim().parse::<u64>().ok().and_then(by_id)),
+        _ => None,
+    };
+    found.map(|c| c.node).ok_or_else(|| {
+        let all: Vec<String> = h.checkpoints().iter().map(|c| format!("{} \"{}\"", c.id, c.name)).collect();
+        if all.is_empty() { format!("Checkpoint {v} doesn't exist – there are none yet") } else { format!("Checkpoint {v} doesn't exist – the checkpoints are: {}", all.join(", ")) }
+    })
+}
+
+/// `step` or `checkpoint` from the arguments; `None` if neither is given.
+fn step_arg(h: &History, a: &Value) -> Result<Option<NodeId>, String> {
+    match (a.get("step").filter(|v| !v.is_null()), a.get("checkpoint").filter(|v| !v.is_null())) {
+        (Some(_), Some(_)) => Err("Give step or checkpoint, not both".into()),
+        (Some(s), None) => {
+            let id = s.as_u64().and_then(|x| NodeId::try_from(x).ok()).ok_or("step must be a step ID from history")?;
+            if h.node(id).is_none() {
+                return Err(format!("Step {id} is not in the history – history lists the steps"));
+            }
+            Ok(Some(id))
+        }
+        (None, Some(c)) => checkpoint_arg(h, c).map(Some),
+        (None, None) => Ok(None),
+    }
+}
+
+/// Where the project stands in the history: step, its label, the active variant.
+fn position(h: &History) -> Value {
+    let cur = h.current();
+    let v = h.active();
+    let mut o = json!({ "step": cur, "variant": { "id": v.id, "name": translate(&v.name) } });
+    if let Some(n) = h.node(cur) {
+        o["label"] = json!(translate(&n.label));
+        o["tracks"] = json!(n.metrics.tracks);
+        o["notes"] = json!(n.metrics.notes);
+    }
+    o
+}
+
+/// The history table for the agent: the rows around the current step; tempo,
+/// meter and key only where they change, flags only when set.
+fn history_table(h: &History, limit: usize) -> Value {
+    let v = crate::history::view(h);
+    let n = v.rows.len();
+    let limit = limit.clamp(1, 1000);
+    let cur = v.rows.iter().position(|r| r.current).unwrap_or(n.saturating_sub(1));
+    let (start, end) = if n <= limit {
+        (0, n)
+    } else if cur + limit / 2 >= n {
+        (n - limit, n)
+    } else {
+        let s = cur.saturating_sub(limit / 2);
+        (s, (s + limit).min(n))
+    };
+    let mut last: Option<(f64, String, Option<String>)> = None;
+    let steps: Vec<Value> = v.rows[start..end]
+        .iter()
+        .map(|r| {
+            let m = &r.metrics;
+            let mut o = json!({ "step": r.id, "label": r.label, "tracks": m.tracks, "notes": m.notes, "beats": m.length_beats });
+            if !r.detail.is_empty() {
+                o["detail"] = json!(r.detail);
+            }
+            let meter = format!("{}/{}", m.beats_per_bar, m.beat_unit);
+            let (tempo_new, meter_new, key_new) = match &last {
+                None => (true, true, m.key.is_some()),
+                Some(p) => (p.0 != m.tempo, p.1 != meter, m.key.is_some() && p.2 != m.key),
+            };
+            if tempo_new {
+                o["tempo"] = json!(m.tempo);
+            }
+            if meter_new {
+                o["meter"] = json!(meter);
+            }
+            if key_new {
+                o["key"] = json!(m.key);
+            }
+            last = Some((m.tempo, meter, m.key.clone()));
+            if r.current {
+                o["current"] = json!(true);
+            }
+            if r.future {
+                o["redo"] = json!(true);
+            }
+            if !r.checkpoints.is_empty() {
+                o["checkpoints"] = json!(r.checkpoints.iter().map(|c| &c.name).collect::<Vec<_>>());
+            }
+            if !r.forks.is_empty() {
+                let branches: Vec<Value> = r
+                    .forks
+                    .iter()
+                    .map(|f| match &f.variant {
+                        Some(x) => json!({ "step": f.node, "steps": f.steps, "variant": x.id, "name": x.name }),
+                        // goto its tip brings the set-aside steps back as a variant
+                        None => json!({ "step": f.node, "steps": f.steps, "tip": f.tip, "setAside": true }),
+                    })
+                    .collect();
+                o["branches"] = json!(branches);
+            }
+            o
+        })
+        .collect();
+    let mut out = json!({
+        "current": v.current,
+        "variant": v.variants.iter().find(|x| x.active).map(|x| json!({ "id": x.id, "name": x.name })),
+        "steps": steps,
+        "variants": v.variants.iter().map(|x| json!({ "id": x.id, "name": x.name, "head": x.head, "active": x.active })).collect::<Vec<_>>(),
+        "checkpoints": v.checkpoints.iter().map(|c| {
+            let mut o = json!({ "id": c.id, "name": c.name, "step": c.node });
+            if !c.on_line {
+                o["onLine"] = json!(false);
+                if let Some(name) = &c.variant {
+                    o["variant"] = json!(name);
+                }
+            }
+            o
+        }).collect::<Vec<_>>(),
+        "total": v.total,
+    });
+    if start > 0 || end < n {
+        out["omitted"] = json!({ "before": start, "after": n - end });
+    }
+    out
+}
+
+fn variant_list(h: &History) -> Value {
+    let v = crate::history::view(h);
+    let variants: Vec<Value> = v
+        .variants
+        .iter()
+        .map(|x| json!({ "id": x.id, "name": x.name, "active": x.active, "head": x.head, "last": x.last, "fork": x.fork, "steps": x.steps }))
+        .collect();
+    json!({ "active": v.active, "current": v.current, "variants": variants })
+}
+
+/// Where a choice of `combine` goes.
+enum Pick {
+    Project,
+    Track(String),
+    Segment(String, f64),
+}
+
+/// One decision of combining, for the agent.
+struct Decision {
+    /// Key in `choices`: "tempo", "track 12", "track 12 bars 5-6".
+    id: String,
+    pick: Pick,
+    by: Vec<Source>,
+    conflict: bool,
+    /// Track, bars, what changed.
+    info: Value,
+    /// The versions to choose from.
+    options: Vec<Value>,
+}
+
+fn source_name(view: &MergeView, s: Source) -> String {
+    if s == ORIGIN {
+        return "origin".into();
+    }
+    view.variants.iter().find(|v| v.id == s).map(|v| v.name.clone()).unwrap_or_else(|| s.to_string())
+}
+
+fn fmt_beats(x: f64) -> String {
+    let r = (x * 1000.0).round() / 1000.0;
+    if r.fract() == 0.0 { format!("{r:.0}") } else { format!("{r}") }
+}
+
+/// The notes of one version of a track in [a, b), compact: "E4 1 @20 · G4 0.5 @21"
+/// (pitch, length, beat in the song).
+fn lane_notes(lane: Option<&crate::history::LaneDto>, a: f64, b: f64) -> String {
+    const MAX: usize = 32;
+    let Some(l) = lane else { return String::new() };
+    if !l.present {
+        return "(no track)".into();
+    }
+    let mut notes: Vec<&[f32; 3]> = l.notes.iter().filter(|n| f64::from(n[0]) >= a - 1e-6 && f64::from(n[0]) < b - 1e-6).collect();
+    notes.sort_by(|x, y| x[0].total_cmp(&y[0]).then(x[2].total_cmp(&y[2])));
+    let mut parts: Vec<String> = notes.iter().take(MAX).map(|n| format!("{} {} @{}", note_name(n[2] as u8), fmt_beats(f64::from(n[1])), fmt_beats(f64::from(n[0])))).collect();
+    if notes.len() > MAX {
+        parts.push(format!("… +{} more", notes.len() - MAX));
+    }
+    let audio = l.audio.iter().filter(|r| f64::from(r[0]) < b && f64::from(r[1]) > a).count();
+    if audio > 0 {
+        parts.push(format!("{audio} recording(s)"));
+    }
+    if parts.is_empty() { "(empty)".into() } else { parts.join(" · ") }
+}
+
+/// Every decision of a combination: tempo/time signature, per track the track
+/// itself and each changed bar section.
+fn decisions(view: &MergeView) -> Vec<Decision> {
+    let name = |s: Source| source_name(view, s);
+    let mut out = Vec::new();
+    let p = &view.project;
+    if !p.by.is_empty() {
+        out.push(Decision {
+            id: "tempo".into(),
+            pick: Pick::Project,
+            by: p.by.clone(),
+            conflict: p.conflict,
+            info: json!({ "what": "tempo/time signature" }),
+            options: p.options.iter().map(|m| json!({ "variant": m.source, "name": name(m.source), "tempo": m.tempo, "meter": format!("{}/{}", m.beats_per_bar, m.beat_unit) })).collect(),
+        });
+    }
+    let bpb = f64::from(view.beats_per_bar.max(1));
+    for t in &view.tracks {
+        let track = json!({ "track": t.name, "trackId": t.track_id });
+        if !t.settings_by.is_empty() {
+            let mut info = track.clone();
+            info["what"] = json!(t.changes.iter().map(|c| format!("{}: {}", name(c.source), c.what)).collect::<Vec<_>>().join("; "));
+            let mut options = vec![json!({ "variant": ORIGIN, "name": name(ORIGIN), "what": if t.in_origin { "as before" } else { "no track" } })];
+            options.extend(t.changes.iter().map(|c| json!({ "variant": c.source, "name": name(c.source), "what": c.what })));
+            out.push(Decision { id: format!("track {}", t.key), pick: Pick::Track(t.key.clone()), by: t.settings_by.clone(), conflict: t.settings_conflict, info, options });
+        }
+        for s in &t.segments {
+            let (from, to) = ((s.start / bpb).round() as i64 + 1, (s.end / bpb).round() as i64);
+            let bars = if to <= from { format!("bar {from}") } else { format!("bars {from}-{to}") };
+            let mut info = track.clone();
+            info["bars"] = json!(bars);
+            info["beats"] = json!([s.start, s.end]);
+            let options = std::iter::once(ORIGIN)
+                .chain(s.by.iter().copied())
+                .map(|src| json!({ "variant": src, "name": name(src), "notes": lane_notes(t.lanes.iter().find(|l| l.source == src), s.start, s.end) }))
+                .collect();
+            out.push(Decision { id: format!("track {} {bars}", t.key), pick: Pick::Segment(t.key.clone(), s.start), by: s.by.clone(), conflict: s.conflict, info, options });
+        }
+    }
+    out
+}
+
+/// Decision IDs compare without case, extra spaces or the kind of dash.
+fn norm_id(s: &str) -> String {
+    s.to_lowercase().replace(['–', '—'], "-").split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// A version in `choices`: variant ID or name, 0 or "origin".
+fn choice_source(view: &MergeView, v: &Value) -> Result<Source, String> {
+    let s = match v {
+        Value::Number(n) => n.as_u64().and_then(|x| u32::try_from(x).ok()),
+        Value::String(s) if same_name(s, "origin") => Some(ORIGIN),
+        Value::String(s) => s.trim().parse::<u32>().ok().or_else(|| view.variants.iter().find(|x| same_name(&x.name, s)).map(|x| x.id)),
+        _ => None,
+    };
+    match s {
+        Some(s) if s == ORIGIN || view.variants.iter().any(|x| x.id == s) => Ok(s),
+        _ => Err(format!(
+            "choices: {v} is not one of the variants being combined ({}) – or 0 = origin",
+            view.variants.iter().map(|x| format!("{} \"{}\"", x.id, x.name)).collect::<Vec<_>>().join(", ")
+        )),
+    }
+}
+
+/// The agent's `choices` as [`Choices`], and per decision the version chosen for it.
+fn parse_choices(view: &MergeView, ds: &[Decision], given: Option<&Value>) -> Result<(Choices, Vec<Option<Source>>), String> {
+    let mut picked: Vec<Option<Source>> = vec![None; ds.len()];
+    let mut c = Choices::default();
+    let Some(given) = given.filter(|v| !v.is_null()) else { return Ok((c, picked)) };
+    let map = given.as_object().ok_or("choices must be an object {decision id: variant}")?;
+    let mut all = None;
+    for (k, v) in map {
+        let s = choice_source(view, v)?;
+        if k.trim() == "*" {
+            all = Some(s);
+            continue;
+        }
+        let i = ds.iter().position(|d| norm_id(&d.id) == norm_id(k)).ok_or_else(|| {
+            let ids: Vec<&str> = ds.iter().map(|d| d.id.as_str()).collect();
+            if ids.is_empty() { format!("choices: there is nothing to decide (\"{k}\")") } else { format!("choices: unknown decision \"{k}\" – the decisions are: {}", ids.join(", ")) }
+        })?;
+        picked[i] = Some(s);
+    }
+    if let Some(s) = all {
+        for (i, d) in ds.iter().enumerate() {
+            if picked[i].is_none() && d.conflict && (s == ORIGIN || d.by.contains(&s)) {
+                picked[i] = Some(s);
+            }
+        }
+    }
+    for (d, s) in ds.iter().zip(&picked) {
+        let Some(s) = *s else { continue };
+        match &d.pick {
+            Pick::Project => c.project = Some(s),
+            Pick::Track(k) => {
+                c.tracks.insert(k.clone(), s);
+            }
+            Pick::Segment(k, start) => c.segments.push(SegmentChoice { key: k.clone(), start: *start, source: s }),
+        }
+    }
+    Ok((c, picked))
+}
+
+impl<S: AgentShell> Agent<S> {
+    fn with_history<T>(&self, f: impl FnOnce(&History) -> T) -> Result<T, String> {
+        Ok(f(lock(&self.st().session)?.history()))
+    }
+
+    /// `combine`: what combining means; with a choice for every conflict
+    /// (and without dryRun) the new variant.
+    fn combine(&self, args: &Value) -> Result<Value, String> {
+        let st = self.st();
+        let (base, others) = self.with_history(|h| -> Result<(u32, Vec<u32>), String> {
+            let base = match args.get("base").filter(|v| !v.is_null()) {
+                Some(v) => variant_arg(h, v)?,
+                None => h.active().id,
+            };
+            let given = match args.get("others") {
+                Some(Value::Array(a)) => a.clone(),
+                Some(v) if !v.is_null() => vec![v.clone()],
+                _ => Vec::new(),
+            };
+            let mut others = Vec::new();
+            for v in &given {
+                let id = variant_arg(h, v)?;
+                if id != base && !others.contains(&id) {
+                    others.push(id);
+                }
+            }
+            if others.is_empty() {
+                return Err(format!("Give others: the variants to bring into variant {base} – the variants are: {}", variant_names(h)));
+            }
+            Ok((base, others))
+        })??;
+        let view = st.history_merge_plan(base, &others)?;
+        let ds = decisions(&view);
+        let (choices, picked) = parse_choices(&view, &ds, args.get("choices"))?;
+        let name = |s: Source| source_name(&view, s);
+        let open: Vec<&str> = ds.iter().zip(&picked).filter(|(d, p)| d.conflict && p.is_none()).map(|(d, _)| d.id.as_str()).collect();
+        let decided: Vec<Value> = ds
+            .iter()
+            .zip(&picked)
+            .map(|(d, p)| {
+                let mut o = d.info.clone();
+                o["id"] = json!(d.id);
+                o["by"] = json!(d.by.iter().map(|s| name(*s)).collect::<Vec<_>>());
+                o["take"] = json!(p.or_else(|| (!d.conflict).then(|| d.by[0])).map(name));
+                if d.conflict {
+                    o["conflict"] = json!(true);
+                    if p.is_none() {
+                        o["options"] = json!(d.options);
+                    }
+                }
+                if p.is_some() {
+                    o["chosen"] = json!(true);
+                }
+                o
+            })
+            .collect();
+        let mut out = json!({
+            "base": { "id": base, "name": name(base) },
+            "variants": view.variants.iter().map(|v| json!({ "id": v.id, "name": v.name })).collect::<Vec<_>>(),
+            "origin": { "step": view.origin.node, "label": view.origin.label, "checkpoints": view.origin.checkpoints },
+            "decisions": decided,
+        });
+        let dry = args.get("dryRun").and_then(Value::as_bool).unwrap_or(false);
+        if dry || !open.is_empty() {
+            out["combined"] = json!(false);
+            out["open"] = json!(open);
+            out["hint"] = json!(if open.is_empty() {
+                "dryRun – nothing changed. Call again without dryRun to create the combined variant."
+            } else {
+                "Nothing changed yet. Decide every id in open with choices – e.g. {\"<id>\": <variant ID or name>}, 0 = keep the origin; \"*\": <variant> = that variant in every conflict it is part of – and call combine again."
+            });
+            return Ok(out);
+        }
+        let label = tr!("Combined: {names}", names = view.variants.iter().skip(1).map(|v| v.name.as_str()).collect::<Vec<_>>().join(", "));
+        let new_name = args.get("name").and_then(Value::as_str).map(str::to_string);
+        st.history_merge_apply(&MergeRequest { target: base, others, choices }, new_name)?;
+        self.changed("combine", label);
+        let pos = self.with_history(position)?;
+        if let (Some(o), Some(p)) = (out.as_object_mut(), pos.as_object()) {
+            o.extend(p.clone());
+        }
+        out["ok"] = json!(true);
+        out["combined"] = json!(true);
+        Ok(out)
+    }
+
+    /// Runs a history change that moves the project; answers with where it stands.
+    fn history_moved(&self, tool: &str, summary: impl FnOnce(&Value) -> String) -> Result<Value, String> {
+        let mut pos = self.with_history(position)?;
+        self.changed(tool, summary(&pos));
+        pos["ok"] = json!(true);
+        Ok(pos)
+    }
+
+    fn history_tool(&self, name: &str, args: &Value) -> Result<Value, String> {
+        let st = self.st();
+        let text = |v: &Value| v.as_str().unwrap_or_default().to_string();
+        match name {
+            "history" => {
+                let limit = args.get("limit").and_then(Value::as_u64).unwrap_or(40) as usize;
+                self.with_history(|h| history_table(h, limit))
+            }
+            "variant_list" => self.with_history(variant_list),
+            "checkpoint" => {
+                let name = args.get("name").and_then(Value::as_str).map(str::to_string);
+                let v = st.history_checkpoint(name)?;
+                let c = v.checkpoints.iter().max_by_key(|c| c.id).ok_or("No checkpoint was set")?;
+                self.changed("checkpoint", tr!("Checkpoint \"{name}\"", name = c.name));
+                let label = v.rows.iter().find(|r| r.id == c.node).map(|r| r.label.clone());
+                Ok(json!({ "ok": true, "checkpoint": { "id": c.id, "name": c.name }, "step": c.node, "label": label }))
+            }
+            "goto" => {
+                let (target, before) = self.with_history(|h| (step_arg(h, args), h.variants().len()))?;
+                let target = target?.ok_or("Give step (an ID from history) or checkpoint (its ID or name)")?;
+                st.history_goto(target)?;
+                let mut out = self.history_moved("goto", |p| format!("{} → {}", tr!("History"), text(&p["label"])))?;
+                if self.with_history(|h| h.variants().len())? > before {
+                    out["variantCreated"] = json!(true);
+                }
+                Ok(out)
+            }
+            "variant_new" => {
+                let at = self.with_history(|h| step_arg(h, args))??;
+                st.history_variant_new(args.get("name").and_then(Value::as_str).map(str::to_string), at)?;
+                self.history_moved("variant_new", |p| format!("{}: {}", tr!("New variant"), text(&p["variant"]["name"])))
+            }
+            "variant_switch" => {
+                let v = args.get("variant").filter(|v| !v.is_null()).ok_or("Argument \"variant\" (ID or name) is missing")?;
+                let id = self.with_history(|h| variant_arg(h, v))??;
+                st.history_variant_switch(id)?;
+                self.history_moved("variant_switch", |p| tr!("Variant \"{name}\"", name = text(&p["variant"]["name"])))
+            }
+            "combine" => self.combine(args),
+            other => Err(format!("Unknown tool: {other}")),
+        }
+    }
+}
+
 impl<S: AgentShell> Handler for Agent<S> {
     fn info(&self) -> ServerInfo {
         ServerInfo {
@@ -1219,6 +1737,7 @@ impl<S: AgentShell> Agent<S> {
             "execute" => self.execute(&args, &mut BTreeMap::new()),
             "batch" => self.batch(&args),
             "chat_peek" => Ok(self.chat_peek(&args)),
+            "history" | "variant_list" | "checkpoint" | "goto" | "variant_new" | "variant_switch" | "combine" => self.history_tool(name, &args),
             "undo" | "redo" => {
                 let label = { let s = lock(&st.session)?; if name == "undo" { s.undo_label() } else { s.redo_label() }.map(str::to_string) };
                 let Some(label) = label else { return Ok(json!({ "ok": false, "info": "Nothing to do" })) };
@@ -2083,6 +2602,140 @@ mod tests {
         assert!(e.contains("cancelRequested"), "{e}");
         call(&a, "chat_reply", json!({ "text": "Gestoppt.", "replyTo": task.id }));
         assert!(call(&a, "get_project", json!({})).get("cancelRequested").is_none());
+    }
+
+    /// Pitches of the first clip of a track.
+    fn pitches(a: &Agent<TestShell>, track: u64) -> Vec<u8> {
+        let s = lock(&a.st().session).unwrap();
+        match &s.project.track(Id(track)).unwrap().clips[0].source {
+            ClipSource::Notes { notes, .. } => notes.iter().map(|n| n.pitch).collect(),
+            _ => vec![],
+        }
+    }
+
+    /// One note per bar (8 bars), the ones at `changed` (bar index → pitch name) replaced.
+    fn bars_of_notes(changed: &[(usize, &str)]) -> String {
+        (0..8).map(|i| format!("{} 1 @{}", changed.iter().find(|c| c.0 == i).map_or("C4", |c| c.1), i * 4)).collect::<Vec<_>>().join(" · ")
+    }
+
+    #[test]
+    fn history_tools_checkpoint_variants_goto_and_combine() {
+        let a = agent();
+        let r = call(&a, "execute", json!({ "commands": [{ "type": "addTrack", "track": { "ref": "$lead", "name": "Lead", "kind": "instrument",
+            "clips": [{ "ref": "$a", "startBeats": 0, "source": { "type": "notes", "lengthBeats": 32, "notes": bars_of_notes(&[]) } }] } }] }));
+        let (lead, clip) = (r["ids"]["$lead"].as_u64().unwrap(), r["ids"]["$a"].as_u64().unwrap());
+        let set_notes = |changed: &[(usize, &str)]| {
+            call(&a, "execute", json!({ "commands": [{ "type": "setClipNotes", "trackId": lead, "clipId": clip, "notes": bars_of_notes(changed) }] }));
+        };
+
+        // a checkpoint names the current state without changing the project
+        let rev = call(&a, "get_project", json!({ "fields": ["name"] }))["revision"].clone();
+        let cp = call(&a, "checkpoint", json!({ "name": "Rohfassung" }));
+        assert_eq!(cp["checkpoint"]["name"], "Rohfassung");
+        assert!(cp.get("revision").is_none(), "no new revision: {cp}");
+        assert_eq!(call(&a, "get_project", json!({ "fields": ["name"] }))["revision"], rev);
+        let base = cp["step"].as_u64().unwrap();
+        let h = call(&a, "history", json!({}));
+        let steps = h["steps"].as_array().unwrap();
+        assert_eq!(steps.len(), 2);
+        assert_eq!((steps[0]["label"].as_str(), steps[0]["tempo"].as_f64(), steps[0]["meter"].as_str()), (Some("New project"), Some(120.0), Some("4/4")));
+        assert_eq!(steps[1]["step"].as_u64(), Some(base));
+        assert_eq!(steps[1]["checkpoints"], json!(["Rohfassung"]));
+        assert_eq!((steps[1]["current"].as_bool(), steps[1]["tracks"].as_u64(), steps[1]["notes"].as_u64()), (Some(true), Some(1), Some(8)));
+        assert!(steps[1].get("tempo").is_none(), "tempo only where it changes");
+        assert_eq!(h["checkpoints"][0]["step"].as_u64(), Some(base));
+        assert_eq!(h["variant"]["name"], "Main version");
+
+        // the main version changes bars 5–6 and adds a pad
+        set_notes(&[(4, "D4"), (5, "D4")]);
+        let pad = call(&a, "execute", json!({ "commands": [{ "type": "addTrack", "track": { "ref": "$pad", "name": "Pad", "kind": "instrument",
+            "clips": [{ "startBeats": 16, "source": { "type": "notes", "lengthBeats": 8, "notes": "C3 8" } }] } }] }))["ids"]["$pad"].as_u64().unwrap();
+        // a variant from the checkpoint: back to the rough version, the main version stays
+        let v = call(&a, "variant_new", json!({ "name": "Refrain", "checkpoint": "rohfassung" }));
+        assert_eq!((v["variant"]["name"].as_str(), v["step"].as_u64()), (Some("Refrain"), Some(base)));
+        assert!(v["revision"].is_u64(), "the project moved: {v}");
+        assert_eq!(pitches(&a, lead), vec![60; 8]);
+        assert_eq!(tracks(&a), 1);
+        set_notes(&[(5, "G4"), (6, "G4"), (7, "G4")]);
+        let list = call(&a, "variant_list", json!({}));
+        let vs = list["variants"].as_array().unwrap();
+        assert_eq!(vs.iter().map(|x| (x["name"].as_str().unwrap(), x["active"].as_bool().unwrap(), x["steps"].as_u64().unwrap())).collect::<Vec<_>>(), [("Main version", false, 2), ("Refrain", true, 1)]);
+        let (main, refrain) = (vs[0]["id"].as_u64().unwrap(), vs[1]["id"].as_u64().unwrap());
+        assert_eq!(call(&a, "variant_switch", json!({ "variant": "main version" }))["variant"]["id"].as_u64(), Some(main));
+        assert_eq!(tracks(&a), 2);
+        call(&a, "variant_switch", json!({ "variant": refrain }));
+
+        // combining onto the active variant: the conflict in bar 6 comes back open, nothing changes
+        let rev = call(&a, "get_project", json!({ "fields": ["name"] }))["revision"].clone();
+        let c = call(&a, "combine", json!({ "others": ["Main version"] }));
+        assert_eq!(c["combined"], false);
+        assert_eq!(c["base"]["name"], "Refrain");
+        assert_eq!(c["origin"]["checkpoints"], json!(["Rohfassung"]));
+        let conflict = format!("track {lead} bar 6");
+        assert_eq!(c["open"], json!([conflict]));
+        let ds = c["decisions"].as_array().unwrap();
+        let by_id = |id: &str| ds.iter().find(|d| d["id"] == id).unwrap_or_else(|| panic!("{id} in {ds:?}")).clone();
+        assert_eq!((by_id(&format!("track {lead} bar 5"))["take"].as_str(), by_id(&format!("track {lead} bars 7-8"))["take"].as_str()), (Some("Main version"), Some("Refrain")));
+        assert_eq!(by_id(&format!("track {pad}"))["take"], "Main version");
+        let open = by_id(&conflict);
+        assert_eq!((open["conflict"].as_bool(), open["take"].is_null(), open["bars"].as_str()), (Some(true), true, Some("bar 6")));
+        let options: Vec<(u64, &str)> = open["options"].as_array().unwrap().iter().map(|o| (o["variant"].as_u64().unwrap(), o["notes"].as_str().unwrap())).collect();
+        assert_eq!(options, [(0, "C4 1 @20"), (refrain, "G4 1 @20"), (main, "D4 1 @20")]);
+        assert_eq!(call(&a, "get_project", json!({ "fields": ["name"] }))["revision"], rev, "an open conflict changes nothing");
+        assert_eq!(call(&a, "variant_list", json!({}))["variants"].as_array().unwrap().len(), 2);
+
+        // "*" decides every conflict a variant is part of; dryRun only shows it
+        let dry = call(&a, "combine", json!({ "others": [main], "choices": { "*": "Refrain" }, "dryRun": true }));
+        assert_eq!((dry["combined"].as_bool(), dry["open"].clone()), (Some(false), json!([])));
+        assert_eq!(dry["decisions"].as_array().unwrap().iter().find(|d| d["id"] == conflict.as_str()).unwrap()["take"], "Refrain");
+        // wrong ids and variants are refused with the valid ones
+        let e = Handler::call(&a, "combine", json!({ "others": [main], "choices": { "track 999": 1 } })).unwrap_err();
+        assert!(e.contains("unknown decision") && e.contains(&conflict), "{e}");
+        let e = Handler::call(&a, "combine", json!({ "others": [main], "choices": { conflict.as_str(): 77 } })).unwrap_err();
+        assert!(e.contains("not one of the variants"), "{e}");
+        assert!(Handler::call(&a, "combine", json!({ "others": ["Refrain"] })).unwrap_err().contains("Give others"));
+
+        // with a choice: the new variant, the project at it
+        // ids compare without case and extra spaces
+        let loose = format!("Track  {}", &conflict[6..]);
+        let c = call(&a, "combine", json!({ "others": ["Main version"], "choices": { loose.as_str(): main }, "name": "Beides" }));
+        assert_eq!((c["combined"].as_bool(), c["variant"]["name"].as_str()), (Some(true), Some("Beides")));
+        assert_eq!(c["label"], "Combined: Main version");
+        assert_eq!(c["created"]["tracks"], json!([pad]));
+        assert_eq!(pitches(&a, lead), vec![60, 60, 60, 60, 62, 62, 67, 67]);
+        assert_eq!(tracks(&a), 2);
+        let combined = c["step"].as_u64().unwrap();
+
+        // goto: to a checkpoint, to a step; the later steps stay
+        let g = call(&a, "goto", json!({ "checkpoint": "Rohfassung" }));
+        assert_eq!((g["step"].as_u64(), g["variant"]["name"].as_str()), (Some(base), Some("Beides")));
+        assert_eq!(tracks(&a), 1);
+        let h = call(&a, "history", json!({}));
+        assert!(h["steps"].as_array().unwrap().iter().any(|s| s["step"].as_u64() == Some(combined) && s["redo"] == true), "{h}");
+        call(&a, "goto", json!({ "step": combined }));
+        assert_eq!(pitches(&a, lead), vec![60, 60, 60, 60, 62, 62, 67, 67]);
+        // editing after an undo sets the combined step aside; goto brings it back as a variant
+        call(&a, "undo", json!({}));
+        call(&a, "execute", json!({ "commands": [{ "type": "setTrack", "trackId": lead, "patch": { "gainDb": -3 } }] }));
+        let h = call(&a, "history", json!({}));
+        let branches = h["steps"].as_array().unwrap().iter().filter_map(|s| s.get("branches")?.as_array()).flatten();
+        let aside = branches.into_iter().find(|x| x["setAside"] == true).cloned().unwrap_or_else(|| panic!("{h}"));
+        let g = call(&a, "goto", json!({ "step": aside["tip"] }));
+        assert_eq!(g["variantCreated"], true);
+        assert_eq!(g["step"].as_u64(), Some(combined));
+        // a short table keeps the current step
+        let h = call(&a, "history", json!({ "limit": 2 }));
+        assert_eq!(h["steps"].as_array().unwrap().len(), 2);
+        assert!(h["omitted"]["before"].as_u64().unwrap() > 0);
+        assert!(h["steps"].as_array().unwrap().iter().any(|s| s["current"] == true));
+
+        // mistakes say what exists; history moves don't run inside batch
+        assert!(Handler::call(&a, "goto", json!({ "step": 9999 })).unwrap_err().contains("not in the history"));
+        assert!(Handler::call(&a, "goto", json!({ "checkpoint": "Nope" })).unwrap_err().contains("Rohfassung"));
+        assert!(Handler::call(&a, "variant_switch", json!({ "variant": "Nope" })).unwrap_err().contains("Refrain"));
+        let e = Handler::call(&a, "batch", json!({ "calls": [{ "tool": "checkpoint", "args": {} }] })).unwrap_err();
+        assert!(e.contains("not allowed"), "{e}");
+        assert_eq!(call(&a, "batch", json!({ "calls": [{ "tool": "history", "args": { "limit": 1 } }] }))["results"][0]["steps"].as_array().unwrap().len(), 1);
     }
 
     #[test]

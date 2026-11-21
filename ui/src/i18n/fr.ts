@@ -3,6 +3,36 @@
 import type { Dict } from "../i18n.js";
 
 const dict: Dict = {
+  // several voices at once – polyphonic analysis (ui/src/voices.ts, components/voicesanalysis.ts, crates/klang-app/src/voices.rs)
+  "Detecting voices…": "Détection des voix…",
+  "Created {n} tracks, one per voice: {notes} notes ({how})": { one: "{n} piste créée pour la voix : {notes} notes ({how})", other: "{n} pistes créées, une par voix : {notes} notes ({how})" },
+  "Detected {n} voices": { one: "{n} voix détectée", other: "{n} voix détectées" },
+  "Live analysis · several voices": "Analyse en direct · plusieurs voix",
+  "Sounding now": "Joue en ce moment",
+  "Voices, each in its color": "Voix, chacune dans sa couleur",
+  "found so far": "détectées jusqu'ici",
+  "as chosen": "comme choisi",
+  "Convert to voice tracks": "Convertir en pistes de voix",
+  "Several voices": "Plusieurs voix",
+  "Several voices at once (a choir, a piano, guitar with bass): one instrument track per voice right below": "Plusieurs voix à la fois (un chœur, un piano, guitare et basse) : une piste d'instrument par voix juste en dessous",
+  "One line": "Une ligne",
+  "A melody: singing, whistling, one instrument – with dynamics, accents and articulation": "Une mélodie : chant, sifflement, un instrument – avec dynamique, accents et articulation",
+  "Several voices at once: a choir, a piano, guitar with bass – one track per voice": "Plusieurs voix à la fois : un chœur, un piano, guitare et basse – une piste par voix",
+  "Find out how many voices the recording has": "Déterminer combien de voix contient l'enregistrement",
+  "Exactly {n} voices": "Exactement {n} voix",
+  "found in the recording": "trouvées dans l'enregistrement",
+  "Per voice: short fragments and repeated notes of one pitch are merged": "Par voix : les fragments courts et les notes répétées de même hauteur sont fusionnés",
+  "Voices → instrument tracks": { one: "Voix → piste d'instrument", other: "Voix → pistes d'instrument" },
+  "pitches found": "hauteurs trouvées",
+  "No notes detected.": "Aucune note détectée.",
+  "\"{name}\" is not an audio clip.": "« {name} » n'est pas un clip audio.",
+  "Recording converted: {n} voices": "Enregistrement converti : {n} voix",
+  "\"voices\" must be \"auto\" or a number from 1 to {max}": "« voices » doit valoir « auto » ou un nombre de 1 à {max}",
+  "No notes were detected in it – for drums, use \"Convert to rhythm track\".": "Aucune note n'y a été détectée – pour une batterie, utilisez « Convertir en piste rythmique ».",
+  "Voice {n} from {name}": "Voix {n} de {name}",
+  "**Several voices** at once – a choir, a piano, guitar with bass: choose \"Several voices\" in the analysis window, or right-click a recording → **Convert to voice tracks**. It finds how many voices there are (Auto) or takes the number you choose, shows each voice in its color – live while recording, too – and makes one instrument track per voice.": "**Plusieurs voix** à la fois – un chœur, un piano, guitare et basse : choisissez « Plusieurs voix » dans la fenêtre « Analyse », ou faites un clic droit sur un enregistrement → **Convertir en pistes de voix**. Klangwelt détermine combien de voix il y a (Auto) ou prend le nombre choisi, montre chaque voix dans sa couleur – aussi en direct pendant l'enregistrement – et crée une piste d'instrument par voix.",
+  "One line: a melody with its dynamics, accents and articulation. Several voices: every voice of a choir, a piano or guitar with bass – Auto finds how many there are. The choice applies to the live view, the analysis and converting into notes.": "Une ligne : une mélodie avec sa dynamique, ses accents et son articulation. Plusieurs voix : chaque voix d'un chœur, d'un piano ou de guitare et basse – Auto détermine combien il y en a. Le choix vaut pour la vue en direct, l'analyse et la conversion en notes.",
+
   // smoothing notes from recordings (ui/src/smoothing.ts, crates/klang-core/src/smooth.rs, crates/klang-app/src/convert.rs)
   "{n} fragments smoothed": { one: "{n} fragment lissé", other: "{n} fragments lissés" },
   "Nothing to smooth in these {n} notes ({strength})": { one: "Rien à lisser dans cette note ({strength})", other: "Rien à lisser dans ces {n} notes ({strength})" },

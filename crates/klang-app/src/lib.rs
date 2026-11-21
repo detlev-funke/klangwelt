@@ -42,6 +42,7 @@ pub mod sound;
 pub mod sound_library;
 pub mod state;
 pub mod vfs;
+pub mod voices;
 pub mod weblib;
 
 pub use host::Host;

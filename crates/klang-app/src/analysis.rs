@@ -253,6 +253,11 @@ impl LiveAnalysis {
         self.take
     }
 
+    /// Onsets found so far (seconds) – the polyphonic live analysis uses them, too.
+    pub fn onsets(&self) -> &[f32] {
+        self.tracker.onsets()
+    }
+
     /// Measures new samples (mono, at the rate given at the start).
     pub fn push(&mut self, samples: &[f32]) {
         if samples.is_empty() {

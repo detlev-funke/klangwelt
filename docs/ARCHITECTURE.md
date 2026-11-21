@@ -327,6 +327,59 @@ taken into account.
   additionally looks for energy jumps (≥ 6 dB in 20 ms) in the low band. The
   grid is sixteenths, keeping the loudest hit per drum and step.
 
+**Several voices at once** (`klang_dsp::poly`, `crates/klang-app/src/voices.rs`)
+– a second analysis mode next to the single line (which stays as it is),
+carried over from the LED light organ's analysis (its slow path: HPSS,
+candidate lists with strengths, Viterbi) and taken further to several voices:
+
+* `PolyStream`: STFT (≈ 90 ms Hann window, 1/8 hop, amplitude-normalized) →
+  HPSS (median over ≈ 380 ms of time keeps held tones, over 17 bins of
+  frequency keeps hits; soft Wiener mask; above 800 Hz only bins standing above
+  the local floor count, against snare noise) → whitening in third-octave bands
+  (lift capped at 10× the loudest band's floor, so empty bands don't blow
+  leakage up into evidence) → per frame several pitches by iterative harmonic
+  subtraction (Klapuri: salience on a fifth-semitone grid summing 16 partials
+  with weights (f0+27)/(h·f0+320); the strongest is taken, its partials are
+  subtracted – only the smooth share where a partial stands far above its
+  neighbours, so a note hidden in another's partial survives; one more while
+  the accumulated salience / count^0.3 grows). Rejected per frame: a pitch
+  already found (its residue), a weak pitch on a partial of a stronger one, a
+  low pitch without two strong partials among its first four (a kick is a
+  falling sine, a two-thirds subharmonic lacks its first partials), and a pitch
+  with even but hardly odd partials is moved an octave up. The same code runs
+  offline and live with bounded memory, ≈ 0.2 s behind; 26× real time natively.
+* `track_notes`: per MIDI pitch a two-state HMM (sounding/silent) decoded with
+  Viterbi (emission: a sigmoid of the salience relative to a clearly sounding
+  note); gaps up to 0.2 s without an onset are bridged (a beating partial);
+  an onset with a rise of that pitch's amplitude after a dip splits a note.
+  Dropped: short weak notes, short notes far off the tuning or with a wandering
+  pitch (a filter sweep), shadows (much weaker, within a note an octave,
+  twelfth or two octaves above, without a fundamental of their own) and
+  hand-overs (a note starting without an onset in the series below another one
+  and outlasting it – its low part, e.g. a bass synth's sub-oscillator, extends
+  the note above).
+* `voice_count`: the polyphony 90 % of the sounding time stays within (max 6);
+  `assign_voices`: notes starting together go to the free voices top to bottom
+  by an order-preserving matching with the smallest leaps (voices start at the
+  register quantiles); extra notes join the nearest voice as a chord.
+* `voices.rs`: `analyze_voices` (cached per recording; voices "auto" or 1–6),
+  `audio_to_voices` – one instrument track per voice below the recording (the
+  highest first; a low lowest voice becomes a bass track), each voice smoothed
+  and snapped to sixteenths, one undo step; `LiveVoices` gets the samples of the
+  single-line live analysis and its onsets, a note settles once it ended 0.6 s
+  before the newest frame (frames before every open note are dropped).
+  Commands: `analyze_voices`, `record_live_voices`, `record_start {mode,
+  voices}`, `audio_to_notes`/`create_melody_track` with `mode: "poly"`; MCP
+  `analyze_clip`/`audio_to_notes` with `mode`/`voices`. UI: `ui/src/voices.ts`
+  (mode and count in localStorage), `components/voicesanalysis.ts`, the live
+  view in `liveanalysis.ts`.
+* Measured (Rust tests): a three-voice chorale on Klangwelt's own instruments
+  comes back 3 voices, ≥ 75 % of each voice's notes with the right pitch and
+  onset, every found note in the right voice; bass + melody, a chord, drums
+  under a bass line. Known limits: a note that is exactly a partial of a louder
+  one (a fifth or third over the bass) can hide for a while; a bass synth's
+  sub-oscillator may leave the octave below as a note.
+
 ## Importing audio files (`crates/klang-app/src/audiofile.rs`, `ui/src/filedrop.ts`)
 
 * **Decoders without third-party libraries** (except libopus, which is built

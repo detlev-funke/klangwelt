@@ -113,7 +113,9 @@ into a melody track (detected pitches with their dynamics, accents/sforzati and 
 `delete_range` deletes a time range from all tracks, everything after it moves up (clips are split or shortened). \
 `quantize_notes` snaps notes to the grid (grid in beats: 1 = quarter, 0.5 = eighth, 0.25 = sixteenth). \
 `smooth_notes` cleans up notes that came from a recording: unusually short fragments go into a neighbour, repeated notes of the same pitch \
-without a new attack become one (`audio_to_notes` and `melody_to_track` already smooth, `smooth` off … strong, default medium).\n\
+without a new attack become one (`audio_to_notes` and `melody_to_track` already smooth, `smooth` off … strong, default medium). \
+For several voices at once (a choir, a piano, guitar with bass) use mode 'poly' in `analyze_clip` and `audio_to_notes`: it finds how many voices there are \
+(voices 'auto', or a number) and makes one instrument track per voice.\n\
 Editing notes: read `get_project` with includeNotes, then `setClipNotes` with the complete new note list (start/length in beats relative to the clip start). \
 `setTrack` with patch {view:'notes'} shows a track as a piano roll, {view:'compact'} flat again.\n\
 Expression of individual notes (in `setClipNotes`): `velocity` 1–127 (pp≈32, p≈48, mp≈64, mf≈80, f≈100, ff≈120; crescendo = rising values), \
@@ -295,6 +297,9 @@ fn tools(packs: &[&'static str]) -> Vec<Tool> {
     let id = json!({ "type": "integer", "minimum": 1 });
     // how much a detected melody is smoothed when it becomes notes
     let smooth = json!({ "enum": ["off", "light", "medium", "strong"] });
+    // one line or several voices at once, and how many
+    let mode = json!({ "enum": ["mono", "poly"], "description": "mono = one line (default), poly = several voices at once" });
+    let voices = json!({ "type": ["string", "integer"], "description": "'auto' (default: found from the recording) or 1–6" });
     let pattern = json!({ "enum": sound::all_preview_keys(),
         "description": "Preview pattern per instrument – pluck: akkord (chord), tonleiter (scale), einzelton (single note); drums: beat, kick, snare, clap, hihat, hihat-offen (open), toms; bass: basslinie (bass line), einzelton" });
     let kind = json!({ "enum": ["pluck", "drums", "bass", "organ", "harpsichord", "synth"],
@@ -501,8 +506,9 @@ fn tools(packs: &[&'static str]) -> Vec<Tool> {
         tool("preview_sound", "Preview sound", "Plays a short preview pattern with the instrument track's sound, independent of playback.",
             schema(json!({ "trackId": id, "pattern": pattern }), &["trackId"]), false),
         tool("analyze_clip", "Analyze recording",
-            "Analyzes an audio clip: detected notes (cleaned up) with how they were played – velocity 1–127 (dynamics relative to the recording, the median note is mf = 80), attack (normal, accent, sforzato) and articulation (normal, staccato, legato) – key, tempo estimate and hits with fundamental (also drums: kick, snare, toms; grundton null = unpitched like a hi-hat).",
-            schema(json!({ "trackId": id, "clipId": id }), &["trackId", "clipId"]), true),
+            "Analyzes an audio clip: detected notes (cleaned up) with how they were played – velocity 1–127 (dynamics relative to the recording, the median note is mf = 80), attack (normal, accent, sforzato) and articulation (normal, staccato, legato) – key, tempo estimate and hits with fundamental (also drums: kick, snare, toms; grundton null = unpitched like a hi-hat). \
+             mode 'poly': several voices at once instead of one line – how many voices (voices 'auto' or 1–6) and the notes of each voice (stimme 1 = the highest).",
+            schema(json!({ "trackId": id, "clipId": id, "mode": mode, "voices": voices }), &["trackId", "clipId"]), true),
         tool("melody_to_track", "Import melody",
             "Creates an instrument track from the detected melody of an audio clip (smoothed, quantized to sixteenths) – with the detected dynamics as velocity, a brighter attack for accents and sforzati, staccato notes short and legato notes up to the next one. smooth: see audio_to_notes.",
             schema(json!({ "trackId": id, "clipId": id, "smooth": smooth }), &["trackId", "clipId"]), false),
@@ -511,8 +517,9 @@ fn tools(packs: &[&'static str]) -> Vec<Tool> {
              target 'melodie': detected pitches, snapped to sixteenths, with the played dynamics, accents/sforzati (velocity, brighter attack) and staccato/legato lengths (a low register becomes a bass track); 'rhythmus': detected hits as a drum track \
              (kick, snare, hi-hat by timbre). Without clipId all audio clips of the track. \
              smooth (melody only, default 'medium'): first merges what pitch detection split up – unusually short fragments (scoops, octave slips, vibrato swings) \
-             into a neighbour, a held note split into notes of the same pitch back into one; 'off' keeps every detected note.",
-            schema(json!({ "trackId": id, "clipId": id, "target": { "enum": ["melodie", "rhythmus"] }, "smooth": smooth }), &["trackId", "target"]), false),
+             into a neighbour, a held note split into notes of the same pitch back into one; 'off' keeps every detected note. \
+             mode 'poly' (melody only): several voices at once – one instrument track per voice directly below (the highest first, a low lowest voice becomes a bass track); voices 'auto' or 1–6.",
+            schema(json!({ "trackId": id, "clipId": id, "target": { "enum": ["melodie", "rhythmus"] }, "smooth": smooth, "mode": mode, "voices": voices }), &["trackId", "target"]), false),
         tool("import_audio", "Insert audio files",
             "Inserts audio files as tracks (one undo step): one new audio track per file with a clip at startBeats. With the trackId of an audio track \
              the first file goes into that track, further ones as new tracks below. Formats: WAV (8/16/24/32 bit, floating point), AIFF, FLAC, Opus; \
@@ -655,6 +662,19 @@ fn tools(packs: &[&'static str]) -> Vec<Tool> {
 fn parse_kind(a: &Value) -> Result<InstrumentKind, String> {
     let k = a.get("kind").cloned().ok_or("Argument \"kind\" is missing (pluck, drums, bass, organ, harpsichord or synth)")?;
     serde_json::from_value(k).map_err(|_| "\"kind\" must be pluck, drums, bass, organ, harpsichord or synth".to_string())
+}
+
+/// Analysis mode (mono, poly – also German); missing = mono.
+fn mode_arg(a: &Value) -> Result<crate::voices::AnalysisMode, String> {
+    match a.get("mode") {
+        None | Some(Value::Null) => Ok(Default::default()),
+        Some(v) => serde_json::from_value(v.clone()).map_err(|_| "\"mode\" must be 'mono' or 'poly'".to_string()),
+    }
+}
+
+/// Voices: "auto" (or missing) or 1–6.
+fn voices_arg(a: &Value) -> Result<klang_dsp::poly::VoiceCount, String> {
+    crate::voices::parse_voices(a.get("voices").unwrap_or(&Value::Null))
 }
 
 /// Smoothing strength (off, light, medium, strong – also German); missing = medium.
@@ -2082,6 +2102,26 @@ impl<S: AgentShell> Agent<S> {
                 self.activity("preview_sound", tr!("Preview: {what}", what = pattern));
                 Ok(json!({ "spielt": pattern, "sekunden": secs }))
             }
+            "analyze_clip" if mode_arg(&args)? == crate::voices::AnalysisMode::Poly => {
+                let clip = st.clip(Id(u64_arg(&args, "trackId")?), Id(u64_arg(&args, "clipId")?))?;
+                let ClipSource::Audio { asset_id, .. } = &clip.source else {
+                    return Err(tr!("\"{name}\" is not an audio clip.", name = clip.name));
+                };
+                let a = st.analyze_voices(asset_id, voices_arg(&args)?)?;
+                Ok(json!({
+                    "clip": clip.name,
+                    "dauerSekunden": a.duration_secs,
+                    "stimmen": a.voices,
+                    "automatisch": a.auto,
+                    "tonart": a.key.as_ref().map(|k| &k.name),
+                    "tempoSchaetzung": a.tempo_estimate,
+                    "proStimme": (0..a.voices).map(|v| json!({
+                        "stimme": v + 1,
+                        "noten": a.notes.iter().filter(|n| n.voice == v).map(|n| json!({
+                            "midi": n.midi, "name": note_name(n.midi), "start": n.start_secs, "ende": n.end_secs, "velocity": n.velocity })).collect::<Vec<_>>()
+                    })).collect::<Vec<_>>()
+                }))
+            }
             "analyze_clip" => {
                 let (clip, a) = st.clip_analysis(Id(u64_arg(&args, "trackId")?), Id(u64_arg(&args, "clipId")?))?;
                 Ok(json!({
@@ -2113,6 +2153,12 @@ impl<S: AgentShell> Agent<S> {
                     crate::convert::Target::Melodie => tr!("Convert to melody track"),
                     crate::convert::Target::Rhythmus => tr!("Convert to rhythm track"),
                 });
+                if target == crate::convert::Target::Melodie && mode_arg(&args)? == crate::voices::AnalysisMode::Poly {
+                    let label = tr!("Agent · {label}", label = tr!("Convert to voice tracks"));
+                    let r = st.audio_to_voices(Id(u64_arg(&args, "trackId")?), clip, &label, strength_arg(&args, "smooth")?, voices_arg(&args)?)?;
+                    self.changed("audio_to_notes", tr!("Recording converted: {n} voices", n = r.voices));
+                    return Ok(json!({ "ok": true, "trackId": r.track_id, "trackIds": r.track_ids, "stimmen": r.voices, "noten": r.notes, "geglaettet": r.smoothed }));
+                }
                 let r = st.audio_to_notes(Id(u64_arg(&args, "trackId")?), clip, target, &label, strength_arg(&args, "smooth")?)?;
                 self.changed("audio_to_notes", trn!(r.notes, "Recording converted: {n} note", "Recording converted: {n} notes"));
                 Ok(json!({ "ok": true, "trackId": r.track_id, "noten": r.notes, "geglaettet": r.smoothed }))

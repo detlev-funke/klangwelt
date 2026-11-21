@@ -3,6 +3,36 @@
 import type { Dict } from "../i18n.js";
 
 const dict: Dict = {
+  // several voices at once – polyphonic analysis (ui/src/voices.ts, components/voicesanalysis.ts, crates/klang-app/src/voices.rs)
+  "Detecting voices…": "Detectando voces…",
+  "Created {n} tracks, one per voice: {notes} notes ({how})": { one: "{n} pista creada para la voz: {notes} notas ({how})", other: "{n} pistas creadas, una por voz: {notes} notas ({how})" },
+  "Detected {n} voices": { one: "{n} voz detectada", other: "{n} voces detectadas" },
+  "Live analysis · several voices": "Análisis en vivo · varias voces",
+  "Sounding now": "Suena ahora",
+  "Voices, each in its color": "Voces, cada una en su color",
+  "found so far": "detectadas hasta ahora",
+  "as chosen": "como se eligió",
+  "Convert to voice tracks": "Convertir en pistas de voces",
+  "Several voices": "Varias voces",
+  "Several voices at once (a choir, a piano, guitar with bass): one instrument track per voice right below": "Varias voces a la vez (un coro, un piano, guitarra con bajo): una pista de instrumento por voz justo debajo",
+  "One line": "Una línea",
+  "A melody: singing, whistling, one instrument – with dynamics, accents and articulation": "Una melodía: canto, silbido, un instrumento, con dinámica, acentos y articulación",
+  "Several voices at once: a choir, a piano, guitar with bass – one track per voice": "Varias voces a la vez: un coro, un piano, guitarra con bajo; una pista por voz",
+  "Find out how many voices the recording has": "Averiguar cuántas voces tiene la grabación",
+  "Exactly {n} voices": "Exactamente {n} voces",
+  "found in the recording": "encontradas en la grabación",
+  "Per voice: short fragments and repeated notes of one pitch are merged": "Por voz: se unen los fragmentos cortos y las notas repetidas de la misma altura",
+  "Voices → instrument tracks": { one: "Voz → pista de instrumento", other: "Voces → pistas de instrumento" },
+  "pitches found": "alturas encontradas",
+  "No notes detected.": "No se detectaron notas.",
+  "\"{name}\" is not an audio clip.": "«{name}» no es un clip de audio.",
+  "Recording converted: {n} voices": "Grabación convertida: {n} voces",
+  "\"voices\" must be \"auto\" or a number from 1 to {max}": "«voices» debe ser «auto» o un número del 1 al {max}",
+  "No notes were detected in it – for drums, use \"Convert to rhythm track\".": "No se detectaron notas; para batería, usa «Convertir en pista de ritmo».",
+  "Voice {n} from {name}": "Voz {n} de {name}",
+  "**Several voices** at once – a choir, a piano, guitar with bass: choose \"Several voices\" in the analysis window, or right-click a recording → **Convert to voice tracks**. It finds how many voices there are (Auto) or takes the number you choose, shows each voice in its color – live while recording, too – and makes one instrument track per voice.": "**Varias voces** a la vez (un coro, un piano, guitarra con bajo): elige «Varias voces» en la ventana «Análisis» o haz clic derecho en una grabación → **Convertir en pistas de voces**. Klangwelt averigua cuántas voces hay (Auto) o toma el número que elijas, muestra cada voz en su color, también en vivo al grabar, y crea una pista de instrumento por voz.",
+  "One line: a melody with its dynamics, accents and articulation. Several voices: every voice of a choir, a piano or guitar with bass – Auto finds how many there are. The choice applies to the live view, the analysis and converting into notes.": "Una línea: una melodía con su dinámica, acentos y articulación. Varias voces: cada voz de un coro, un piano o guitarra con bajo; Auto averigua cuántas hay. La elección vale para la vista en vivo, el análisis y la conversión en notas.",
+
   // smoothing notes from recordings (ui/src/smoothing.ts, crates/klang-core/src/smooth.rs, crates/klang-app/src/convert.rs)
   "{n} fragments smoothed": { one: "{n} fragmento suavizado", other: "{n} fragmentos suavizados" },
   "Nothing to smooth in these {n} notes ({strength})": { one: "Nada que suavizar en esta nota ({strength})", other: "Nada que suavizar en estas {n} notas ({strength})" },

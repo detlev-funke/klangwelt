@@ -4,7 +4,9 @@
 // they are detected. The core analyses (klang-app `LiveAnalysis`, fed by
 // both shells); this window fetches what is new a dozen times a second
 // (`record_live` with a cursor) and draws it. After the recording the
-// finished analysis replaces it.
+// finished analysis replaces it. In the polyphonic mode (`voices.ts`) the
+// voices come from `record_live_voices`: each in its color, and what sounds
+// right now instead of the tuner.
 
 import { backend } from "../bridge.js";
 import { fitCanvas, h, noteName } from "../dom.js";
@@ -12,7 +14,8 @@ import { t } from "../i18n.js";
 import { highOnTop } from "../pianoroll.js";
 import { dynamicName } from "../expression.js";
 import { accentsText, drawMarks, noteAlpha } from "./performance.js";
-import type { KeyInfo, LiveNote, LiveView } from "../types.js";
+import { analysisMode, voiceColor } from "../voices.js";
+import type { KeyInfo, LiveNote, LiveView, LiveVoicesView } from "../types.js";
 
 /** Seconds the running view shows. */
 const WINDOW_SECS = 10;
@@ -35,12 +38,14 @@ interface LiveState {
   pending: LiveNote[];
   onsets: number[];
   last: LiveView | null;
+  /** Polyphonic mode: the voices so far (the last seconds). */
+  voices: LiveVoicesView | null;
   /** Shown pitch range (changes only when the notes leave it). */
   range: [number, number] | null;
 }
 
 function emptyState(take = 0): LiveState {
-  return { take, seconds: 0, curve: [], notes: [], pending: [], onsets: [], last: null, range: null };
+  return { take, seconds: 0, curve: [], notes: [], pending: [], onsets: [], last: null, voices: null, range: null };
 }
 
 /** Takes over what is new; a new recording starts afresh. */
@@ -76,6 +81,11 @@ export function liveAnalysisPanel(): Panel {
   const scale = h("div", { class: "cents-scale", title: t("−50 to +50 cents") }, h("b"), needle);
   const tuneHint = h("span", { class: "hint" }, t("Sing or play a note"));
   const tuner = h("div", { class: "value live-tuner" }, h("div", { class: "live-note-row" }, note, cents, tuneHint), scale);
+  // polyphonic mode: what sounds right now, how many voices
+  const poly = analysisMode.peek() === "poly";
+  const soundingValue = h("div", { class: "value live-sounding" }, "–");
+  const voicesValue = h("div", { class: "value" }, "–");
+  const voicesHint = h("div", { class: "hint" }, "");
 
   // Level: bar from −60 to 0 dBFS
   const levelBar = h("i");
@@ -95,12 +105,13 @@ export function liveAnalysisPanel(): Panel {
   const facts = h(
     "div",
     { class: "facts" },
-    h("div", { class: "live-badge wide" }, h("i"), t("Live analysis")),
-    fact(t("Current note"), tuner, null, true),
+    h("div", { class: "live-badge wide" }, h("i"), poly ? t("Live analysis · several voices") : t("Live analysis")),
+    poly ? fact(t("Sounding now"), soundingValue, null, true) : fact(t("Current note"), tuner, null, true),
+    poly ? fact(t("Voices"), voicesValue, voicesHint) : null,
     fact(t("Input level"), level, levelHint, true),
     fact(t("Key"), keyValue, keyHint),
     fact(t("Tempo estimate"), tempoValue, tempoHint),
-    fact(t("Dynamics"), dynValue, dynHint),
+    poly ? null : fact(t("Dynamics"), dynValue, dynHint),
     fact(t("Notes"), notesValue, null),
     fact(t("Duration"), durationValue, null),
   );
@@ -108,8 +119,9 @@ export function liveAnalysisPanel(): Panel {
   const legend = h(
     "div",
     { class: "legend" },
-    h("span", {}, h("i", { style: "background:#6ee7d8" }), t("Pitch curve")),
-    h("span", {}, h("i", { style: "background:#ffb454" }), t("detected notes")),
+    ...(poly
+      ? [h("span", {}, h("i", { style: `background:linear-gradient(90deg,${voiceColor(0)},${voiceColor(1)},${voiceColor(2)})` }), t("Voices, each in its color"))]
+      : [h("span", {}, h("i", { style: "background:#6ee7d8" }), t("Pitch curve")), h("span", {}, h("i", { style: "background:#ffb454" }), t("detected notes"))]),
     h("span", {}, h("i", { style: "background:#8a93a6" }), t("Onsets")),
   );
   const el = h("div", { class: "analysis live" }, facts, h("div", { style: "display:grid;grid-template-rows:auto 1fr;gap:8px;min-height:0" }, legend, canvas));
@@ -139,6 +151,13 @@ export function liveAnalysisPanel(): Panel {
     tempoValue.textContent = v.tempoEstimate ? `${v.tempoEstimate.toFixed(1)} BPM` : "–";
     tempoHint.textContent = v.tempoEstimate ? "" : t("needs a steady beat");
     notesValue.textContent = String(st.notes.length + st.pending.length);
+    const vv = st.voices;
+    if (poly) {
+      soundingValue.textContent = vv?.sounding.length ? vv.sounding.map((m) => noteName(m)).join(" · ") : "–";
+      voicesValue.textContent = vv && vv.voices ? String(vv.voices) : "–";
+      voicesHint.textContent = vv && vv.voices ? (vv.auto ? t("found so far") : t("as chosen")) : t("after a few notes");
+      notesValue.textContent = String(vv?.notes.length ?? 0);
+    }
     // dynamics of the latest note, accents and sforzati so far
     const all = [...st.notes, ...st.pending];
     const latest = all[all.length - 1];
@@ -172,6 +191,7 @@ export function liveAnalysisPanel(): Panel {
       const v = await backend.recordLive({ take: st.take, curve: st.curve.length, notes: st.notes.length, onsets: st.onsets.length });
       if (v) {
         st = merge(st, v);
+        if (poly) st.voices = await backend.recordLiveVoices();
         showFacts();
         redraw();
       }
@@ -197,9 +217,13 @@ function drawLive(canvas: HTMLCanvasElement, st: LiveState): void {
   let from = st.curve.length;
   while (from > 0 && st.curve[from - 1]![0] >= start) from--;
   const curve = st.curve.slice(from);
-  const notes = [...st.notes.filter((n) => n.endSecs >= start), ...st.pending];
-  const now = st.last?.pitch ?? null;
-  const values = [...curve.map((p) => p[1]).filter((v): v is number => v != null), ...notes.map((n) => n.midi), ...(now != null ? [now] : [])];
+  const voiced = st.voices;
+  const notes = voiced ? [] : [...st.notes.filter((n) => n.endSecs >= start), ...st.pending];
+  const voiceNotes = voiced ? voiced.notes.filter((n) => n.endSecs >= start) : [];
+  const now = voiced ? null : (st.last?.pitch ?? null);
+  const values = voiced
+    ? [...voiceNotes.map((n) => n.midi), ...voiced.sounding]
+    : [...curve.map((p) => p[1]).filter((v): v is number => v != null), ...notes.map((n) => n.midi), ...(now != null ? [now] : [])];
 
   // "now" at the right edge of what was recorded
   ctx.fillStyle = "rgba(255, 93, 108, 0.5)";
@@ -251,6 +275,26 @@ function drawLive(canvas: HTMLCanvasElement, st: LiveState): void {
     const next = notes[i + 1];
     if (n.startSecs >= start) drawMarks(ctx, n, x0, x(n.endSecs), y(n.midi), nh, next ? x(next.startSecs) : null, next ? y(next.midi) : null);
   });
+
+  // polyphonic: every voice in its color, what sounds now at the right edge
+  for (const n of voiceNotes) {
+    ctx.globalAlpha = noteAlpha(n.velocity);
+    ctx.fillStyle = voiceColor(n.voice);
+    const x0 = x(Math.max(n.startSecs, start));
+    ctx.beginPath();
+    ctx.roundRect(x0, y(n.midi) - nh / 2, Math.max(2, x(n.endSecs) - x0), nh, 3);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  if (voiced) {
+    ctx.fillStyle = "#e6e9ef";
+    for (const m of voiced.sounding) {
+      ctx.beginPath();
+      ctx.arc(x(st.seconds), y(m), 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    return;
+  }
 
   ctx.strokeStyle = "#6ee7d8";
   ctx.lineWidth = 1.5;

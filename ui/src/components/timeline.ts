@@ -13,7 +13,7 @@ import { chordName } from "../spelling.js";
 import { backend } from "../bridge.js";
 import {
   addTrack, analyzeSelected, convertAudio, deleteRange, deleteSelectedNotes, detectTempo, loadDemo, quantizeSelectedNotes, resetRowHeight, scaleSelectedNoteLengths, setSelectedNoteLengths,
-  seekBeats, smoothClipNotes, smoothSelectedNotes, startRowResize, toggleRecord, transposeSelectedNotes,
+  seekBeats, smoothClipNotes, smoothSelectedNotes, startRowResize, toggleRecord, transposeSelectedNotes, convertToVoices,
 } from "../actions.js";
 import { smoothLabel, smoothTitle } from "../smoothing.js";
 import { type MenuEntry, openContextMenu } from "../ctxmenu.js";
@@ -1193,6 +1193,7 @@ class KwTimeline extends HTMLElement {
       { heading: c.name },
       { label: t("Convert to melody track"), hint: t("Pitches → notes"), act: "melodie", title: t("The detected pitches as an instrument track right below (quantized to sixteenths, low registers as bass)"), action: () => void convertAudio(track.id, c.id, "melodie") },
       { label: t("Convert to rhythm track"), hint: t("Hits → drums"), act: "rhythmus", title: t("The detected hits as a drum track right below: kick, snare and hi-hat by timbre"), action: () => void convertAudio(track.id, c.id, "rhythmus") },
+      { label: t("Convert to voice tracks"), hint: t("Several voices"), act: "stimmen", title: t("Several voices at once (a choir, a piano, guitar with bass): one instrument track per voice right below"), action: () => void convertToVoices(track.id, c.id) },
       "sep",
       { label: t("Show analysis"), act: "analyse", action: () => void analyzeSelected() },
       { label: t("Detect tempo"), act: "tempo", title: t("Estimate the source tempo – the clip then follows the project tempo"), action: () => void detectTempo() },

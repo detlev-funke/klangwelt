@@ -3,6 +3,36 @@
 import type { Dict } from "../i18n.js";
 
 const dict: Dict = {
+  // several voices at once – polyphonic analysis (ui/src/voices.ts, components/voicesanalysis.ts, crates/klang-app/src/voices.rs)
+  "Detecting voices…": "Rozpoznawanie głosów…",
+  "Created {n} tracks, one per voice: {notes} notes ({how})": { one: "Utworzono {n} ścieżkę dla głosu: {notes} nut ({how})", few: "Utworzono {n} ścieżki, po jednej na głos: {notes} nut ({how})", many: "Utworzono {n} ścieżek, po jednej na głos: {notes} nut ({how})", other: "Utworzono {n} ścieżki, po jednej na głos: {notes} nut ({how})" },
+  "Detected {n} voices": { one: "Rozpoznano {n} głos", few: "Rozpoznano {n} głosy", many: "Rozpoznano {n} głosów", other: "Rozpoznano {n} głosy" },
+  "Live analysis · several voices": "Analiza na żywo · wiele głosów",
+  "Sounding now": "Brzmi teraz",
+  "Voices, each in its color": "Głosy, każdy w swoim kolorze",
+  "found so far": "rozpoznane do tej pory",
+  "as chosen": "jak wybrano",
+  "Convert to voice tracks": "Zamień na ścieżki głosów",
+  "Several voices": "Wiele głosów",
+  "Several voices at once (a choir, a piano, guitar with bass): one instrument track per voice right below": "Kilka głosów naraz (chór, fortepian, gitara z basem): jedna ścieżka instrumentu na głos tuż poniżej",
+  "One line": "Jeden głos",
+  "A melody: singing, whistling, one instrument – with dynamics, accents and articulation": "Melodia: śpiew, gwizdanie, jeden instrument – z dynamiką, akcentami i artykulacją",
+  "Several voices at once: a choir, a piano, guitar with bass – one track per voice": "Kilka głosów naraz: chór, fortepian, gitara z basem – jedna ścieżka na głos",
+  "Find out how many voices the recording has": "Ustal, ile głosów ma nagranie",
+  "Exactly {n} voices": "Dokładnie {n} głosów",
+  "found in the recording": "rozpoznane w nagraniu",
+  "Per voice: short fragments and repeated notes of one pitch are merged": "Dla każdego głosu: krótkie fragmenty i powtarzane dźwięki tej samej wysokości są scalane",
+  "Voices → instrument tracks": { one: "Głos → ścieżka instrumentu", few: "Głosy → ścieżki instrumentów", many: "Głosy → ścieżki instrumentów", other: "Głosy → ścieżki instrumentów" },
+  "pitches found": "znalezione wysokości",
+  "No notes detected.": "Nie rozpoznano nut.",
+  "\"{name}\" is not an audio clip.": "„{name}” nie jest klipem audio.",
+  "Recording converted: {n} voices": "Zamieniono nagranie: {n} głosów",
+  "\"voices\" must be \"auto\" or a number from 1 to {max}": "„voices” musi mieć wartość „auto” albo liczbę od 1 do {max}",
+  "No notes were detected in it – for drums, use \"Convert to rhythm track\".": "Nie rozpoznano w nim nut – dla perkusji użyj „Zamień na ścieżkę rytmu”.",
+  "Voice {n} from {name}": "Głos {n} z {name}",
+  "**Several voices** at once – a choir, a piano, guitar with bass: choose \"Several voices\" in the analysis window, or right-click a recording → **Convert to voice tracks**. It finds how many voices there are (Auto) or takes the number you choose, shows each voice in its color – live while recording, too – and makes one instrument track per voice.": "**Kilka głosów** naraz – chór, fortepian, gitara z basem: wybierz „Wiele głosów” w oknie „Analiza” albo kliknij nagranie prawym przyciskiem → **Zamień na ścieżki głosów**. Klangwelt ustala, ile jest głosów (Auto), albo bierze wybraną liczbę, pokazuje każdy głos w jego kolorze – także na żywo podczas nagrywania – i tworzy jedną ścieżkę instrumentu na głos.",
+  "One line: a melody with its dynamics, accents and articulation. Several voices: every voice of a choir, a piano or guitar with bass – Auto finds how many there are. The choice applies to the live view, the analysis and converting into notes.": "Jeden głos: melodia z dynamiką, akcentami i artykulacją. Wiele głosów: każdy głos chóru, fortepianu albo gitary z basem – Auto ustala, ile ich jest. Wybór dotyczy widoku na żywo, analizy i zamiany na nuty.",
+
   // smoothing notes from recordings (ui/src/smoothing.ts, crates/klang-core/src/smooth.rs, crates/klang-app/src/convert.rs)
   "{n} fragments smoothed": { one: "Wygładzono {n} fragment", few: "Wygładzono {n} fragmenty", many: "Wygładzono {n} fragmentów", other: "Wygładzono {n} fragmenty" },
   "Nothing to smooth in these {n} notes ({strength})": { one: "Nie ma czego wygładzić w tej nucie ({strength})", few: "Nie ma czego wygładzić w tych {n} nutach ({strength})", many: "Nie ma czego wygładzić w tych {n} nutach ({strength})", other: "Nie ma czego wygładzić w tych {n} nutach ({strength})" },

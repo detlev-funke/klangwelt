@@ -814,6 +814,10 @@ body.dk-dragging, body.dk-dragging * { cursor: grabbing !important; user-select:
 .autosave-grid { display: grid; grid-template-columns: auto repeat(4, 1fr); gap: 2px; }
 .autosave-option { justify-content: center; padding: 4px 6px; white-space: nowrap; }
 .smooth-grid { grid-template-columns: repeat(4, 1fr); }
+/* Analysis of several voices (components/voicesanalysis.ts) */
+.voice-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.analysis-mode > .prop { margin-top: 6px; }
+.live-sounding { font-size: 20px; font-weight: 700; letter-spacing: .02em; }
 /* Flags (ui/src/flags.ts): 3:2, a faint frame so black and white stripes stand off the dark menu */
 .flag { width: 18px; height: 12px; flex: none; display: block; border-radius: 2px; overflow: hidden; box-shadow: 0 0 0 1px rgba(255, 255, 255, .14); }
 /* Context menu (right-click in the timeline) */

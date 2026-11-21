@@ -3,6 +3,36 @@
 import type { Dict } from "../i18n.js";
 
 const dict: Dict = {
+  // several voices at once – polyphonic analysis (ui/src/voices.ts, components/voicesanalysis.ts, crates/klang-app/src/voices.rs)
+  "Detecting voices…": "Stimmen werden erkannt …",
+  "Created {n} tracks, one per voice: {notes} notes ({how})": { one: "{n} Spur für die Stimme angelegt: {notes} Noten ({how})", other: "{n} Spuren angelegt, eine je Stimme: {notes} Noten ({how})" },
+  "Detected {n} voices": { one: "{n} Stimme erkannt", other: "{n} Stimmen erkannt" },
+  "Live analysis · several voices": "Live-Analyse · mehrstimmig",
+  "Sounding now": "Klingt gerade",
+  "Voices, each in its color": "Stimmen, jede in ihrer Farbe",
+  "found so far": "bisher erkannt",
+  "as chosen": "wie gewählt",
+  "Convert to voice tracks": "In Stimmen-Spuren umwandeln",
+  "Several voices": "Mehrstimmig",
+  "Several voices at once (a choir, a piano, guitar with bass): one instrument track per voice right below": "Mehrere Stimmen zugleich (ein Chor, ein Klavier, Gitarre mit Bass): eine Instrumentspur je Stimme direkt darunter",
+  "One line": "Einstimmig",
+  "A melody: singing, whistling, one instrument – with dynamics, accents and articulation": "Eine Melodie: Gesang, Pfeifen, ein Instrument – mit Dynamik, Akzenten und Artikulation",
+  "Several voices at once: a choir, a piano, guitar with bass – one track per voice": "Mehrere Stimmen zugleich: ein Chor, ein Klavier, Gitarre mit Bass – eine Spur je Stimme",
+  "Find out how many voices the recording has": "Herausfinden, wie viele Stimmen die Aufnahme hat",
+  "Exactly {n} voices": "Genau {n} Stimmen",
+  "found in the recording": "in der Aufnahme erkannt",
+  "Per voice: short fragments and repeated notes of one pitch are merged": "Je Stimme: kurze Bruchstücke und wiederholte Töne gleicher Höhe werden zusammengelegt",
+  "Voices → instrument tracks": { one: "Stimme → Instrumentspur", other: "Stimmen → Instrumentspuren" },
+  "pitches found": "gefundene Tonhöhen",
+  "No notes detected.": "Keine Noten erkannt.",
+  "\"{name}\" is not an audio clip.": "„{name}“ ist kein Audio-Clip.",
+  "Recording converted: {n} voices": "Aufnahme umgewandelt: {n} Stimmen",
+  "\"voices\" must be \"auto\" or a number from 1 to {max}": "„voices“ muss „auto“ oder eine Zahl von 1 bis {max} sein",
+  "No notes were detected in it – for drums, use \"Convert to rhythm track\".": "Darin wurden keine Noten erkannt – für Schlagzeug „In Rhythmus-Spur umwandeln“ verwenden.",
+  "Voice {n} from {name}": "Stimme {n} aus {name}",
+  "**Several voices** at once – a choir, a piano, guitar with bass: choose \"Several voices\" in the analysis window, or right-click a recording → **Convert to voice tracks**. It finds how many voices there are (Auto) or takes the number you choose, shows each voice in its color – live while recording, too – and makes one instrument track per voice.": "**Mehrere Stimmen** zugleich – ein Chor, ein Klavier, Gitarre mit Bass: im Fenster „Analyse“ „Mehrstimmig“ wählen oder per Rechtsklick auf eine Aufnahme → **In Stimmen-Spuren umwandeln**. Klangwelt findet heraus, wie viele Stimmen es sind (Auto), oder nimmt die gewählte Zahl, zeigt jede Stimme in ihrer Farbe – auch live beim Aufnehmen – und legt je Stimme eine Instrumentspur an.",
+  "One line: a melody with its dynamics, accents and articulation. Several voices: every voice of a choir, a piano or guitar with bass – Auto finds how many there are. The choice applies to the live view, the analysis and converting into notes.": "Einstimmig: eine Melodie mit Dynamik, Akzenten und Artikulation. Mehrstimmig: jede Stimme eines Chors, eines Klaviers oder von Gitarre mit Bass – Auto findet heraus, wie viele es sind. Die Wahl gilt für die Live-Ansicht, die Analyse und das Umwandeln in Noten.",
+
   // smoothing notes from recordings (ui/src/smoothing.ts, crates/klang-core/src/smooth.rs, crates/klang-app/src/convert.rs)
   "{n} fragments smoothed": { one: "{n} Bruchstück geglättet", other: "{n} Bruchstücke geglättet" },
   "Nothing to smooth in these {n} notes ({strength})": { one: "In dieser Note gibt es nichts zu glätten ({strength})", other: "In diesen {n} Noten gibt es nichts zu glätten ({strength})" },

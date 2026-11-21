@@ -3,6 +3,36 @@
 import type { Dict } from "../i18n.js";
 
 const dict: Dict = {
+  // several voices at once – polyphonic analysis (ui/src/voices.ts, components/voicesanalysis.ts, crates/klang-app/src/voices.rs)
+  "Detecting voices…": "Riconoscimento delle voci…",
+  "Created {n} tracks, one per voice: {notes} notes ({how})": { one: "{n} traccia creata per la voce: {notes} note ({how})", other: "{n} tracce create, una per voce: {notes} note ({how})" },
+  "Detected {n} voices": { one: "{n} voce riconosciuta", other: "{n} voci riconosciute" },
+  "Live analysis · several voices": "Analisi dal vivo · più voci",
+  "Sounding now": "Suona ora",
+  "Voices, each in its color": "Voci, ognuna nel suo colore",
+  "found so far": "trovate finora",
+  "as chosen": "come scelto",
+  "Convert to voice tracks": "Converti in tracce per voce",
+  "Several voices": "Più voci",
+  "Several voices at once (a choir, a piano, guitar with bass): one instrument track per voice right below": "Più voci insieme (un coro, un pianoforte, chitarra con basso): una traccia strumento per voce subito sotto",
+  "One line": "Una linea",
+  "A melody: singing, whistling, one instrument – with dynamics, accents and articulation": "Una melodia: canto, fischio, uno strumento – con dinamica, accenti e articolazione",
+  "Several voices at once: a choir, a piano, guitar with bass – one track per voice": "Più voci insieme: un coro, un pianoforte, chitarra con basso – una traccia per voce",
+  "Find out how many voices the recording has": "Scopri quante voci ha la registrazione",
+  "Exactly {n} voices": "Esattamente {n} voci",
+  "found in the recording": "trovate nella registrazione",
+  "Per voice: short fragments and repeated notes of one pitch are merged": "Per voce: frammenti brevi e note ripetute della stessa altezza vengono uniti",
+  "Voices → instrument tracks": { one: "Voce → traccia strumento", other: "Voci → tracce strumento" },
+  "pitches found": "altezze trovate",
+  "No notes detected.": "Nessuna nota riconosciuta.",
+  "\"{name}\" is not an audio clip.": "«{name}» non è un clip audio.",
+  "Recording converted: {n} voices": "Registrazione convertita: {n} voci",
+  "\"voices\" must be \"auto\" or a number from 1 to {max}": "«voices» deve essere «auto» o un numero da 1 a {max}",
+  "No notes were detected in it – for drums, use \"Convert to rhythm track\".": "Non vi sono state riconosciute note – per la batteria usa «Converti in traccia ritmica».",
+  "Voice {n} from {name}": "Voce {n} da {name}",
+  "**Several voices** at once – a choir, a piano, guitar with bass: choose \"Several voices\" in the analysis window, or right-click a recording → **Convert to voice tracks**. It finds how many voices there are (Auto) or takes the number you choose, shows each voice in its color – live while recording, too – and makes one instrument track per voice.": "**Più voci** insieme – un coro, un pianoforte, chitarra con basso: scegli «Più voci» nella finestra «Analisi», oppure clic destro su una registrazione → **Converti in tracce per voce**. Klangwelt scopre quante voci ci sono (Auto) o usa il numero scelto, mostra ogni voce nel suo colore – anche dal vivo durante la registrazione – e crea una traccia strumento per voce.",
+  "One line: a melody with its dynamics, accents and articulation. Several voices: every voice of a choir, a piano or guitar with bass – Auto finds how many there are. The choice applies to the live view, the analysis and converting into notes.": "Una linea: una melodia con dinamica, accenti e articolazione. Più voci: ogni voce di un coro, di un pianoforte o di chitarra con basso – Auto scopre quante sono. La scelta vale per la vista dal vivo, l'analisi e la conversione in note.",
+
   // smoothing notes from recordings (ui/src/smoothing.ts, crates/klang-core/src/smooth.rs, crates/klang-app/src/convert.rs)
   "{n} fragments smoothed": { one: "{n} frammento levigato", other: "{n} frammenti levigati" },
   "Nothing to smooth in these {n} notes ({strength})": { one: "Niente da levigare in questa nota ({strength})", other: "Niente da levigare in queste {n} note ({strength})" },

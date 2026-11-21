@@ -7,7 +7,7 @@
 import type {
   AgentActivity, Analysis, AutosaveResult, CatalogEntry, CheckView, ExportInfo, ExportOptions, ExportResult, Chord, ChordInfo, ChatView, Command, Countersubject, Dimension, EngineStatus, FugueOptions,
   FuguePlan, HarmonyView, InstrumentKind, InstrumentSpec, SubjectView, TransformSpec, VNote,
-  AddResult, ConvertResult, ConvertTarget, ImportResult, QuantizeResult, SmoothResult, SmoothStrength, KeySpec, LibEntry, LibHit, LibraryInfo, ListenResult, OwnScore, PlacedChord, PlayInfo, PreviewPattern, ProjectFile, RecordResult, LiveCursor, LiveView, HarmonyLine, SongPlan, SongWritten, ClipGrid, RhythmGrid, RhythmInfo, RhythmWritten, SavedSound, ScoreView, Snapshot, SoundReport, SoundSaveResult, SuggestResult, TreeLevel, WaveView,
+  AddResult, ConvertResult, ConvertTarget, ImportResult, QuantizeResult, SmoothResult, SmoothStrength, VoicesAnalysis, LiveVoicesView, KeySpec, LibEntry, LibHit, LibraryInfo, ListenResult, OwnScore, PlacedChord, PlayInfo, PreviewPattern, ProjectFile, RecordResult, LiveCursor, LiveView, HarmonyLine, SongPlan, SongWritten, ClipGrid, RhythmGrid, RhythmInfo, RhythmWritten, SavedSound, ScoreView, Snapshot, SoundReport, SoundSaveResult, SuggestResult, TreeLevel, WaveView,
 } from "./types.js";
 import type { AudioDevices, AudioKind, HistoryView, MergeChoices, MergeView } from "./types.js";
 import { createMock } from "./mock.js";
@@ -82,17 +82,20 @@ export interface Backend {
   audioDevices(): Promise<AudioDevices>;
   /** Choose a device (null = system default) – takes effect immediately and applies at the next start. */
   setAudioDevice(kind: AudioKind, name: string | null): Promise<Snapshot>;
-  recordStart(): Promise<void>;
+  /** `mode` "poly": the polyphonic analysis runs along (`recordLiveVoices`). */
+  recordStart(opts?: { mode: "mono" | "poly"; voices: string | number }): Promise<void>;
+  recordLiveVoices(): Promise<LiveVoicesView | null>;
   recordStop(): Promise<RecordResult>;
   /** What the running recording's live analysis found since `since` (null: no recording running). */
   recordLive(since: LiveCursor): Promise<LiveView | null>;
   getWaveform(assetId: string, buckets: number): Promise<number[]>;
   analyzeAsset(assetId: string): Promise<Analysis>;
-  createMelodyTrack(trackId: number, clipId: number, smooth?: SmoothStrength): Promise<Snapshot>;
+  createMelodyTrack(trackId: number, clipId: number, smooth?: SmoothStrength, mode?: "mono" | "poly", voices?: string | number): Promise<Snapshot>;
+  analyzeVoices(assetId: string, voices: string | number): Promise<VoicesAnalysis>;
   /** Insert audio files: on an audio track the first file goes in, otherwise one new track per file (under `trackId`), from `startBeats`. */
   audioImport(paths: string[], trackId: number | null, startBeats: number): Promise<ImportResult>;
   /** Convert a recording into a melody or rhythm track (`clipId` null: all audio clips of the track). */
-  audioToNotes(trackId: number, clipId: number | null, target: ConvertTarget, smooth?: SmoothStrength): Promise<ConvertResult>;
+  audioToNotes(trackId: number, clipId: number | null, target: ConvertTarget, smooth?: SmoothStrength, mode?: "mono" | "poly", voices?: string | number): Promise<ConvertResult>;
   /** Delete a time range from all tracks, everything after it moves up (clears the selection). */
   deleteRange(startBeats: number, endBeats: number): Promise<Snapshot>;
   /** Align notes to the grid (`indices` null: all notes of the clip); `grid` in beats. */
@@ -276,14 +279,16 @@ function coreBackend(link: CoreLink, platform: "desktop" | "web"): Backend {
     setLoopRange: (range) => call("set_loop_range", { range }),
     audioDevices: () => call("audio_devices"),
     setAudioDevice: (kind, name) => call("audio_set_device", { kind, name }),
-    recordStart: () => call("record_start"),
+    recordStart: (opts) => call("record_start", opts ?? {}),
+    recordLiveVoices: () => call("record_live_voices"),
     recordStop: () => call("record_stop"),
     recordLive: (since) => call("record_live", { since }),
     getWaveform: (assetId, buckets) => call("get_waveform", { assetId, buckets }),
     analyzeAsset: (assetId) => call("analyze_asset", { assetId }),
-    createMelodyTrack: (trackId, clipId, smooth) => call("create_melody_track", { trackId, clipId, smooth }),
+    createMelodyTrack: (trackId, clipId, smooth, mode, voices) => call("create_melody_track", { trackId, clipId, smooth, mode, voices }),
+    analyzeVoices: (assetId, voices) => call("analyze_voices", { assetId, voices }),
     audioImport: (paths, trackId, startBeats) => call("audio_import", { paths, trackId, startBeats }),
-    audioToNotes: (trackId, clipId, target, smooth) => call("audio_to_notes", { trackId, clipId, target, smooth }),
+    audioToNotes: (trackId, clipId, target, smooth, mode, voices) => call("audio_to_notes", { trackId, clipId, target, smooth, mode, voices }),
     deleteRange: (startBeats, endBeats) => call("delete_range", { startBeats, endBeats }),
     quantizeNotes: (trackId, clipId, indices, grid, lengths) => call("quantize_notes", { trackId, clipId, indices, grid, lengths }),
     smoothNotes: (trackId, clipId, indices, strength) => call("smooth_notes", { trackId, clipId, indices, strength }),

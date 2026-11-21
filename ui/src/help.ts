@@ -47,6 +47,7 @@ const lanes: HelpTopic = {
     t("Just drag audio files (WAV, AIFF, FLAC, Opus) here: each becomes an audio track with a clip starting at the spot under the mouse – dropped onto an audio track, the first file lands in it. Klangwelt can't read MP3 and AAC yet."),
     t("Recordings and inserted audio files have a **♪ → Notes** button: it creates the detected pitches as a melody track below. Right-click also offers a **rhythm track** (hits as kick, snare, hi-hat)."),
     t("Pitch detection breaks a sung or played line into more notes than were played. **Smoothing** puts them back together: unusually short fragments go into the note next to them, a held note split in two becomes one again – a louder or accented note stays apart. It happens when a recording becomes notes (strength in the gear menu and the analysis window), and afterwards with a right-click on selected notes or a note clip → **Smooth**."),
+    t("**Several voices** at once – a choir, a piano, guitar with bass: choose \"Several voices\" in the analysis window, or right-click a recording → **Convert to voice tracks**. It finds how many voices there are (Auto) or takes the number you choose, shows each voice in its color – live while recording, too – and makes one instrument track per voice."),
   ],
   keys: [
     [t("Ctrl + mouse wheel"), t("zoom")],
@@ -296,6 +297,7 @@ const ENTRIES: Entry[] = [
   },
   { sel: ".ctx-menu [data-act^=laenge]", topic: { title: t("Note length"), text: [t("Gives the selected notes a new length, their starts stay: **Length** sets 1/1 … 1/16 for all of them, **Longer / shorter** halves, dots (1½×) or doubles each one. A note reaching past the clip's end makes the clip grow by whole bars.")] } },
   { sel: ".ctx-menu [data-act^=raster]", topic: { title: t("Quantize"), text: [t("Moves the selected notes onto the grid: 1/4, 1/8, 1/16 or the view's grid (finer the further you zoom in). The grid follows the song's bars, even if the clip starts offset."), t("\"Quantize\" only moves the starts, \"Start and length\" also the ends – every note stays at least one grid step long.")] } },
+  { sel: ".analysis-mode", topic: { title: t("Analysis"), text: [t("One line: a melody with its dynamics, accents and articulation. Several voices: every voice of a choir, a piano or guitar with bass – Auto finds how many there are. The choice applies to the live view, the analysis and converting into notes.")] } },
   { sel: ".ctx-menu", topic: { title: t("Context menu"), text: [t("What you can do with the clicked item: quantize and transpose notes, convert a recording into a melody or rhythm track, delete the selected time range from all tracks. Esc or a click outside closes it.")] } },
 
   // ------------------------------------------------ Agent

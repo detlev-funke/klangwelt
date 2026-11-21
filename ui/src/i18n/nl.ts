@@ -3,6 +3,36 @@
 import type { Dict } from "../i18n.js";
 
 const dict: Dict = {
+  // several voices at once – polyphonic analysis (ui/src/voices.ts, components/voicesanalysis.ts, crates/klang-app/src/voices.rs)
+  "Detecting voices…": "Stemmen herkennen…",
+  "Created {n} tracks, one per voice: {notes} notes ({how})": { one: "{n} spoor gemaakt voor de stem: {notes} noten ({how})", other: "{n} sporen gemaakt, één per stem: {notes} noten ({how})" },
+  "Detected {n} voices": { one: "{n} stem herkend", other: "{n} stemmen herkend" },
+  "Live analysis · several voices": "Live-analyse · meerstemmig",
+  "Sounding now": "Klinkt nu",
+  "Voices, each in its color": "Stemmen, elk in zijn eigen kleur",
+  "found so far": "tot nu toe herkend",
+  "as chosen": "zoals gekozen",
+  "Convert to voice tracks": "Omzetten in stemsporen",
+  "Several voices": "Meerstemmig",
+  "Several voices at once (a choir, a piano, guitar with bass): one instrument track per voice right below": "Meerdere stemmen tegelijk (een koor, een piano, gitaar met bas): één instrumentspoor per stem direct eronder",
+  "One line": "Eenstemmig",
+  "A melody: singing, whistling, one instrument – with dynamics, accents and articulation": "Een melodie: zang, fluiten, één instrument – met dynamiek, accenten en articulatie",
+  "Several voices at once: a choir, a piano, guitar with bass – one track per voice": "Meerdere stemmen tegelijk: een koor, een piano, gitaar met bas – één spoor per stem",
+  "Find out how many voices the recording has": "Uitzoeken hoeveel stemmen de opname heeft",
+  "Exactly {n} voices": "Precies {n} stemmen",
+  "found in the recording": "in de opname herkend",
+  "Per voice: short fragments and repeated notes of one pitch are merged": "Per stem: korte fragmenten en herhaalde noten van dezelfde hoogte worden samengevoegd",
+  "Voices → instrument tracks": { one: "Stem → instrumentspoor", other: "Stemmen → instrumentsporen" },
+  "pitches found": "gevonden toonhoogtes",
+  "No notes detected.": "Geen noten herkend.",
+  "\"{name}\" is not an audio clip.": "“{name}” is geen audioclip.",
+  "Recording converted: {n} voices": "Opname omgezet: {n} stemmen",
+  "\"voices\" must be \"auto\" or a number from 1 to {max}": "“voices” moet “auto” zijn of een getal van 1 tot {max}",
+  "No notes were detected in it – for drums, use \"Convert to rhythm track\".": "Er zijn geen noten in herkend – gebruik voor drums “Omzetten in ritmespoor”.",
+  "Voice {n} from {name}": "Stem {n} uit {name}",
+  "**Several voices** at once – a choir, a piano, guitar with bass: choose \"Several voices\" in the analysis window, or right-click a recording → **Convert to voice tracks**. It finds how many voices there are (Auto) or takes the number you choose, shows each voice in its color – live while recording, too – and makes one instrument track per voice.": "**Meerdere stemmen** tegelijk – een koor, een piano, gitaar met bas: kies “Meerstemmig” in het venster “Analyse”, of klik met rechts op een opname → **Omzetten in stemsporen**. Klangwelt zoekt uit hoeveel stemmen het zijn (Auto) of neemt het gekozen aantal, toont elke stem in zijn kleur – ook live tijdens het opnemen – en maakt per stem een instrumentspoor.",
+  "One line: a melody with its dynamics, accents and articulation. Several voices: every voice of a choir, a piano or guitar with bass – Auto finds how many there are. The choice applies to the live view, the analysis and converting into notes.": "Eenstemmig: een melodie met dynamiek, accenten en articulatie. Meerstemmig: elke stem van een koor, een piano of gitaar met bas – Auto zoekt uit hoeveel het er zijn. De keuze geldt voor de live-weergave, de analyse en het omzetten in noten.",
+
   // smoothing notes from recordings (ui/src/smoothing.ts, crates/klang-core/src/smooth.rs, crates/klang-app/src/convert.rs)
   "{n} fragments smoothed": { one: "{n} fragment gladgestreken", other: "{n} fragmenten gladgestreken" },
   "Nothing to smooth in these {n} notes ({strength})": { one: "Niets glad te strijken in deze noot ({strength})", other: "Niets glad te strijken in deze {n} noten ({strength})" },

@@ -7,6 +7,7 @@
 //! * [`hits`]    – assign the hits of a recording to drums (bass drum, snare, hi-hat)
 //! * [`pad`]     – synthesizer for pads with a drawn envelope
 //! * [`pitch`]   – pitch detection (YIN)
+//! * [`poly`]    – several voices at once (HPSS, iterative harmonic subtraction, per-pitch Viterbi, voices)
 //! * [`notes`]   – pitch curve → individual notes
 //! * [`onset`]   – onsets (spectral flux) and tempo estimation
 //! * [`stretch`] – change tempo/pitch (WSOLA + sinc resampling)
@@ -26,6 +27,7 @@ pub mod notes;
 pub mod onset;
 pub mod pad;
 pub mod pitch;
+pub mod poly;
 pub mod stretch;
 pub mod synth;
 pub mod tracker;

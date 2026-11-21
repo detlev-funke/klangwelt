@@ -57,6 +57,8 @@ pub const COMMANDS: &[&str] = &[
     "record_live",
     "get_waveform",
     "analyze_asset",
+    "analyze_voices",
+    "record_live_voices",
     "create_melody_track",
     "audio_import",
     "audio_to_notes",
@@ -253,7 +255,13 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
         }
 
         // ------------------------------------------------ Recording, analysis
-        "record_start" => json(st.record_start()?),
+        // mode "poly": the polyphonic analysis runs along (record_live_voices)
+        "record_start" => {
+            let (mode, voices) = args!(a; mode: Option<crate::voices::AnalysisMode>, voices: Option<crate::voices::VoiceArg>);
+            let poly = (mode == Some(crate::voices::AnalysisMode::Poly)).then(|| voices.unwrap_or_default().0);
+            json(st.record_start(poly)?)
+        }
+        "record_live_voices" => json(st.record_live_voices()?),
         "record_stop" => json(st.record_stop()?),
         // What the running recording's live analysis found since the cursor (null: no recording running)
         "record_live" => {
@@ -268,9 +276,17 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
             let (asset_id,) = args!(a; asset_id: String);
             json(st.analysis_for(&asset_id)?)
         }
+        // Several voices at once (polyphonic analysis; voices "auto" or 1–6)
+        "analyze_voices" => {
+            let (asset_id, voices) = args!(a; asset_id: String, voices: Option<crate::voices::VoiceArg>);
+            json(st.analyze_voices(&asset_id, voices.unwrap_or_default().0)?)
+        }
         // Detected melody of an audio clip as an instrument track (smoothed, quantized to sixteenth notes)
         "create_melody_track" => {
-            let (track_id, clip_id, smooth) = args!(a; track_id: u64, clip_id: u64, smooth: Option<Strength>);
+            let (track_id, clip_id, smooth, mode, voices) = args!(a; track_id: u64, clip_id: u64, smooth: Option<Strength>, mode: Option<crate::voices::AnalysisMode>, voices: Option<crate::voices::VoiceArg>);
+            if mode == Some(crate::voices::AnalysisMode::Poly) {
+                return json(st.audio_to_voices(Id(track_id), Some(Id(clip_id)), &tr!("Import melody"), smooth.unwrap_or_default(), voices.unwrap_or_default().0)?.snapshot);
+            }
             json(st.melody_to_track(Id(track_id), Id(clip_id), &tr!("Import melody"), smooth.unwrap_or_default())?.0)
         }
         // Insert audio files (drag & drop) as tracks – read through the core's file system
@@ -289,7 +305,11 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
         // Convert a recording into a melody or rhythm track (without clipId: all audio clips of the track;
         // smooth: how much a melody is smoothed, default medium)
         "audio_to_notes" => {
-            let (track_id, clip_id, target, smooth) = args!(a; track_id: u64, clip_id: Option<u64>, target: crate::convert::Target, smooth: Option<Strength>);
+            let (track_id, clip_id, target, smooth, mode, voices) =
+                args!(a; track_id: u64, clip_id: Option<u64>, target: crate::convert::Target, smooth: Option<Strength>, mode: Option<crate::voices::AnalysisMode>, voices: Option<crate::voices::VoiceArg>);
+            if target == crate::convert::Target::Melodie && mode == Some(crate::voices::AnalysisMode::Poly) {
+                return json(st.audio_to_voices(Id(track_id), clip_id.map(Id), &tr!("Convert to voice tracks"), smooth.unwrap_or_default(), voices.unwrap_or_default().0)?);
+            }
             let label = match target {
                 crate::convert::Target::Melodie => tr!("Convert to melody track"),
                 crate::convert::Target::Rhythmus => tr!("Convert to rhythm track"),

@@ -4,6 +4,9 @@ import { highOnTop, noteKey, noteSel } from "../pianoroll.js";
 import { plural, t } from "../i18n.js";
 import { effect } from "../signals.js";
 import { SMOOTH_LEVELS, setSmoothLevel, smoothLabel, smoothLevel, smoothTitle } from "../smoothing.js";
+import { analysisMode, voiceCount, voicesAnalysis } from "../voices.js";
+import { modeChoice, voicesPanel } from "./voicesanalysis.js";
+import { loadVoices } from "../actions.js";
 import { DYNAMICS, EXPRS, EXPR_ORDER, type ExprKey, type Mark, applyMark, exprKeysFor, exprValue, setExprAll } from "../expression.js";
 import {
   analysis, chat, clipLengthBeats, findClip, findTrack, instrumentSpecs,
@@ -19,7 +22,7 @@ import { libraryPanel, librarySignals } from "./library.js";
 import { liveAnalysisPanel } from "./liveanalysis.js";
 import { accentsText, articulationText, drawMarks, dynamicsRange, noteAlpha } from "./performance.js";
 import { soundPanel } from "./sound.js";
-import type { Analysis, Note, Track } from "../types.js";
+import type { Analysis, Note, Track, VoicesAnalysis } from "../types.js";
 
 type Tab = "clip" | "analyse" | "klang" | "rhythmus" | "song" | "historie" | "agent" | "bibliothek" | "harmonie" | "fuge";
 
@@ -275,12 +278,14 @@ function analysisPanel(a: Analysis): Panel {
   const draw = () => drawAnalysis(canvas, a);
   new ResizeObserver(draw).observe(canvas);
   const corrected = a.notes.filter((n) => n.midi !== n.rawMidi).length;
+  const mode = modeChoice();
   const smooth = smoothChoice();
   const smoothProp = prop(t("Smooth notes"), h("div", { class: "value" }, smooth.el), t("When the melody becomes notes: short fragments and repeated notes of one pitch are merged"));
   smoothProp.classList.add("wide");
   const facts = h(
     "div",
     { class: "facts" },
+    mode.el,
     prop(t("Key"), a.key ? a.key.name : "–", a.key ? t("Confidence {percent}%", { percent: (a.key.confidence * 100).toFixed(0) }) : t("too few notes")),
     prop(t("Tempo estimate"), a.tempoEstimate ? `${a.tempoEstimate.toFixed(1)} BPM` : "–"),
     prop(t("Notes"), String(a.notes.length), corrected ? t("Corrected {n} out-of-tune notes", { n: corrected }) : t("no correction needed")),
@@ -304,6 +309,7 @@ function analysisPanel(a: Analysis): Panel {
     update() {
       draw();
       smooth.update();
+      mode.update();
     },
   };
 }
@@ -402,6 +408,7 @@ class KwPanel extends HTMLElement {
   #panel: Panel | null = null;
   #key = "";
   #analysis: Analysis | null = null;
+  #voices: VoicesAnalysis | null = null;
 
   connectedCallback(): void {
     if (this.childElementCount) return;
@@ -417,6 +424,9 @@ class KwPanel extends HTMLElement {
       if (tab === "agent") chat.value; // redraw chat
       if (tab === "analyse") highOnTop.value; // redraw curve when the pitch axis changes
       if (tab === "analyse") smoothLevel.value; // the smoothing choice may change in the settings
+      const mode = tab === "analyse" ? analysisMode.value : "mono";
+      const va = tab === "analyse" ? voicesAnalysis.value : null;
+      if (tab === "analyse") voiceCount.value;
       if (tab === "clip") noteSel.value; // expression follows the note selection
       if (tab === "bibliothek") librarySignals();
       if (tab === "klang") savedSounds.value; // redraw My sounds
@@ -427,11 +437,13 @@ class KwPanel extends HTMLElement {
       const key =
         tab === "clip" ? `${track?.id ?? ""}|${clip?.clip.id ?? ""}`
         : tab === "klang" ? `${track?.id ?? ""}|${track?.kind ?? ""}|${track?.instrument?.kind ?? ""}|${specsReady}`
-        : live ? "analyse-live"
+        : live ? `analyse-live|${mode}`
+        : tab === "analyse" ? `analyse|${mode}`
         : tab;
-      if (key !== this.#key || (a !== this.#analysis && !live)) {
+      if (key !== this.#key || (a !== this.#analysis && !live) || (va !== this.#voices && !live)) {
         this.#key = key;
         this.#analysis = a;
+        this.#voices = va;
         this.#panel = this.#build(tab, track ?? null, clip ? clip.clip.id : null, a);
         this.#body.replaceChildren(this.#panel.el);
       }
@@ -454,6 +466,14 @@ class KwPanel extends HTMLElement {
     }
     if (tab === "analyse") {
       if (liveRecording.peek()) return liveAnalysisPanel();
+      if (analysisMode.peek() === "poly") {
+        const v = voicesAnalysis.peek();
+        if (v && (!a || v.assetId === a.assetId)) return voicesPanel(v);
+        if (a) {
+          void loadVoices(a.assetId);
+          return placeholder(t("Detecting voices…"));
+        }
+      }
       if (a) return analysisPanel(a);
       return placeholder(t("Record something (R) or select an audio clip and click \"Analyze\" (or double-click the clip)."));
     }

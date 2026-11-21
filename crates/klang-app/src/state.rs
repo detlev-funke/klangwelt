@@ -40,6 +40,8 @@ pub struct AssetPool {
     /// side) – key with the tempo, so a new tempo plays them live again.
     prerendered: HashMap<String, (Arc<[f32]>, Option<Arc<[f32]>>)>,
     analyses: HashMap<String, Analysis>,
+    /// What the polyphonic analysis found per recording (see `voices`).
+    pub(crate) voices: HashMap<String, Arc<crate::voices::PolyRaw>>,
     counter: u64,
 }
 
@@ -53,6 +55,7 @@ impl AssetPool {
             live: self.live.clone(),
             prerendered: self.prerendered.clone(),
             analyses: HashMap::new(),
+            voices: HashMap::new(),
             counter: self.counter,
         }
     }
@@ -272,6 +275,8 @@ pub struct AppState {
     /// Analysis of the running recording (fed in `tick`), with the number of
     /// the last recording.
     live: Mutex<Option<LiveAnalysis>>,
+    /// The polyphonic live analysis, when the recording was started in that mode.
+    live_voices: Mutex<Option<crate::voices::LiveVoices>>,
     live_take: AtomicU32,
     /// File of the open project (None = never saved).
     pub project_file: Mutex<Option<std::path::PathBuf>>,
@@ -455,6 +460,7 @@ impl AppState {
             looping: Mutex::new(LoopState::default()),
             record_counter: AtomicU32::new(0),
             live: Mutex::new(None),
+            live_voices: Mutex::new(None),
             live_take: AtomicU32::new(0),
             project_file: Mutex::new(None),
             saved_hash: Mutex::new(project_hash(&Project::default())),
@@ -1025,8 +1031,20 @@ impl AppState {
     fn feed_live(&self, engine: &Engine) {
         let Ok(mut live) = lock(&self.live) else { return };
         if let Some(l) = live.as_mut() {
-            l.push(&engine.take_input_tap());
+            let samples = engine.take_input_tap();
+            l.push(&samples);
+            if let Ok(mut voices) = lock(&self.live_voices) {
+                if let Some(v) = voices.as_mut() {
+                    v.push(&samples, l.onsets());
+                }
+            }
         }
+    }
+
+    /// The running recording's polyphonic analysis (`None`: no recording, or
+    /// it wasn't started in that mode).
+    pub fn record_live_voices(&self) -> CmdResult<Option<crate::voices::LiveVoicesView>> {
+        Ok(lock(&self.live_voices)?.as_ref().map(|v| v.view()))
     }
 
     /// The running recording's analysis – what is new since `since` (see
@@ -1299,8 +1317,9 @@ impl AppState {
         self.execute(Command::AddClip { track_id, clip }, false)
     }
 
-    /// Start recording (playback runs along).
-    pub fn record_start(&self) -> CmdResult<()> {
+    /// Start recording (playback runs along). `voices`: also analyze it
+    /// polyphonically while it runs, with that many voices.
+    pub fn record_start(&self, voices: Option<klang_dsp::poly::VoiceCount>) -> CmdResult<()> {
         if crate::library::LISTENING.load(Ordering::SeqCst) {
             return Err(tr!("Sing-to-search for the library is currently running – stop it there first."));
         }
@@ -1316,6 +1335,7 @@ impl AppState {
         };
         let take = self.live_take.fetch_add(1, Ordering::Relaxed) + 1;
         *lock(&self.live)? = Some(LiveAnalysis::new(take, sample_rate));
+        *lock(&self.live_voices)? = voices.map(|count| crate::voices::LiveVoices::new(take, sample_rate, count));
         self.mute_metronome_for_recording();
         engine.play();
         Ok(())
@@ -1347,6 +1367,7 @@ impl AppState {
         // the finished analysis below replaces the live one
         engine.set_input_tap(false);
         *lock(&self.live)? = None;
+        *lock(&self.live_voices)? = None;
         let rec = engine.stop_recording().map_err(|e| e.to_string());
         self.unmute_metronome_after_recording();
         let rec = rec?;

@@ -9,6 +9,7 @@ import { playheadMoved } from "./noteinput.js";
 import { clipSpan, gridLabel, rangeLabel } from "./editmath.js";
 import { language, plural, t } from "./i18n.js";
 import { smoothLabel, smoothLevel } from "./smoothing.js";
+import { analysisMode, voicesAnalysis, voicesArg } from "./voices.js";
 import type { ConvertTarget, Note, SmoothResult, SmoothStrength, Track, TrackKind } from "./types.js";
 
 // ---------- Track height (splitter) ----------
@@ -189,6 +190,21 @@ export async function deleteRange(): Promise<boolean> {
   return true;
 }
 
+/** A recording as one instrument track per voice (polyphonic analysis, the chosen voice count). */
+export async function convertToVoices(trackId: number, clipId: number | null): Promise<boolean> {
+  notify(t("Detecting voices…"));
+  try {
+    const r = await backend.audioToNotes(trackId, clipId, "melodie", smoothLevel.peek(), "poly", voicesArg());
+    snapshot.value = r.snapshot;
+    selection.value = { trackId: r.trackId, clipId: null };
+    notify(plural(r.voices, "Created {n} track for the voice: {notes} notes ({how})", "Created {n} tracks, one per voice: {notes} notes ({how})", { notes: r.notes, how: melodyHow(r.smoothed) }));
+    return true;
+  } catch (e) {
+    notify(errorText(e), "error");
+    return false;
+  }
+}
+
 /** How a converted melody was made, for the message: quantized, and smoothed if anything was. */
 function melodyHow(smoothed: number): string {
   const q = t("quantized to sixteenths");
@@ -198,6 +214,7 @@ function melodyHow(smoothed: number): string {
 /** Converts a recording into a melody or rhythm track (`clipId` null: all audio clips of the track).
  *  A melody is smoothed first with the strength chosen in the settings / analysis window. */
 export async function convertAudio(trackId: number, clipId: number | null, target: ConvertTarget): Promise<boolean> {
+  if (target === "melodie" && analysisMode.peek() === "poly") return convertToVoices(trackId, clipId);
   notify(target === "melodie" ? t("Detecting pitches…") : t("Detecting hits…"));
   try {
     const r = await backend.audioToNotes(trackId, clipId, target, smoothLevel.peek());
@@ -250,7 +267,7 @@ export function seekBeats(beats: number): void {
 export async function toggleRecord(): Promise<void> {
   if (!status.peek().recording) {
     await guarded(async () => {
-      await backend.recordStart();
+      await backend.recordStart({ mode: analysisMode.peek(), voices: voicesArg() });
       // the analysis window follows the recording live
       liveRecording.value = true;
       showPanel("analyse");
@@ -270,7 +287,12 @@ export async function toggleRecord(): Promise<void> {
       selection.value = { trackId: r.trackId, clipId: r.clipId };
       showPanel("analyse");
       const key = r.analysis.key ? ` · ${r.analysis.key.name}` : "";
-      notify(`${t("Detected {n} notes", { n: r.analysis.notes.length })}${key}`);
+      if (analysisMode.peek() === "poly") {
+        const v = await loadVoices(r.analysis.assetId);
+        if (v) notify(`${plural(v.voices, "Detected {n} voice", "Detected {n} voices")} · ${plural(v.notes.length, "{n} note", "{n} notes")}${key}`);
+      } else {
+        notify(`${t("Detected {n} notes", { n: r.analysis.notes.length })}${key}`);
+      }
     });
   } finally {
     holdLive(false);
@@ -322,8 +344,24 @@ export async function analyzeSelected(): Promise<void> {
   const assetId = found.clip.source.assetId;
   await guarded(async () => {
     analysis.value = await backend.analyzeAsset(assetId);
+    if (analysisMode.peek() === "poly") await loadVoices(assetId);
     showPanel("analyse");
   });
+}
+
+/** The polyphonic analysis of a recording (default: the one in the analysis
+ *  window) with the chosen voice count – into `voicesAnalysis`. */
+export async function loadVoices(assetId?: string): Promise<import("./types.js").VoicesAnalysis | null> {
+  const id = assetId ?? analysis.peek()?.assetId ?? voicesAnalysis.peek()?.assetId;
+  if (!id) return null;
+  try {
+    const v = await backend.analyzeVoices(id, voicesArg());
+    voicesAnalysis.value = v;
+    return v;
+  } catch (e) {
+    notify(errorText(e), "error");
+    return null;
+  }
 }
 
 export async function detectTempo(): Promise<void> {
@@ -358,6 +396,10 @@ export async function melodyToTrack(): Promise<void> {
   }
   if (!found || found.clip.source.type !== "audio") {
     notify(t("Please select an audio clip."));
+    return;
+  }
+  if (analysisMode.peek() === "poly") {
+    await convertToVoices(found.track.id, found.clip.id);
     return;
   }
   if (await act(backend.createMelodyTrack(found.track.id, found.clip.id, smoothLevel.peek()))) {

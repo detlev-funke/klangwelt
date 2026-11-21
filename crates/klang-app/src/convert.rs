@@ -74,6 +74,9 @@ pub struct Converted {
     pub notes: usize,
     /// Detected notes that smoothing merged into a neighbour or removed.
     pub smoothed: usize,
+    /// Every track created (several when converting voice by voice) and how many voices.
+    pub track_ids: Vec<Id>,
+    pub voices: usize,
 }
 
 #[derive(Serialize)]
@@ -425,7 +428,7 @@ impl AppState {
             (Command::Batch { label: label.into(), commands: vec![Command::AddTrack { track: t, index: Some(index + 1) }] }, new_id)
         };
         let snapshot = self.execute(cmd, false)?;
-        Ok(Converted { snapshot, track_id: new_id, notes, smoothed })
+        Ok(Converted { snapshot, track_id: new_id, notes, smoothed, track_ids: vec![new_id], voices: 1 })
     }
 
     /// Smooths the notes of a clip (`indices`: None = all): unusually short

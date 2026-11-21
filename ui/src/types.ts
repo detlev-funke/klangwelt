@@ -1140,6 +1140,48 @@ export interface ConvertResult {
   notes: number;
   /** Detected notes that smoothing merged into a neighbour or removed. */
   smoothed: number;
+  /** Every track created (several when converting voice by voice) and how many voices. */
+  trackIds: Id[];
+  voices: number;
+}
+
+/** A note of the polyphonic analysis with its voice (0 = the highest). */
+export interface VoiceNote {
+  startSecs: number;
+  endSecs: number;
+  midi: number;
+  cents: number;
+  velocity: number;
+  voice: number;
+  newAttack: boolean;
+}
+
+/** Several voices at once (polyphonic analysis of a recording). */
+export interface VoicesAnalysis {
+  assetId: string;
+  durationSecs: number;
+  /** How many voices, and whether that was found from the recording. */
+  voices: number;
+  auto: boolean;
+  perVoice: Array<{ notes: number; low: number | null; high: number | null }>;
+  notes: VoiceNote[];
+  /** Per moment (every other frame): time and the pitches found [MIDI, strength]. */
+  candidates: Array<[number, Array<[number, number]>]>;
+  onsets: number[];
+  tempoEstimate: number | null;
+  key: KeyInfo | null;
+}
+
+/** The polyphonic analysis of a running recording. */
+export interface LiveVoicesView {
+  take: number;
+  seconds: number;
+  voices: number;
+  auto: boolean;
+  /** The notes of the last seconds, with voices. */
+  notes: VoiceNote[];
+  /** What sounds right now (MIDI, lowest first). */
+  sounding: number[];
 }
 
 /** How much notes from a recording are smoothed (short fragments, repeated notes of one pitch). */

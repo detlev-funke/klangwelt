@@ -1,0 +1,23 @@
+{
+  "type": "fixed",
+  "platform": "browser",
+  "title": {
+    "en": "New versions show up at once",
+    "de": "Neue Versionen gleich sichtbar",
+    "fr": "Les nouvelles versions apparaissent tout de suite",
+    "it": "Le nuove versioni compaiono subito",
+    "es": "Las nuevas versiones aparecen enseguida",
+    "nl": "Nieuwe versies meteen zichtbaar",
+    "pl": "Nowe wersje widać od razu"
+  },
+  "text": {
+    "en": "after an update, Klangwelt in the browser and as an installed app no longer starts once more in the old version. If you haven't touched anything yet, it switches to the new one at once; otherwise a note offers “Reload” – your project comes along either way. This also lets the browser install the app again where it saw no manifest.",
+    "de": "Nach einem Update startet Klangwelt im Browser und als installierte App nicht mehr einmal in der alten Version. Hast du noch nichts angefasst, wechselt es sofort zur neuen; sonst bietet ein Hinweis „Neu laden“ an – dein Projekt kommt in jedem Fall mit. Damit lässt sich die App auch wieder installieren, wo der Browser kein Manifest fand.",
+    "fr": "après une mise à jour, Klangwelt dans le navigateur et en application installée ne démarre plus une fois encore dans l'ancienne version. Si vous n'avez encore rien touché, il passe aussitôt à la nouvelle ; sinon un message propose « Recharger » – votre projet suit dans tous les cas. Le navigateur peut ainsi de nouveau installer l'application là où il ne trouvait pas de manifeste.",
+    "it": "dopo un aggiornamento, Klangwelt nel browser e come app installata non parte più un'ultima volta nella vecchia versione. Se non hai ancora toccato nulla, passa subito alla nuova; altrimenti un avviso propone «Ricarica» – il tuo progetto viene sempre con te. Così il browser può di nuovo installare l'app dove non trovava il manifest.",
+    "es": "tras una actualización, Klangwelt en el navegador y como aplicación instalada ya no arranca una vez más en la versión antigua. Si aún no has tocado nada, cambia enseguida a la nueva; si no, un aviso ofrece «Recargar»: tu proyecto viene contigo en cualquier caso. Así el navegador vuelve a poder instalar la aplicación donde no encontraba el manifiesto.",
+    "nl": "na een update start Klangwelt in de browser en als geïnstalleerde app niet meer nog één keer in de oude versie. Heb je nog niets aangeraakt, dan schakelt het meteen over naar de nieuwe; anders biedt een melding ‘Herladen’ aan – je project gaat hoe dan ook mee. Zo kan de browser de app ook weer installeren waar hij geen manifest vond.",
+    "pl": "po aktualizacji Klangwelt w przeglądarce i jako zainstalowana aplikacja nie uruchamia się już jeszcze raz w starej wersji. Jeśli niczego jeszcze nie dotknięto, od razu przechodzi na nową; w przeciwnym razie komunikat proponuje „Przeładuj” – projekt w każdym razie zostaje. Dzięki temu przeglądarka znów może zainstalować aplikację tam, gdzie nie widziała manifestu."
+  },
+  "dev": "web/host.ts reports a worker taking over from an earlier one, update.ts reloads through autosave.ts reloadKeepingProject (shared with the language switch) or shows a note; sw.ts installs with cache: \"reload\" so no file comes from the browser's HTTP cache."
+}

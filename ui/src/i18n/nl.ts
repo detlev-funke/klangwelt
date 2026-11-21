@@ -939,6 +939,11 @@ const dict: Dict = {
   "Autosave failed: {error}": "Automatisch opslaan mislukt: {error}",
   "The project couldn't be saved. Switch the language anyway? Unsaved changes may be lost.": "Het project kon niet worden opgeslagen. Toch van taal wisselen? Niet-opgeslagen wijzigingen kunnen verloren gaan.",
   "Switch anyway": "Toch wisselen",
+  // ui/src/update.ts
+  "The project couldn't be saved. Reload anyway? Unsaved changes may be lost.": "Het project kon niet worden opgeslagen. Toch herladen? Niet-opgeslagen wijzigingen kunnen verloren gaan.",
+  "Reload anyway": "Toch herladen",
+  "A new version of Klangwelt is ready.": "Er staat een nieuwe versie van Klangwelt klaar.",
+  "Reload": "Herladen",
   "Restored the unsaved project from the last session.": "Het niet-opgeslagen project van de vorige sessie is hersteld.",
 
   // ui/src/components/song.ts

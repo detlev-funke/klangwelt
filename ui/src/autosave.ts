@@ -1,5 +1,5 @@
 // Saving in the background, and keeping the open project through a reload of
-// the UI (switching the language).
+// the UI (switching the language, a new version of the browser app – update.ts).
 //
 // Every `autosaveSeconds` (gear menu; one minute by default, 0 = off) the core
 // saves the open project if it changed (`project_autosave`):
@@ -142,20 +142,19 @@ export async function autosaveNow(recoveryOnly = false): Promise<AutosaveResult 
 }
 
 /**
- * Switch the language: save the project first (see above), remember to open
- * it again, then reload. If saving fails, ask before changes could be lost.
+ * Before a reload of the UI: save the project (see above) and remember to open
+ * it again. If saving fails with unsaved changes, ask first (`question`, the
+ * button `go`); false: the user cancelled, don't reload.
  */
-export async function switchLanguageKeepingProject(code: string): Promise<void> {
+async function prepareReload(question: string, go: string): Promise<boolean> {
   const snap = snapshot.peek();
   const result = await autosaveNow(!autosaveOn());
   if (!result && snap?.dirty) {
-    const choice = await modal(t("Unsaved changes"), [
-      h("p", {}, t("The project couldn't be saved. Switch the language anyway? Unsaved changes may be lost.")),
-    ], [
-      { label: t("Switch anyway"), value: "switch", kind: "danger" },
+    const choice = await modal(t("Unsaved changes"), [h("p", {}, question)], [
+      { label: go, value: "go", kind: "danger" },
       { label: t("Cancel"), value: "cancel", kind: "ghost" },
     ]);
-    if (choice !== "switch") return;
+    if (choice !== "go") return false;
   }
   try {
     await backend.syncStorage();
@@ -167,7 +166,17 @@ export async function switchLanguageKeepingProject(code: string): Promise<void> 
   } catch {
     /* without storage: the recovery copy still comes back */
   }
-  switchLanguage(code);
+  return true;
+}
+
+/** Switch the language: save the project, reload, open it again (see above). */
+export async function switchLanguageKeepingProject(code: string): Promise<void> {
+  if (await prepareReload(t("The project couldn't be saved. Switch the language anyway? Unsaved changes may be lost."), t("Switch anyway"))) switchLanguage(code);
+}
+
+/** Reload the UI (a new version of the browser app): save the project, reload, open it again. */
+export async function reloadKeepingProject(): Promise<void> {
+  if (await prepareReload(t("The project couldn't be saved. Reload anyway? Unsaved changes may be lost."), t("Reload anyway"))) location.reload();
 }
 
 /**

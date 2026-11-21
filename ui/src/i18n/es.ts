@@ -939,6 +939,11 @@ const dict: Dict = {
   "Autosave failed: {error}": "Error al guardar automáticamente: {error}",
   "The project couldn't be saved. Switch the language anyway? Unsaved changes may be lost.": "No se pudo guardar el proyecto. ¿Cambiar el idioma de todos modos? Los cambios sin guardar podrían perderse.",
   "Switch anyway": "Cambiar de todos modos",
+  // ui/src/update.ts
+  "The project couldn't be saved. Reload anyway? Unsaved changes may be lost.": "No se pudo guardar el proyecto. ¿Recargar de todos modos? Los cambios sin guardar podrían perderse.",
+  "Reload anyway": "Recargar de todos modos",
+  "A new version of Klangwelt is ready.": "Hay una nueva versión de Klangwelt lista.",
+  "Reload": "Recargar",
   "Restored the unsaved project from the last session.": "Se ha restaurado el proyecto sin guardar de la última sesión.",
 
   // ui/src/components/song.ts

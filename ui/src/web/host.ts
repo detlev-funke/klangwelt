@@ -335,6 +335,9 @@ async function startAudio(audio: WebAudioInfo): Promise<MessagePort | null> {
   }
 }
 
+/** Event on window: a newer version of the app took over from the service worker (see update.ts). */
+export const UPDATE_READY = "klangwelt:update-ready";
+
 /** Service worker: app files and WebAssembly in the cache – then it also runs
  *  offline. `?ohne-sw` in the address turns it off (for development). */
 function registerServiceWorker(): void {
@@ -346,6 +349,17 @@ function registerServiceWorker(): void {
   }
   const register = () =>
     void navigator.serviceWorker.register(new URL("../sw.js", import.meta.url), { scope: "./", type: "module" }).catch((e) => console.warn("Service Worker:", e));
+  // The worker serves this page from its cache: after an update the page is still the
+  // old version while the new worker caches the new one and takes over. Taking over
+  // from an earlier worker means a newer version is ready – update.ts decides when to
+  // reload (the mark on <html> is for a listener that comes later than the event).
+  // Without an earlier worker this page came from the network and is current already.
+  if (navigator.serviceWorker.controller) {
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      document.documentElement.dataset.updateReady = "";
+      window.dispatchEvent(new Event(UPDATE_READY));
+    });
+  }
   // the app loads after the dictionary (main.ts awaits it) – "load" may have fired already
   if (document.readyState === "complete") register();
   else window.addEventListener("load", register);

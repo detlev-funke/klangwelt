@@ -24,11 +24,13 @@ const sw = self as unknown as {
   registration: { scope: string };
 };
 
+// Every file straight from the server ("reload"): GitHub Pages lets the browser keep
+// files for ten minutes, and a new version must not cache an old page next to new code.
 sw.addEventListener("install", (e) => {
   e.waitUntil(
     caches
       .open(CACHE)
-      .then((c) => c.addAll(FILES.map((f) => new URL(f, sw.registration.scope).href)))
+      .then((c) => c.addAll(FILES.map((f) => new Request(new URL(f, sw.registration.scope).href, { cache: "reload" }))))
       .then(() => sw.skipWaiting()),
   );
 });

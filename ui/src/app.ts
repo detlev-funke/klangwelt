@@ -13,6 +13,7 @@ import { initLibrary } from "./components/library.js";
 import { initFileDrop } from "./filedrop.js";
 import { initAutosave, resumeProject } from "./autosave.js";
 import { checkWhatsNew } from "./components/whatsnew.js";
+import { watchForUpdates } from "./update.js";
 import { t } from "./i18n.js";
 import { agentPulse, chat, chatUnread, errorText, followLive, instrumentSpecs, libraryBusy, notify, savedSounds, snapshot, status, visiblePanels } from "./store.js";
 
@@ -99,6 +100,9 @@ async function boot(): Promise<void> {
     notify(t("Connection to the core failed: {error}", { error: errorText(e) }), "error");
   }
   initAutosave();
+  // browser: a newer version took over from the service worker – reload into it
+  // (only now: the reload keeps the project, which has to be back first)
+  watchForUpdates();
   backend.instrumentSpecs().then((s) => (instrumentSpecs.value = s)).catch(() => {});
   backend.soundsList().then((s) => (savedSounds.value = s)).catch(() => (savedSounds.value = []));
   backend.onSoundsChanged((s) => (savedSounds.value = s));

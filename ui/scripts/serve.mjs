@@ -13,13 +13,16 @@
 // work like on Zenodo; `--no-multirange` answers several ranges with the
 // whole file, like GitHub Pages (to test the fallback). `--no-library` answers
 // /library.json with no package, so the app reads nothing from Zenodo (tests).
+// `--dist=DIR` serves another folder instead of ui/dist(-web), e.g. a copy a test
+// changes to stand for a new version.
 import { createServer } from "node:http";
 import { open, readFile, stat } from "node:fs/promises";
 import { extname, join, normalize, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const web = process.argv.includes("--web");
-const dist = join(dirname(fileURLToPath(import.meta.url)), "..", web ? "dist-web" : "dist");
+const distArg = process.argv.find((a) => a.startsWith("--dist="))?.slice(7);
+const dist = distArg ? resolve(distArg) : join(dirname(fileURLToPath(import.meta.url)), "..", web ? "dist-web" : "dist");
 const types = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript",

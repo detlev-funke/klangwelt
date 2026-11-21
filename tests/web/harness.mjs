@@ -275,15 +275,16 @@ async function ready(app) {
  *  app gets no package (never the Zenodo record from ui/static/library.json).
  *  `fakeMic`: WAV file the substitute microphone plays (in a loop) instead of its beep.
  *  `autosave`: seconds between autosaves (ui/src/autosave.ts) – off by default, so it never
- *  saves (and clears "unsaved changes") in the middle of other tests; null keeps the app's default. */
-export async function startWeb({ languages = "de-DE,de", library = null, fakeMic = null, autosave = 0 } = {}) {
+ *  saves (and clears "unsaved changes") in the middle of other tests; null keeps the app's default.
+ *  `dist`: serve this folder instead of ui/dist-web (a copy a test changes, e.g. to stand for a new version). */
+export async function startWeb({ languages = "de-DE,de", library = null, fakeMic = null, autosave = 0, dist = null } = {}) {
   if (!existsSync(join(ROOT, "ui", "dist-web", "klang_web.wasm"))) throw new Error("ui/dist-web fehlt – erst „npm run build:web“ in ui/");
   if (!existsSync(EDGE)) throw new Error(`Edge nicht gefunden: ${EDGE} (KLANGWELT_EDGE setzen)`);
   const tmp = makeTempDir("klangwelt-web-");
   const downloads = join(tmp, "downloads");
   mkdirSync(downloads, { recursive: true });
   const [port, cdpPort] = [await freePort(), await freePort()];
-  const serverArgs = library ? [`--library=${library}`] : ["--no-library"];
+  const serverArgs = [...(library ? [`--library=${library}`] : ["--no-library"]), ...(dist ? [`--dist=${dist}`] : [])];
   const server = await serve(port, serverArgs);
   const edge = spawn(
     EDGE,

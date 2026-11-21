@@ -939,6 +939,11 @@ const dict: Dict = {
   "Autosave failed: {error}": "Échec de l'enregistrement automatique : {error}",
   "The project couldn't be saved. Switch the language anyway? Unsaved changes may be lost.": "Le projet n'a pas pu être enregistré. Changer de langue quand même ? Les modifications non enregistrées risquent d'être perdues.",
   "Switch anyway": "Changer quand même",
+  // ui/src/update.ts
+  "The project couldn't be saved. Reload anyway? Unsaved changes may be lost.": "Le projet n'a pas pu être enregistré. Recharger quand même ? Les modifications non enregistrées risquent d'être perdues.",
+  "Reload anyway": "Recharger quand même",
+  "A new version of Klangwelt is ready.": "Une nouvelle version de Klangwelt est prête.",
+  "Reload": "Recharger",
   "Restored the unsaved project from the last session.": "Le projet non enregistré de la dernière session a été restauré.",
 
   // ui/src/components/song.ts

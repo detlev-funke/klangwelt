@@ -605,7 +605,8 @@ default layout.
   `autosave::writing()`), so the dot means "not yet in the file". A project
   without a file goes into the **recovery copy** `Wiederherstellung.klangwelt`
   next to the settings file (desktop: the app's local data folder, in tests
-  under `KLANGWELT_BIBLIOTHEK`; browser: `/Klangwelt` in OPFS). A small
+  under `KLANGWELT_BIBLIOTHEK`; browser: `/Klangwelt` in OPFS), written by
+  `AppState::write_project` like Save, change history included. A small
   `Wiederherstellung.json` beside it holds the project's file and the hash at
   its last save, so the project comes back unsaved and with the same "dirty"
   state. An unchanged project isn't written again. Without changes, or after

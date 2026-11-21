@@ -567,7 +567,7 @@ impl AppState {
     /// Saves the project together with the recordings it uses and its
     /// history to `path`.
     pub fn save_project(&self, path: &std::path::Path) -> CmdResult<()> {
-        let (project, history) = {
+        {
             let mut s = lock(&self.session)?;
             // A still unnamed project is afterwards named like its file (without an undo step).
             if s.project.name == Project::default().name {
@@ -575,6 +575,19 @@ impl AppState {
                     s.project.name = stem.to_string();
                 }
             }
+        }
+        let hash = self.write_project(path)?;
+        *lock(&self.saved_hash)? = hash;
+        *lock(&self.project_file)? = Some(path.to_path_buf());
+        Ok(())
+    }
+
+    /// Writes the open project with its recordings and history to `path`
+    /// without making it the project's file (Save, and the autosave's recovery
+    /// copy); returns the checksum of what was written.
+    pub fn write_project(&self, path: &std::path::Path) -> CmdResult<u64> {
+        let (project, history) = {
+            let s = lock(&self.session)?;
             (s.project.clone(), s.history_file().ok())
         };
         let audio: Vec<crate::project::AudioData> = {
@@ -593,9 +606,7 @@ impl AppState {
                 .collect()
         };
         crate::project::save_with_history(path, &project, &audio, history.as_ref()).map_err(|e| tr!("Saving to {path} failed: {error}", path = path.display(), error = e))?;
-        *lock(&self.saved_hash)? = project_hash(&project);
-        *lock(&self.project_file)? = Some(path.to_path_buf());
-        Ok(())
+        Ok(project_hash(&project))
     }
 
     /// Opens a project (replaces the open one) with the history saved in it –

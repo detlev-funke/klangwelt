@@ -18,7 +18,7 @@
 //!   app closes normally (its shell calls [`clear_recovery`]).
 
 use crate::state::{lock, project_hash, AppState, CmdResult};
-use crate::{project, vfs};
+use crate::vfs;
 use klang_core::Project;
 use klang_i18n::tr;
 use serde::{Deserialize, Serialize};
@@ -97,25 +97,15 @@ pub fn autosave(st: &AppState, recovery_only: bool) -> CmdResult<AutosaveResult>
 /// False: no place for it.
 fn write_recovery(st: &AppState, file: Option<&Path>) -> CmdResult<bool> {
     let Some((copy, info_path)) = recovery_paths(st)? else { return Ok(false) };
-    let (project, hash) = {
-        let s = lock(&st.session)?;
-        (s.project.clone(), project_hash(&s.project))
-    };
-    let info = RecoveryInfo { file: file.map(|p| p.display().to_string()), saved_hash: *lock(&st.saved_hash)?, hash };
+    let hash = project_hash(&lock(&st.session)?.project);
+    let mut info = RecoveryInfo { file: file.map(|p| p.display().to_string()), saved_hash: *lock(&st.saved_hash)?, hash };
     if vfs::exists(&copy) && read_info(&info_path).as_ref() == Some(&info) {
         return Ok(true);
     }
-    let audio: Vec<project::AudioData> = {
-        let pool = lock(&st.pool)?;
-        project::used_assets(&project)
-            .into_iter()
-            .filter_map(|id| pool.get(&id).map(|a| project::AudioData { name: a.name.clone(), samples: a.samples.to_vec(), sample_rate: a.sample_rate, id }))
-            .collect()
-    };
-    let failed = |e: std::io::Error| tr!("Saving to {path} failed: {error}", path = copy.display(), error = e);
-    project::save(&copy, &project, &audio).map_err(failed)?;
+    // the same file as Save writes: recordings and the change history included
+    info.hash = st.write_project(&copy)?;
     let json = serde_json::to_vec(&info).map_err(|e| e.to_string())?;
-    vfs::write_atomic(&info_path, &json, "json.teil").map_err(failed)?;
+    vfs::write_atomic(&info_path, &json, "json.teil").map_err(|e| tr!("Saving to {path} failed: {error}", path = info_path.display(), error = e))?;
     Ok(true)
 }
 
@@ -149,6 +139,7 @@ pub fn clear_recovery(st: &AppState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::project;
     use klang_core::Command;
 
     fn app(dir: &Path) -> AppState {
@@ -219,6 +210,7 @@ mod tests {
         assert!(recover(&fresh).unwrap());
         assert_eq!(state(&fresh), (None, true), "without a file and unsaved");
         assert_eq!(names(&fresh), ["Skizze"]);
+        assert!(lock(&fresh.session).unwrap().undo_label().is_some(), "the change history came along");
         assert_eq!(lock(&fresh.session).unwrap().project.name, Project::default().name, "the copy's file name doesn't name the project");
 
         // undone to the empty project: the copy is removed

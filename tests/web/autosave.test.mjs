@@ -172,6 +172,7 @@ test("a project without a name goes into a recovery copy and comes back after th
   const notice = await app.waitFor(() => T.st.snapshot.peek().project.tracks.length && (T.st.message.peek()?.text ?? "-"), { what: "project back" });
   assert.match(notice, /ungespeicherte Projekt der letzten Sitzung wurde wiederhergestellt/);
   assert.deepEqual(await state(), { file: null, dirty: true, tracks: ["Skizze"] });
+  assert.equal(await app.eval(() => T.st.snapshot.peek().canUndo), true, "the change history came along");
   // saved under a name: the copy is gone
   await saveAs("Skizze");
   assert.equal(await stored(RECOVERY), false);

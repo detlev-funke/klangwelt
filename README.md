@@ -2,9 +2,9 @@
 
 **Make music in your browser – no installation, no account, no server.**
 
-### [▶ Open Klangwelt in your browser](https://devfunke.github.io/klangwelt/)
+### [▶ Open Klangwelt in your browser](https://detlev-funke.github.io/klangwelt/)
 
-Prefer a program on your computer? → [Klangwelt Desktop](https://github.com/DevFunke/klangwelt-desktop)
+Prefer a program on your computer? → [Klangwelt Desktop](https://github.com/detlev-funke/klangwelt-desktop)
 
 ---
 
@@ -78,7 +78,7 @@ listen to them, then write them into a track with one click.
 
 ## Getting started
 
-1. [Open Klangwelt](https://devfunke.github.io/klangwelt/) – Edge or Chrome
+1. [Open Klangwelt](https://detlev-funke.github.io/klangwelt/) – Edge or Chrome
    work best.
 2. **"Load demo"** plays a short piece with beat, arpeggio and melody – a good
    place to start exploring. The space bar starts and stops playback.
@@ -100,7 +100,7 @@ record or sing a melody.
 ## Browser or desktop?
 
 Both share the same interface and the same core. The
-[desktop app](https://github.com/DevFunke/klangwelt-desktop) can additionally
+[desktop app](https://github.com/detlev-funke/klangwelt-desktop) can additionally
 do what a web page is not allowed to do, or cannot do well:
 
 | | Browser | Desktop |

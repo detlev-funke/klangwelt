@@ -15,7 +15,7 @@ use std::path::Path;
 
 /// The file formats, copied into every README (headings one level down).
 const FORMAT: &str = include_str!("../../../docs/LIBRARY-FORMAT.md");
-const REPO: &str = "https://github.com/DevFunke/klangwelt";
+const REPO: &str = "https://github.com/detlev-funke/klangwelt";
 
 /// Writes `README.md` and `zenodo.json` into the package folder `dir`.
 pub fn write(dir: &Path, cfg: &Config) -> io::Result<()> {

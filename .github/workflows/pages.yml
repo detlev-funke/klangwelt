@@ -1,5 +1,5 @@
 # Build the browser version and publish it on GitHub Pages:
-# https://devfunke.github.io/klangwelt/
+# https://detlev-funke.github.io/klangwelt/
 #
 # One-time setup: on GitHub, under Settings → Pages → Build and deployment,
 # choose "GitHub Actions" as the source. After that this runs on every push

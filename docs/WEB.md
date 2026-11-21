@@ -42,7 +42,7 @@ npm run serve:web     # → http://localhost:1420/
 
 ## Publishing on GitHub Pages
 
-The browser version runs at **https://devfunke.github.io/klangwelt/**.
+The browser version runs at **https://detlev-funke.github.io/klangwelt/**.
 All paths in the app are relative, so it also runs in a subfolder.
 
 * **Setup (once):** Create the repo on GitHub and push, then under
@@ -56,9 +56,9 @@ All paths in the app are relative, so it also runs in a subfolder.
   it on the next visit (version = checksum of the files).
 * **Custom domain** (later, e.g. klangwelt.io): enter it under *Settings →
   Pages → Custom domain* and, at the domain provider, set a CNAME pointing to
-  `devfunke.github.io`; GitHub issues the HTTPS certificate itself.
+  `detlev-funke.github.io`; GitHub issues the HTTPS certificate itself.
 * **Good to know:** The browser's storage (OPFS) is per origin – under
-  `devfunke.github.io` all project pages of this account share one storage.
+  `detlev-funke.github.io` all project pages of this account share one storage.
   Klangwelt puts everything into its own folder `Klangwelt`.
 
 ## Structure: one core, two shells

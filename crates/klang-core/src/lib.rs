@@ -15,6 +15,7 @@ pub mod merge;
 mod metrics;
 mod model;
 mod session;
+pub mod smooth;
 
 pub use command::{apply, ClipPatch, Command, CoreError, ProjectPatch, TrackPatch};
 pub use history::{Checkpoint, History, HistoryFile, NodeId, Scope, Variant};

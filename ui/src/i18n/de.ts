@@ -3,6 +3,35 @@
 import type { Dict } from "../i18n.js";
 
 const dict: Dict = {
+  // smoothing notes from recordings (ui/src/smoothing.ts, crates/klang-core/src/smooth.rs, crates/klang-app/src/convert.rs)
+  "{n} fragments smoothed": { one: "{n} Bruchstück geglättet", other: "{n} Bruchstücke geglättet" },
+  "Nothing to smooth in these {n} notes ({strength})": { one: "In dieser Note gibt es nichts zu glätten ({strength})", other: "In diesen {n} Noten gibt es nichts zu glätten ({strength})" },
+  "{n} fragments merged": { one: "{n} Bruchstück zusammengelegt", other: "{n} Bruchstücke zusammengelegt" },
+  "{n} soft blips removed": { one: "{n} leiser Ausreißer entfernt", other: "{n} leise Ausreißer entfernt" },
+  "Smoothed ({strength}): {what} – Ctrl+Z brings them back": "Geglättet ({strength}): {what} – Strg+Z holt sie zurück",
+  "Smooth notes": "Noten glätten",
+  "When the melody becomes notes: short fragments and repeated notes of one pitch are merged": "Wenn die Melodie zu Noten wird: kurze Bruchstücke und wiederholte Töne gleicher Höhe werden zusammengelegt",
+  "Smooth notes from recordings": "Noten aus Aufnahmen glätten",
+  "When a recording becomes notes, unusually short fragments go into the note next to them and a held note split in two becomes one again. Selected notes can be smoothed afterwards with a right-click.": "Wird eine Aufnahme zu Noten, gehen ungewöhnlich kurze Bruchstücke in der Nachbarnote auf, und ein in zwei Teile zerfallener gehaltener Ton wird wieder einer. Markierte Noten kannst du hinterher per Rechtsklick glätten.",
+  "All notes of the clip: short fragments go into the note next to them, repeated notes of one pitch become one": "Alle Noten des Clips: kurze Bruchstücke gehen in der Nachbarnote auf, wiederholte Töne gleicher Höhe werden zu einem",
+  "Smooth": "Glätten",
+  "For notes from a recording: short fragments go into the note next to them, repeated notes of one pitch become one – a louder or accented note stays apart": "Für Noten aus einer Aufnahme: kurze Bruchstücke gehen in der Nachbarnote auf, wiederholte Töne gleicher Höhe werden zu einem – ein lauterer oder betonter Ton bleibt für sich",
+  "Pitch detection breaks a sung or played line into more notes than were played. **Smoothing** puts them back together: unusually short fragments go into the note next to them, a held note split in two becomes one again – a louder or accented note stays apart. It happens when a recording becomes notes (strength in the gear menu and the analysis window), and afterwards with a right-click on selected notes or a note clip → **Smooth**.": "Die Tonerkennung zerlegt eine gesungene oder gespielte Linie in mehr Noten, als gespielt wurden. **Glätten** fügt sie wieder zusammen: ungewöhnlich kurze Bruchstücke gehen in der Nachbarnote auf, ein in zwei Teile zerfallener gehaltener Ton wird wieder einer – ein lauterer oder betonter Ton bleibt für sich. Das geschieht, wenn eine Aufnahme zu Noten wird (Stärke im Zahnrad und im Fenster „Analyse“), und hinterher per Rechtsklick auf markierte Noten oder einen Noten-Clip → **Glätten**.",
+  "Before that, the melody is smoothed (strength in the gear menu or the analysis window): short fragments and a held note split in two are merged.": "Vorher wird die Melodie geglättet (Stärke im Zahnrad oder im Fenster „Analyse“): kurze Bruchstücke und ein in zwei Teile zerfallener gehaltener Ton werden zusammengelegt.",
+  "Light": "Leicht",
+  "Medium": "Mittel",
+  "Strong": "Stark",
+  "Keep every detected note": "Jede erkannte Note behalten",
+  "Only the clearest fragments: very short notes and notes of one pitch that touch": "Nur die deutlichsten Bruchstücke: sehr kurze Noten und sich berührende Töne gleicher Höhe",
+  "Short fragments go into the note next to them, a held note split in two becomes one again": "Kurze Bruchstücke gehen in der Nachbarnote auf, ein in zwei Teile zerfallener gehaltener Ton wird wieder einer",
+  "Also longer fragments and small gaps between notes of one pitch": "Auch längere Bruchstücke und kleine Lücken zwischen Tönen gleicher Höhe",
+  "Notes smoothed: {n} fewer": { one: "Noten geglättet: {n} weniger", other: "Noten geglättet: {n} weniger" },
+  "Smooth notes (light)": "Noten glätten (leicht)",
+  "Smooth notes (medium)": "Noten glätten (mittel)",
+  "Smooth notes (strong)": "Noten glätten (stark)",
+  "Smoothing only works on note clips.": "Glätten geht nur bei Noten-Clips.",
+  "Drum notes are single hits – smoothing is meant for melodies, e.g. from a recording.": "Schlagzeug-Noten sind einzelne Schläge – Glätten ist für Melodien gedacht, z. B. aus einer Aufnahme.",
+
   // change history (ui/src/components/history.ts, crates/klang-core/src/session.rs, crates/klang-app/src/history.rs)
   "Combine variants: choose per track and section which version goes into a new variant": "Varianten kombinieren: pro Spur und Abschnitt wählen, welche Fassung in eine neue Variante kommt",
   "Combine…": "Kombinieren …",

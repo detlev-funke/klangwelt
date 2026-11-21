@@ -5,6 +5,7 @@ import { dropdown, h, icon } from "../dom.js";
 import { flag } from "../flags.js";
 import { LANGUAGES, language, t } from "../i18n.js";
 import { highOnTop, setHighOnTop } from "../pianoroll.js";
+import { SMOOTH_LEVELS, setSmoothLevel, smoothLabel, smoothLevel, smoothTitle } from "../smoothing.js";
 import { effect } from "../signals.js";
 import { whatsNewMenuItem, whatsNewUnread } from "./whatsnew.js";
 
@@ -49,6 +50,31 @@ function autosaveOptions(close: () => void): HTMLElement {
           },
         },
         s === 0 ? t("Off") : t("{n} min", { n: s / 60 }),
+      ),
+    ),
+  );
+}
+
+/** Smoothing when a recording becomes notes: off, light, medium, strong (smoothing.ts). */
+function smoothOptions(close: () => void): HTMLElement {
+  const now = smoothLevel.peek();
+  return h(
+    "div",
+    { class: "autosave-grid smooth-grid", role: "group", "aria-label": t("Smooth notes from recordings") },
+    ...SMOOTH_LEVELS.map((level) =>
+      h(
+        "button",
+        {
+          class: `dev-option autosave-option smooth-option${level === now ? " on" : ""}`,
+          "data-smooth": level,
+          "aria-pressed": level === now ? "true" : "false",
+          title: smoothTitle(level),
+          onclick: () => {
+            close();
+            setSmoothLevel(level);
+          },
+        },
+        smoothLabel(level),
       ),
     ),
   );
@@ -114,6 +140,10 @@ export function settingsMenu(): HTMLElement {
       h("div", { class: "menu-title" }, t("Save automatically")),
       autosaveOptions(close),
       h("div", { class: "menu-hint" }, t("Only when something changed, and only after playback or recording. A project without a name goes into a recovery copy. Earlier states stay in the change history.")),
+      h("div", { class: "menu-sep" }),
+      h("div", { class: "menu-title" }, t("Smooth notes from recordings")),
+      smoothOptions(close),
+      h("div", { class: "menu-hint" }, t("When a recording becomes notes, unusually short fragments go into the note next to them and a held note split in two becomes one again. Selected notes can be smoothed afterwards with a right-click.")),
       h("div", { class: "menu-sep" }),
       whatsNewMenuItem(close),
     );

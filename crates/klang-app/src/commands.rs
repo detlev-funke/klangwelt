@@ -13,6 +13,7 @@
 
 use crate::state::{AppState, CmdResult};
 use crate::{autosave, export, fugue, harmony, library, project, rhythm, song, sound, sound_library};
+use klang_core::smooth::Strength;
 use klang_core::{Command, Id, InstrumentKind};
 use klang_i18n::{tr, trn};
 use klang_music::counterpoint::VNote;
@@ -61,6 +62,7 @@ pub const COMMANDS: &[&str] = &[
     "audio_to_notes",
     "delete_range",
     "quantize_notes",
+    "smooth_notes",
     "create_demo",
     "preview_track",
     "preview_note",
@@ -266,10 +268,10 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
             let (asset_id,) = args!(a; asset_id: String);
             json(st.analysis_for(&asset_id)?)
         }
-        // Detected melody of an audio clip as an instrument track (quantized to sixteenth notes)
+        // Detected melody of an audio clip as an instrument track (smoothed, quantized to sixteenth notes)
         "create_melody_track" => {
-            let (track_id, clip_id) = args!(a; track_id: u64, clip_id: u64);
-            json(st.melody_to_track(Id(track_id), Id(clip_id), &tr!("Import melody"))?.0)
+            let (track_id, clip_id, smooth) = args!(a; track_id: u64, clip_id: u64, smooth: Option<Strength>);
+            json(st.melody_to_track(Id(track_id), Id(clip_id), &tr!("Import melody"), smooth.unwrap_or_default())?.0)
         }
         // Insert audio files (drag & drop) as tracks – read through the core's file system
         // (desktop: the disk; browser: dropped files under /Klangwelt/Import)
@@ -284,14 +286,15 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
                 .collect();
             json(st.import_audio(files, track_id.map(Id), start_beats.unwrap_or(0.0))?)
         }
-        // Convert a recording into a melody or rhythm track (without clipId: all audio clips of the track)
+        // Convert a recording into a melody or rhythm track (without clipId: all audio clips of the track;
+        // smooth: how much a melody is smoothed, default medium)
         "audio_to_notes" => {
-            let (track_id, clip_id, target) = args!(a; track_id: u64, clip_id: Option<u64>, target: crate::convert::Target);
+            let (track_id, clip_id, target, smooth) = args!(a; track_id: u64, clip_id: Option<u64>, target: crate::convert::Target, smooth: Option<Strength>);
             let label = match target {
                 crate::convert::Target::Melodie => tr!("Convert to melody track"),
                 crate::convert::Target::Rhythmus => tr!("Convert to rhythm track"),
             };
-            json(st.audio_to_notes(Id(track_id), clip_id.map(Id), target, &label)?)
+            json(st.audio_to_notes(Id(track_id), clip_id.map(Id), target, &label, smooth.unwrap_or_default())?)
         }
         // Delete a time range from all tracks, everything after it moves up
         "delete_range" => {
@@ -302,6 +305,12 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
         "quantize_notes" => {
             let (track_id, clip_id, indices, grid, lengths) = args!(a; track_id: u64, clip_id: u64, indices: Option<Vec<usize>>, grid: f64, lengths: bool);
             json(st.quantize_notes(Id(track_id), Id(clip_id), indices, grid, lengths, None)?)
+        }
+        // Smooth notes from a recording: short fragments into a neighbour, repeated notes of the
+        // same pitch into one (without indices: all notes of the clip; strength default medium)
+        "smooth_notes" => {
+            let (track_id, clip_id, indices, strength) = args!(a; track_id: u64, clip_id: u64, indices: Option<Vec<usize>>, strength: Option<Strength>);
+            json(st.smooth_notes(Id(track_id), Id(clip_id), indices, strength.unwrap_or_default(), None)?)
         }
         "create_demo" => json(st.create_demo()?),
 

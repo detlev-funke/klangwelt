@@ -26,6 +26,10 @@ pub struct AnalyzedNote {
     pub level_db: f32,
     pub attack: Attack,
     pub articulation: Articulation,
+    /// Struck anew at its start (an onset with a level jump, or a dip before
+    /// it) – not just the note before going on. Smoothing keeps such a note
+    /// apart from one of the same pitch before it.
+    pub new_attack: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -84,6 +88,7 @@ pub fn analyze_with(asset_id: &str, samples: &[f32], sample_rate: u32, yin: &Yin
     };
     let spans = expression::spans(&frames, &cleaned.iter().map(|c| (c.start, c.end)).collect::<Vec<_>>());
     let played = expression::expression(&spans, tempo_estimate);
+    let struck = expression::new_attacks(&spans, &onsets.onsets);
 
     Analysis {
         asset_id: asset_id.to_string(),
@@ -94,7 +99,8 @@ pub fn analyze_with(asset_id: &str, samples: &[f32], sample_rate: u32, yin: &Yin
             .iter()
             .zip(&timed)
             .zip(spans.iter().zip(&played))
-            .map(|((c, r), (s, p))| AnalyzedNote {
+            .zip(&struck)
+            .map(|(((c, r), (s, p)), &new_attack)| AnalyzedNote {
                 start_secs: c.start,
                 end_secs: c.end,
                 midi: c.midi,
@@ -104,6 +110,7 @@ pub fn analyze_with(asset_id: &str, samples: &[f32], sample_rate: u32, yin: &Yin
                 level_db: round2(s.levels.body_db),
                 attack: p.attack,
                 articulation: p.articulation,
+                new_attack,
             })
             .collect(),
         onsets: onsets.onsets,

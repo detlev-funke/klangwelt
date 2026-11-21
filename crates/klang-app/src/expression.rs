@@ -102,6 +102,33 @@ const STACCATO_GAP_SECS: f64 = 0.06;
 const STACCATO_BEATS: f64 = 0.6;
 const STACCATO_SECS: f64 = 0.3;
 
+/// A note starts with an attack of its own when the level dips this far
+/// below the quieter of it and the note before in between …
+const NEW_ATTACK_DIP_DB: f32 = 6.0;
+/// … or an onset lies at its start (from a little before, where the pitch
+/// hasn't locked on yet) and its attack is this much above the body of the note before.
+const NEW_ATTACK_ONSET_BEFORE_SECS: f64 = 0.08;
+const NEW_ATTACK_ONSET_AFTER_SECS: f64 = 0.03;
+const NEW_ATTACK_JUMP_DB: f32 = 3.0;
+
+/// Whether each note (sorted, as from [`spans`]) is struck anew rather than
+/// continuing the note before – smoothing merges notes of the same pitch only
+/// without one. `onsets` sorted, in seconds. The first note always is.
+pub fn new_attacks(notes: &[Span], onsets: &[f32]) -> Vec<bool> {
+    (0..notes.len())
+        .map(|i| {
+            let Some(prev) = i.checked_sub(1).map(|j| &notes[j]) else { return true };
+            let s = &notes[i];
+            let quieter = prev.levels.body_db.min(s.levels.body_db);
+            let dip = prev.dip_after_db.is_some_and(|d| d <= quieter - NEW_ATTACK_DIP_DB);
+            let from = onsets.partition_point(|&t| (t as f64) < s.start - NEW_ATTACK_ONSET_BEFORE_SECS);
+            let onset = onsets.get(from).is_some_and(|&t| (t as f64) <= s.start + NEW_ATTACK_ONSET_AFTER_SECS);
+            let jump = s.levels.attack_db >= prev.levels.body_db + NEW_ATTACK_JUMP_DB;
+            dip || (onset && jump)
+        })
+        .collect()
+}
+
 /// The note's loudness from the pitch frames (sorted by time) between
 /// `start` and `end` (seconds).
 pub fn levels(frames: &[PitchFrame], start: f64, end: f64) -> Levels {
@@ -290,6 +317,26 @@ mod tests {
         let p = expression(&rest, Some(60.0));
         assert_eq!(p[0].articulation, Articulation::Staccato);
         assert_eq!(p[2].articulation, Articulation::Normal);
+    }
+
+    #[test]
+    fn a_new_attack_needs_a_dip_or_an_onset_with_a_jump() {
+        let mut n = even();
+        for (i, s) in n.iter_mut().enumerate() {
+            s.dip_after_db = (i < 7).then_some(-60.0); // silence between the notes
+        }
+        assert!(new_attacks(&n, &[]).iter().all(|&a| a), "a gap of silence: every note struck");
+        // held through: the level stays up between notes 2 and 3
+        n[2].dip_after_db = Some(-21.0);
+        let a = new_attacks(&n, &[]);
+        assert!(!a[3] && a[2] && a[4], "{a:?}");
+        // an onset at note 3, but no jump: a timbre change, not an attack
+        n[3].levels.attack_db = -18.5;
+        assert!(!new_attacks(&n, &[1.49])[3]);
+        // an onset with an attack 3 dB above the body before: struck anew
+        n[3].levels.attack_db = -16.5;
+        assert!(new_attacks(&n, &[1.49])[3]);
+        assert!(!new_attacks(&n, &[1.3])[3], "the onset is too far before");
     }
 
     #[test]

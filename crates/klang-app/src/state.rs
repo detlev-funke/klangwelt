@@ -1173,8 +1173,8 @@ impl AppState {
 
     /// Create the detected melody of an audio clip as an instrument track (sixteenth-note grid,
     /// directly below the audio track) – see `convert::audio_to_notes`.
-    pub fn melody_to_track(&self, track_id: Id, clip_id: Id, label: &str) -> CmdResult<(Snapshot, Id)> {
-        let r = self.audio_to_notes(track_id, Some(clip_id), crate::convert::Target::Melodie, label)?;
+    pub fn melody_to_track(&self, track_id: Id, clip_id: Id, label: &str, smooth: klang_core::smooth::Strength) -> CmdResult<(Snapshot, Id)> {
+        let r = self.audio_to_notes(track_id, Some(clip_id), crate::convert::Target::Melodie, label, smooth)?;
         Ok((r.snapshot, r.track_id))
     }
 

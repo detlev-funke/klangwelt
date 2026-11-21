@@ -13,8 +13,9 @@ import { chordName } from "../spelling.js";
 import { backend } from "../bridge.js";
 import {
   addTrack, analyzeSelected, convertAudio, deleteRange, deleteSelectedNotes, detectTempo, loadDemo, quantizeSelectedNotes, resetRowHeight, scaleSelectedNoteLengths, setSelectedNoteLengths,
-  seekBeats, startRowResize, toggleRecord, transposeSelectedNotes,
+  seekBeats, smoothClipNotes, smoothSelectedNotes, startRowResize, toggleRecord, transposeSelectedNotes,
 } from "../actions.js";
+import { smoothLabel, smoothTitle } from "../smoothing.js";
 import { type MenuEntry, openContextMenu } from "../ctxmenu.js";
 import { dropdown, fitCanvas, formatBarBeat, h, icon } from "../dom.js";
 import { type DropTarget, audioDrag } from "../filedrop.js";
@@ -1095,7 +1096,7 @@ class KwTimeline extends HTMLElement {
         selection.value = { trackId: hit.track.id, clipId: clip.id };
       }
       const now = noteSel.peek();
-      if (now && now.clipId === clip.id && now.keys.length) add(this.#notesMenu(now.keys.length, p));
+      if (now && now.clipId === clip.id && now.keys.length) add(this.#notesMenu(now.keys.length, p, hit.track.instrument?.kind === "drums"));
     }
     if (hit && clip?.source.type === "audio") {
       selection.value = { trackId: hit.track.id, clipId: clip.id };
@@ -1104,13 +1105,28 @@ class KwTimeline extends HTMLElement {
     if (range && (e.offsetY < RULER_H || (beat >= range[0] && beat <= range[1]))) add(this.#rangeMenu(range, p.beatsPerBar));
     if (hit && clip && !entries.length) {
       selection.value = { trackId: hit.track.id, clipId: clip.id };
-      add([{ heading: clip.name }, { label: t("Delete clip"), hint: t("Del"), act: "clip-loeschen", action: () => void run({ type: "removeClip", trackId: hit.track.id, clipId: clip.id }) }]);
+      const melody = clip.source.type === "notes" && clip.source.notes.length > 1 && hit.track.kind === "instrument" && hit.track.instrument?.kind !== "drums";
+      add([
+        { heading: clip.name },
+        ...(melody ? [this.#smoothRow("glaetten-clip", t("Smooth notes"), t("All notes of the clip: short fragments go into the note next to them, repeated notes of one pitch become one"), (s) => void smoothClipNotes(hit.track.id, clip.id, s))] : []),
+        { label: t("Delete clip"), hint: t("Del"), act: "clip-loeschen", action: () => void run({ type: "removeClip", trackId: hit.track.id, clipId: clip.id }) },
+      ]);
     }
     if (entries.length) openContextMenu(e.clientX, e.clientY, entries);
   }
 
-  /** Menu for selected notes: align to bar (grid selectable), transpose, delete. */
-  #notesMenu(count: number, p: Project): MenuEntry[] {
+  /** Row with the smoothing strengths (light, medium, strong) as chips. */
+  #smoothRow(act: string, label: string, title: string, action: (s: "light" | "medium" | "strong") => void): MenuEntry {
+    return {
+      label,
+      act,
+      title,
+      chips: (["light", "medium", "strong"] as const).map((s) => ({ label: smoothLabel(s), act: `${act}-${s}`, title: smoothTitle(s), action: () => action(s) })),
+    };
+  }
+
+  /** Menu for selected notes: align to bar (grid selectable), smooth, lengths, transpose, delete. */
+  #notesMenu(count: number, p: Project, drums: boolean): MenuEntry[] {
     const unit = p.beatUnit || 4;
     const view = noteGrid(this.#ppb(), false) || 0.25;
     const chips = (lengths: boolean) => [
@@ -1131,6 +1147,7 @@ class KwTimeline extends HTMLElement {
       { heading: plural(count, "{n} note selected", "{n} notes selected") },
       { label: t("Quantize"), act: "ausrichten", title: t("Starts move to the nearest grid line – lengths stay"), chips: chips(false) },
       { label: t("Start and length"), act: "ausrichten-laenge", title: t("Start and end move to the grid (every note at least one grid step long)"), chips: chips(true) },
+      ...(drums || count < 2 ? [] : [this.#smoothRow("glaetten", t("Smooth"), t("For notes from a recording: short fragments go into the note next to them, repeated notes of one pitch become one – a louder or accented note stays apart"), (s) => void smoothSelectedNotes(s))]),
       {
         label: t("Length"),
         act: "laenge",

@@ -46,6 +46,7 @@ const lanes: HelpTopic = {
     t("With the **keyboard entry** switch in the track header you type notes: the letter keys play the visible octave like a piano and add the note at the violet mark."),
     t("Just drag audio files (WAV, AIFF, FLAC, Opus) here: each becomes an audio track with a clip starting at the spot under the mouse – dropped onto an audio track, the first file lands in it. Klangwelt can't read MP3 and AAC yet."),
     t("Recordings and inserted audio files have a **♪ → Notes** button: it creates the detected pitches as a melody track below. Right-click also offers a **rhythm track** (hits as kick, snare, hi-hat)."),
+    t("Pitch detection breaks a sung or played line into more notes than were played. **Smoothing** puts them back together: unusually short fragments go into the note next to them, a held note split in two becomes one again – a louder or accented note stays apart. It happens when a recording becomes notes (strength in the gear menu and the analysis window), and afterwards with a right-click on selected notes or a note clip → **Smooth**."),
   ],
   keys: [
     [t("Ctrl + mouse wheel"), t("zoom")],
@@ -195,7 +196,7 @@ const ENTRIES: Entry[] = [
   { sel: ".track-row input.text", topic: { title: t("Track name"), text: [t("Click and type to rename the track; Enter confirms. The agent refers to tracks by name and ID.")] } },
   { sel: ".track-row .toggle.m", topic: { title: t("Mute (M)"), text: [t("Mutes the track. Muted tracks are also left out of the export; the agent knows which ones are muted.")] } },
   { sel: ".track-row .toggle.s", topic: { title: t("Solo (S)"), text: [t("Only solo tracks are audible – several at once, too. Also applies to the export.")] } },
-  { sel: ".track-row .toggle.convert", topic: { title: t("Convert to notes"), text: [t("Appears on audio tracks in pitch view: creates the detected notes of all the track's clips as a melody track directly below – quantized to sixteenths, low registers as a bass track. One undo step."), t("For drum recordings: right-click the clip → \"Convert to rhythm track\" (kick, snare, hi-hat).")] } },
+  { sel: ".track-row .toggle.convert", topic: { title: t("Convert to notes"), text: [t("Appears on audio tracks in pitch view: creates the detected notes of all the track's clips as a melody track directly below – quantized to sixteenths, low registers as a bass track. One undo step."), t("For drum recordings: right-click the clip → \"Convert to rhythm track\" (kick, snare, hi-hat)."), t("Before that, the melody is smoothed (strength in the gear menu or the analysis window): short fragments and a held note split in two are merged.")] } },
   { sel: ".track-row .toggle.v.x", topic: { title: t("Expression lane"), text: [t("Shows a lane for expression below the notes: velocity, vibrato, brightness or bend per note. Drag values or paint across several notes; Shift draws a straight line (crescendo), double-click resets.")] } },
   { sel: ".track-row .toggle.v", topic: { title: t("View"), text: [t("Switches between a compact row and the piano roll. In the piano roll, audio tracks show what the analysis detects.")] } },
   { sel: ".track-row .stepper", topic: { title: t("Pitch"), text: [t("Shifts the track in semitones (−24 … +24). For audio the tempo stays the same; the shift is included in the export and in MIDI.")] } },

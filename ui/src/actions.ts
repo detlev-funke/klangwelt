@@ -8,7 +8,8 @@ import { heightDraft, heightLimits, noteKey, noteSel, rowHeight } from "./pianor
 import { playheadMoved } from "./noteinput.js";
 import { clipSpan, gridLabel, rangeLabel } from "./editmath.js";
 import { language, plural, t } from "./i18n.js";
-import type { ConvertTarget, Note, Track, TrackKind } from "./types.js";
+import { smoothLabel, smoothLevel } from "./smoothing.js";
+import type { ConvertTarget, Note, SmoothResult, SmoothStrength, Track, TrackKind } from "./types.js";
 
 // ---------- Track height (splitter) ----------
 
@@ -188,15 +189,22 @@ export async function deleteRange(): Promise<boolean> {
   return true;
 }
 
-/** Converts a recording into a melody or rhythm track (`clipId` null: all audio clips of the track). */
+/** How a converted melody was made, for the message: quantized, and smoothed if anything was. */
+function melodyHow(smoothed: number): string {
+  const q = t("quantized to sixteenths");
+  return smoothed > 0 ? `${q}, ${plural(smoothed, "{n} fragment smoothed", "{n} fragments smoothed")}` : q;
+}
+
+/** Converts a recording into a melody or rhythm track (`clipId` null: all audio clips of the track).
+ *  A melody is smoothed first with the strength chosen in the settings / analysis window. */
 export async function convertAudio(trackId: number, clipId: number | null, target: ConvertTarget): Promise<boolean> {
   notify(target === "melodie" ? t("Detecting pitches…") : t("Detecting hits…"));
   try {
-    const r = await backend.audioToNotes(trackId, clipId, target);
+    const r = await backend.audioToNotes(trackId, clipId, target, smoothLevel.peek());
     snapshot.value = r.snapshot;
     selection.value = { trackId: r.trackId, clipId: null };
     const name = r.snapshot.project.tracks.find((t) => t.id === r.trackId)?.name ?? t("New track");
-    const how = target === "melodie" ? t("quantized to sixteenths") : t("kick, snare and hi-hat");
+    const how = target === "melodie" ? melodyHow(r.smoothed) : t("kick, snare and hi-hat");
     notify(plural(r.notes, "Created \"{name}\": {n} note ({how})", "Created \"{name}\": {n} notes ({how})", { name, how }));
     return true;
   } catch (e) {
@@ -352,7 +360,57 @@ export async function melodyToTrack(): Promise<void> {
     notify(t("Please select an audio clip."));
     return;
   }
-  if (await act(backend.createMelodyTrack(found.track.id, found.clip.id))) {
+  if (await act(backend.createMelodyTrack(found.track.id, found.clip.id, smoothLevel.peek()))) {
     notify(t("Melody created as an instrument track (quantized to sixteenths)"));
+  }
+}
+
+/** Shows the result of smoothing: selection on the merged notes, a message. */
+function smoothed(r: SmoothResult, trackId: number, clipId: number, count: number, strength: SmoothStrength, keepSelection: boolean): void {
+  const vars = { strength: smoothLabel(strength) };
+  if (!r.changed) {
+    notify(plural(count, "Nothing to smooth in this note ({strength})", "Nothing to smooth in these {n} notes ({strength})", vars));
+    return;
+  }
+  snapshot.value = r.snapshot;
+  if (keepSelection) {
+    const clip = r.snapshot.project.tracks.find((t) => t.id === trackId)?.clips.find((c) => c.id === clipId);
+    const notes = clip?.source.type === "notes" ? clip.source.notes : [];
+    noteSel.value = { trackId, clipId, keys: r.selected.flatMap((i) => (notes[i] ? [noteKey(notes[i])] : [])) };
+  }
+  const merged = r.merged ? plural(r.merged, "{n} fragment merged", "{n} fragments merged") : "";
+  const removed = r.removed ? plural(r.removed, "{n} soft blip removed", "{n} soft blips removed") : "";
+  notify(t("Smoothed ({strength}): {what} – Ctrl+Z brings them back", { ...vars, what: [merged, removed].filter(Boolean).join(", ") }));
+}
+
+/** Smooths the selected notes: short fragments into a neighbour, repeated notes of one pitch into one. */
+export async function smoothSelectedNotes(strength: SmoothStrength): Promise<boolean> {
+  const s = selectedNotesClip();
+  if (!s) {
+    notify(t("Select notes first: tap or click them, or draw a box around them"));
+    return false;
+  }
+  const indices = s.notes.map((n, i) => (s.keys.has(noteKey(n)) ? i : -1)).filter((i) => i >= 0);
+  try {
+    const r = await backend.smoothNotes(s.trackId, s.clipId, indices, strength);
+    smoothed(r, s.trackId, s.clipId, indices.length, strength, true);
+    return true;
+  } catch (e) {
+    notify(errorText(e), "error");
+    return false;
+  }
+}
+
+/** Smooths all notes of a clip. */
+export async function smoothClipNotes(trackId: number, clipId: number, strength: SmoothStrength): Promise<boolean> {
+  const clip = project()?.tracks.find((t) => t.id === trackId)?.clips.find((c) => c.id === clipId);
+  const count = clip?.source.type === "notes" ? clip.source.notes.length : 0;
+  try {
+    const r = await backend.smoothNotes(trackId, clipId, null, strength);
+    smoothed(r, trackId, clipId, count, strength, false);
+    return true;
+  } catch (e) {
+    notify(errorText(e), "error");
+    return false;
   }
 }

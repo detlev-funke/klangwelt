@@ -3,6 +3,35 @@
 import type { Dict } from "../i18n.js";
 
 const dict: Dict = {
+  // smoothing notes from recordings (ui/src/smoothing.ts, crates/klang-core/src/smooth.rs, crates/klang-app/src/convert.rs)
+  "{n} fragments smoothed": { one: "{n} fragmento suavizado", other: "{n} fragmentos suavizados" },
+  "Nothing to smooth in these {n} notes ({strength})": { one: "Nada que suavizar en esta nota ({strength})", other: "Nada que suavizar en estas {n} notas ({strength})" },
+  "{n} fragments merged": { one: "{n} fragmento unido", other: "{n} fragmentos unidos" },
+  "{n} soft blips removed": { one: "{n} ruido suave eliminado", other: "{n} ruidos suaves eliminados" },
+  "Smoothed ({strength}): {what} – Ctrl+Z brings them back": "Suavizado ({strength}): {what}; Ctrl+Z los recupera",
+  "Smooth notes": "Suavizar notas",
+  "When the melody becomes notes: short fragments and repeated notes of one pitch are merged": "Cuando la melodía se convierte en notas: se unen los fragmentos cortos y las notas repetidas de la misma altura",
+  "Smooth notes from recordings": "Suavizar notas de grabaciones",
+  "When a recording becomes notes, unusually short fragments go into the note next to them and a held note split in two becomes one again. Selected notes can be smoothed afterwards with a right-click.": "Cuando una grabación se convierte en notas, los fragmentos inusualmente cortos pasan a la nota vecina y una nota sostenida partida en dos vuelve a ser una. Las notas seleccionadas puedes suavizarlas después con un clic derecho.",
+  "All notes of the clip: short fragments go into the note next to them, repeated notes of one pitch become one": "Todas las notas del clip: los fragmentos cortos pasan a la nota vecina, las notas repetidas de la misma altura se convierten en una",
+  "Smooth": "Suavizar",
+  "For notes from a recording: short fragments go into the note next to them, repeated notes of one pitch become one – a louder or accented note stays apart": "Para notas de una grabación: los fragmentos cortos pasan a la nota vecina, las notas repetidas de la misma altura se convierten en una; una nota más fuerte o acentuada queda aparte",
+  "Pitch detection breaks a sung or played line into more notes than were played. **Smoothing** puts them back together: unusually short fragments go into the note next to them, a held note split in two becomes one again – a louder or accented note stays apart. It happens when a recording becomes notes (strength in the gear menu and the analysis window), and afterwards with a right-click on selected notes or a note clip → **Smooth**.": "La detección de alturas divide una línea cantada o tocada en más notas de las que se tocaron. **Suavizar** las vuelve a juntar: los fragmentos inusualmente cortos pasan a la nota vecina, una nota sostenida partida en dos vuelve a ser una; una nota más fuerte o acentuada queda aparte. Ocurre cuando una grabación se convierte en notas (intensidad en el engranaje y en la ventana «Análisis») y después con un clic derecho en notas seleccionadas o en un clip de notas → **Suavizar**.",
+  "Before that, the melody is smoothed (strength in the gear menu or the analysis window): short fragments and a held note split in two are merged.": "Antes se suaviza la melodía (intensidad en el engranaje o en la ventana «Análisis»): se unen los fragmentos cortos y una nota sostenida partida en dos.",
+  "Light": "Suave",
+  "Medium": "Media",
+  "Strong": "Fuerte",
+  "Keep every detected note": "Conservar cada nota detectada",
+  "Only the clearest fragments: very short notes and notes of one pitch that touch": "Solo los fragmentos más claros: notas muy cortas y notas de la misma altura que se tocan",
+  "Short fragments go into the note next to them, a held note split in two becomes one again": "Los fragmentos cortos pasan a la nota vecina, una nota sostenida partida en dos vuelve a ser una",
+  "Also longer fragments and small gaps between notes of one pitch": "También fragmentos más largos y pequeños huecos entre notas de la misma altura",
+  "Notes smoothed: {n} fewer": { one: "Notas suavizadas: {n} menos", other: "Notas suavizadas: {n} menos" },
+  "Smooth notes (light)": "Suavizar notas (suave)",
+  "Smooth notes (medium)": "Suavizar notas (media)",
+  "Smooth notes (strong)": "Suavizar notas (fuerte)",
+  "Smoothing only works on note clips.": "Suavizar solo funciona en clips de notas.",
+  "Drum notes are single hits – smoothing is meant for melodies, e.g. from a recording.": "Las notas de batería son golpes sueltos; suavizar está pensado para melodías, p. ej. de una grabación.",
+
   // change history (ui/src/components/history.ts, crates/klang-core/src/session.rs, crates/klang-app/src/history.rs)
   "Combine variants: choose per track and section which version goes into a new variant": "Combinar variantes: elige por pista y sección qué versión va a una nueva variante",
   "Combine…": "Combinar…",

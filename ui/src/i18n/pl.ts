@@ -3,6 +3,35 @@
 import type { Dict } from "../i18n.js";
 
 const dict: Dict = {
+  // smoothing notes from recordings (ui/src/smoothing.ts, crates/klang-core/src/smooth.rs, crates/klang-app/src/convert.rs)
+  "{n} fragments smoothed": { one: "Wygładzono {n} fragment", few: "Wygładzono {n} fragmenty", many: "Wygładzono {n} fragmentów", other: "Wygładzono {n} fragmenty" },
+  "Nothing to smooth in these {n} notes ({strength})": { one: "Nie ma czego wygładzić w tej nucie ({strength})", few: "Nie ma czego wygładzić w tych {n} nutach ({strength})", many: "Nie ma czego wygładzić w tych {n} nutach ({strength})", other: "Nie ma czego wygładzić w tych {n} nutach ({strength})" },
+  "{n} fragments merged": { one: "Scalono {n} fragment", few: "Scalono {n} fragmenty", many: "Scalono {n} fragmentów", other: "Scalono {n} fragmenty" },
+  "{n} soft blips removed": { one: "Usunięto {n} cichy wtręt", few: "Usunięto {n} ciche wtręty", many: "Usunięto {n} cichych wtrętów", other: "Usunięto {n} ciche wtręty" },
+  "Smoothed ({strength}): {what} – Ctrl+Z brings them back": "Wygładzono ({strength}): {what} – Ctrl+Z je przywraca",
+  "Smooth notes": "Wygładź nuty",
+  "When the melody becomes notes: short fragments and repeated notes of one pitch are merged": "Gdy melodia staje się nutami: krótkie fragmenty i powtarzane dźwięki tej samej wysokości są scalane",
+  "Smooth notes from recordings": "Wygładzaj nuty z nagrań",
+  "When a recording becomes notes, unusually short fragments go into the note next to them and a held note split in two becomes one again. Selected notes can be smoothed afterwards with a right-click.": "Gdy nagranie staje się nutami, nietypowo krótkie fragmenty przechodzą do sąsiedniej nuty, a przytrzymany dźwięk rozbity na dwa znów staje się jednym. Zaznaczone nuty możesz wygładzić później prawym przyciskiem myszy.",
+  "All notes of the clip: short fragments go into the note next to them, repeated notes of one pitch become one": "Wszystkie nuty klipu: krótkie fragmenty przechodzą do sąsiedniej nuty, powtarzane dźwięki tej samej wysokości stają się jednym",
+  "Smooth": "Wygładź",
+  "For notes from a recording: short fragments go into the note next to them, repeated notes of one pitch become one – a louder or accented note stays apart": "Dla nut z nagrania: krótkie fragmenty przechodzą do sąsiedniej nuty, powtarzane dźwięki tej samej wysokości stają się jednym – głośniejszy lub akcentowany dźwięk zostaje osobno",
+  "Pitch detection breaks a sung or played line into more notes than were played. **Smoothing** puts them back together: unusually short fragments go into the note next to them, a held note split in two becomes one again – a louder or accented note stays apart. It happens when a recording becomes notes (strength in the gear menu and the analysis window), and afterwards with a right-click on selected notes or a note clip → **Smooth**.": "Rozpoznawanie wysokości dzieli śpiewaną lub graną linię na więcej nut, niż zagrano. **Wygładzanie** składa je z powrotem: nietypowo krótkie fragmenty przechodzą do sąsiedniej nuty, przytrzymany dźwięk rozbity na dwa znów staje się jednym – głośniejszy lub akcentowany dźwięk zostaje osobno. Dzieje się to, gdy nagranie staje się nutami (siła pod ikoną zębatki i w oknie „Analiza”), a potem prawym przyciskiem na zaznaczonych nutach lub klipie nutowym → **Wygładź**.",
+  "Before that, the melody is smoothed (strength in the gear menu or the analysis window): short fragments and a held note split in two are merged.": "Wcześniej melodia jest wygładzana (siła pod ikoną zębatki lub w oknie „Analiza”): krótkie fragmenty i przytrzymany dźwięk rozbity na dwa są scalane.",
+  "Light": "Lekko",
+  "Medium": "Średnio",
+  "Strong": "Mocno",
+  "Keep every detected note": "Zachowaj każdą rozpoznaną nutę",
+  "Only the clearest fragments: very short notes and notes of one pitch that touch": "Tylko najwyraźniejsze fragmenty: bardzo krótkie nuty i stykające się dźwięki tej samej wysokości",
+  "Short fragments go into the note next to them, a held note split in two becomes one again": "Krótkie fragmenty przechodzą do sąsiedniej nuty, przytrzymany dźwięk rozbity na dwa znów staje się jednym",
+  "Also longer fragments and small gaps between notes of one pitch": "Także dłuższe fragmenty i małe przerwy między dźwiękami tej samej wysokości",
+  "Notes smoothed: {n} fewer": { one: "Wygładzono nuty: o {n} mniej", few: "Wygładzono nuty: o {n} mniej", many: "Wygładzono nuty: o {n} mniej", other: "Wygładzono nuty: o {n} mniej" },
+  "Smooth notes (light)": "Wygładź nuty (lekko)",
+  "Smooth notes (medium)": "Wygładź nuty (średnio)",
+  "Smooth notes (strong)": "Wygładź nuty (mocno)",
+  "Smoothing only works on note clips.": "Wygładzanie działa tylko na klipach nutowych.",
+  "Drum notes are single hits – smoothing is meant for melodies, e.g. from a recording.": "Nuty perkusji to pojedyncze uderzenia – wygładzanie jest przeznaczone dla melodii, np. z nagrania.",
+
   // change history (ui/src/components/history.ts, crates/klang-core/src/session.rs, crates/klang-app/src/history.rs)
   "Combine variants: choose per track and section which version goes into a new variant": "Połącz warianty: wybierz dla każdej ścieżki i sekcji, która wersja trafi do nowego wariantu",
   "Combine…": "Połącz…",

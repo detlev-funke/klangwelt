@@ -3,6 +3,35 @@
 import type { Dict } from "../i18n.js";
 
 const dict: Dict = {
+  // smoothing notes from recordings (ui/src/smoothing.ts, crates/klang-core/src/smooth.rs, crates/klang-app/src/convert.rs)
+  "{n} fragments smoothed": { one: "{n} fragment gladgestreken", other: "{n} fragmenten gladgestreken" },
+  "Nothing to smooth in these {n} notes ({strength})": { one: "Niets glad te strijken in deze noot ({strength})", other: "Niets glad te strijken in deze {n} noten ({strength})" },
+  "{n} fragments merged": { one: "{n} fragment samengevoegd", other: "{n} fragmenten samengevoegd" },
+  "{n} soft blips removed": { one: "{n} zachte uitschieter verwijderd", other: "{n} zachte uitschieters verwijderd" },
+  "Smoothed ({strength}): {what} – Ctrl+Z brings them back": "Gladgestreken ({strength}): {what} – Ctrl+Z haalt ze terug",
+  "Smooth notes": "Noten gladstrijken",
+  "When the melody becomes notes: short fragments and repeated notes of one pitch are merged": "Wanneer de melodie noten wordt: korte fragmenten en herhaalde noten van dezelfde hoogte worden samengevoegd",
+  "Smooth notes from recordings": "Noten uit opnames gladstrijken",
+  "When a recording becomes notes, unusually short fragments go into the note next to them and a held note split in two becomes one again. Selected notes can be smoothed afterwards with a right-click.": "Wanneer een opname noten wordt, gaan ongewoon korte fragmenten op in de buurnoot en wordt een in tweeën gesplitste aangehouden noot weer één. Geselecteerde noten kun je achteraf met een rechterklik gladstrijken.",
+  "All notes of the clip: short fragments go into the note next to them, repeated notes of one pitch become one": "Alle noten van de clip: korte fragmenten gaan op in de buurnoot, herhaalde noten van dezelfde hoogte worden één",
+  "Smooth": "Gladstrijken",
+  "For notes from a recording: short fragments go into the note next to them, repeated notes of one pitch become one – a louder or accented note stays apart": "Voor noten uit een opname: korte fragmenten gaan op in de buurnoot, herhaalde noten van dezelfde hoogte worden één – een luidere of geaccentueerde noot blijft apart",
+  "Pitch detection breaks a sung or played line into more notes than were played. **Smoothing** puts them back together: unusually short fragments go into the note next to them, a held note split in two becomes one again – a louder or accented note stays apart. It happens when a recording becomes notes (strength in the gear menu and the analysis window), and afterwards with a right-click on selected notes or a note clip → **Smooth**.": "De toonhoogtedetectie deelt een gezongen of gespeelde lijn op in meer noten dan er gespeeld zijn. **Gladstrijken** voegt ze weer samen: ongewoon korte fragmenten gaan op in de buurnoot, een in tweeën gesplitste aangehouden noot wordt weer één – een luidere of geaccentueerde noot blijft apart. Dat gebeurt wanneer een opname noten wordt (sterkte via het tandwiel en in het venster “Analyse”), en achteraf met een rechterklik op geselecteerde noten of een notenclip → **Gladstrijken**.",
+  "Before that, the melody is smoothed (strength in the gear menu or the analysis window): short fragments and a held note split in two are merged.": "Eerst wordt de melodie gladgestreken (sterkte via het tandwiel of in het venster “Analyse”): korte fragmenten en een in tweeën gesplitste aangehouden noot worden samengevoegd.",
+  "Light": "Licht",
+  "Medium": "Middel",
+  "Strong": "Sterk",
+  "Keep every detected note": "Elke herkende noot behouden",
+  "Only the clearest fragments: very short notes and notes of one pitch that touch": "Alleen de duidelijkste fragmenten: zeer korte noten en elkaar rakende noten van dezelfde hoogte",
+  "Short fragments go into the note next to them, a held note split in two becomes one again": "Korte fragmenten gaan op in de buurnoot, een in tweeën gesplitste aangehouden noot wordt weer één",
+  "Also longer fragments and small gaps between notes of one pitch": "Ook langere fragmenten en kleine gaten tussen noten van dezelfde hoogte",
+  "Notes smoothed: {n} fewer": { one: "Noten gladgestreken: {n} minder", other: "Noten gladgestreken: {n} minder" },
+  "Smooth notes (light)": "Noten gladstrijken (licht)",
+  "Smooth notes (medium)": "Noten gladstrijken (middel)",
+  "Smooth notes (strong)": "Noten gladstrijken (sterk)",
+  "Smoothing only works on note clips.": "Gladstrijken werkt alleen op notenclips.",
+  "Drum notes are single hits – smoothing is meant for melodies, e.g. from a recording.": "Drumnoten zijn losse slagen – gladstrijken is bedoeld voor melodieën, bijv. uit een opname.",
+
   // change history (ui/src/components/history.ts, crates/klang-core/src/session.rs, crates/klang-app/src/history.rs)
   "Combine variants: choose per track and section which version goes into a new variant": "Varianten combineren: kies per spoor en sectie welke versie in een nieuwe variant komt",
   "Combine…": "Combineren…",

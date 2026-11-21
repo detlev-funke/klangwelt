@@ -1026,6 +1026,8 @@ export interface AnalyzedNote {
   levelDb: number;
   attack: Attack;
   articulation: Articulation;
+  /** Struck anew at its start (not the note before going on) – smoothing keeps it apart. */
+  newAttack: boolean;
 }
 
 export interface HitPitch {
@@ -1136,6 +1138,22 @@ export interface ConvertResult {
   trackId: Id;
   /** Number of notes generated. */
   notes: number;
+  /** Detected notes that smoothing merged into a neighbour or removed. */
+  smoothed: number;
+}
+
+/** How much notes from a recording are smoothed (short fragments, repeated notes of one pitch). */
+export type SmoothStrength = "off" | "light" | "medium" | "strong";
+
+export interface SmoothResult {
+  snapshot: Snapshot;
+  /** New indices of the notes that came from the chosen ones (for the selection). */
+  selected: number[];
+  /** False: nothing to smooth – nothing changed (no undo step). */
+  changed: boolean;
+  /** Notes that went into a neighbour, and soft blips removed. */
+  merged: number;
+  removed: number;
 }
 
 export interface QuantizeResult {

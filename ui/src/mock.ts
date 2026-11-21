@@ -215,6 +215,7 @@ export function createMock(): Backend {
     audioToNotes: noAudio,
     deleteRange: noAudio,
     quantizeNotes: noAudio,
+    smoothNotes: noAudio,
     getWaveform: (assetId, buckets) => {
       let seed = [...assetId].reduce((a, ch) => a * 31 + ch.charCodeAt(0), 7) >>> 0;
       const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);

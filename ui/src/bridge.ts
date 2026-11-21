@@ -7,7 +7,7 @@
 import type {
   AgentActivity, Analysis, AutosaveResult, CatalogEntry, CheckView, ExportInfo, ExportOptions, ExportResult, Chord, ChordInfo, ChatView, Command, Countersubject, Dimension, EngineStatus, FugueOptions,
   FuguePlan, HarmonyView, InstrumentKind, InstrumentSpec, SubjectView, TransformSpec, VNote,
-  AddResult, ConvertResult, ConvertTarget, ImportResult, QuantizeResult, KeySpec, LibEntry, LibHit, LibraryInfo, ListenResult, OwnScore, PlacedChord, PlayInfo, PreviewPattern, ProjectFile, RecordResult, LiveCursor, LiveView, HarmonyLine, SongPlan, SongWritten, ClipGrid, RhythmGrid, RhythmInfo, RhythmWritten, SavedSound, ScoreView, Snapshot, SoundReport, SoundSaveResult, SuggestResult, TreeLevel, WaveView,
+  AddResult, ConvertResult, ConvertTarget, ImportResult, QuantizeResult, SmoothResult, SmoothStrength, KeySpec, LibEntry, LibHit, LibraryInfo, ListenResult, OwnScore, PlacedChord, PlayInfo, PreviewPattern, ProjectFile, RecordResult, LiveCursor, LiveView, HarmonyLine, SongPlan, SongWritten, ClipGrid, RhythmGrid, RhythmInfo, RhythmWritten, SavedSound, ScoreView, Snapshot, SoundReport, SoundSaveResult, SuggestResult, TreeLevel, WaveView,
 } from "./types.js";
 import type { AudioDevices, AudioKind, HistoryView, MergeChoices, MergeView } from "./types.js";
 import { createMock } from "./mock.js";
@@ -88,15 +88,16 @@ export interface Backend {
   recordLive(since: LiveCursor): Promise<LiveView | null>;
   getWaveform(assetId: string, buckets: number): Promise<number[]>;
   analyzeAsset(assetId: string): Promise<Analysis>;
-  createMelodyTrack(trackId: number, clipId: number): Promise<Snapshot>;
+  createMelodyTrack(trackId: number, clipId: number, smooth?: SmoothStrength): Promise<Snapshot>;
   /** Insert audio files: on an audio track the first file goes in, otherwise one new track per file (under `trackId`), from `startBeats`. */
   audioImport(paths: string[], trackId: number | null, startBeats: number): Promise<ImportResult>;
   /** Convert a recording into a melody or rhythm track (`clipId` null: all audio clips of the track). */
-  audioToNotes(trackId: number, clipId: number | null, target: ConvertTarget): Promise<ConvertResult>;
+  audioToNotes(trackId: number, clipId: number | null, target: ConvertTarget, smooth?: SmoothStrength): Promise<ConvertResult>;
   /** Delete a time range from all tracks, everything after it moves up (clears the selection). */
   deleteRange(startBeats: number, endBeats: number): Promise<Snapshot>;
   /** Align notes to the grid (`indices` null: all notes of the clip); `grid` in beats. */
   quantizeNotes(trackId: number, clipId: number, indices: number[] | null, grid: number, lengths: boolean): Promise<QuantizeResult>;
+  smoothNotes(trackId: number, clipId: number, indices: number[] | null, strength: SmoothStrength): Promise<SmoothResult>;
   createDemo(): Promise<Snapshot>;
   previewTrack(trackId: number, pattern: PreviewPattern): Promise<number>;
   previewNote(trackId: number, midi: number): Promise<void>;
@@ -280,11 +281,12 @@ function coreBackend(link: CoreLink, platform: "desktop" | "web"): Backend {
     recordLive: (since) => call("record_live", { since }),
     getWaveform: (assetId, buckets) => call("get_waveform", { assetId, buckets }),
     analyzeAsset: (assetId) => call("analyze_asset", { assetId }),
-    createMelodyTrack: (trackId, clipId) => call("create_melody_track", { trackId, clipId }),
+    createMelodyTrack: (trackId, clipId, smooth) => call("create_melody_track", { trackId, clipId, smooth }),
     audioImport: (paths, trackId, startBeats) => call("audio_import", { paths, trackId, startBeats }),
-    audioToNotes: (trackId, clipId, target) => call("audio_to_notes", { trackId, clipId, target }),
+    audioToNotes: (trackId, clipId, target, smooth) => call("audio_to_notes", { trackId, clipId, target, smooth }),
     deleteRange: (startBeats, endBeats) => call("delete_range", { startBeats, endBeats }),
     quantizeNotes: (trackId, clipId, indices, grid, lengths) => call("quantize_notes", { trackId, clipId, indices, grid, lengths }),
+    smoothNotes: (trackId, clipId, indices, strength) => call("smooth_notes", { trackId, clipId, indices, strength }),
     createDemo: () => call("create_demo"),
     previewTrack: (trackId, pattern) => call("preview_track", { trackId, pattern }),
     previewNote: (trackId, midi) => call("preview_note", { trackId, midi }),

@@ -294,6 +294,29 @@ taken into account.
   accent and +0.4 for a sforzato (a harder, brighter attack – no extra note
   property, so every instrument plays it), staccato at most half the way to
   the next note (1/32 resolution), legato up to the next note.
+* Smoothing comes first (`klang_core::smooth`, before the grid – a fragment
+  must not grow to a sixteenth of its own): pitch detection breaks a line into
+  more notes than were played (a scoop or attack transient in front of a note,
+  a few frames an octave off, vibrato swings over the split threshold, a voice
+  break). Unusually short notes go into the neighbour they stick to (hardly a
+  gap) – "short" is the smallest of three limits: a share of the piece's
+  median note length, clamped to a share of the grid, and seconds (transients
+  and vibrato last the same at any tempo), so a fast run of real sixteenths
+  stays; an octave slip or a swing between two notes of one pitch may be a
+  little longer. Consecutive notes of one pitch become one unless the second
+  is struck anew – `AnalyzedNote::new_attack` (`expression::new_attacks`: a
+  level dip in between, or an onset with a jump of the attack); where the
+  recording says the note sounded through, a slightly wider gap is bridged. A
+  note struck anew is never absorbed into the note before it (staccato stays).
+  Isolated short notes much softer than their neighbours are removed. The
+  merged note keeps the main note's pitch and the attack (velocity, accent) of
+  where it starts; its articulation is that of its last part. Strength off /
+  light / medium (default) / strong: `smooth` of `audio_to_notes` and
+  `create_melody_track`; the UI keeps the choice in localStorage (gear menu,
+  analysis window). `smooth_notes` smooths the notes of a clip afterwards
+  (selection or all; chords, unselected notes and drum tracks stay; without a
+  recording behind them a clearly louder or brighter note counts as struck
+  anew) – one undo step, none if nothing changes.
 * Rhythm (`klang_dsp::hits`): for each hit found by the analysis, it measures
   what is **added** in the low (< 150 Hz), mid and high (> 5 kHz) band compared
   with the equally long stretch before it – so a decaying kick drum does not

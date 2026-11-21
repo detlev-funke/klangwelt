@@ -3,6 +3,7 @@ import { fitCanvas, formatBarBeat, h, icon, noteName, setRange } from "../dom.js
 import { highOnTop, noteKey, noteSel } from "../pianoroll.js";
 import { plural, t } from "../i18n.js";
 import { effect } from "../signals.js";
+import { SMOOTH_LEVELS, setSmoothLevel, smoothLabel, smoothLevel, smoothTitle } from "../smoothing.js";
 import { DYNAMICS, EXPRS, EXPR_ORDER, type ExprKey, type Mark, applyMark, exprKeysFor, exprValue, setExprAll } from "../expression.js";
 import {
   analysis, chat, clipLengthBeats, findClip, findTrack, instrumentSpecs,
@@ -252,11 +253,31 @@ function clipPanel(trackId: number, clipId: number): Panel {
 
 // ---------------------------------------------------------------- Analysis
 
+/** Strength of smoothing when a recording becomes notes (remembered; also in the settings). */
+function smoothChoice(): { el: HTMLElement; update(): void } {
+  const buttons = SMOOTH_LEVELS.map((level) =>
+    h("button", { class: "seg-btn", "data-smooth": level, title: smoothTitle(level), onclick: () => setSmoothLevel(level) }, smoothLabel(level)),
+  );
+  const el = h("div", { class: "seg mini smooth-choice", role: "group", "aria-label": t("Smooth notes") }, ...buttons);
+  const update = () => {
+    for (const b of buttons) {
+      const on = b.dataset.smooth === smoothLevel.peek();
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-pressed", String(on));
+    }
+  };
+  update();
+  return { el, update };
+}
+
 function analysisPanel(a: Analysis): Panel {
   const canvas = h("canvas");
   const draw = () => drawAnalysis(canvas, a);
   new ResizeObserver(draw).observe(canvas);
   const corrected = a.notes.filter((n) => n.midi !== n.rawMidi).length;
+  const smooth = smoothChoice();
+  const smoothProp = prop(t("Smooth notes"), h("div", { class: "value" }, smooth.el), t("When the melody becomes notes: short fragments and repeated notes of one pitch are merged"));
+  smoothProp.classList.add("wide");
   const facts = h(
     "div",
     { class: "facts" },
@@ -265,6 +286,7 @@ function analysisPanel(a: Analysis): Panel {
     prop(t("Notes"), String(a.notes.length), corrected ? t("Corrected {n} out-of-tune notes", { n: corrected }) : t("no correction needed")),
     ...performanceFacts(a),
     prop(t("Duration"), `${a.durationSecs.toFixed(2)} s`),
+    smoothProp,
     h("button", { class: "btn", onclick: () => melodyToTrack() }, icon("keys"), t("Melody → instrument track")),
   );
   const legend = h(
@@ -277,7 +299,13 @@ function analysisPanel(a: Analysis): Panel {
     h("span", {}, h("b", { class: "mark" }, "> sfz"), t("Accents")),
   );
   const el = h("div", { class: "analysis" }, facts, h("div", { style: "display:grid;grid-template-rows:auto 1fr;gap:8px;min-height:0" }, legend, canvas));
-  return { el, update: draw };
+  return {
+    el,
+    update() {
+      draw();
+      smooth.update();
+    },
+  };
 }
 
 /** Dynamics, accents and articulation of the detected notes – they come along into the notes. */
@@ -388,6 +416,7 @@ class KwPanel extends HTMLElement {
       const live = tab === "analyse" && liveRecording.value;
       if (tab === "agent") chat.value; // redraw chat
       if (tab === "analyse") highOnTop.value; // redraw curve when the pitch axis changes
+      if (tab === "analyse") smoothLevel.value; // the smoothing choice may change in the settings
       if (tab === "clip") noteSel.value; // expression follows the note selection
       if (tab === "bibliothek") librarySignals();
       if (tab === "klang") savedSounds.value; // redraw My sounds

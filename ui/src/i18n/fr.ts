@@ -3,6 +3,35 @@
 import type { Dict } from "../i18n.js";
 
 const dict: Dict = {
+  // smoothing notes from recordings (ui/src/smoothing.ts, crates/klang-core/src/smooth.rs, crates/klang-app/src/convert.rs)
+  "{n} fragments smoothed": { one: "{n} fragment lissé", other: "{n} fragments lissés" },
+  "Nothing to smooth in these {n} notes ({strength})": { one: "Rien à lisser dans cette note ({strength})", other: "Rien à lisser dans ces {n} notes ({strength})" },
+  "{n} fragments merged": { one: "{n} fragment fusionné", other: "{n} fragments fusionnés" },
+  "{n} soft blips removed": { one: "{n} parasite faible supprimé", other: "{n} parasites faibles supprimés" },
+  "Smoothed ({strength}): {what} – Ctrl+Z brings them back": "Lissé ({strength}) : {what} – Ctrl+Z les rétablit",
+  "Smooth notes": "Lisser les notes",
+  "When the melody becomes notes: short fragments and repeated notes of one pitch are merged": "Quand la mélodie devient des notes : les fragments courts et les notes répétées de même hauteur sont fusionnés",
+  "Smooth notes from recordings": "Lisser les notes issues d'enregistrements",
+  "When a recording becomes notes, unusually short fragments go into the note next to them and a held note split in two becomes one again. Selected notes can be smoothed afterwards with a right-click.": "Quand un enregistrement devient des notes, les fragments inhabituellement courts rejoignent la note voisine et une note tenue coupée en deux redevient une seule. Vous pouvez lisser des notes sélectionnées après coup avec un clic droit.",
+  "All notes of the clip: short fragments go into the note next to them, repeated notes of one pitch become one": "Toutes les notes du clip : les fragments courts rejoignent la note voisine, les notes répétées de même hauteur n'en font plus qu'une",
+  "Smooth": "Lisser",
+  "For notes from a recording: short fragments go into the note next to them, repeated notes of one pitch become one – a louder or accented note stays apart": "Pour les notes issues d'un enregistrement : les fragments courts rejoignent la note voisine, les notes répétées de même hauteur n'en font plus qu'une – une note plus forte ou accentuée reste à part",
+  "Pitch detection breaks a sung or played line into more notes than were played. **Smoothing** puts them back together: unusually short fragments go into the note next to them, a held note split in two becomes one again – a louder or accented note stays apart. It happens when a recording becomes notes (strength in the gear menu and the analysis window), and afterwards with a right-click on selected notes or a note clip → **Smooth**.": "La détection des hauteurs découpe une ligne chantée ou jouée en plus de notes qu'il n'en a été joué. Le **lissage** les rassemble : les fragments inhabituellement courts rejoignent la note voisine, une note tenue coupée en deux redevient une seule – une note plus forte ou accentuée reste à part. Cela se fait quand un enregistrement devient des notes (intensité sous la roue dentée et dans la fenêtre « Analyse »), puis après coup avec un clic droit sur des notes sélectionnées ou un clip de notes → **Lisser**.",
+  "Before that, the melody is smoothed (strength in the gear menu or the analysis window): short fragments and a held note split in two are merged.": "Auparavant, la mélodie est lissée (intensité sous la roue dentée ou dans la fenêtre « Analyse ») : les fragments courts et une note tenue coupée en deux sont fusionnés.",
+  "Light": "Léger",
+  "Medium": "Moyen",
+  "Strong": "Fort",
+  "Keep every detected note": "Garder chaque note détectée",
+  "Only the clearest fragments: very short notes and notes of one pitch that touch": "Seulement les fragments les plus nets : notes très courtes et notes de même hauteur qui se touchent",
+  "Short fragments go into the note next to them, a held note split in two becomes one again": "Les fragments courts rejoignent la note voisine, une note tenue coupée en deux redevient une seule",
+  "Also longer fragments and small gaps between notes of one pitch": "Aussi les fragments plus longs et les petits écarts entre notes de même hauteur",
+  "Notes smoothed: {n} fewer": { one: "Notes lissées : {n} de moins", other: "Notes lissées : {n} de moins" },
+  "Smooth notes (light)": "Lisser les notes (léger)",
+  "Smooth notes (medium)": "Lisser les notes (moyen)",
+  "Smooth notes (strong)": "Lisser les notes (fort)",
+  "Smoothing only works on note clips.": "Le lissage ne fonctionne que sur les clips de notes.",
+  "Drum notes are single hits – smoothing is meant for melodies, e.g. from a recording.": "Les notes de batterie sont des frappes isolées – le lissage est prévu pour les mélodies, p. ex. issues d'un enregistrement.",
+
   // change history (ui/src/components/history.ts, crates/klang-core/src/session.rs, crates/klang-app/src/history.rs)
   "Combine variants: choose per track and section which version goes into a new variant": "Combiner des variantes : choisir par piste et par section quelle version va dans une nouvelle variante",
   "Combine…": "Combiner…",

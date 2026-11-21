@@ -3,6 +3,35 @@
 import type { Dict } from "../i18n.js";
 
 const dict: Dict = {
+  // smoothing notes from recordings (ui/src/smoothing.ts, crates/klang-core/src/smooth.rs, crates/klang-app/src/convert.rs)
+  "{n} fragments smoothed": { one: "{n} frammento levigato", other: "{n} frammenti levigati" },
+  "Nothing to smooth in these {n} notes ({strength})": { one: "Niente da levigare in questa nota ({strength})", other: "Niente da levigare in queste {n} note ({strength})" },
+  "{n} fragments merged": { one: "{n} frammento unito", other: "{n} frammenti uniti" },
+  "{n} soft blips removed": { one: "{n} disturbo debole rimosso", other: "{n} disturbi deboli rimossi" },
+  "Smoothed ({strength}): {what} – Ctrl+Z brings them back": "Levigato ({strength}): {what} – Ctrl+Z li riporta indietro",
+  "Smooth notes": "Leviga le note",
+  "When the melody becomes notes: short fragments and repeated notes of one pitch are merged": "Quando la melodia diventa note: frammenti brevi e note ripetute della stessa altezza vengono uniti",
+  "Smooth notes from recordings": "Leviga le note dalle registrazioni",
+  "When a recording becomes notes, unusually short fragments go into the note next to them and a held note split in two becomes one again. Selected notes can be smoothed afterwards with a right-click.": "Quando una registrazione diventa note, i frammenti insolitamente brevi confluiscono nella nota vicina e una nota tenuta spezzata in due torna una sola. Le note selezionate puoi levigarle anche dopo, con un clic destro.",
+  "All notes of the clip: short fragments go into the note next to them, repeated notes of one pitch become one": "Tutte le note del clip: i frammenti brevi confluiscono nella nota vicina, le note ripetute della stessa altezza diventano una",
+  "Smooth": "Leviga",
+  "For notes from a recording: short fragments go into the note next to them, repeated notes of one pitch become one – a louder or accented note stays apart": "Per note da una registrazione: i frammenti brevi confluiscono nella nota vicina, le note ripetute della stessa altezza diventano una – una nota più forte o accentata resta a sé",
+  "Pitch detection breaks a sung or played line into more notes than were played. **Smoothing** puts them back together: unusually short fragments go into the note next to them, a held note split in two becomes one again – a louder or accented note stays apart. It happens when a recording becomes notes (strength in the gear menu and the analysis window), and afterwards with a right-click on selected notes or a note clip → **Smooth**.": "Il rilevamento delle altezze spezza una linea cantata o suonata in più note di quelle suonate. **Levigare** le ricompone: i frammenti insolitamente brevi confluiscono nella nota vicina, una nota tenuta spezzata in due torna una sola – una nota più forte o accentata resta a sé. Succede quando una registrazione diventa note (intensità nell'ingranaggio e nella finestra «Analisi») e poi con un clic destro su note selezionate o su un clip di note → **Leviga**.",
+  "Before that, the melody is smoothed (strength in the gear menu or the analysis window): short fragments and a held note split in two are merged.": "Prima la melodia viene levigata (intensità nell'ingranaggio o nella finestra «Analisi»): frammenti brevi e una nota tenuta spezzata in due vengono uniti.",
+  "Light": "Leggera",
+  "Medium": "Media",
+  "Strong": "Forte",
+  "Keep every detected note": "Mantieni ogni nota rilevata",
+  "Only the clearest fragments: very short notes and notes of one pitch that touch": "Solo i frammenti più evidenti: note brevissime e note della stessa altezza che si toccano",
+  "Short fragments go into the note next to them, a held note split in two becomes one again": "I frammenti brevi confluiscono nella nota vicina, una nota tenuta spezzata in due torna una sola",
+  "Also longer fragments and small gaps between notes of one pitch": "Anche frammenti più lunghi e piccoli vuoti tra note della stessa altezza",
+  "Notes smoothed: {n} fewer": { one: "Note levigate: {n} in meno", other: "Note levigate: {n} in meno" },
+  "Smooth notes (light)": "Leviga le note (leggera)",
+  "Smooth notes (medium)": "Leviga le note (media)",
+  "Smooth notes (strong)": "Leviga le note (forte)",
+  "Smoothing only works on note clips.": "La levigatura funziona solo sui clip di note.",
+  "Drum notes are single hits – smoothing is meant for melodies, e.g. from a recording.": "Le note di batteria sono colpi singoli – la levigatura è pensata per le melodie, ad es. da una registrazione.",
+
   // change history (ui/src/components/history.ts, crates/klang-core/src/session.rs, crates/klang-app/src/history.rs)
   "Combine variants: choose per track and section which version goes into a new variant": "Combina varianti: scegli per traccia e sezione quale versione finisce in una nuova variante",
   "Combine…": "Combina…",

@@ -17,6 +17,7 @@ use crate::audiofile;
 use crate::sound;
 use crate::state::{lock, AppState, CmdResult, Snapshot};
 use klang_core::edit::{self, AudioKeep};
+use klang_core::smooth::{self as smoothing, Strength};
 use klang_core::{Clip, ClipSource, Command, Id, InstrumentKind, Note, Track, TrackKind};
 use klang_dsp::hits;
 use klang_i18n::{tr, trn};
@@ -71,6 +72,21 @@ pub struct Converted {
     pub track_id: Id,
     /// Number of notes created.
     pub notes: usize,
+    /// Detected notes that smoothing merged into a neighbour or removed.
+    pub smoothed: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Smoothed {
+    pub snapshot: Snapshot,
+    /// New indices of the notes that came from the chosen ones (for the selection).
+    pub selected: Vec<usize>,
+    /// False: nothing to smooth – nothing was changed (no undo step).
+    pub changed: bool,
+    /// Notes that went into a neighbour, and soft blips removed.
+    pub merged: usize,
+    pub removed: usize,
 }
 
 #[derive(Serialize)]
@@ -120,27 +136,59 @@ fn splice(x: &[f32], sr: u32, parts: &[(f64, f64)]) -> Vec<f32> {
     out
 }
 
+/// Grid of a converted melody (beats): sixteenths. Smoothing measures against it, too.
+const MELODY_GRID: f64 = 0.25;
+
+/// Grid of notes smoothed in a clip (beats) – the one recordings are converted to.
+const SMOOTH_GRID: f64 = MELODY_GRID;
+
 /// Detected melody → notes on the sixteenth grid; `spb` = seconds per beat of
-/// the source. How each note was played comes along: velocity (dynamics,
-/// accents), a brighter attack for accents and sforzati, and the length –
-/// staccato short (at most half the way to the next note), legato up to it.
-fn melody_notes(a: &Analysis, spb: f64, shift: i32) -> Vec<Note> {
-    const GRID: f64 = 0.25;
+/// the source. First smoothed (`smooth`, on the exact times – a fragment must
+/// not grow to a grid step of its own), then how each note was played comes
+/// along: velocity (dynamics, accents), a brighter attack for accents and
+/// sforzati, and the length – staccato short (at most half the way to the
+/// next note), legato up to it. Also returns how many detected notes
+/// smoothing merged or removed.
+fn melody_notes(a: &Analysis, spb: f64, shift: i32, smooth: Strength) -> (Vec<Note>, usize) {
+    const GRID: f64 = MELODY_GRID;
     const FINE: f64 = 0.125;
     let snap = |b: f64, grid: f64| (b / grid).round() * grid;
-    let mut notes: Vec<(Note, Articulation, f64)> = a
+    let rank = |k: Attack| match k {
+        Attack::Normal => 0.0,
+        Attack::Accent => 1.0,
+        Attack::Sforzato => 2.0,
+    };
+    let items: Vec<smoothing::Item> = a
         .notes
         .iter()
-        .map(|n| {
-            let start = snap(n.start_secs / spb, GRID).max(0.0);
-            let end = snap(n.end_secs / spb, GRID).max(start + GRID);
-            let mut note = Note::new((n.midi as i32 + shift).clamp(0, 127) as u8, start, end - start, n.velocity.max(1));
-            note.brightness = match n.attack {
-                Attack::Normal => 0.0,
-                Attack::Accent => expression::ACCENT_BRIGHTNESS,
-                Attack::Sforzato => expression::SFORZATO_BRIGHTNESS,
+        .map(|n| smoothing::Item {
+            start: n.start_secs / spb,
+            end: n.end_secs / spb,
+            pitch: n.midi,
+            velocity: n.velocity,
+            accent: rank(n.attack),
+            new_attack: Some(n.new_attack),
+        })
+        .collect();
+    let plan = smoothing::plan(&items, None, smooth, smoothing::Scale { secs_per_beat: spb, grid_beats: GRID });
+    let smoothed = plan.merged() + plan.removed.len();
+    let mut notes: Vec<(Note, Articulation, f64)> = plan
+        .groups
+        .iter()
+        .map(|g| {
+            let main = &a.notes[g.main];
+            let start = snap(g.start, GRID).max(0.0);
+            let end = snap(g.end, GRID).max(start + GRID);
+            let mut note = Note::new((main.midi as i32 + shift).clamp(0, 127) as u8, start, end - start, g.velocity.max(1));
+            // the attack from where the note starts (accent rank, see above)
+            note.brightness = match g.accent {
+                r if r >= 2.0 => expression::SFORZATO_BRIGHTNESS,
+                r if r >= 1.0 => expression::ACCENT_BRIGHTNESS,
+                _ => 0.0,
             };
-            (note, n.articulation, (n.end_secs - n.start_secs) / spb)
+            // how it ends: the articulation of its last part
+            let last = g.members.last().map_or(main, |&i| &a.notes[i]);
+            (note, last.articulation, g.end - g.start)
         })
         .collect();
     notes.sort_by(|a, b| a.0.start_beats.total_cmp(&b.0.start_beats));
@@ -153,7 +201,7 @@ fn melody_notes(a: &Analysis, spb: f64, shift: i32) -> Vec<Note> {
         same
     });
     let starts: Vec<f64> = notes.iter().map(|n| n.0.start_beats).collect();
-    notes
+    let notes = notes
         .into_iter()
         .enumerate()
         .map(|(i, (mut note, articulation, sounding))| {
@@ -173,7 +221,18 @@ fn melody_notes(a: &Analysis, spb: f64, shift: i32) -> Vec<Note> {
             }
             note
         })
-        .collect()
+        .collect();
+    (notes, smoothed)
+}
+
+/// Undo label of smoothing with a strength.
+pub fn smooth_label(s: Strength) -> String {
+    match s {
+        Strength::Off => tr!("Smooth notes"),
+        Strength::Light => tr!("Smooth notes (light)"),
+        Strength::Medium => tr!("Smooth notes (medium)"),
+        Strength::Strong => tr!("Smooth notes (strong)"),
+    }
 }
 
 /// Detected hits → drum notes (sixteenth notes); the strongest per drum and step.
@@ -271,7 +330,8 @@ impl AppState {
     /// Detected melody or hits of audio clips as a new instrument track
     /// directly below the audio track (one clip per audio clip, in the same
     /// place, length rounded to whole bars). `clip_id`: None = all audio clips of the track.
-    pub fn audio_to_notes(&self, track_id: Id, clip_id: Option<Id>, target: Target, label: &str) -> CmdResult<Converted> {
+    /// `smooth`: how much a detected melody is smoothed first (drums aren't).
+    pub fn audio_to_notes(&self, track_id: Id, clip_id: Option<Id>, target: Target, label: &str, smooth: Strength) -> CmdResult<Converted> {
         let (track, index, bpm, bpb) = {
             let s = lock(&self.session)?;
             let p = &s.project;
@@ -297,12 +357,17 @@ impl AppState {
         let shift = track.pitch_semitones.round() as i32;
         let mut out = Vec::new();
         let mut pitches = Vec::new();
+        let mut smoothed = 0;
         for clip in &clips {
             let ClipSource::Audio { asset_id, .. } = &clip.source else { continue };
             let a = self.analysis_for(asset_id)?;
             let spb = 1.0 / edit::audio_beats_per_sec(&clip.source, bpm);
             let notes = match target {
-                Target::Melodie => melody_notes(&a, spb, shift),
+                Target::Melodie => {
+                    let (notes, n) = melody_notes(&a, spb, shift, smooth);
+                    smoothed += n;
+                    notes
+                }
                 Target::Rhythmus => {
                     let (samples, sr) = {
                         let pool = lock(&self.pool)?;
@@ -360,7 +425,44 @@ impl AppState {
             (Command::Batch { label: label.into(), commands: vec![Command::AddTrack { track: t, index: Some(index + 1) }] }, new_id)
         };
         let snapshot = self.execute(cmd, false)?;
-        Ok(Converted { snapshot, track_id: new_id, notes })
+        Ok(Converted { snapshot, track_id: new_id, notes, smoothed })
+    }
+
+    /// Smooths the notes of a clip (`indices`: None = all): unusually short
+    /// notes go into a neighbour, consecutive notes of the same pitch become
+    /// one unless the second is louder or accented (see `klang_core::smooth`).
+    /// Nothing to smooth: no undo step.
+    pub fn smooth_notes(&self, track_id: Id, clip_id: Id, indices: Option<Vec<usize>>, strength: Strength, label: Option<&str>) -> CmdResult<Smoothed> {
+        let (clip, drums, bpm) = {
+            let s = lock(&self.session)?;
+            let p = &s.project;
+            let clip = p.clip(track_id, clip_id).cloned().ok_or_else(|| tr!("Clip {clip} not found on track {track}", clip = clip_id, track = track_id))?;
+            let drums = p.track(track_id).and_then(|t| t.instrument.as_ref()).is_some_and(|i| i.kind == InstrumentKind::Drums);
+            (clip, drums, p.tempo_bpm)
+        };
+        let ClipSource::Notes { notes, .. } = &clip.source else {
+            return Err(tr!("Smoothing only works on note clips."));
+        };
+        if drums {
+            return Err(tr!("Drum notes are single hits – smoothing is meant for melodies, e.g. from a recording."));
+        }
+        if let Some(bad) = indices.as_ref().and_then(|ix| ix.iter().find(|&&i| i >= notes.len())) {
+            return Err(trn!(
+                notes.len(),
+                "Note {nr} doesn't exist in this clip (it has {n} note).",
+                "Note {nr} doesn't exist in this clip (it has {n} notes).",
+                nr = bad
+            ));
+        }
+        let scale = smoothing::Scale { secs_per_beat: 60.0 / bpm.max(1.0), grid_beats: SMOOTH_GRID };
+        let (smoothed, selected, plan) = smoothing::smooth_notes(notes, indices.as_deref(), strength, scale);
+        if !plan.changed() {
+            let selected = indices.unwrap_or_else(|| (0..notes.len()).collect());
+            return Ok(Smoothed { snapshot: self.snapshot()?, selected, changed: false, merged: 0, removed: 0 });
+        }
+        let label = label.map(str::to_string).unwrap_or_else(|| smooth_label(strength));
+        let cmd = Command::Batch { label, commands: vec![Command::SetClipNotes { track_id, clip_id, notes: smoothed, length_beats: None }] };
+        Ok(Smoothed { snapshot: self.execute(cmd, false)?, selected, changed: true, merged: plan.merged(), removed: plan.removed.len() })
     }
 
     /// Deletes the time range `[start, end)` (beats) from all tracks; everything
@@ -533,7 +635,7 @@ mod tests {
         assert!(vel[2] >= 108, "sforzato: {vel:?}");
         assert!(vel[4] <= 50 && vel[5] <= 50, "soft notes about p/pp: {vel:?}");
 
-        let notes = melody_notes(&a, 0.5, 0);
+        let (notes, _) = melody_notes(&a, 0.5, 0, Strength::Medium);
         assert_eq!(notes.len(), 10);
         assert_eq!(notes.iter().map(|n| n.start_beats).collect::<Vec<_>>(), (0..10).map(|i| i as f64).collect::<Vec<_>>());
         assert_eq!(notes[2].brightness, expression::SFORZATO_BRIGHTNESS, "harder, brighter attack");
@@ -542,6 +644,118 @@ mod tests {
         assert_eq!(notes[0].length_beats, 1.0, "legato: up to the next note");
         assert_eq!(notes[6].length_beats, 0.25, "staccato: short");
         assert!(notes[3].length_beats >= 0.75 && notes[3].length_beats <= 1.0, "{}", notes[3].length_beats);
+        // a clean recording: smoothing changes nothing
+        assert_eq!(melody_notes(&a, 0.5, 0, Strength::Strong), (notes.clone(), 0));
+        assert_eq!(melody_notes(&a, 0.5, 0, Strength::Off).0, notes);
+    }
+
+    /// A sung line the way pitch detection breaks it up: each part is
+    /// (MIDI, seconds, kind) – kinds: 0 tone, 1 noise at the same level (a
+    /// breathy voice break), 2 silence. Phase-continuous between tone parts.
+    fn sung_with_flaws(parts: &[(f32, f32, u8)], sr: f32) -> Vec<f32> {
+        let mut out = Vec::new();
+        let mut phase = 0.0f32;
+        let mut noise = 0x2545_f491u32;
+        let mut since_rest = 0.0f32;
+        for &(midi, secs, kind) in parts {
+            let f = 440.0 * 2f32.powf((midi - 69.0) / 12.0);
+            for _ in 0..(secs * sr) as usize {
+                let env = (since_rest / 0.015).min(1.0);
+                since_rest += 1.0 / sr;
+                out.push(match kind {
+                    0 => {
+                        phase += 2.0 * std::f32::consts::PI * f / sr;
+                        env * (0.4 * phase.sin() + 0.15 * (2.0 * phase).sin() + 0.06 * (3.0 * phase).sin())
+                    }
+                    1 => {
+                        noise ^= noise << 13;
+                        noise ^= noise >> 17;
+                        noise ^= noise << 5;
+                        0.3 * env * (noise as f32 / u32::MAX as f32 * 2.0 - 1.0) * 1.7
+                    }
+                    _ => {
+                        since_rest = 0.0;
+                        0.0
+                    }
+                });
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn smoothing_puts_a_broken_up_recording_back_together() {
+        let sr = 44_100.0;
+        // 120 BPM, two beats per note: c' with an octave slip, e' with a breathy
+        // voice break, a scoop d' → g', then d' d' re-struck after a breath, c'
+        let x = sung_with_flaws(
+            &[
+                (60.0, 0.44, 0), (72.0, 0.13, 0), (60.0, 0.39, 0), (0.0, 0.04, 2),
+                (64.0, 0.47, 0), (64.0, 0.05, 1), (64.0, 0.44, 0), (0.0, 0.04, 2),
+                (62.0, 0.11, 0), (67.0, 0.85, 0), (0.0, 0.04, 2),
+                (62.0, 0.44, 0), (0.0, 0.06, 2), (62.0, 0.44, 0), (0.0, 0.06, 2),
+                (60.0, 0.9, 0), (0.0, 0.1, 2),
+            ],
+            sr,
+        );
+        let a = crate::analysis::analyze("t", &x, sr as u32);
+        let (raw, none) = melody_notes(&a, 0.5, 0, Strength::Off);
+        let pitches = |n: &[Note]| n.iter().map(|n| n.pitch).collect::<Vec<_>>();
+        assert_eq!(none, 0);
+        assert!(raw.len() >= 9, "broken up without smoothing: {:?}", pitches(&raw));
+        assert!(pitches(&raw).contains(&72), "the octave slip is a note of its own: {:?}", pitches(&raw));
+
+        let (smooth, merged) = melody_notes(&a, 0.5, 0, Strength::Medium);
+        assert_eq!(pitches(&smooth), vec![60, 64, 67, 62, 62, 60], "{:?}", a.notes.iter().map(|n| (n.midi, n.start_secs, n.end_secs, n.new_attack)).collect::<Vec<_>>());
+        assert_eq!(merged, raw.len() - smooth.len());
+        let starts: Vec<f64> = smooth.iter().map(|n| n.start_beats).collect();
+        assert_eq!(starts[..3], [0.0, 2.0, 4.0], "each held note from its start: {smooth:?}");
+        assert!(smooth[0].length_beats >= 1.75 && smooth[1].length_beats >= 1.75, "held through: {smooth:?}");
+        assert!(smooth[2].length_beats >= 1.75, "the scoop belongs to the g': {smooth:?}");
+    }
+
+    #[test]
+    fn smoothing_a_clip_is_one_undo_step_and_leaves_drums_alone() {
+        let st = AppState::without_audio();
+        let notes = vec![Note::new(60, 0.0, 0.9, 80), Note::new(72, 0.9, 0.18, 80), Note::new(60, 1.08, 0.92, 80), Note::new(64, 2.0, 1.0, 80)];
+        let clip = Clip { id: Id::NEW, name: "m".into(), start_beats: 0.0, source: ClipSource::Notes { length_beats: 4.0, notes: notes.clone() } };
+        let mut track = Track::new(Id::NEW, "Melody", TrackKind::Instrument);
+        track.clips.push(clip);
+        st.execute(Command::AddTrack { track, index: None }, false).unwrap();
+        let (tid, cid) = {
+            let s = lock(&st.session).unwrap();
+            let t = s.project.tracks.last().unwrap();
+            (t.id, t.clips[0].id)
+        };
+        let clip_notes = |st: &AppState| match &st.clip(tid, cid).unwrap().source {
+            ClipSource::Notes { notes, .. } => notes.clone(),
+            _ => unreachable!(),
+        };
+        let r = st.smooth_notes(tid, cid, None, Strength::Medium, None).unwrap();
+        assert!(r.changed);
+        assert_eq!((r.merged, r.removed), (2, 0));
+        let got = clip_notes(&st);
+        assert_eq!(got.iter().map(|n| (n.pitch, n.start_beats, n.length_beats)).collect::<Vec<_>>(), vec![(60, 0.0, 2.0), (64, 2.0, 1.0)]);
+        let undo_label = |st: &AppState| lock(&st.session).unwrap().undo_label().map(str::to_string);
+        assert_eq!(undo_label(&st).as_deref(), Some("Smooth notes (medium)"));
+        // once more: nothing left to smooth, no empty undo step
+        let again = st.smooth_notes(tid, cid, None, Strength::Strong, None).unwrap();
+        assert!(!again.changed);
+        assert_eq!(undo_label(&st).as_deref(), Some("Smooth notes (medium)"));
+        st.undo().unwrap();
+        assert_eq!(clip_notes(&st), notes, "undo brings the fragments back");
+        // drum notes are hits, not a melody
+        let mut kit = Track::new(Id::NEW, "Drums", TrackKind::Instrument);
+        kit.instrument = Some(sound::default_instrument(InstrumentKind::Drums));
+        kit.clips.push(Clip { id: Id::NEW, name: "d".into(), start_beats: 0.0, source: ClipSource::Notes { length_beats: 4.0, notes: vec![Note::new(42, 0.0, 0.25, 90), Note::new(42, 0.25, 0.25, 90)] } });
+        st.execute(Command::AddTrack { track: kit, index: None }, false).unwrap();
+        let (dt, dc) = {
+            let s = lock(&st.session).unwrap();
+            let t = s.project.tracks.last().unwrap();
+            (t.id, t.clips[0].id)
+        };
+        assert!(st.smooth_notes(dt, dc, None, Strength::Medium, None).is_err());
+        assert!(st.smooth_notes(tid, cid, Some(vec![9]), Strength::Medium, None).is_err(), "a note that isn't there");
     }
 
     #[test]

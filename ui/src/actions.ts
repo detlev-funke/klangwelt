@@ -6,8 +6,8 @@ import {
 } from "./store.js";
 import { heightDraft, heightLimits, noteKey, noteSel, rowHeight } from "./pianoroll.js";
 import { playheadMoved } from "./noteinput.js";
-import { gridLabel, rangeLabel } from "./editmath.js";
-import { plural, t } from "./i18n.js";
+import { clipSpan, gridLabel, rangeLabel } from "./editmath.js";
+import { language, plural, t } from "./i18n.js";
 import type { ConvertTarget, Note, Track, TrackKind } from "./types.js";
 
 // ---------- Track height (splitter) ----------
@@ -99,16 +99,26 @@ export function transposeSelectedNotes(delta: number): boolean {
 /** Aligns selected notes to the grid (`grid` in beats); with `lengths` the ends too. */
 export async function quantizeSelectedNotes(grid: number, lengths: boolean): Promise<boolean> {
   const s = selectedNotesClip();
-  if (!s) return false;
+  if (!s) {
+    notify(t("Select notes first: tap or click them, or draw a box around them"));
+    return false;
+  }
   const indices = s.notes.map((n, i) => (s.keys.has(noteKey(n)) ? i : -1)).filter((i) => i >= 0);
   try {
     const r = await backend.quantizeNotes(s.trackId, s.clipId, indices, grid, lengths);
+    const unit = project()?.beatUnit ?? 4;
+    const vars = { grid: gridLabel(grid, unit) };
+    if (!r.changed) {
+      // (the selection stays as it is)
+      notify(lengths
+        ? plural(indices.length, "The selected note already sits on the {grid} grid with start and end – nothing to change", "The selected notes already sit on the {grid} grid with start and end – nothing to change", vars)
+        : plural(indices.length, "The selected note already starts on the {grid} grid – nothing to change", "The selected notes already start on the {grid} grid – nothing to change", vars));
+      return true;
+    }
     snapshot.value = r.snapshot;
     const clip = r.snapshot.project.tracks.find((t) => t.id === s.trackId)?.clips.find((c) => c.id === s.clipId);
     const notes = clip?.source.type === "notes" ? clip.source.notes : [];
     noteSel.value = { trackId: s.trackId, clipId: s.clipId, keys: r.selected.flatMap((i) => (notes[i] ? [noteKey(notes[i])] : [])) };
-    const unit = project()?.beatUnit ?? 4;
-    const vars = { grid: gridLabel(grid, unit) };
     notify(lengths
       ? plural(indices.length, "Snapped {n} note to the {grid} grid (start and length)", "Snapped {n} notes to the {grid} grid (start and length)", vars)
       : plural(indices.length, "Snapped {n} note to the {grid} grid", "Snapped {n} notes to the {grid} grid", vars));
@@ -117,6 +127,51 @@ export async function quantizeSelectedNotes(grid: number, lengths: boolean): Pro
     notify(errorText(e), "error");
     return false;
   }
+}
+
+/**
+ * New lengths for the selected notes (starts stay) – one undo step. The clip grows by whole bars
+ * when a note reaches past its end.
+ */
+function resizeSelectedNotes(len: (n: Note) => number, label: string, done: (n: number) => string): boolean {
+  const s = selectedNotesClip();
+  const p = project();
+  if (!s || !p) {
+    notify(t("Select notes first: tap or click them, or draw a box around them"));
+    return false;
+  }
+  const clip = p.tracks.find((tr) => tr.id === s.trackId)?.clips.find((c) => c.id === s.clipId);
+  if (!clip || clip.source.type !== "notes") return false;
+  const changed: Note[] = [];
+  let count = 0;
+  const notes = s.notes.map((n) => {
+    if (!s.keys.has(noteKey(n))) return n;
+    count++;
+    const m = { ...n, lengthBeats: Math.max(1 / 64, len(n)) };
+    if (Math.abs(m.lengthBeats - n.lengthBeats) > 1e-9) changed.push(m);
+    return m;
+  });
+  if (!changed.length) {
+    notify(plural(count, "The selected note already has this length", "The selected notes already have this length"));
+    return true;
+  }
+  const span = clipSpan(notes, clip.source.lengthBeats, p.beatsPerBar, clip.startBeats);
+  const grown = span.hi > clip.source.lengthBeats + 1e-9 ? span.hi : undefined;
+  void run({ type: "batch", label, commands: [{ type: "setClipNotes", trackId: s.trackId, clipId: s.clipId, notes, ...(grown ? { lengthBeats: grown } : {}) }] });
+  notify(done(count));
+  return true;
+}
+
+/** Every selected note gets the length `beats` (e.g. the note value 1/8), the starts stay. */
+export function setSelectedNoteLengths(beats: number): boolean {
+  const name = gridLabel(beats, project()?.beatUnit ?? 4);
+  return resizeSelectedNotes(() => beats, t("Note length {value}", { value: name }), (n) => plural(n, "{n} note now {value} long", "{n} notes now {value} long", { value: name }));
+}
+
+/** Lengths of the selected notes times `factor` (½ shorter, 1½ dotted, 2 longer). */
+export function scaleSelectedNoteLengths(factor: number): boolean {
+  const f = `${factor.toLocaleString(language())}×`;
+  return resizeSelectedNotes((n) => n.lengthBeats * factor, t("Note lengths {factor}", { factor: f }), (n) => plural(n, "{n} note {factor} as long", "{n} notes {factor} as long", { factor: f }));
 }
 
 /** Deletes the selected time range from all tracks; everything after it moves up. */

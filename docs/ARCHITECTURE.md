@@ -186,6 +186,25 @@ notes queue up so that each one is added to the snapshot of the one before.
 The shortcut line (`.keys-hint`) sits right below the last track; while
 typing it lists the mode's keys.
 
+**Length of new notes** (`noteValue` in noteinput.ts): Auto or 1/1 … 1/32,
+plain, dotted or triplet – chosen next to the piano (`.note-values`; in the
+slim header of a phone one button `.nv-compact` with a menu) or with the digit
+keys while typing (1–6, "." dotted, "," triplet, 0 Auto). `valueBeats`
+converts it with the time signature's beat unit. Typed notes get `entryStep`
+(the value, else the grid of the zoom) and the mark moves on by it; clicks and
+the playhead still put the mark on the grid of the zoom (`entryGrid`).
+Double-click and Alt+click use `newNoteLength` (Auto: the last drawn length).
+The piano (`pianoKey`) adds its note with keyboard entry on – and without it
+when the playhead stands at the end of the piece (`atPieceEnd`, compared with
+`engine.endBeats`): the note is appended there and the playhead moves behind
+it, so the next key appends after it; Shift joins the note before (chord). The
+`appended` chain bridges the moment until snapshot and status have caught up
+(fast clicks).
+
+**Touch in the piano roll:** pressing an empty spot inside a clip keeps the
+note selection until the finger moves (selection box) or lifts (a tap clears
+it) – so holding opens the menu for the selected notes, like a right-click.
+
 **The clip grows along:** `clipSpan` (in `ui/src/editmath.ts`, pure and tested
 in Node) computes how far the clip has to grow in whole bars: to the left at
 most to the project start, to the right up to the last note.
@@ -257,7 +276,12 @@ the beat. The start goes to the nearest grid point (never before the clip
 start); with lengths, the end too (at least one grid step). Two notes of the
 same pitch on the same start merge (the longer one stays). The function returns
 the new indices of the edited notes so that the UI keeps the selection. The UI
-(`quantize_notes`) and the agent use the same implementation.
+(`quantize_notes`) and the agent use the same implementation. If nothing would
+change, `AppState::quantize_notes` executes nothing (no empty undo step) and
+returns `changed: false` – the UI says so instead of seeming to do nothing.
+The same menu sets lengths: "Length" (1/1 … 1/16) and "Longer / shorter"
+(½×, 1½×, 2×) – `setSelectedNoteLengths` / `scaleSelectedNoteLengths` in
+actions.ts, one `setClipNotes` (the clip grows by whole bars), starts stay.
 
 **Recording → notes** (`AppState::audio_to_notes`): for each audio clip, one
 note clip at the same position (length rounded to whole bars), in a new

@@ -201,7 +201,7 @@ const ENTRIES: Entry[] = [
   { sel: ".track-row .stepper", topic: { title: t("Pitch"), text: [t("Shifts the track in semitones (−24 … +24). For audio the tempo stays the same; the shift is included in the export and in MIDI.")] } },
   { sel: "[data-help=pegel]", topic: { title: t("Level"), text: [t("Track volume in dB (−60 … +6). Double-click sets 0 dB.")] } },
   { sel: "[data-help=panorama]", topic: { title: t("Pan"), text: [t("Position in the stereo field, from left to right. Double-click centers it.")] } },
-  { sel: ".track-row canvas.keys", topic: { title: t("Keyboard"), text: [t("A piano rotated by 90°: click plays a note. Change the pitch axis (low or high notes at the top) in the gear menu."), t("With keyboard entry on, a click adds the note at the violet mark – like the letter keys shown on the piano.")], keys: [[t("Mouse wheel"), t("scroll pitch range")], [t("Ctrl + mouse wheel"), t("zoom")], [t("Double-click"), t("fit")]] } },
+  { sel: ".track-row canvas.keys", topic: { title: t("Keyboard"), text: [t("A piano rotated by 90°: click plays a note. Change the pitch axis (low or high notes at the top) in the gear menu."), t("With keyboard entry on, a click adds the note at the violet mark – like the letter keys shown on the piano."), t("With the playhead at the end of the piece, a click appends the note there in the length chosen next to the piano, and the playhead moves on behind it – so you can play a melody in note by note. Shift+click adds to the note before (chord).")], keys: [[t("Mouse wheel"), t("scroll pitch range")], [t("Ctrl + mouse wheel"), t("zoom")], [t("Double-click"), t("fit")]] } },
   {
     sel: ".track-row .entry-switch",
     // a function: the letters of the octave keys come from the keyboard layout (arrives later)
@@ -210,6 +210,7 @@ const ENTRIES: Entry[] = [
       text: [
         t("Type notes instead of drawing them. While the switch is on, the letter keys play the octave visible in the piano roll – the middle letter row are the white keys, the row above the black ones; the piano shows each key's letter. Every note lands at the **violet mark** in the timeline, which then moves on by one grid step (the grid follows the zoom)."),
         t("Hold **Shift** to stay in place: that's how you type chords. A click on a key of the piano works like its letter. Each note is its own undo step."),
+        t("With a note length chosen next to the piano, every note gets that length and the mark moves on by it (digit keys 1–6, \".\" dotted, \",\" triplet, 0 back to Auto)."),
         t("The mark starts at the playhead or at the selected time range; a click into the piano roll or the ruler moves it."),
         t("While the mode is on, the letter keys don't trigger their usual shortcuts (L loop, R record); Space and the Ctrl shortcuts (undo, save …) still work."),
       ],
@@ -280,6 +281,19 @@ const ENTRIES: Entry[] = [
   { sel: "kw-panel[tab=harmonie] .hc-circle", topic: { title: t("Circle of fifths"), text: [t("Major outside, minor in the middle, diminished inside; the key's chords are colored. The best continuations show a rank and an arrow.")], keys: [[t("Click"), t("preview transition")], [t("Double-click"), t("add to progression")]] } },
 
   // ------------------------------------------------ Context menu
+  {
+    sel: "[data-help=notenlaenge]",
+    topic: {
+      title: t("Length of new notes"),
+      text: [
+        t("How long new notes become: Auto, a whole note (1/1) down to a 32nd (1/32), dotted (·, one and a half times as long) or as a triplet (3, two thirds). It applies to the piano, the letter keys of keyboard entry, a double-click or double tap in the piano roll and Alt+click (dragging still sets the length)."),
+        t("**Auto**: typed notes are one grid step long (the grid follows the zoom), drawn notes as long as the last one you drew."),
+        t("On a phone the button opens the choice. Notes already placed: select them and use **Length** in their menu (right-click or hold)."),
+      ],
+      keys: [["1 … 6", t("whole … 32nd (keyboard entry)")], [".", t("dotted")], [",", t("triplet")], ["0", t("Auto")]],
+    },
+  },
+  { sel: ".ctx-menu [data-act^=laenge]", topic: { title: t("Note length"), text: [t("Gives the selected notes a new length, their starts stay: **Length** sets 1/1 … 1/16 for all of them, **Longer / shorter** halves, dots (1½×) or doubles each one. A note reaching past the clip's end makes the clip grow by whole bars.")] } },
   { sel: ".ctx-menu [data-act^=raster]", topic: { title: t("Quantize"), text: [t("Moves the selected notes onto the grid: 1/4, 1/8, 1/16 or the view's grid (finer the further you zoom in). The grid follows the song's bars, even if the clip starts offset."), t("\"Quantize\" only moves the starts, \"Start and length\" also the ends – every note stays at least one grid step long.")] } },
   { sel: ".ctx-menu", topic: { title: t("Context menu"), text: [t("What you can do with the clicked item: quantize and transpose notes, convert a recording into a melody or rhythm track, delete the selected time range from all tracks. Esc or a click outside closes it.")] } },
 

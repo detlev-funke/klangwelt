@@ -141,9 +141,17 @@ kw-tracks { position: relative; overflow: hidden; background: var(--panel); bord
 .toggle.convert:hover { background: rgba(110, 231, 216, .12); }
 /* .toggle.v and .toggle.convert set display themselves – the hidden attribute must still take effect */
 .toggle.v[hidden], .toggle.convert[hidden] { display: none; }
-/* keyboard entry: small switch in the header of a piano roll, next to the piano */
-.track-row .track-entry { display: none; justify-content: flex-end; }
+/* keyboard entry: small switch in the header of a piano roll, next to the piano – below it the length of new notes */
+.track-row .track-entry { display: none; flex-direction: column; align-items: flex-end; gap: 5px; }
 .track-row.notes .track-entry { display: flex; }
+.note-values { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 1px; padding: 2px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel-2); max-width: 100%; }
+.nv { height: 18px; min-width: 20px; padding: 0 3px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font: inherit; font-size: 10.5px; font-weight: 600; cursor: pointer; }
+.nv:hover:not(:disabled) { color: var(--text); background: rgba(255, 255, 255, .07); }
+.nv.on { background: rgba(199, 146, 255, .24); color: #f3eaff; }
+.nv:disabled { opacity: .35; cursor: default; }
+.nv.mod { min-width: 18px; }
+.nv-sep { width: 1px; height: 12px; margin: 0 2px; background: var(--line-2); }
+.nv-compact { display: none; align-items: center; justify-content: center; height: 22px; padding: 0 7px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel-2); color: #e3d0ff; font: inherit; font-size: 11px; font-weight: 600; white-space: nowrap; cursor: pointer; }
 .entry-switch { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px 0 3px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--muted); font-size: 10.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .entry-switch[hidden] { display: none; }
 .entry-switch svg { width: 13px; height: 13px; }
@@ -816,6 +824,8 @@ body.dk-dragging, body.dk-dragging * { cursor: grabbing !important; user-select:
 .ctx-chips { display: flex; gap: 3px; }
 .ctx-chip { min-width: 30px; padding: 3px 7px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--panel-2); color: var(--muted); font-size: 11.5px; cursor: pointer; }
 .ctx-chip:hover, .ctx-chip:focus-visible { background: rgba(255, 180, 84, .14); border-color: rgba(255, 180, 84, .55); color: var(--text); }
+.ctx-chip.on { background: rgba(199, 146, 255, .22); border-color: rgba(199, 146, 255, .6); color: #f3eaff; }
+.ctx-chip:disabled { opacity: .4; cursor: default; }
 
 /* Narrow windows (e.g. docked at the side): single column */
 @container (max-width: 720px) {
@@ -1360,6 +1370,23 @@ kw-tracks.open .heads-toggle svg { transform: rotate(180deg); }
 @media (hover: none) {
   .dk-close { opacity: 1; }
 }
+/* the menu of selected notes and the length of new notes with a finger: finger-sized options that wrap */
+@media (pointer: coarse) {
+  .menu.ctx-menu { max-width: calc(100vw - 8px); }
+  .ctx-row { flex-wrap: wrap; row-gap: 4px; padding: 5px 6px 5px 10px; }
+  .ctx-chips { flex-wrap: wrap; justify-content: flex-end; gap: 4px; margin-left: auto; }
+  .ctx-chip { min-width: 40px; min-height: 36px; padding: 4px 8px; font-size: 13px; }
+  .nv { height: 30px; min-width: 32px; font-size: 12px; }
+  .nv.mod { min-width: 30px; }
+  .nv-compact { height: 34px; padding: 0 9px; font-size: 13px; }
+  .entry-switch { height: 30px; }
+}
+/* slim track headers (phone): the keyboard switch as an icon, the length as one button with a menu */
+.workspace.narrow kw-tracks:not(.open) .track-row.notes .track-entry { display: flex; flex-direction: row; flex-wrap: wrap; justify-content: flex-start; align-items: center; gap: 4px; }
+.workspace.narrow kw-tracks:not(.open) .track-row .note-values { display: none; }
+.workspace.narrow kw-tracks:not(.open) .track-row .nv-compact { display: inline-flex; }
+.workspace.narrow kw-tracks:not(.open) .entry-switch .lbl, .workspace.narrow kw-tracks:not(.open) .entry-switch .switch { display: none; }
+.workspace.narrow kw-tracks:not(.open) .entry-switch { padding: 0 7px; }
 /* empty project in a narrow window: headline and buttons only, never cut off at the top */
 .workspace.narrow .empty-hint { justify-content: safe center; gap: 10px; padding: 0 8px; }
 .workspace.narrow .empty-hint h2 { font-size: 17px; }
@@ -1371,8 +1398,8 @@ kw-tracks.open .heads-toggle svg { transform: rotate(180deg); }
 .hist-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .hist-top .btn.small svg { width: 14px; height: 14px; }
 .hist-variants { display: flex; align-items: center; gap: 5px; flex: 1; min-width: 0; flex-wrap: wrap; }
-.hist-var-lbl { font-size: 11.5px; margin: 0 2px 0 6px; }
-.hist-var { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--muted); font-size: 12px; cursor: pointer; max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hist-var-lbl { font-size: 11.5px; margin: 0 2px 0 6px; flex: none; }
+.hist-var { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--muted); font-size: 12px; cursor: pointer; max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hist-var i { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; }
 .hist-var small { color: var(--faint); font-size: 10.5px; }
 .hist-var:hover { color: var(--text); }
@@ -1402,7 +1429,8 @@ kw-tracks.open .heads-toggle svg { transform: rotate(180deg); }
 .hist-row.current { cursor: default; }
 .hist-row.future td { opacity: .45; }
 .hist-row.future:hover td { opacity: .8; }
-.hist-change { display: flex; align-items: center; gap: 6px; min-width: 150px; }
+.hist-change-in { display: flex; align-items: center; gap: 6px; min-width: 150px; }
+.hist-sub { display: none; margin-top: 2px; font-size: 11px; color: var(--faint); white-space: normal; }
 .hist-label { color: var(--text); }
 .hist-row.future .hist-label { color: var(--muted); }
 .hist-detail { max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
@@ -1419,6 +1447,19 @@ kw-tracks.open .heads-toggle svg { transform: rotate(180deg); }
 @media (hover: none) {
   .hist-branch-here { opacity: 1; }
 }
+.history.narrow .hist-top .lbl { display: none; }
+.history.narrow .hist-variants { order: 5; flex-basis: 100%; }
+.history.narrow .hist-var-lbl { margin-left: 0; }
+.history.narrow .hist-table th:nth-child(2), .history.narrow .hist-table td:nth-child(2),
+.history.narrow .hist-table th:nth-child(4), .history.narrow .hist-table td:nth-child(4),
+.history.narrow .hist-table th:nth-child(6), .history.narrow .hist-table td:nth-child(6),
+.history.narrow .hist-table th:nth-child(8), .history.narrow .hist-table td:nth-child(8),
+.history.narrow .hist-table th:nth-child(9), .history.narrow .hist-table td:nth-child(9),
+.history.narrow .hist-table th:nth-child(10), .history.narrow .hist-table td:nth-child(10) { display: none; }
+.history.narrow .hist-table td.hist-change { white-space: normal; }
+.history.narrow .hist-change-in { min-width: 0; flex-wrap: wrap; }
+.history.narrow .hist-sub { display: block; }
+.history.narrow .hist-foot .hint { display: none; }
 /* combining variants */
 .merge { display: flex; flex-direction: column; gap: 8px; height: 100%; min-height: 0; min-width: 0; }
 .mg-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; }

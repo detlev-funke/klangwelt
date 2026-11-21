@@ -10,7 +10,8 @@ import { EXPRS, type ExprKey, exprKeysFor, exprLanes, exprShown, laneKeyFor, set
 import { t } from "../i18n.js";
 import { effect } from "../signals.js";
 import { act, instrumentSpecs, run, selection, snapshot, specFor, viewport } from "../store.js";
-import { enterNote, entry, entryLetters, entryTrack, keyLabelsVersion, setEntryPosition, toggleEntry } from "../noteinput.js";
+import { NOTE_VALUES, entryLetters, entryTrack, keyLabelsVersion, noteValue, pianoKey, setNoteValue, toggleEntry, toggleValueMod, valueLabel } from "../noteinput.js";
+import { openContextMenu } from "../ctxmenu.js";
 import { harmonyLaneOn, setHarmonyLane } from "../harmonyline.js";
 import type { InstrumentKind, Track } from "../types.js";
 
@@ -153,6 +154,87 @@ function panText(p: number): string {
   return `${p < 0 ? "L" : "R"} ${Math.round(Math.abs(p) * 100)}`;
 }
 
+interface NoteValuePicker {
+  /** The row of note values (wide header). */
+  el: HTMLElement;
+  /** One button with the chosen value that opens the choice (slim column on a phone). */
+  compact: HTMLButtonElement;
+  update(): void;
+}
+
+/** Names of the note values 1/1 … 1/32 with their digit key (keyboard entry). */
+function valueTitle(d: number): string {
+  const key = NOTE_VALUES.indexOf(d as (typeof NOTE_VALUES)[number]) + 1;
+  const name = d === 1 ? t("Whole note") : d === 2 ? t("Half note") : d === 4 ? t("Quarter note") : d === 8 ? t("Eighth note") : d === 16 ? t("Sixteenth note") : t("32nd note");
+  return `${name} (${key})`;
+}
+const AUTO_TITLE = () => t("Automatic: typed notes one grid step long (it follows the zoom), drawn notes as long as the last one you drew (0)");
+const DOT_TITLE = () => t("Dotted: one and a half times as long (.)");
+const TRIPLET_TITLE = () => t("Triplet: two thirds as long – three in the time of two (,)");
+
+/**
+ * Length of new notes next to the piano: Auto, 1/1 … 1/32, dotted, triplet. New notes from the
+ * piano, the letter keys, double-click/double tap and Alt+click get it; digit keys choose it while typing.
+ */
+function noteValuePicker(): NoteValuePicker {
+  const values = [0, ...NOTE_VALUES].map((d) => {
+    // (a redraw only switches classes – the buttons stay, so a press may select the track and start a swipe)
+    const b = h("button", { class: "nv", "data-value": String(d), title: d ? valueTitle(d) : AUTO_TITLE(), onclick: () => setNoteValue(d) }, d ? `1/${d}` : t("Auto"));
+    return { b, d };
+  });
+  const mods = ([["dot", "·", DOT_TITLE()], ["tri", "3", TRIPLET_TITLE()]] as const).map(([mod, label, title]) => {
+    const b = h("button", { class: "nv mod", "data-mod": mod, title, "aria-label": title, onclick: () => toggleValueMod(mod) }, label);
+    return { b, mod };
+  });
+  const el = h(
+    "div",
+    { class: "note-values", role: "group", "aria-label": t("Length of new notes"), "data-help": "notenlaenge" },
+    ...values.map((v) => v.b),
+    h("span", { class: "nv-sep" }),
+    ...mods.map((m) => m.b),
+  );
+  const compact = h("button", { class: "nv-compact", "data-help": "notenlaenge" });
+  compact.addEventListener("click", () => {
+    const r = compact.getBoundingClientRect();
+    const v = noteValue.peek();
+    openContextMenu(r.left, r.bottom + 4, [
+      { heading: t("Length of new notes") },
+      {
+        label: t("Note value"),
+        act: "notenwert",
+        chips: [0, ...NOTE_VALUES].map((d) => ({ label: d ? `1/${d}` : t("Auto"), act: `notenwert-${d}`, title: d ? valueTitle(d) : AUTO_TITLE(), on: v.d === d, action: () => setNoteValue(d) })),
+      },
+      {
+        label: t("Variant"),
+        act: "notenwert-art",
+        chips: [
+          { label: t("plain"), act: "notenwert-normal", on: !!v.d && !v.mod, action: () => v.mod && toggleValueMod(v.mod) },
+          { label: t("dotted"), act: "notenwert-punktiert", title: DOT_TITLE(), on: v.mod === "dot", disabled: !v.d, action: () => v.mod !== "dot" && toggleValueMod("dot") },
+          { label: t("triplet"), act: "notenwert-triole", title: TRIPLET_TITLE(), on: v.mod === "tri", disabled: !v.d, action: () => v.mod !== "tri" && toggleValueMod("tri") },
+        ],
+      },
+    ]);
+  });
+  return {
+    el,
+    compact,
+    update() {
+      const v = noteValue.peek();
+      for (const { b, d } of values) {
+        b.classList.toggle("on", v.d === d);
+        b.setAttribute("aria-pressed", String(v.d === d));
+      }
+      for (const { b, mod } of mods) {
+        b.classList.toggle("on", v.mod === mod);
+        b.setAttribute("aria-pressed", String(v.mod === mod));
+        b.disabled = !v.d;
+      }
+      compact.textContent = `♪ ${valueLabel(v)}`;
+      compact.title = t("Length of new notes: {value} – tap to change", { value: valueLabel(v) });
+    },
+  };
+}
+
 class TrackRow {
   readonly el: HTMLDivElement;
   #track!: Track;
@@ -174,6 +256,7 @@ class TrackRow {
   #exprSelect: HTMLSelectElement;
   #exprHint: HTMLElement;
   #entryBtn: HTMLButtonElement;
+  #values: NoteValuePicker;
 
   constructor(readonly id: number) {
     const set = (patch: object, merge = false) => run({ type: "setTrack", trackId: this.id, patch }, merge);
@@ -223,7 +306,7 @@ class TrackRow {
 
     this.#keys = h("canvas", {
       class: "keys",
-      title: t("Mouse wheel: shift pitch range · Ctrl+mouse wheel: zoom · Double-click: fit · Click: play note"),
+      title: t("Mouse wheel: shift pitch range · Ctrl+mouse wheel: zoom · Double-click: fit · Click: play note – at the end of the piece or with keyboard entry it is added"),
     });
     this.#keys.style.top = `${NOTES_TOP}px`;
     this.#keys.addEventListener("wheel", (e) => {
@@ -273,13 +356,16 @@ class TrackRow {
     this.#entryBtn = h("button", {
       class: "entry-switch",
       role: "switch",
-      title: t("Keyboard entry: letter keys and clicks on the piano add notes at the violet mark – one grid step further each time, with Shift in the same place (chords)"),
+      title: t("Keyboard entry: letter keys and clicks on the piano add notes at the violet mark – each time one note length further, with Shift in the same place (chords)"),
       onclick: () => {
         toggleEntry(this.id);
         this.#entryBtn.blur(); // Enter (stop) must not toggle it again
       },
-    }, h("span", { class: "switch" }), icon("keyboard"), t("Keyboard entry"));
+    }, h("span", { class: "switch" }), icon("keyboard"), h("span", { class: "lbl" }, t("Keyboard entry")));
+    this.#entryBtn.setAttribute("aria-label", t("Keyboard entry"));
     this.#entryBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+    // Length of new notes, right next to the piano
+    this.#values = noteValuePicker();
 
     // Splitter at the bottom edge: drag a row larger/smaller individually, double-click = default height.
     const splitter = h("div", { class: "splitter", title: t("Drag: change track height · Double-click: default height") });
@@ -291,17 +377,10 @@ class TrackRow {
       e.stopPropagation();
       void resetRowHeight(this.#track);
     });
+    // a key adds its note with keyboard entry on or the playhead at the end of the piece, else it sounds
     const pressKey = (offsetY: number, shift: boolean) => {
       if (this.#track.kind !== "instrument") return;
-      const pitch = pitchAt(geoFor(this.#track), offsetY + NOTES_TOP);
-      const en = entry.peek();
-      if (en) {
-        // keyboard entry: the key adds its note (Shift: stay in place)
-        if (en.trackId !== this.id) setEntryPosition(en.beat, this.id);
-        enterNote(pitch, shift);
-        return;
-      }
-      void backend.previewNote(this.id, pitch).catch(() => {});
+      pianoKey(this.id, pitchAt(geoFor(this.#track), offsetY + NOTES_TOP), shift);
     };
     // Touch: dragging along the keys shifts the pitch range (the mouse wheel's job), a tap plays the key
     let slide: { id: number; y0: number; low: number; moved: boolean } | null = null;
@@ -349,7 +428,7 @@ class TrackRow {
           h("div", { class: "knob" }, h("span", {}, t("Pan"), this.#panVal), this.#pan),
           stepper,
         ),
-        h("div", { class: "track-entry" }, this.#entryBtn),
+        h("div", { class: "track-entry" }, this.#entryBtn, this.#values.el, this.#values.compact),
       ),
       this.#keys,
       this.#rhythm,
@@ -387,6 +466,7 @@ class TrackRow {
     this.#entryBtn.hidden = !canExpr;
     this.#entryBtn.classList.toggle("on", typing);
     this.#entryBtn.setAttribute("aria-checked", String(typing));
+    if (canExpr) this.#values.update();
     const exprOn = canExpr && exprShown(track);
     this.#exprBtn.classList.toggle("on", exprOn);
     this.#exprBtn.title = exprOn ? t("Hide expression lane") : t("Show expression lane (velocity, vibrato, brightness, bend per note)");
@@ -489,6 +569,7 @@ class KwTracks extends HTMLElement {
       highOnTop.value; // … and the direction of the pitch axis
       exprLanes.value; // … and the expression track
       entryTrack.value; // keyboard entry: switch and letters on the piano
+      noteValue.value; // length of new notes next to the piano
       keyLabelsVersion.value;
       this.#render(snapshot.value?.project.tracks ?? [], selection.value?.trackId);
     });
@@ -517,7 +598,7 @@ class KwTracks extends HTMLElement {
       // (sliders, menus and the keys keep the finger; a swipe may start on a name or a button)
       if ((e.target as Element).closest('input[type="range"], select, .splitter, canvas.keys, .menu')) return;
       swipe = { id: e.pointerId, y0: e.clientY, scrollY0: viewport.peek().scrollY, moved: false };
-    });
+    }, true); // (capture: also from buttons that keep their press to themselves, like the keyboard switch)
     this.addEventListener("pointermove", (e) => {
       if (!swipe || swipe.id !== e.pointerId) return;
       const dy = e.clientY - swipe.y0;

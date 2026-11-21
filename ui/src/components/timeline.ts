@@ -12,7 +12,7 @@ import { startTour } from "./tour.js";
 import { chordName } from "../spelling.js";
 import { backend } from "../bridge.js";
 import {
-  addTrack, analyzeSelected, convertAudio, deleteRange, deleteSelectedNotes, detectTempo, loadDemo, quantizeSelectedNotes, resetRowHeight,
+  addTrack, analyzeSelected, convertAudio, deleteRange, deleteSelectedNotes, detectTempo, loadDemo, quantizeSelectedNotes, resetRowHeight, scaleSelectedNoteLengths, setSelectedNoteLengths,
   seekBeats, startRowResize, toggleRecord, transposeSelectedNotes,
 } from "../actions.js";
 import { type MenuEntry, openContextMenu } from "../ctxmenu.js";
@@ -31,7 +31,7 @@ import { effect } from "../signals.js";
 import { RULER_H, act, clipLengthBeats, counterpointMarks, rangeFocus, run, selection, snapshot, specFor, status, viewport } from "../store.js";
 import type { Clip, Command, Note, Project, Track } from "../types.js";
 import { EXPRS, type ExprKey, exprKeysFor, exprLanes, exprValue, laneKeyFor, withExpr } from "../expression.js";
-import { addNoteAt, entry, entryStep, entryTrack, keyLabel, keyLabelsVersion, setEntryPosition } from "../noteinput.js";
+import { addNoteAt, entry, entryGrid, entryStep, entryTrack, keyLabel, keyLabelsVersion, newNoteLength, noteValue, setEntryPosition, valueLabel } from "../noteinput.js";
 import { clipSpan, fmtShift, gridLabel, gridOf, rangeGrid, rangeLabel, snapTo } from "../editmath.js";
 
 const WAVE_BUCKETS = 2400;
@@ -254,7 +254,7 @@ class KwTimeline extends HTMLElement {
       audioDrag.value;
       entry.value;
       this.#hint.style.display = p && p.tracks.length === 0 ? "" : "none";
-      this.#updateKeysHint(entryTrack.value !== null, keyLabelsVersion.value);
+      this.#updateKeysHint(entryTrack.value !== null, keyLabelsVersion.value, valueLabel(noteValue.value));
       this.#invalidate();
     });
     effect(() => {
@@ -308,10 +308,10 @@ class KwTimeline extends HTMLElement {
   }
 
   /** Text of the shortcut line: the usual shortcuts, or the keys of keyboard entry. */
-  #updateKeysHint(typing: boolean, labels: number): void {
+  #updateKeysHint(typing: boolean, labels: number, value: string): void {
     // a finger instead of mouse and keyboard: the touch gestures instead of the shortcuts
     const touch = !typing && matchMedia("(pointer: coarse)").matches;
-    const mode = `${typing}:${labels}:${touch}`;
+    const mode = `${typing}:${labels}:${touch}:${typing ? value : ""}`;
     if (mode === this.#keysHintMode) return;
     this.#keysHintMode = mode;
     this.#keysHint.classList.toggle("entry", typing);
@@ -322,7 +322,7 @@ class KwTimeline extends HTMLElement {
     this.#keysHint.innerHTML = typing
       ? t("Keyboard entry: <kbd>{first}</kbd>…<kbd>{last}</kbd> notes · <kbd>Shift</kbd> chord · <kbd>{down}</kbd> <kbd>{up}</kbd> octave · <kbd>←</kbd> <kbd>→</kbd> step · <kbd>Backspace</kbd> back · <kbd>Esc</kbd> end", {
           first: keyLabel("KeyA"), last: keyLabel("KeyK"), down: keyLabel("KeyZ"), up: keyLabel("KeyX"),
-        })
+        }) + ` · ${t("<kbd>1</kbd>…<kbd>6</kbd> length: <b>{value}</b> · <kbd>.</kbd> dotted · <kbd>,</kbd> triplet · <kbd>0</kbd> auto", { value })}`
       : t("<kbd>Space</kbd> Play · <kbd>L</kbd> Loop · <kbd>R</kbd> Record · <kbd>Ctrl</kbd>+mouse wheel Zoom · <kbd>Alt</kbd>+click Add note · <kbd>Del</kbd> Delete");
   }
 
@@ -667,7 +667,8 @@ class KwTimeline extends HTMLElement {
     const additive = e.shiftKey || e.ctrlKey || e.metaKey;
     const sel = noteSel.peek();
     const base = additive && sel && sel.trackId === hit.track.id ? { clipId: sel.clipId, keys: sel.keys } : null;
-    if (!additive) noteSel.value = null;
+    // a finger keeps the selection until it draws a box or lifts (a tap): holding opens the menu for it
+    if (!additive && !this.#fat) noteSel.value = null;
     this.#drag = {
       kind: "marquee", trackId: hit.track.id, clipId: hit.clip?.source.type === "notes" ? hit.clip.id : null,
       x0: e.offsetX, y0: e.offsetY, x: e.offsetX, y: e.offsetY, base, moved: false,
@@ -730,7 +731,7 @@ class KwTimeline extends HTMLElement {
     const bar = Math.floor(at / bpb) * bpb;
     const grid = noteGrid(this.#ppb(), false);
     const start = grid ? Math.floor((at - bar) / grid) * grid : at - bar;
-    const len = Math.max(lastNoteLength, grid || 0.0625);
+    const len = newNoteLength(Math.max(lastNoteLength, grid || 0.0625));
     const note: Note = { pitch: hit.pitch, startBeats: start, lengthBeats: len, velocity: 100 };
     void backend.previewNote(hit.track.id, hit.pitch).catch(() => {});
     void run({
@@ -773,7 +774,7 @@ class KwTimeline extends HTMLElement {
     const grid = noteGrid(this.#ppb(), e.shiftKey);
     // also before the clip start (negative) – just not before the project start
     const start = Math.max(-clip.startBeats, grid ? Math.floor(hit.beatInClip / grid) * grid : hit.beatInClip);
-    const created: Note = { pitch: hit.pitch, startBeats: start, lengthBeats: Math.max(lastNoteLength, grid || 0.0625), velocity: 100 };
+    const created: Note = { pitch: hit.pitch, startBeats: start, lengthBeats: newNoteLength(Math.max(lastNoteLength, grid || 0.0625)), velocity: 100 };
     const orig = [...notes, created];
     const idx = orig.length - 1;
     noteSel.value = { trackId: hit.track.id, clipId: clip.id, keys: [noteKey(created)] };
@@ -922,7 +923,8 @@ class KwTimeline extends HTMLElement {
     if (d.kind === "marquee") {
       d.x = e.offsetX;
       d.y = e.offsetY;
-      if (Math.abs(d.x - d.x0) > 3 || Math.abs(d.y - d.y0) > 3) d.moved = true;
+      const slop = this.#fat ? TOUCH_SLOP : 3;
+      if (Math.abs(d.x - d.x0) > slop || Math.abs(d.y - d.y0) > slop) d.moved = true;
       if (d.moved) this.#marqueeSelect();
       this.#invalidate();
       return;
@@ -1014,9 +1016,11 @@ class KwTimeline extends HTMLElement {
       if (r) noteSel.value = null;
     }
     if (d?.kind === "marquee" && d.moved) this.#marqueeSelect();
+    // a tap of a finger on an empty spot clears the selection (a mouse did that on press already)
+    if (d?.kind === "marquee" && !d.moved && !d.base && e.pointerType === "touch") noteSel.value = null;
     if (d?.kind === "marquee" && !d.moved && entry.peek()) {
       // keyboard entry: a click into the piano roll puts the entry position there
-      const step = entryStep();
+      const step = entryGrid();
       setEntryPosition(Math.floor(this.#xToBeat(d.x0) / step + 1e-9) * step, d.trackId);
     }
     if (d?.kind === "clip" && d.moved && Math.abs(d.beats - d.origBeats) > 1e-9) {
@@ -1128,6 +1132,28 @@ class KwTimeline extends HTMLElement {
       { label: t("Quantize"), act: "ausrichten", title: t("Starts move to the nearest grid line – lengths stay"), chips: chips(false) },
       { label: t("Start and length"), act: "ausrichten-laenge", title: t("Start and end move to the grid (every note at least one grid step long)"), chips: chips(true) },
       {
+        label: t("Length"),
+        act: "laenge",
+        title: t("Every selected note gets this length – the starts stay"),
+        chips: [1, 2, 4, 8, 16].map((d) => ({
+          label: `1/${d}`,
+          act: `laenge-${d}`,
+          title: t("Make the notes {value} long", { value: `1/${d}` }),
+          action: () => void setSelectedNoteLengths(gridOf(d, unit)),
+        })),
+      },
+      {
+        label: t("Longer / shorter"),
+        act: "laenge-mal",
+        title: t("Multiply the lengths – the starts stay"),
+        chips: ([[0.5, "½×", t("Half as long")], [1.5, "1½×", t("One and a half times as long (dotted)")], [2, "2×", t("Twice as long")]] as const).map(([f, label, title]) => ({
+          label,
+          act: `laenge-mal-${f}`,
+          title,
+          action: () => void scaleSelectedNoteLengths(f),
+        })),
+      },
+      {
         label: t("Transpose"),
         act: "transponieren",
         title: t("Shift in semitones – faster with ↑ / ↓ (Shift: octave)"),
@@ -1199,7 +1225,7 @@ class KwTimeline extends HTMLElement {
       const ref = hit.clip?.startBeats ?? 0;
       const beat = grid ? ref + Math.floor((hit.beat - ref) / grid + 1e-9) * grid : hit.beat;
       void backend.previewNote(hit.track.id, hit.pitch).catch(() => {});
-      void addNoteAt(hit.track.id, beat, hit.pitch, Math.max(lastNoteLength, grid || 0.0625));
+      void addNoteAt(hit.track.id, beat, hit.pitch, newNoteLength(Math.max(lastNoteLength, grid || 0.0625)));
       return;
     }
     // Double-click on empty space of an instrument track: create a new clip (1 bar).

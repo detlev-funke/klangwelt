@@ -4,12 +4,19 @@
 // Keyboard entry mode (small switch next to the piano of an instrument track): the
 // letter keys play the visible octave like a piano – middle letter row = white keys,
 // the row above = black keys – and add the note at the entry position; a click on a
-// key of the piano does the same. After each note the entry position moves on by one
-// grid step, unless Shift is held: then it stays, for chords. Every note is
+// key of the piano does the same. After each note the entry position moves on by the
+// note's length, unless Shift is held: then it stays, for chords. Every note is
 // its own undo step. When playback stops at the end of the piece, the entry position
 // follows it there, so typing appends to the piece. The keys are taken by their
 // position on the keyboard (KeyboardEvent.code), so the piano shape is the same on
 // every layout; the piano shows each key's letter.
+//
+// Length of new notes: a note value chosen next to the piano (digit keys 1–6 while
+// typing, "." dotted, "," triplet, 0 automatic). "Automatic" is the grid of the zoom
+// for typed notes and the last drawn length for double-click and Alt+click.
+//
+// Without the mode a key of the piano only sounds – unless the playhead stands at the
+// end of the piece: then the note is appended there and the playhead moves on behind it.
 
 import { backend } from "./bridge.js";
 import { noteName } from "./dom.js";
@@ -179,9 +186,54 @@ export function entryLetters(track: Track): Map<number, string> | null {
   return out;
 }
 
-/** Entry step and note length: the grid of the current zoom (like drawing notes). */
-export function entryStep(): number {
+// ---------- length of new notes ----------
+
+/** Note value of new notes: 1/`d` (1 = whole … 32), plain, dotted or triplet; `d` 0 = automatic. */
+export interface NoteValue {
+  d: number;
+  mod: "" | "dot" | "tri";
+}
+/** The note values to choose from, by digit key 1–6: whole … 32nd. */
+export const NOTE_VALUES = [1, 2, 4, 8, 16, 32] as const;
+export const noteValue = signal<NoteValue>({ d: 0, mod: "" });
+
+/** Length of a note value in beats (the beat is the time signature's unit: in 4/4 a quarter is 1); null = automatic. */
+export function valueBeats(v: NoteValue = noteValue.peek()): number | null {
+  if (!v.d) return null;
+  const unit = snapshot.peek()?.project.beatUnit || 4;
+  return (unit / v.d) * (v.mod === "dot" ? 1.5 : v.mod === "tri" ? 2 / 3 : 1);
+}
+
+/** Length of a new note: the chosen note value, else `auto`. */
+export function newNoteLength(auto: number): number {
+  return valueBeats() ?? auto;
+}
+
+/** "1/8", "1/8." (dotted), "1/8³" (triplet) or "Auto". */
+export function valueLabel(v: NoteValue = noteValue.peek()): string {
+  if (!v.d) return t("Auto");
+  return `1/${v.d}${v.mod === "dot" ? "." : v.mod === "tri" ? "³" : ""}`;
+}
+
+/** Choose the note value of new notes (0 = automatic); dotted/triplet stay as they are. */
+export function setNoteValue(d: number): void {
+  noteValue.value = { d, mod: d ? noteValue.peek().mod : "" };
+}
+
+/** Dotted or triplet on/off (only one of them; nothing to change while automatic). */
+export function toggleValueMod(mod: "dot" | "tri"): void {
+  const v = noteValue.peek();
+  if (v.d) noteValue.value = { d: v.d, mod: v.mod === mod ? "" : mod };
+}
+
+/** Grid of the current zoom: where clicks and the playhead put the entry position. */
+export function entryGrid(): number {
   return noteGrid(viewport.peek().pxPerBeat, false) || 0.25;
+}
+
+/** Entry step and note length: the chosen note value, else the grid of the zoom (like drawing notes). */
+export function entryStep(): number {
+  return valueBeats() ?? entryGrid();
 }
 
 /** The end of the piece when the playhead stands at it (playback without a range stops there), else null. */
@@ -193,16 +245,21 @@ function endAt(beat: number): number | null {
 /** Entry position for the playhead at `beat`: on the grid – at the end of the piece the first grid
  * point not before it, so that typing appends instead of overlapping the last note. */
 function entryBeatAt(beat: number): number {
-  const step = entryStep();
   const end = endAt(beat);
-  return Math.max(0, end !== null ? Math.ceil(end / step - 1e-6) * step : snapTo(beat, step));
+  return end !== null ? appendBeat(end) : Math.max(0, snapTo(beat, entryGrid()));
+}
+
+/** Where a note appended at `end` starts: the first point of the grid (or the finer note value) not before it. */
+function appendBeat(end: number): number {
+  const step = Math.min(entryGrid(), entryStep());
+  return Math.max(0, Math.ceil(end / step - 1e-6) * step);
 }
 
 /** Start of a new entry: the start of the selected time range, else the playhead – on the grid. */
 function startBeat(): number {
   const snap = snapshot.peek();
   const range = snap?.engine.loopRange;
-  if (range) return Math.max(0, snapTo(range[0], entryStep()));
+  if (range) return Math.max(0, snapTo(range[0], entryGrid()));
   return entryBeatAt(secondsToBeats(status.peek().positionSecs, snap?.project.tempoBpm ?? 120));
 }
 
@@ -224,7 +281,8 @@ export function setEntryPosition(beat: number, trackId?: number): void {
 
 /** The playhead was moved on purpose (ruler click, stop): the entry position follows. */
 export function playheadMoved(beat: number): void {
-  if (entry.peek()) setEntryPosition(snapTo(beat, entryStep()));
+  appended = null;
+  if (entry.peek()) setEntryPosition(snapTo(beat, entryGrid()));
 }
 
 /** Plays and adds a note at the entry position; moves on by one step unless `stay`. */
@@ -240,6 +298,64 @@ export function enterNote(pitch: number, stay: boolean): void {
     lastEntered = null;
   }
   queue = queue.then(() => addNoteAt(e.trackId, e.beat, pitch, step, chord)).catch(() => {});
+}
+
+/**
+ * Last note the piano appended at the end of the piece: its start, the spot behind it (the
+ * playhead goes there), when, and the spots the playhead and the end of the piece pass on the way.
+ */
+let appended: { trackId: number; beat: number; next: number; t: number; spots: number[] } | null = null;
+const near = (a: number, b: number) => Math.abs(a - b) < 1e-3;
+
+/** Where the piano appends now: the end of the piece if the playhead stands there (stopped), else null. */
+function appendEnd(): number | null {
+  const snap = snapshot.peek();
+  const st = status.peek();
+  if (!snap || st.playing || st.recording) return null;
+  const beat = secondsToBeats(st.positionSecs, snap.project.tempoBpm);
+  const end = snap.engine.endBeats;
+  const a = appended;
+  // right after a note: the core and the playhead may still be on their way behind it
+  if (a && performance.now() - a.t < 1000 && a.spots.some((s) => near(s, beat)) && a.spots.some((s) => near(s, end))) return a.next;
+  if (!a || !near(a.next, end)) appended = null;
+  return near(beat, end) ? end : null;
+}
+
+/** Does the playhead stand at the end of the piece (stopped; in an empty piece: at its start)? */
+export function atPieceEnd(): boolean {
+  return appendEnd() !== null;
+}
+
+/**
+ * A key of the piano: with keyboard entry on, its note goes to the entry position. Otherwise it
+ * sounds – and with the playhead at the end of the piece it is appended there in the chosen
+ * length; the playhead moves on behind it, with `stay` (Shift) the note joins the one before (chord).
+ */
+export function pianoKey(trackId: number, pitch: number, stay: boolean): void {
+  const en = entry.peek();
+  if (en) {
+    if (en.trackId !== trackId) setEntryPosition(en.beat, trackId);
+    enterNote(pitch, stay);
+    return;
+  }
+  void backend.previewNote(trackId, pitch).catch(() => {});
+  const end = pitch >= 0 && pitch <= 127 ? appendEnd() : null;
+  if (end === null) return;
+  const last = appended;
+  const chord = stay && !!last && last.trackId === trackId && near(last.next, end);
+  // right behind the note appended before; otherwise on the grid after the end of the piece
+  const at = chord ? last!.beat : last && near(last.next, end) ? end : appendBeat(end);
+  const len = entryStep();
+  const next = chord ? Math.max(last!.next, at + len) : at + len;
+  const beat = secondsToBeats(status.peek().positionSecs, snapshot.peek()?.project.tempoBpm ?? 120);
+  appended = { trackId, beat: at, next, t: performance.now(), spots: [...(last?.spots ?? [beat, end]), next].slice(-8) };
+  queue = queue.then(async () => {
+    if (!(await addNoteAt(trackId, at, pitch, len, chord))) return;
+    // the playhead behind the note: the next key appends after it
+    const bpm = snapshot.peek()?.project.tempoBpm ?? 120;
+    status.value = { ...status.peek(), positionSecs: (next * 60) / bpm };
+    await backend.seek((next * 60) / bpm);
+  }).catch(() => {});
 }
 
 /** Backspace: one step back, the notes starting there are deleted (one undo step). */
@@ -272,6 +388,7 @@ export function entryIdle(): Promise<unknown> {
  * with Shift the position stays (chords); Ctrl shortcuts (undo, save …) work as usual.
  * Z / X shift the octave, ← / → move the entry position (Shift: a bar), Backspace steps
  * back and deletes the notes there, Esc ends the mode; other letters do nothing.
+ * Digits 1–6 choose the note value (whole … 32nd), 0 automatic, "." dotted, "," triplet.
  */
 export function handleEntryKey(e: KeyboardEvent): boolean {
   const en = entry.peek();
@@ -282,6 +399,18 @@ export function handleEntryKey(e: KeyboardEvent): boolean {
   if (off !== undefined) {
     e.preventDefault();
     if (!e.repeat) enterNote(entryBase(viewFor(track)) + off, e.shiftKey);
+    return true;
+  }
+  const digit = /^(?:Digit|Numpad)([0-6])$/.exec(e.code);
+  if (digit) {
+    e.preventDefault();
+    const n = Number(digit[1]);
+    setNoteValue(n ? NOTE_VALUES[n - 1]! : 0);
+    return true;
+  }
+  if (e.code === "Period" || e.code === "NumpadDecimal" || e.code === "Comma") {
+    e.preventDefault();
+    toggleValueMod(e.code === "Comma" ? "tri" : "dot");
     return true;
   }
   const octave = OCTAVE_KEYS[e.code];

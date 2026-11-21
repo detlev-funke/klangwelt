@@ -1611,7 +1611,7 @@ impl<S: AgentShell> Agent<S> {
                 let label = tr!("Agent · {label}", label = tr!("Quantize notes"));
                 let r = st.quantize_notes(Id(u64_arg(&args, "trackId")?), Id(u64_arg(&args, "clipId")?), indices, grid, lengths, Some(&label))?;
                 self.changed("quantize_notes", tr!("Notes quantized"));
-                Ok(json!({ "ok": true, "ausgerichtet": r.selected.len() }))
+                Ok(json!({ "ok": true, "ausgerichtet": r.selected.len(), "geaendert": r.changed }))
             }
             "download_library" => {
                 let id = str_arg(&args, "id")?;

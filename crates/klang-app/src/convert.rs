@@ -79,6 +79,8 @@ pub struct Quantized {
     pub snapshot: Snapshot,
     /// New indices of the aligned notes (for the selection).
     pub selected: Vec<usize>,
+    /// False: the notes already lay on the grid – nothing was changed (no undo step).
+    pub changed: bool,
 }
 
 /// File name without folder and extension.
@@ -403,6 +405,14 @@ impl AppState {
             ));
         }
         let (quantized, selected) = edit::quantize_notes(notes, indices.as_deref(), clip.start_beats, grid, lengths).map_err(|e| e.to_string())?;
+        // already on the grid (the result is only sorted): no empty undo step
+        let mut before = notes.clone();
+        before.sort_by(|a, b| a.start_beats.total_cmp(&b.start_beats).then(a.pitch.cmp(&b.pitch)));
+        let same = |a: &Note, b: &Note| a.pitch == b.pitch && (a.start_beats - b.start_beats).abs() < 1e-9 && (a.length_beats - b.length_beats).abs() < 1e-9;
+        if before.len() == quantized.len() && before.iter().zip(&quantized).all(|(a, b)| same(a, b)) {
+            let selected = indices.unwrap_or_else(|| (0..notes.len()).collect());
+            return Ok(Quantized { snapshot: self.snapshot()?, selected, changed: false });
+        }
         let label = label.map(str::to_string).unwrap_or_else(|| {
             let grid = edit::grid_name(grid, beat_unit);
             if lengths {
@@ -412,7 +422,7 @@ impl AppState {
             }
         });
         let cmd = Command::Batch { label, commands: vec![Command::SetClipNotes { track_id, clip_id, notes: quantized, length_beats: None }] };
-        Ok(Quantized { snapshot: self.execute(cmd, false)?, selected })
+        Ok(Quantized { snapshot: self.execute(cmd, false)?, selected, changed: true })
     }
 }
 

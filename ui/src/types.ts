@@ -1142,6 +1142,8 @@ export interface QuantizeResult {
   snapshot: Snapshot;
   /** New indices of the aligned notes (for the selection). */
   selected: number[];
+  /** False: the notes already lay on the grid – nothing changed (no undo step). */
+  changed: boolean;
 }
 
 export interface ProjectPatch { name?: string; tempoBpm?: number; beatsPerBar?: number; beatUnit?: number }

@@ -10,6 +10,9 @@ export interface MenuChip {
   title?: string;
   /** Identifier for tests and help (data-act). */
   act?: string;
+  /** Shown as chosen (e.g. the current value). */
+  on?: boolean;
+  disabled?: boolean;
   action: () => void;
 }
 
@@ -51,8 +54,10 @@ export function openContextMenu(x: number, y: number, entries: MenuEntry[]): HTM
       const row = h("div", { class: "ctx-row", title: e.title ?? "" }, h("span", { class: "ctx-label" }, e.label));
       const chips = h("div", { class: "ctx-chips" });
       for (const c of e.chips) {
-        const b = h("button", { class: "ctx-chip", role: "menuitem", title: c.title ?? "" }, c.label);
+        const b = h("button", { class: c.on ? "ctx-chip on" : "ctx-chip", role: c.on === undefined ? "menuitem" : "menuitemradio", title: c.title ?? "" }, c.label);
         if (c.act) b.dataset.act = c.act;
+        if (c.on !== undefined) b.setAttribute("aria-checked", String(c.on));
+        if (c.disabled) b.disabled = true;
         b.addEventListener("click", () => run(c.action));
         chips.append(b);
       }

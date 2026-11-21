@@ -9,6 +9,30 @@ This file is generated from the JSON files in [changelog/](changelog/README.md),
 which also says how to add an entry. The app shows the same entries in its own
 language under the gear menu → What's new.
 
+## [2026.11.21+1959] - 2026-11-21 19:59
+
+### Added
+
+- **Klangwelt on GitHub:** The gear menu leads to the project page: source code, releases, questions and ideas.
+  - Technical: The desktop app opens it in the system's browser (open_url in lib.rs, https only).
+- **Interface size:** A slider in the gear menu (Display) makes everything smaller or larger, from 40 to 200 %: smaller shows more at once, on a phone with a stylus for example. Remembered on each device; in a browser on a computer its own zoom does that (Ctrl + and Ctrl −).<br>
+  <img src="changelog/images/interface-size.webp" alt="Interface size" width="412">
+  - Technical: Page zoom, not CSS zoom, so hit tests stay right: the webview's zoom on the desktop (lib.rs, applied before the window shows), the viewport meta on phones and tablets (web/viewport.ts, boot.ts).
+- **Spacing: tight, normal, airy:** In the gear menu (Display) the gaps between the windows, the tab bars, the toolbar and the margins become narrower or wider, at once and on each device.<br>
+  <img src="changelog/images/layout-spacing.webp" alt="Spacing: tight, normal, airy" width="640">
+  - Technical: CSS custom properties under html[data-density]; dock.ts reads --dk-gutter and --dk-inset for the minimum sizes.
+
+### Changed
+
+- **Installed app in full screen:** On Android, Klangwelt installed from the browser opens without the status and navigation bar; the toolbar keeps clear of a notch. Already installed? Remove it and install it again once. *(browser only)*
+  - Technical: Manifest display: fullscreen (falls back to standalone on iOS and desktop); #app pads env(safe-area-inset-top), iOS status bar black-translucent.
+- **Language in the gear menu:** One entry shows the current language with its flag and opens the list – with the mouse, the keyboard or a finger.
+
+### Internal
+
+- **Test runs clean up their temp folders:** the end-to-end harnesses end Edge or the app with its whole process tree before removing their temp folder, and sweep folders that killed runs left behind in %TEMP% on the next start.
+  - Technical: tests/tempdirs.mjs, shared by tests/web/harness.mjs and the desktop app's tests/e2e/harness.mjs.
+
 ## [2026.11.21+1746] - 2026-11-21 17:46
 
 ### Added
@@ -114,4 +138,5 @@ language under the gear menu → What's new.
 - **English sources:** source code comments, agent texts and test titles are in English.
 - **README:** screenshots of the overview, piano roll, bass sound fields and circle of fifths.
 
+[2026.11.21+1959]: https://github.com/detlev-funke/klangwelt/releases/tag/v2026.11.21%2B1959
 [2026.11.21+1746]: https://github.com/detlev-funke/klangwelt/releases/tag/v2026.11.21%2B1746

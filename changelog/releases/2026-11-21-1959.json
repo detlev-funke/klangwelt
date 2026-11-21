@@ -1,0 +1,134 @@
+{
+  "version": "2026.11.21+1959",
+  "date": "2026-11-21T19:59+01:00",
+  "entries": [
+    {
+      "id": "github-link",
+      "type": "added",
+      "title": {
+        "en": "Klangwelt on GitHub",
+        "de": "Klangwelt auf GitHub",
+        "fr": "Klangwelt sur GitHub",
+        "it": "Klangwelt su GitHub",
+        "es": "Klangwelt en GitHub",
+        "nl": "Klangwelt op GitHub",
+        "pl": "Klangwelt na GitHubie"
+      },
+      "text": {
+        "en": "The gear menu leads to the project page: source code, releases, questions and ideas.",
+        "de": "Das Zahnrad-Menü führt zur Projektseite: Quelltext, Versionen, Fragen und Ideen.",
+        "fr": "Le menu de l'engrenage mène à la page du projet : code source, versions, questions et idées.",
+        "it": "Il menu dell'ingranaggio porta alla pagina del progetto: codice sorgente, versioni, domande e idee.",
+        "es": "El menú del engranaje lleva a la página del proyecto: código fuente, versiones, preguntas e ideas.",
+        "nl": "Het tandwielmenu leidt naar de projectpagina: broncode, versies, vragen en ideeën.",
+        "pl": "Menu zębatki prowadzi do strony projektu: kod źródłowy, wydania, pytania i pomysły."
+      },
+      "dev": "The desktop app opens it in the system's browser (open_url in lib.rs, https only)."
+    },
+    {
+      "id": "interface-size",
+      "type": "added",
+      "title": {
+        "en": "Interface size",
+        "de": "Größe der Oberfläche",
+        "fr": "Taille de l'interface",
+        "it": "Dimensione dell'interfaccia",
+        "es": "Tamaño de la interfaz",
+        "nl": "Grootte van de interface",
+        "pl": "Rozmiar interfejsu"
+      },
+      "text": {
+        "en": "A slider in the gear menu (Display) makes everything smaller or larger, from 40 to 200 %: smaller shows more at once, on a phone with a stylus for example. Remembered on each device; in a browser on a computer its own zoom does that (Ctrl + and Ctrl −).",
+        "de": "Ein Schieberegler im Zahnrad-Menü (Ansicht) macht alles kleiner oder größer, von 40 bis 200 %: Kleiner zeigt mehr auf einmal, etwa auf dem Handy mit Stift. Gilt je Gerät; im Browser am Computer macht das sein eigener Zoom (Strg + und Strg −).",
+        "fr": "Un curseur dans le menu de l'engrenage (Affichage) rend tout plus petit ou plus grand, de 40 à 200 % : plus petit, on voit davantage à la fois, par exemple sur un téléphone avec un stylet. Mémorisé sur chaque appareil ; dans un navigateur sur ordinateur, c'est son propre zoom qui s'en charge (Ctrl + et Ctrl −).",
+        "it": "Un cursore nel menu dell'ingranaggio (Visualizzazione) rende tutto più piccolo o più grande, dal 40 al 200%: più piccolo mostra più cose insieme, per esempio sul telefono con un pennino. Memorizzato su ogni dispositivo; in un browser sul computer se ne occupa il suo zoom (Ctrl + e Ctrl −).",
+        "es": "Un control deslizante en el menú del engranaje (Visualización) lo hace todo más pequeño o más grande, del 40 al 200 %: más pequeño muestra más a la vez, por ejemplo en el móvil con un lápiz. Se guarda en cada dispositivo; en un navegador en el ordenador lo hace su propio zoom (Ctrl + y Ctrl −).",
+        "nl": "Een schuifregelaar in het tandwielmenu (Weergave) maakt alles kleiner of groter, van 40 tot 200%: kleiner laat meer tegelijk zien, bijvoorbeeld op een telefoon met een stylus. Wordt per apparaat onthouden; in een browser op de computer doet zijn eigen zoom dat (Ctrl + en Ctrl −).",
+        "pl": "Suwak w menu zębatki (Wygląd) zmniejsza lub powiększa wszystko, od 40 do 200%: mniejszy pokazuje więcej naraz, na przykład na telefonie z rysikiem. Zapamiętywane na każdym urządzeniu; w przeglądarce na komputerze robi to jej własne powiększenie (Ctrl + i Ctrl −)."
+      },
+      "image": "interface-size.webp",
+      "dev": "Page zoom, not CSS zoom, so hit tests stay right: the webview's zoom on the desktop (lib.rs, applied before the window shows), the viewport meta on phones and tablets (web/viewport.ts, boot.ts)."
+    },
+    {
+      "id": "layout-spacing",
+      "type": "added",
+      "title": {
+        "en": "Spacing: tight, normal, airy",
+        "de": "Abstände: eng, normal, luftig",
+        "fr": "Espacement : serré, normal, aéré",
+        "it": "Spaziatura: compatta, normale, ariosa",
+        "es": "Espaciado: compacto, normal, amplio",
+        "nl": "Afstanden: compact, normaal, ruim",
+        "pl": "Odstępy: ciasno, normalnie, przestronnie"
+      },
+      "text": {
+        "en": "In the gear menu (Display) the gaps between the windows, the tab bars, the toolbar and the margins become narrower or wider, at once and on each device.",
+        "de": "Im Zahnrad-Menü (Ansicht) werden die Abstände zwischen den Fenstern, die Tab-Leisten, die Werkzeugleiste und die Ränder schmaler oder breiter, sofort und je Gerät.",
+        "fr": "Dans le menu de l'engrenage (Affichage), les espaces entre les fenêtres, les barres d'onglets, la barre d'outils et les marges deviennent plus étroits ou plus larges, immédiatement et pour chaque appareil.",
+        "it": "Nel menu dell'ingranaggio (Visualizzazione) gli spazi tra le finestre, le barre delle schede, la barra degli strumenti e i margini diventano più stretti o più ampi, subito e per ogni dispositivo.",
+        "es": "En el menú del engranaje (Visualización), los espacios entre las ventanas, las barras de pestañas, la barra de herramientas y los márgenes se vuelven más estrechos o más amplios, al instante y en cada dispositivo.",
+        "nl": "In het tandwielmenu (Weergave) worden de afstanden tussen de vensters, de tabbalken, de werkbalk en de marges smaller of breder, meteen en per apparaat.",
+        "pl": "W menu zębatki (Wygląd) odstępy między oknami, paski kart, pasek narzędzi i marginesy stają się węższe lub szersze, od razu i na każdym urządzeniu."
+      },
+      "image": "layout-spacing.webp",
+      "dev": "CSS custom properties under html[data-density]; dock.ts reads --dk-gutter and --dk-inset for the minimum sizes."
+    },
+    {
+      "id": "app-full-screen",
+      "type": "changed",
+      "platform": "browser",
+      "title": {
+        "en": "Installed app in full screen",
+        "de": "Installierte App im Vollbild",
+        "fr": "Application installée en plein écran",
+        "it": "App installata a schermo intero",
+        "es": "Aplicación instalada a pantalla completa",
+        "nl": "Geïnstalleerde app op volledig scherm",
+        "pl": "Zainstalowana aplikacja na pełnym ekranie"
+      },
+      "text": {
+        "en": "On Android, Klangwelt installed from the browser opens without the status and navigation bar; the toolbar keeps clear of a notch. Already installed? Remove it and install it again once.",
+        "de": "Auf Android öffnet sich das aus dem Browser installierte Klangwelt ohne Status- und Navigationsleiste; die Werkzeugleiste bleibt frei von einer Kamera-Aussparung. Schon installiert? Einmal entfernen und neu installieren.",
+        "fr": "Sur Android, Klangwelt installé depuis le navigateur s'ouvre sans barre d'état ni barre de navigation ; la barre d'outils évite l'encoche de la caméra. Déjà installé ? Supprimez-le et installez-le à nouveau une fois.",
+        "it": "Su Android, Klangwelt installato dal browser si apre senza barra di stato e di navigazione; la barra degli strumenti resta libera dal notch. Già installato? Rimuovilo e installalo di nuovo una volta.",
+        "es": "En Android, Klangwelt instalado desde el navegador se abre sin barra de estado ni de navegación; la barra de herramientas deja libre el notch. ¿Ya lo tenías instalado? Quítalo y vuelve a instalarlo una vez.",
+        "nl": "Op Android opent de vanuit de browser geïnstalleerde Klangwelt zonder status- en navigatiebalk; de werkbalk blijft vrij van een camera-uitsparing. Al geïnstalleerd? Verwijder de app en installeer hem één keer opnieuw.",
+        "pl": "Na Androidzie Klangwelt zainstalowany z przeglądarki otwiera się bez paska stanu i nawigacji; pasek narzędzi omija wycięcie aparatu. Już zainstalowany? Usuń go i zainstaluj ponownie jeden raz."
+      },
+      "dev": "Manifest display: fullscreen (falls back to standalone on iOS and desktop); #app pads env(safe-area-inset-top), iOS status bar black-translucent."
+    },
+    {
+      "id": "language-submenu",
+      "type": "changed",
+      "title": {
+        "en": "Language in the gear menu",
+        "de": "Sprache im Zahnrad-Menü",
+        "fr": "Langue dans le menu de l'engrenage",
+        "it": "Lingua nel menu dell'ingranaggio",
+        "es": "Idioma en el menú del engranaje",
+        "nl": "Taal in het tandwielmenu",
+        "pl": "Język w menu zębatki"
+      },
+      "text": {
+        "en": "One entry shows the current language with its flag and opens the list – with the mouse, the keyboard or a finger.",
+        "de": "Ein Eintrag zeigt die aktuelle Sprache mit ihrer Flagge und öffnet die Liste – mit Maus, Tastatur oder Finger.",
+        "fr": "Une entrée affiche la langue actuelle avec son drapeau et ouvre la liste – à la souris, au clavier ou au doigt.",
+        "it": "Una voce mostra la lingua attuale con la sua bandiera e apre l'elenco – con il mouse, la tastiera o il dito.",
+        "es": "Una entrada muestra el idioma actual con su bandera y abre la lista – con el ratón, el teclado o el dedo.",
+        "nl": "Eén item toont de huidige taal met haar vlag en opent de lijst – met de muis, het toetsenbord of een vinger.",
+        "pl": "Jedna pozycja pokazuje bieżący język z flagą i otwiera listę – myszą, klawiaturą lub palcem."
+      }
+    },
+    {
+      "id": "test-temp-cleanup",
+      "type": "internal",
+      "title": {
+        "en": "Test runs clean up their temp folders"
+      },
+      "text": {
+        "en": "the end-to-end harnesses end Edge or the app with its whole process tree before removing their temp folder, and sweep folders that killed runs left behind in %TEMP% on the next start."
+      },
+      "dev": "tests/tempdirs.mjs, shared by tests/web/harness.mjs and the desktop app's tests/e2e/harness.mjs."
+    }
+  ]
+}

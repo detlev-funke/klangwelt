@@ -756,6 +756,10 @@ body.dk-dragging, body.dk-dragging * { cursor: grabbing !important; user-select:
 .proj-row svg { width: 15px; height: 15px; color: var(--muted); flex: none; }
 .proj-row .name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
 .proj-row .meta { font-size: 11px; color: var(--faint); white-space: nowrap; }
+/* path field and the button for the system's file picker in one row */
+.proj-path { display: flex; gap: 8px; align-items: center; }
+.modal .proj-path .modal-input { flex: 1; width: auto; min-width: 0; }
+.proj-pick { flex: none; }
 
 /* "Windows" menu */
 .menu-wrap { position: relative; }

@@ -311,6 +311,7 @@ export function createMock(): Backend {
     onProjectChanged: () => {},
     projectSave: () => Promise.reject(t("Saving is only available in the desktop app.")),
     projectOpen: () => Promise.reject(t("Opening files is only available in the desktop app.")),
+    projectPick: () => Promise.reject(t("Opening files is only available in the desktop app.")),
     projectNew: noAudio,
     projectList: async () => ["Dokumente/Klangwelt/Projekte", []],
     exportInfo: async () => ({ dir: "Musik/Klangwelt/Exporte", name: "Export", range: null, rangeLabel: null, seconds: 0, hasNotes: false, bitrates: [64, 96, 128, 160, 192, 256, 320], defaultBitrate: 160, existing: [] }),

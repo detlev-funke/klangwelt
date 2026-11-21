@@ -166,6 +166,21 @@ export function createWebLink(): CoreLink {
       for (const f of (a.files as File[]) ?? []) paths.push(await importFile(f));
       return paths;
     },
+    // Instead of the native file dialog: the browser's file picker; the chosen project
+    // goes into the browser's storage like a dropped one (null: cancelled)
+    project_pick: () =>
+      new Promise((resolve, reject) => {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = ".klangwelt";
+        input.addEventListener("cancel", () => resolve(null));
+        input.addEventListener("change", () => {
+          const f = input.files?.[0];
+          if (f) importFile(f).then(resolve, reject);
+          else resolve(null);
+        });
+        input.click();
+      }),
     library_list: async () => [],
     library_create: async () => Promise.reject(NOT_IN_BROWSER),
     library_switch: async () => Promise.reject(NOT_IN_BROWSER),

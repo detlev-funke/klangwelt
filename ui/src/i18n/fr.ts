@@ -149,7 +149,6 @@ const dict: Dict = {
   "Save": "Enregistrer",
   "Please enter a name.": "Veuillez saisir un nom.",
   "\"{name}\" has unsaved changes. Save before creating a new project?": "« {name} » contient des modifications non enregistrées. Enregistrer avant de créer un nouveau projet ?",
-  "\"{name}\" has unsaved changes. Save before loading the demo?": "« {name} » contient des modifications non enregistrées. Enregistrer avant de charger la démo ?",
   "\"{name}\" has unsaved changes. Save before opening?": "« {name} » contient des modifications non enregistrées. Enregistrer avant d'ouvrir ?",
   "\"{name}\" has unsaved changes. Save before closing?": "« {name} » contient des modifications non enregistrées. Enregistrer avant de fermer ?",
   "Unsaved changes": "Modifications non enregistrées",
@@ -157,6 +156,8 @@ const dict: Dict = {
   "Opened: {name}": "Ouvert : {name}",
   "No projects in {dir} yet.": "Aucun projet dans {dir} pour l'instant.",
   "… or path to a .klangwelt file": "… ou chemin vers un fichier .klangwelt",
+  "Choose a .klangwelt file on this computer": "Choisir un fichier .klangwelt sur cet ordinateur",
+  "Choose file…": "Choisir un fichier …",
   "Open project": "Ouvrir un projet",
   "Open": "Ouvrir",
   "Please select a project.": "Veuillez sélectionner un projet.",
@@ -171,8 +172,6 @@ const dict: Dict = {
   "Export…": "Exporter …",
   "Ctrl+E": "Ctrl+E",
   "Download project file": "Télécharger le fichier du projet",
-  "Upload project file…": "Importer un fichier de projet …",
-  "Load demo project": "Charger le projet de démo",
   "{name} – unsaved changes (Ctrl+S)": "{name} – modifications non enregistrées (Ctrl+S)",
   "{name} – saved (Ctrl+S)": "{name} – enregistré (Ctrl+S)",
   "Save project (Ctrl+S)": "Enregistrer le projet (Ctrl+S)",
@@ -1189,7 +1188,7 @@ const dict: Dict = {
   "Point at something with the mouse – this shows what it does. **F1** pins the text (lock icon); pressing F1 again on the same element releases it.": "Pointez un élément avec la souris – vous verrez ici ce qu'il fait. **F1** fige le texte (symbole de cadenas) ; un nouvel appui sur F1 sur le même élément le libère.",
   "Make music, record, detect and design sounds – all in one program. The **intro tour** on the page of an empty project shows all the windows.": "Faire de la musique, enregistrer, analyser et façonner des sons – tout dans un seul logiciel. La **visite guidée** sur la page d'un projet vide présente toutes les fenêtres.",
   "\"File\" menu": "Menu « Fichier »",
-  "New project, Open, Save as, Export and the demo project. Projects are stored in Documents/Klangwelt/Projekte; a .klangwelt file contains everything, including the recordings.": "Nouveau projet, Ouvrir, Enregistrer sous, Exporter et le projet de démo. Les projets se trouvent dans Documents/Klangwelt/Projekte ; un fichier .klangwelt contient tout, y compris les enregistrements.",
+  "New project, Open, Save as and Export. Projects are stored in Documents/Klangwelt/Projekte; \"Choose file…\" in the Open dialog loads a .klangwelt file from anywhere. A .klangwelt file contains everything, including the recordings.": "Nouveau projet, Ouvrir, Enregistrer sous et Exporter. Les projets se trouvent dans Documents/Klangwelt/Projekte ; « Choisir un fichier … » dans la boîte de dialogue Ouvrir charge un fichier .klangwelt depuis n'importe où. Un fichier .klangwelt contient tout, y compris les enregistrements.",
   "new": "nouveau",
   "open": "ouvrir",
   "save as": "enregistrer sous",
@@ -2610,6 +2609,8 @@ const dict: Dict = {
 
   // ../klangwelt-desktop/app/src/lib.rs
   "{path} no longer exists": "{path} n'existe plus",
+  "Klangwelt project": "Projet Klangwelt",
+  "Could not open the file dialog: {error}": "Impossible d'ouvrir la boîte de dialogue de fichiers : {error}",
   "Cancelled: {error}": "Annulé : {error}",
 
   // ../klangwelt-desktop/app/src/libraries.rs

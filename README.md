@@ -83,8 +83,9 @@ listen to them, then write them into a track with one click.
 2. **"Load demo"** plays a short piece with beat, arpeggio and melody – a good
    place to start exploring. The space bar starts and stops playback.
 3. **Save** keeps the project in your browser's storage; it is still there on
-   your next visit. "File → Download project file" downloads it as a file for
-   backup or sharing (the desktop app opens it, too).
+   your next visit. "Download project file" in the "Save as" dialog downloads
+   it as a file for backup or sharing (the desktop app opens it, too);
+   "Choose file…" in the "Open" dialog brings such a file back in.
 4. After your first visit, Klangwelt also works **offline**.
 
 ## Your data stays with you

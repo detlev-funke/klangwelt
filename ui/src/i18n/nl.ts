@@ -149,7 +149,6 @@ const dict: Dict = {
   "Save": "Opslaan",
   "Please enter a name.": "Geef een naam op.",
   "\"{name}\" has unsaved changes. Save before creating a new project?": "“{name}” heeft niet-opgeslagen wijzigingen. Opslaan voordat je een nieuw project maakt?",
-  "\"{name}\" has unsaved changes. Save before loading the demo?": "“{name}” heeft niet-opgeslagen wijzigingen. Opslaan voordat je de demo laadt?",
   "\"{name}\" has unsaved changes. Save before opening?": "“{name}” heeft niet-opgeslagen wijzigingen. Opslaan voordat je een ander project opent?",
   "\"{name}\" has unsaved changes. Save before closing?": "“{name}” heeft niet-opgeslagen wijzigingen. Opslaan voordat je afsluit?",
   "Unsaved changes": "Niet-opgeslagen wijzigingen",
@@ -157,6 +156,8 @@ const dict: Dict = {
   "Opened: {name}": "Geopend: {name}",
   "No projects in {dir} yet.": "Nog geen projecten in {dir}.",
   "… or path to a .klangwelt file": "… of pad naar een .klangwelt-bestand",
+  "Choose a .klangwelt file on this computer": "Een .klangwelt-bestand op deze computer kiezen",
+  "Choose file…": "Bestand kiezen …",
   "Open project": "Project openen",
   "Open": "Openen",
   "Please select a project.": "Kies een project.",
@@ -171,8 +172,6 @@ const dict: Dict = {
   "Export…": "Exporteren …",
   "Ctrl+E": "Ctrl+E",
   "Download project file": "Projectbestand downloaden",
-  "Upload project file…": "Projectbestand uploaden …",
-  "Load demo project": "Demoproject laden",
   "{name} – unsaved changes (Ctrl+S)": "{name} – niet-opgeslagen wijzigingen (Ctrl+S)",
   "{name} – saved (Ctrl+S)": "{name} – opgeslagen (Ctrl+S)",
   "Save project (Ctrl+S)": "Project opslaan (Ctrl+S)",
@@ -1189,7 +1188,7 @@ const dict: Dict = {
   "Point at something with the mouse – this shows what it does. **F1** pins the text (lock icon); pressing F1 again on the same element releases it.": "Wijs met de muis iets aan – hier staat wat het doet. **F1** zet de tekst vast (slotje); nog een keer F1 op hetzelfde element maakt hem weer los.",
   "Make music, record, detect and design sounds – all in one program. The **intro tour** on the page of an empty project shows all the windows.": "Muziek maken, opnemen, herkennen en klanken vormgeven – alles in één programma. De **rondleiding** op de pagina van een leeg project toont alle vensters.",
   "\"File\" menu": "Menu “Bestand”",
-  "New project, Open, Save as, Export and the demo project. Projects are stored in Documents/Klangwelt/Projekte; a .klangwelt file contains everything, including the recordings.": "Nieuw project, Openen, Opslaan als, Exporteren en het demoproject. Projecten staan in Documenten/Klangwelt/Projekte; een .klangwelt-bestand bevat alles, ook de opnames.",
+  "New project, Open, Save as and Export. Projects are stored in Documents/Klangwelt/Projekte; \"Choose file…\" in the Open dialog loads a .klangwelt file from anywhere. A .klangwelt file contains everything, including the recordings.": "Nieuw project, Openen, Opslaan als en Exporteren. Projecten staan in Documenten/Klangwelt/Projekte; “Bestand kiezen …” in het venster Openen laadt een .klangwelt-bestand van elke locatie. Een .klangwelt-bestand bevat alles, ook de opnames.",
   "new": "nieuw",
   "open": "openen",
   "save as": "opslaan als",
@@ -2610,6 +2609,8 @@ const dict: Dict = {
 
   // ../klangwelt-desktop/app/src/lib.rs
   "{path} no longer exists": "{path} bestaat niet meer",
+  "Klangwelt project": "Klangwelt-project",
+  "Could not open the file dialog: {error}": "Het bestandsvenster kon niet worden geopend: {error}",
   "Cancelled: {error}": "Geannuleerd: {error}",
 
   // ../klangwelt-desktop/app/src/libraries.rs

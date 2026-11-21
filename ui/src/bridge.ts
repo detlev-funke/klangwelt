@@ -188,6 +188,9 @@ export interface Backend {
   /** Save: without a path into the current file; a name ends up in the project folder. */
   projectSave(path: string | null): Promise<Snapshot>;
   projectOpen(path: string): Promise<Snapshot>;
+  /** The system's file picker for a .klangwelt file; the path to open it with (null: cancelled).
+   *  Desktop: the native dialog; browser: the file goes into the browser's storage first. */
+  projectPick(): Promise<string | null>;
   projectNew(): Promise<Snapshot>;
   /** [project folder, projects in it (newest first)] */
   projectList(): Promise<[string, ProjectFile[]]>;
@@ -330,6 +333,7 @@ function coreBackend(link: CoreLink, platform: "desktop" | "web"): Backend {
     },
     projectSave: (path) => call("project_save", { path }),
     projectOpen: (path) => call("project_open", { path }),
+    projectPick: () => call("project_pick"),
     projectNew: () => call("project_new"),
     projectList: () => call("project_list"),
     exportInfo: () => call("export_info"),

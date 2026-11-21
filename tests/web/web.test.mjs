@@ -6,7 +6,7 @@
 // the browser's fake microphone and start without a server (service worker).
 import { before, after } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { startWeb, makeTest, sleep } from "./harness.mjs";
 
@@ -262,22 +262,80 @@ test("save and reload: the project is back in the list afterwards and opens", as
   assert.ok(wave.some((v) => v > 0.05), "Aufnahme mitgespeichert");
 });
 
-test("download project file (menu) and upload it again", async () => {
+/** Labels of the File menu (without the shortcut on the right); leaves it open. */
+async function fileMenu() {
   await app.clickOn(".file-controls .btn", { text: "Datei" });
-  await app.clickOn(".file-menu .menu-item", { text: "Projektdatei herunterladen" });
+  await app.waitFor(() => T.$(".file-menu.open"), { what: "Datei-Menü" });
+  return app.eval(() => T.$$(".file-menu.open .menu-item").map((b) => b.firstChild.textContent));
+}
+
+/** File → Open…, "Choose file…", and the browser's file picker answers with `file`
+ *  (intercepted through CDP – headless Edge shows no picker). */
+async function chooseFile(file) {
+  await app.send("Page.setInterceptFileChooserDialog", { enabled: true });
+  const opened = new Promise((resolve) => {
+    const h = (m) => {
+      if (m.method !== "Page.fileChooserOpened") return;
+      app.page.handlers.splice(app.page.handlers.indexOf(h), 1);
+      resolve(m.params);
+    };
+    app.page.handlers.push(h);
+  });
+  await fileMenu();
+  await app.clickOn(".file-menu.open .menu-item", { text: "Öffnen …" });
+  await app.waitFor(() => T.$(".modal .proj-pick"), { what: "Öffnen-Dialog mit Dateiauswahl" });
+  assert.equal(await app.eval(() => T.$(".modal .proj-pick").textContent), "Datei auswählen …");
+  await app.clickOn(".modal .proj-pick");
+  const chooser = await Promise.race([opened, sleep(10000).then(() => null)]);
+  assert.ok(chooser, "Dateiauswahl des Browsers geöffnet");
+  assert.equal(chooser.mode, "selectSingle");
+  await app.send("DOM.setFileInputFiles", { files: [file], backendNodeId: chooser.backendNodeId });
+}
+
+test("File menu: no demo, upload or download entries – those live in the dialogs and the empty project", async () => {
+  assert.deepEqual(await fileMenu(), ["Neues Projekt", "Öffnen …", "Speichern", "Speichern unter …", "Exportieren …"]);
+  await app.eval(() => document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
+  await app.waitFor(() => !T.$(".file-menu.open"), { what: "Menü zu" });
+});
+
+test("Save as: \"Download project file\" saves and downloads it; Open: \"Choose file…\" brings it back in", async () => {
+  await fileMenu();
+  await app.clickOn(".file-menu.open .menu-item", { text: "Speichern unter …" });
+  await app.waitFor(() => T.$(".modal-title")?.textContent === "Projekt speichern", { what: "Speichern-unter-Dialog" });
+  assert.deepEqual(await app.eval(() => T.$$(".modal-actions .btn").map((b) => b.textContent)), ["Speichern", "Projektdatei herunterladen", "Abbrechen"]);
+  assert.equal(await app.eval(() => T.$(".modal-input").value), "E2E Lied");
+  await app.clickOn(".modal-actions .btn", { text: "Projektdatei herunterladen" });
   const file = await downloaded("E2E Lied.klangwelt");
   const bytes = readFileSync(file);
   assert.equal(bytes.toString("ascii", 0, 2), "PK", "ZIP-Container");
-  // upload as via the file picker: under a new name into the browser's storage, then open
-  const opened = await app.eval(async (b64) => {
-    const data = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-    const path = await T.web.importFile(new File([data], "Hochgeladen.klangwelt"));
-    await (await import("./components/fileops.js")).openPath(path);
-    await T.waitFor(() => T.st.snapshot.peek().file === path);
-    return T.st.snapshot.peek();
-  }, bytes.toString("base64"));
-  assert.equal(opened.file, "/Klangwelt/Projekte/Hochgeladen.klangwelt");
+  assert.equal(await app.eval(() => !!T.$(".modal")), false, "Dialog zu");
+  // back in through the Open dialog's file picker – under a new name, with an unsaved change first
+  const upload = join(app.tmp, "Hochgeladen.klangwelt");
+  copyFileSync(file, upload);
+  await app.eval(() => T.st.run({ type: "setProject", patch: { tempoBpm: 99 } }));
+  await chooseFile(upload);
+  await app.waitFor(() => T.$(".modal-title")?.textContent === "Ungespeicherte Änderungen", { what: "Frage nach Ungespeichertem" });
+  assert.equal(await app.eval(() => T.$$(".modal").length), 1, "Öffnen-Dialog geschlossen");
+  await app.clickOn(".modal-actions .btn", { text: "Nicht speichern" });
+  await app.waitFor(() => T.st.snapshot.peek().file === "/Klangwelt/Projekte/Hochgeladen.klangwelt", { what: "hochgeladene Datei geöffnet" });
+  const opened = await snap();
   assert.deepEqual(opened.project.tracks.map((t) => t.name), ["Beat", "Arpeggio", "Melodie"]);
+  assert.equal(opened.project.tempoBpm, 133);
+  assert.equal(opened.dirty, false);
+  assert.equal(await app.eval(() => T.$(".proj-name").textContent), "Hochgeladen");
+  assert.equal(await app.eval(() => !!T.$(".modal")), false, "kein Dialog mehr offen");
+});
+
+test("Open: a damaged file from \"Choose file…\" shows the error, the open project stays", async () => {
+  const broken = join(app.tmp, "Kaputt.klangwelt");
+  writeFileSync(broken, "kein ZIP – kaputt");
+  await app.eval(() => (T.st.message.value = null));
+  await chooseFile(broken);
+  const msg = await app.waitFor(() => (T.st.message.peek()?.kind === "error" ? T.st.message.peek().text : null), { what: "Fehlermeldung" });
+  assert.ok(msg.includes("Kaputt.klangwelt"), msg);
+  assert.equal(await app.eval(() => !!T.$(".modal")), false, "kein Dialog mehr offen");
+  assert.equal((await snap()).file, "/Klangwelt/Projekte/Hochgeladen.klangwelt");
+  await app.send("Page.setInterceptFileChooserDialog", { enabled: false });
 });
 
 test("export: WAV is downloaded (header, length, level)", async () => {

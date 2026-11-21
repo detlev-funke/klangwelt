@@ -149,7 +149,6 @@ const dict: Dict = {
   "Save": "Guardar",
   "Please enter a name.": "Introduce un nombre.",
   "\"{name}\" has unsaved changes. Save before creating a new project?": "«{name}» tiene cambios sin guardar. ¿Guardar antes de crear uno nuevo?",
-  "\"{name}\" has unsaved changes. Save before loading the demo?": "«{name}» tiene cambios sin guardar. ¿Guardar antes de cargar la demo?",
   "\"{name}\" has unsaved changes. Save before opening?": "«{name}» tiene cambios sin guardar. ¿Guardar antes de abrir?",
   "\"{name}\" has unsaved changes. Save before closing?": "«{name}» tiene cambios sin guardar. ¿Guardar antes de cerrar?",
   "Unsaved changes": "Cambios sin guardar",
@@ -157,6 +156,8 @@ const dict: Dict = {
   "Opened: {name}": "Abierto: {name}",
   "No projects in {dir} yet.": "Aún no hay proyectos en {dir}.",
   "… or path to a .klangwelt file": "… o ruta a un archivo .klangwelt",
+  "Choose a .klangwelt file on this computer": "Elegir un archivo .klangwelt de este ordenador",
+  "Choose file…": "Elegir archivo…",
   "Open project": "Abrir proyecto",
   "Open": "Abrir",
   "Please select a project.": "Selecciona un proyecto.",
@@ -171,8 +172,6 @@ const dict: Dict = {
   "Export…": "Exportar…",
   "Ctrl+E": "Ctrl+E",
   "Download project file": "Descargar archivo del proyecto",
-  "Upload project file…": "Subir archivo de proyecto…",
-  "Load demo project": "Cargar proyecto de demo",
   "{name} – unsaved changes (Ctrl+S)": "{name} – cambios sin guardar (Ctrl+S)",
   "{name} – saved (Ctrl+S)": "{name} – guardado (Ctrl+S)",
   "Save project (Ctrl+S)": "Guardar proyecto (Ctrl+S)",
@@ -1189,7 +1188,7 @@ const dict: Dict = {
   "Point at something with the mouse – this shows what it does. **F1** pins the text (lock icon); pressing F1 again on the same element releases it.": "Señala algo con el ratón: aquí verás qué hace. **F1** fija el texto (icono de candado); pulsa F1 otra vez sobre el mismo elemento para soltarlo.",
   "Make music, record, detect and design sounds – all in one program. The **intro tour** on the page of an empty project shows all the windows.": "Hacer música, grabar, detectar y diseñar sonidos, todo en un solo programa. El **recorrido de introducción** en la página de un proyecto vacío muestra todas las ventanas.",
   "\"File\" menu": "Menú «Archivo»",
-  "New project, Open, Save as, Export and the demo project. Projects are stored in Documents/Klangwelt/Projekte; a .klangwelt file contains everything, including the recordings.": "Nuevo proyecto, Abrir, Guardar como, Exportar y el proyecto de demo. Los proyectos se guardan en Documentos/Klangwelt/Projekte; un archivo .klangwelt lo contiene todo, también las grabaciones.",
+  "New project, Open, Save as and Export. Projects are stored in Documents/Klangwelt/Projekte; \"Choose file…\" in the Open dialog loads a .klangwelt file from anywhere. A .klangwelt file contains everything, including the recordings.": "Nuevo proyecto, Abrir, Guardar como y Exportar. Los proyectos se guardan en Documentos/Klangwelt/Projekte; «Elegir archivo…» en el diálogo Abrir carga un archivo .klangwelt desde cualquier lugar. Un archivo .klangwelt lo contiene todo, también las grabaciones.",
   "new": "nuevo",
   "open": "abrir",
   "save as": "guardar como",
@@ -2610,6 +2609,8 @@ const dict: Dict = {
 
   // ../klangwelt-desktop/app/src/lib.rs
   "{path} no longer exists": "{path} ya no existe",
+  "Klangwelt project": "Proyecto de Klangwelt",
+  "Could not open the file dialog: {error}": "No se pudo abrir el diálogo de archivos: {error}",
   "Cancelled: {error}": "Cancelado: {error}",
 
   // ../klangwelt-desktop/app/src/libraries.rs

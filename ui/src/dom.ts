@@ -78,8 +78,10 @@ export interface ModalAction {
 /**
  * Simple dialog over the app. Returns the `value` of the chosen action,
  * `null` on Esc or a click outside. Enter triggers the first action.
+ * `close`: aborting it closes the dialog from outside (also `null`) – e.g. a
+ * control in the body that finished the job itself.
  */
-export function modal(title: string, body: Node[], actions: ModalAction[], focus?: HTMLElement): Promise<string | null> {
+export function modal(title: string, body: Node[], actions: ModalAction[], focus?: HTMLElement, close?: AbortSignal): Promise<string | null> {
   return new Promise((resolve) => {
     const back = h("div", { class: "modal-back" });
     const done = (v: string | null) => {
@@ -111,6 +113,7 @@ export function modal(title: string, body: Node[], actions: ModalAction[], focus
       if (e.target === back) done(null);
     });
     window.addEventListener("keydown", onKey, true);
+    close?.addEventListener("abort", () => done(null), { once: true });
     document.body.append(back);
     (focus ?? (box.querySelector(".modal-actions .btn") as HTMLElement | null))?.focus();
   });

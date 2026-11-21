@@ -1,10 +1,10 @@
 // Save, open and create projects – "Save" button (with a dot for
 // unsaved changes) and "File" menu. The dialogs are our own
 // (not system dialogs): projects live in Dokumente/Klangwelt/Projekte,
-// other locations go via a path.
+// other locations go via a path or – when opening – the system's file
+// picker (browser: a file from the computer into the browser's storage).
 
 import { backend } from "../bridge.js";
-import { loadDemo } from "../actions.js";
 import { exportDialog } from "./export.js";
 import { endTour, tourRunning } from "./tour.js";
 import { dropdown, h, icon, modal } from "../dom.js";
@@ -43,7 +43,8 @@ export async function saveProject(): Promise<boolean> {
   }
 }
 
-/** "Save as": name (or full path) in the own dialog. */
+/** "Save as": name (or full path) in the own dialog. In the browser it can
+ *  also hand the saved project over as a download (.klangwelt file). */
 export async function saveAs(): Promise<boolean> {
   const snap = snapshot.peek();
   let dir = "";
@@ -74,9 +75,11 @@ export async function saveAs(): Promise<boolean> {
   setTimeout(() => name.select(), 0);
   const choice = await modal(t("Save project"), [name, hint], [
     { label: t("Save"), value: "save", kind: "blue" },
+    // Browser: projects live in the browser's storage – save, then take it along as a file
+    ...(backend.platform === "web" ? [{ label: t("Download project file"), value: "download", kind: "ghost" as const }] : []),
     { label: t("Cancel"), value: "cancel", kind: "ghost" },
   ], name);
-  if (choice !== "save") return false;
+  if (choice !== "save" && choice !== "download") return false;
   const target = name.value.trim();
   if (!target) {
     notify(t("Please enter a name."), "error");
@@ -85,6 +88,9 @@ export async function saveAs(): Promise<boolean> {
   try {
     snapshot.value = await backend.projectSave(target);
     notify(t("Saved: {name}", { name: fileName(snapshot.peek()?.file) ?? "" }));
+    const file = snapshot.peek()?.file;
+    // (saved either way – a failed download doesn't undo that)
+    if (choice === "download" && file) await backend.exportReveal(file).catch((e) => notify(errorText(e), "error"));
     return true;
   } catch (e) {
     notify(errorText(e), "error");
@@ -96,7 +102,6 @@ export async function saveAs(): Promise<boolean> {
  *  The table keys are internal ids (not shown, not translated). */
 const DISCARD_QUESTION = {
   new: tk("\"{name}\" has unsaved changes. Save before creating a new project?"),
-  demo: tk("\"{name}\" has unsaved changes. Save before loading the demo?"),
   open: tk("\"{name}\" has unsaved changes. Save before opening?"),
   close: tk("\"{name}\" has unsaved changes. Save before closing?"),
 };
@@ -129,18 +134,6 @@ export async function newProject(): Promise<void> {
   }
 }
 
-/** New project with the demo tracks (beat, arpeggio, melody). */
-async function demoProject(): Promise<void> {
-  if (!(await confirmDiscard("demo"))) return;
-  try {
-    snapshot.value = await backend.projectNew();
-  } catch (e) {
-    notify(errorText(e), "error");
-    return;
-  }
-  await loadDemo();
-}
-
 /** Open project – asks on unsaved changes (also for double-clicking a file). */
 export async function openPath(path: string): Promise<void> {
   if (!(await confirmDiscard("open"))) return;
@@ -152,7 +145,8 @@ export async function openPath(path: string): Promise<void> {
   }
 }
 
-/** Open project: list from the project folder, or a path. */
+/** Open project: list from the project folder, a path, or a file from the
+ *  system's file picker. */
 export async function openDialog(): Promise<void> {
   let dir = "";
   let files: ProjectFile[] = [];
@@ -182,10 +176,27 @@ export async function openDialog(): Promise<void> {
         })
       : [h("div", { class: "lib-empty" }, t("No projects in {dir} yet.", { dir }))]));
   const path = stopKeys(h("input", { class: "lib-input mono modal-input", placeholder: t("… or path to a .klangwelt file") }));
-  const choice = await modal(t("Open project"), [h("div", { class: "modal-hint" }, dir), list, path], [
+  // The system's file picker: a chosen file closes the dialog and opens like any
+  // other way (unsaved changes are asked about first); cancelled, the dialog stays
+  const closer = new AbortController();
+  let fromPicker: string | null = null;
+  const pick = h("button", {
+    class: "btn proj-pick",
+    title: t("Choose a .klangwelt file on this computer"),
+    onclick: async () => {
+      try {
+        fromPicker = await backend.projectPick();
+      } catch (e) {
+        notify(errorText(e), "error");
+      }
+      if (fromPicker) closer.abort();
+    },
+  }, icon("folder"), t("Choose file…"));
+  const choice = await modal(t("Open project"), [h("div", { class: "modal-hint" }, dir), list, h("div", { class: "proj-path" }, path, pick)], [
     { label: t("Open"), value: "open", kind: "blue" },
     { label: t("Cancel"), value: "cancel", kind: "ghost" },
-  ]);
+  ], undefined, closer.signal);
+  if (fromPicker) return openPath(fromPicker);
   const target = path.value.trim() || picked;
   if (choice !== "open") return;
   if (!target) {
@@ -193,24 +204,6 @@ export async function openDialog(): Promise<void> {
     return;
   }
   await openPath(target);
-}
-
-/** Browser: download the saved project as a .klangwelt file (save first). */
-async function downloadProject(): Promise<void> {
-  if (!(await saveProject())) return;
-  const file = snapshot.peek()?.file;
-  if (file) await backend.exportReveal(file).catch((e) => notify(errorText(e), "error"));
-}
-
-/** Browser: pick a .klangwelt file, put it into the browser's storage and open it. */
-function uploadProject(): void {
-  const input = h("input", { type: "file", accept: ".klangwelt" }) as HTMLInputElement;
-  input.addEventListener("change", () => {
-    const f = input.files?.[0];
-    if (!f || !window.__klangweltWeb) return;
-    void window.__klangweltWeb.importFile(f).then((path) => openPath(path)).catch((e) => notify(errorText(e), "error"));
-  });
-  input.click();
 }
 
 /** "Save" button + "File" menu for the transport bar. */
@@ -230,16 +223,8 @@ export function fileControls(): HTMLElement {
       item(t("Save as…"), t("Ctrl+Shift+S"), () => void saveAs()),
       // Export lives only here (and on Ctrl+E) – the bar keeps its room for the project name
       item(t("Export…"), t("Ctrl+E"), () => void exportDialog(), "mi-export", t("Export as WAV, FLAC, Opus, stems or MIDI (Ctrl+E)")),
-      // Browser: projects live in the browser's storage – take them along as a file or bring them in
-      ...(backend.platform === "web"
-        ? [
-            h("div", { class: "menu-sep" }),
-            item(t("Download project file"), "", () => void downloadProject()),
-            item(t("Upload project file…"), "", () => uploadProject()),
-          ]
-        : []),
-      h("div", { class: "menu-sep" }),
-      item(t("Load demo project"), "", () => void demoProject()),
+      // (browser: a project file comes in through "Open…" and goes out through "Save as…";
+      // the demo is offered by the empty project)
     );
   });
   effect(() => {

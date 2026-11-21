@@ -486,6 +486,11 @@ Output and input device can be chosen while running – in the top bar
   * `harness.mjs` starts it in isolation for each file: temp folders for
     `KLANGWELT_BIBLIOTHEK` and the WebView2 profile, free ports for CDP and
     MCP. Then it connects via the Chrome DevTools Protocol.
+  * Temp folders (`tests/tempdirs.mjs`, shared by both harnesses): `close()`
+    ends the app or Edge with its whole process tree and removes the folder,
+    retrying and killing processes that still name it. Each harness first sweeps
+    folders with its prefix that a killed run left behind (unchanged for three
+    hours, named by no running process).
   * In the window it provides `T`: `store.js`/`pianoroll.js` of the same
     module instance (dynamic `import`), `waitFor`, `$`.
   * It sends real mouse and keyboard events (`Input.dispatch*`) with

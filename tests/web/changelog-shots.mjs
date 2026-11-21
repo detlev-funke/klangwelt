@@ -8,10 +8,10 @@
 // browser with a fresh temporary profile, so the pictures don't depend on each other;
 // notes (toasts), hover states and the text cursor are hidden. Nothing goes to the
 // network: the harness serves the app locally and offers no score library.
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ROOT, sleep, startWeb } from "./harness.mjs";
+import { makeTempDir, removeTempDir } from "../tempdirs.mjs";
 
 const OUT = join(ROOT, "changelog", "images");
 const LANGUAGES = "en-US,en";
@@ -649,7 +649,7 @@ mkdirSync(OUT, { recursive: true });
 let failed = 0;
 for (const id of wanted.length ? wanted : Object.keys(SHOTS)) {
   const shot = SHOTS[id];
-  const tmp = shot.files ? mkdtempSync(join(tmpdir(), "klangwelt-shot-")) : null;
+  const tmp = shot.files ? makeTempDir("klangwelt-shot-") : null;
   let app;
   try {
     const options = shot.files ? shot.files(tmp) : {};
@@ -662,7 +662,7 @@ for (const id of wanted.length ? wanted : Object.keys(SHOTS)) {
     console.error(`${id}: ${e.stack ?? e.message}`);
   } finally {
     await app?.close();
-    if (tmp) rmSync(tmp, { recursive: true, force: true });
+    await removeTempDir(tmp);
   }
 }
 process.exit(failed ? 1 : 0);

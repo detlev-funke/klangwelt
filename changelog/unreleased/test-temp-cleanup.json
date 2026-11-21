@@ -1,0 +1,10 @@
+{
+  "type": "internal",
+  "title": {
+    "en": "Test runs clean up their temp folders"
+  },
+  "text": {
+    "en": "the end-to-end harnesses end Edge or the app with its whole process tree before removing their temp folder, and sweep folders that killed runs left behind in %TEMP% on the next start."
+  },
+  "dev": "tests/tempdirs.mjs, shared by tests/web/harness.mjs and the desktop app's tests/e2e/harness.mjs."
+}

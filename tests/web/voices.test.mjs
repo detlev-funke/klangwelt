@@ -6,10 +6,10 @@
 // (substitute microphone) the live view shows the voices.
 import { before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { startWeb, makeTest, sleep } from "./harness.mjs";
+import { makeTempDir, removeTempDir } from "../tempdirs.mjs";
 
 const SR = 44_100;
 const BEAT = 0.6; // 100 BPM
@@ -62,15 +62,18 @@ function wavBytes(samples) {
 
 let app;
 let wav;
+let micDir;
 const test = makeTest(() => app);
 before(async () => {
-  wav = join(mkdtempSync(join(tmpdir(), "klangwelt-voices-")), "Satz.wav");
+  micDir = makeTempDir("klangwelt-voices-");
+  wav = join(micDir, "Satz.wav");
   writeFileSync(wav, wavBytes(chorale()));
   app = await startWeb({ fakeMic: wav });
   await app.send("Emulation.setDeviceMetricsOverride", { width: 1400, height: 900, deviceScaleFactor: 1, mobile: false });
 });
 after(async () => {
   await app?.close();
+  await removeTempDir(micDir);
 });
 
 const project = () => app.eval(() => T.st.snapshot.peek().project);

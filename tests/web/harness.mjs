@@ -5,18 +5,20 @@
 //
 // Each test file starts its own server and browser: free ports, its own
 // browser profile in the temp folder (OPFS, service worker) and its own folder for
-// downloads. Beforehand: `npm run build:web` in ui/.
+// downloads. `close()` ends Edge with all its processes and removes that folder; folders
+// of killed runs are swept on the next start (tests/tempdirs.mjs).
+// Beforehand: `npm run build:web` in ui/.
 //
 // Browser: KLANGWELT_EDGE or the usual path of Edge on Windows.
 // Muted (--mute-audio); KLANGWELT_TESTS_LAUT=1 makes the tests audible.
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
+import { makeTempDir, removeTempDir, stopProcess } from "../tempdirs.mjs";
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 export const OUT = join(ROOT, "tests", "web", "out");
@@ -190,6 +192,7 @@ class WebApp {
     this.server = await serve(this.port, this.serverArgs);
   }
 
+  /** Ends Edge (with all its processes) and the server, then removes the profile folder. */
   async close() {
     this.page.close();
     try {
@@ -198,16 +201,9 @@ class WebApp {
       /* already closed */
     }
     this.browser.close();
-    if (this.edge.exitCode == null) this.edge.kill();
-    this.server.kill();
-    for (let i = 0; i < 10; i++) {
-      try {
-        rmSync(this.tmp, { recursive: true, force: true });
-        break;
-      } catch {
-        await sleep(300);
-      }
-    }
+    await stopProcess(this.edge, { grace: 5000 });
+    await stopProcess(this.server);
+    await removeTempDir(this.tmp);
   }
 }
 
@@ -283,7 +279,7 @@ async function ready(app) {
 export async function startWeb({ languages = "de-DE,de", library = null, fakeMic = null, autosave = 0 } = {}) {
   if (!existsSync(join(ROOT, "ui", "dist-web", "klang_web.wasm"))) throw new Error("ui/dist-web fehlt – erst „npm run build:web“ in ui/");
   if (!existsSync(EDGE)) throw new Error(`Edge nicht gefunden: ${EDGE} (KLANGWELT_EDGE setzen)`);
-  const tmp = mkdtempSync(join(tmpdir(), "klangwelt-web-"));
+  const tmp = makeTempDir("klangwelt-web-");
   const downloads = join(tmp, "downloads");
   mkdirSync(downloads, { recursive: true });
   const [port, cdpPort] = [await freePort(), await freePort()];
@@ -317,8 +313,9 @@ export async function startWeb({ languages = "de-DE,de", library = null, fakeMic
   try {
     targets = await pageTarget(cdpPort);
   } catch (e) {
-    edge.kill();
-    server.kill();
+    await stopProcess(edge);
+    await stopProcess(server);
+    await removeTempDir(tmp);
     throw e;
   }
   const page = await Cdp.open(targets.page);

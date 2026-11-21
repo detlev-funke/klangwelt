@@ -5,10 +5,10 @@
 // stopping the finished analysis replaces the live view.
 import { before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { startWeb, makeTest, sleep } from "./harness.mjs";
+import { makeTempDir, removeTempDir } from "../tempdirs.mjs";
 
 /** Mono 16-bit WAV. */
 function writeWav(path, samples, sr) {
@@ -53,14 +53,17 @@ function melody(sr) {
 }
 
 let app;
+let micDir;
 const test = makeTest(() => app);
 before(async () => {
-  const wav = join(mkdtempSync(join(tmpdir(), "klangwelt-mic-")), "melody.wav");
+  micDir = makeTempDir("klangwelt-mic-");
+  const wav = join(micDir, "melody.wav");
   writeWav(wav, melody(48000), 48000);
   app = await startWeb({ fakeMic: wav });
 });
 after(async () => {
   await app?.close();
+  await removeTempDir(micDir);
 });
 
 /** Label → value of the facts in the analysis window. */

@@ -611,7 +611,8 @@ default layout.
   when it changes. Per track
   a `PitchView` (lowest note + number of semitones); the lane height follows
   from it. On first display the range is fitted to the content (also kick drum
-  to snare); after that it stays stable.
+  to snare); after that it stays stable – until drums switch between drum
+  kit and pitch (`drumMode`), which fits it again.
 * Audio in the note view: melody notes (YIN, from 40 Hz), hits with a
   pitch (`klang_dsp::pitch::hit_pitches`: per onset a 1.2 kHz low-pass,
   YIN down to 28 Hz, energy-weighted median) and unpitched hits in the
@@ -996,6 +997,12 @@ recording.
     (two square tones at 540/800 Hz with band-pass), ride and crash (six
     inharmonic partials plus noise) and shaker (noise swish) – without
     their own controls, derived from the snare and hi-hat controls.
+    Every note sounds: `drums::voice_for` gives keys without a drum (and
+    every key once the control `tasten` = 1, "Keys: pitch") a tuned drum
+    that settles on the note's pitch – kick drum below C3, tom up to B4,
+    snare from C5 – by retuning the kit's fundamental for that one note.
+    Drum keys of the drum kit keep the kit untouched (bit for bit, tested);
+    live voices and the offline render share `voice_for`.
   * **Bass** (`klang_dsp::bass`): PolyBLEP saw/square, TPT low-pass with
     envelope, sub-octave, saturation, monophonic glide on tied notes.
   * **Organ** (`klang_dsp::keys::organ_note`): additive. The partials of the

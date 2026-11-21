@@ -9,6 +9,13 @@ This file is generated from the JSON files in [changelog/](changelog/README.md),
 which also says how to add an entry. The app shows the same entries in its own
 language under the gear menu → What's new.
 
+## [2026.11.21+2051] - 2026-11-21 20:51
+
+### Fixed
+
+- **New versions show up at once:** after an update, Klangwelt in the browser and as an installed app no longer starts once more in the old version. If you haven't touched anything yet, it switches to the new one at once; otherwise a note offers “Reload” – your project comes along either way. This also lets the browser install the app again where it saw no manifest. *(browser only)*
+  - Technical: web/host.ts reports a worker taking over from an earlier one, update.ts reloads through autosave.ts reloadKeepingProject (shared with the language switch) or shows a note; sw.ts installs with cache: "reload" so no file comes from the browser's HTTP cache.
+
 ## [2026.11.21+1959] - 2026-11-21 19:59
 
 ### Added
@@ -138,5 +145,6 @@ language under the gear menu → What's new.
 - **English sources:** source code comments, agent texts and test titles are in English.
 - **README:** screenshots of the overview, piano roll, bass sound fields and circle of fifths.
 
+[2026.11.21+2051]: https://github.com/detlev-funke/klangwelt/releases/tag/v2026.11.21%2B2051
 [2026.11.21+1959]: https://github.com/detlev-funke/klangwelt/releases/tag/v2026.11.21%2B1959
 [2026.11.21+1746]: https://github.com/detlev-funke/klangwelt/releases/tag/v2026.11.21%2B1746

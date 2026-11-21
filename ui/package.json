@@ -1,7 +1,7 @@
 {
   "name": "klangwelt-ui",
   "private": true,
-  "version": "2026.11.21+1959",
+  "version": "2026.11.21+2051",
   "type": "module",
   "description": "Klangwelt user interface: TypeScript without runtime dependencies",
   "scripts": {

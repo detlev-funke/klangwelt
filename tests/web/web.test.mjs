@@ -326,6 +326,30 @@ test("Save as: \"Download project file\" saves and downloads it; Open: \"Choose 
   assert.equal(await app.eval(() => !!T.$(".modal")), false, "kein Dialog mehr offen");
 });
 
+test("Open: a picked file whose name is taken in the browser's storage comes in as \"-2\", \"-3\" – nothing is overwritten", async () => {
+  // the stored "Hochgeladen" gets a change of its own (tempo 120); the file on disk still has 133
+  await app.eval(async () => {
+    await T.st.run({ type: "setProject", patch: { tempoBpm: 120 } });
+    await T.st.act(T.backend.projectSave(null));
+  });
+  const upload = join(app.tmp, "Hochgeladen.klangwelt");
+  for (const n of [2, 3]) {
+    await chooseFile(upload);
+    await app.waitFor((n) => T.st.snapshot.peek().file === `/Klangwelt/Projekte/Hochgeladen-${n}.klangwelt`, { what: `als Hochgeladen-${n} geöffnet` }, n);
+    assert.equal((await snap()).project.tempoBpm, 133);
+    assert.equal(await app.eval(() => T.$(".proj-name").textContent), `Hochgeladen-${n}`);
+  }
+  const [, list] = await app.eval(() => T.backend.projectList());
+  assert.deepEqual(list.map((p) => p.name).filter((n) => n.startsWith("Hochgeladen")).sort(), ["Hochgeladen", "Hochgeladen-2", "Hochgeladen-3"]);
+  // the stored one is untouched
+  const original = await app.eval(async () => {
+    await T.st.act(T.backend.projectOpen("Hochgeladen"));
+    return T.st.snapshot.peek();
+  });
+  assert.equal(original.file, "/Klangwelt/Projekte/Hochgeladen.klangwelt");
+  assert.equal(original.project.tempoBpm, 120);
+});
+
 test("Open: a damaged file from \"Choose file…\" shows the error, the open project stays", async () => {
   const broken = join(app.tmp, "Kaputt.klangwelt");
   writeFileSync(broken, "kein ZIP – kaputt");

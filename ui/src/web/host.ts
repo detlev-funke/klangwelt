@@ -173,8 +173,16 @@ export function createWebLink(): CoreLink {
         const input = document.createElement("input");
         input.type = "file";
         input.accept = ".klangwelt";
-        input.addEventListener("cancel", () => resolve(null));
+        input.hidden = true;
+        // in the page while the picker is open – a detached input can be garbage
+        // collected meanwhile, and the chosen file would be lost
+        document.body.append(input);
+        input.addEventListener("cancel", () => {
+          input.remove();
+          resolve(null);
+        });
         input.addEventListener("change", () => {
+          input.remove();
           const f = input.files?.[0];
           if (f) importFile(f).then(resolve, reject);
           else resolve(null);
@@ -221,10 +229,22 @@ export function createWebLink(): CoreLink {
   /** Put a file from the computer into the core's file tree (projects into the
    *  project folder, everything else under "Import"); returns the path there. */
   async function importFile(f: File): Promise<string> {
-    const project = /\.klangwelt$/i.test(f.name);
-    const path = `${project ? PROJECTS_DIR : IMPORT_DIR}/${f.name.replace(/[\\/]/g, "_")}`;
+    const name = f.name.replace(/[\\/]/g, "_");
+    const path = /\.klangwelt$/i.test(name) ? `${PROJECTS_DIR}/${await freeProjectName(name)}` : `${IMPORT_DIR}/${name}`;
     await send("web_write_file", { path }, { data: await f.arrayBuffer() });
     return path;
+  }
+
+  /** A project file brought in never overwrites one in the browser's storage: if
+   *  the name is taken, "-2", "-3" … go before the extension ("Song-2.klangwelt"). */
+  async function freeProjectName(name: string): Promise<string> {
+    const [, files] = await send<[string, Array<{ name: string }>]>("project_list", undefined);
+    const taken = new Set(files.map((p) => p.name.toLowerCase()));
+    const stem = name.replace(/\.klangwelt$/i, "");
+    if (!taken.has(stem.toLowerCase())) return name;
+    let n = 2;
+    while (taken.has(`${stem}-${n}`.toLowerCase())) n++;
+    return `${stem}-${n}.klangwelt`;
   }
 
   // Dropping in files: open project files, report everything else as paths like on the

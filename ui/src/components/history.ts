@@ -3,8 +3,9 @@
 // tracks, clips, tempo, key). A click on a row goes back (or forward) to that
 // state; Ctrl+Z / Ctrl+Y walk the same line step by step. Checkpoints name a
 // state, variants are branches: editing after going back starts a new one
-// instead of throwing the later steps away. The logic lives in the core
-// (klang-core history.rs, klang-app history.rs) – this window only shows it.
+// instead of throwing the later steps away; "Combine…" brings variants together
+// (historymerge.ts). The logic lives in the core (klang-core history.rs,
+// merge.rs, klang-app history.rs) – this window only shows it.
 
 import { backend } from "../bridge.js";
 import { dropdown, h, icon, modal, noteName, type ModalAction } from "../dom.js";
@@ -12,6 +13,7 @@ import { language, plural, t } from "../i18n.js";
 import { effect } from "../signals.js";
 import { act, errorText, notify, snapshot, visiblePanels } from "../store.js";
 import type { HistoryRow, HistoryVariant, HistoryView } from "../types.js";
+import { mergeView } from "./historymerge.js";
 
 /** Time of a step: clock time today, with the date on other days. */
 function timeText(ms: number): string {
@@ -57,6 +59,8 @@ export function historyPanel(): { el: HTMLElement; update(): void } {
   const adopt = (v: HistoryView) => {
     view = v;
     render();
+    // combining variants that are gone (another project, deleted): back to the table
+    if (merge && !merge.variants().every((id) => v.variants.some((x) => x.id === id))) closeMerge();
   };
 
   // ------------------------------------------------------------ Actions
@@ -163,10 +167,27 @@ export function historyPanel(): { el: HTMLElement; update(): void } {
   const body = h("tbody");
   const scroll = h("div", { class: "hist-scroll" }, h("table", { class: "hist-table" }, h("thead", {}, head), body));
   const foot = h("div", { class: "hist-foot" });
-  const el = h("div", { class: "history" },
-    h("div", { class: "hist-top" }, checkpointBtn, variantBtn, variantsBar, more),
-    scroll,
-    foot);
+  const combineBtn = h("button", {
+    class: "btn small hist-combine",
+    title: t("Combine variants: choose per track and section which version goes into a new variant"),
+  }, icon("merge"), h("span", { class: "lbl" }, t("Combine…"))) as HTMLButtonElement;
+  const top = h("div", { class: "hist-top" }, checkpointBtn, variantBtn, variantsBar, combineBtn, more);
+  const el = h("div", { class: "history" }, top, scroll, foot);
+
+  // "Combine" replaces the table until it is done or cancelled
+  let merge: ReturnType<typeof mergeView> | null = null;
+  const closeMerge = () => {
+    merge?.destroy();
+    merge = null;
+    el.replaceChildren(top, scroll, foot);
+    lastCurrent = -1;
+    void refresh();
+  };
+  combineBtn.addEventListener("click", () => {
+    if (!view || view.variants.length < 2) return;
+    merge = mergeView(view, closeMerge);
+    el.replaceChildren(merge.el);
+  });
 
   // ------------------------------------------------------------ Display
   const cell = (text: string, cls = "", title?: string) => h("td", { class: cls, title }, text);
@@ -259,6 +280,10 @@ export function historyPanel(): { el: HTMLElement; update(): void } {
     const v = view;
     if (!v) return;
     renderVariants(v);
+    combineBtn.disabled = v.variants.length < 2;
+    combineBtn.title = v.variants.length < 2
+      ? t("Combining needs at least two variants – start one with \"New variant\"")
+      : t("Combine variants: choose per track and section which version goes into a new variant");
     const rows = v.rows.map((r, i) => renderRow(r, v.rows[i - 1]));
     body.replaceChildren(...rows);
     const active = v.variants.find((x) => x.active);
@@ -308,6 +333,8 @@ export function historyPanel(): { el: HTMLElement; update(): void } {
     if (s === shownFor && view) return;
     shownFor = s;
     void refresh();
+    // the project changed while combining (agent, undo …): compare anew
+    merge?.refresh();
   };
   effect(() => {
     if (visiblePanels.value.has("historie")) queueMicrotask(update);

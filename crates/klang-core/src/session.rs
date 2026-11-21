@@ -338,6 +338,42 @@ impl Session {
         self.gesture = None;
     }
 
+    // ------------------------------------------------------------ Combining variants
+
+    /// What combining `variants` needs: their common origin (the newest step all
+    /// of them share), the project there and the project of each variant.
+    pub fn merge_sources(&self, variants: &[u32]) -> Result<MergeSources, CoreError> {
+        if variants.len() < 2 {
+            return invalid(tr!("Choose at least two variants to combine"));
+        }
+        let mut heads = Vec::with_capacity(variants.len());
+        for id in variants {
+            let v = self.history.variant(*id).ok_or_else(|| CoreError::Invalid(tr!("Variant {id} doesn't exist", id = id)))?;
+            heads.push(v.head);
+        }
+        let origin = heads.iter().skip(1).fold(heads[0], |acc, &h| self.history.common_ancestor(acc, h));
+        let mut projects = Vec::with_capacity(variants.len());
+        for (id, head) in variants.iter().zip(&heads) {
+            projects.push((*id, self.project_at(*head)?));
+        }
+        Ok(MergeSources { origin, origin_project: self.project_at(origin)?, variants: projects })
+    }
+
+    /// Starts a variant at the newest step of `target` with one step `label` that
+    /// turns its project into `result` – the combined variants. Returns its ID.
+    pub fn add_combined(&mut self, target: u32, result: &Project, name: Option<String>, label: String) -> Result<u32, CoreError> {
+        let head = self.history.variant(target).map(|v| v.head).ok_or_else(|| CoreError::Invalid(tr!("Variant {id} doesn't exist", id = target)))?;
+        let id = self.create_variant(name, Some(head))?;
+        let commands = crate::merge::commands_between(&self.project, result);
+        if !commands.is_empty() {
+            if let Err(e) = self.execute(Command::Batch { label, commands }, false) {
+                let _ = self.delete_variant(id);
+                return Err(e);
+            }
+        }
+        Ok(id)
+    }
+
     // ------------------------------------------------------------ Agent batches
 
     /// Mark in the history for [`Session::squash`] and [`Session::rollback`].
@@ -525,6 +561,23 @@ impl Session {
         }
         history.prune();
         Ok(Session { project, history, revision: next_revision(), gesture: None })
+    }
+}
+
+/// The versions for combining variants (see [`Session::merge_sources`]).
+#[derive(Clone, Debug)]
+pub struct MergeSources {
+    /// The newest step all the variants share.
+    pub origin: NodeId,
+    pub origin_project: Project,
+    /// Each variant's ID with its project, in the order asked for.
+    pub variants: Vec<(u32, Project)>,
+}
+
+impl MergeSources {
+    /// The versions as [`crate::merge`] takes them.
+    pub fn versions(&self) -> crate::merge::Versions<'_> {
+        crate::merge::Versions { origin: &self.origin_project, variants: self.variants.iter().map(|(id, p)| (*id, p)).collect() }
     }
 }
 
@@ -1055,5 +1108,67 @@ mod history_tests {
         assert_eq!(s.history().active().name, "Zweite");
         assert!(s.history().checkpoints().is_empty());
         assert!(!s.undo().unwrap());
+    }
+}
+
+#[cfg(test)]
+mod merge_tests {
+    use super::*;
+    use crate::merge::{self, Choices, SegmentChoice};
+    use crate::{Clip, ClipSource, Id, Note, Track, TrackKind};
+
+    fn notes_of(s: &Session) -> Vec<u8> {
+        match &s.project.tracks[0].clips[0].source {
+            ClipSource::Notes { notes, .. } => notes.iter().map(|n| n.pitch).collect(),
+            _ => vec![],
+        }
+    }
+
+    #[test]
+    fn two_variants_combined_into_a_new_one_with_one_step() {
+        let mut s = Session::default();
+        let mut lead = Track::new(Id::NEW, "Lead", TrackKind::Instrument);
+        lead.clips.push(Clip { id: Id::NEW, name: "A".into(), start_beats: 0.0, source: ClipSource::Notes { length_beats: 32.0, notes: (0..8).map(|i| Note::new(60, i as f64 * 4.0, 1.0, 90)).collect() } });
+        s.execute(Command::AddTrack { track: lead, index: None }, false).unwrap();
+        let (tid, cid) = (s.project.tracks[0].id, s.project.tracks[0].clips[0].id);
+        let set = |s: &mut Session, f: &dyn Fn(&mut Vec<Note>)| {
+            let ClipSource::Notes { notes, .. } = &s.project.tracks[0].clips[0].source else { unreachable!() };
+            let mut n = notes.clone();
+            f(&mut n);
+            s.execute(Command::SetClipNotes { track_id: tid, clip_id: cid, notes: n, length_beats: None }, false).unwrap();
+        };
+        let base = s.history().current();
+        let main = s.history().active().id;
+        set(&mut s, &|n| n[0].pitch = 62); // main: bar 1
+        let b = s.create_variant(Some("B".into()), Some(base)).unwrap();
+        set(&mut s, &|n| n[7].pitch = 67); // B: bar 8
+        s.switch_variant(main).unwrap();
+        let src = s.merge_sources(&[main, b]).unwrap();
+        assert_eq!(src.origin, base);
+        let v = src.versions();
+        let plan = merge::plan(&v, main);
+        let segs: Vec<(f64, Vec<u32>)> = plan.tracks[0].segments.iter().map(|x| (x.start, x.by.clone())).collect();
+        assert_eq!(segs, vec![(0.0, vec![main]), (28.0, vec![b])]);
+        let result = merge::combine(&v, &plan, &Choices::default()).unwrap();
+        let before = s.history().len();
+        let id = s.add_combined(main, &result, Some("Main + B".into()), "Combined: B".into()).unwrap();
+        assert_eq!(s.history().active().id, id);
+        assert_eq!(s.history().len(), before + 1, "one step");
+        assert_eq!(s.undo_label(), Some("Combined: B"));
+        assert_eq!(notes_of(&s), vec![62, 60, 60, 60, 60, 60, 60, 67]);
+        assert_eq!(s.history().variants().len(), 3);
+        // undo goes back to the main version's state, the others are untouched
+        s.undo().unwrap();
+        assert_eq!(notes_of(&s)[7], 60);
+        s.switch_variant(b).unwrap();
+        assert_eq!(notes_of(&s), vec![60, 60, 60, 60, 60, 60, 60, 67]);
+        // taking the origin for bar 1 drops the main version's change
+        let only_b = Choices { segments: vec![SegmentChoice { key: plan.tracks[0].key.clone(), start: 0.0, source: merge::ORIGIN }], ..Default::default() };
+        let r = merge::combine(&v, &plan, &only_b).unwrap();
+        let id2 = s.add_combined(main, &r, None, "Combined".into()).unwrap();
+        assert_eq!(s.history().active().name, "Variant 4");
+        assert_eq!(s.history().active().id, id2);
+        assert_eq!(notes_of(&s), vec![60, 60, 60, 60, 60, 60, 60, 67]);
+        assert!(s.merge_sources(&[main]).is_err());
     }
 }

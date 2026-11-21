@@ -181,3 +181,117 @@ test("the history is saved in the project file and comes back after a reload", a
   await sleep(100);
   assert.deepEqual(app.errors, []);
 });
+
+// ---------------------------------------------------------------- Combining variants
+
+/** Lead with one note per bar (8 bars) and a checkpoint; the main version
+ *  changes bars 5–6, the variant "Refrain" bars 6–8 and the lead's sound and adds a pad. */
+async function twoVariants() {
+  await fresh();
+  await app.eval(async () => {
+    const notes = (pitches) => pitches.map((p, i) => ({ pitch: p, startBeats: i * 4, lengthBeats: 1, velocity: 90 }));
+    await T.st.run({ type: "addTrack", track: { id: 0, name: "Lead", kind: "instrument" } });
+    const t = T.st.snapshot.peek().project.tracks[0];
+    await T.st.run({ type: "addClip", trackId: t.id, clip: { id: 0, name: "Thema", startBeats: 0, source: { type: "notes", lengthBeats: 32, notes: notes([60, 60, 60, 60, 60, 60, 60, 60]) } } });
+    const v = await T.backend.historyCheckpoint("Rohfassung");
+    const base = v.current;
+    const clip = () => T.st.snapshot.peek().project.tracks[0].clips[0].id;
+    await T.st.run({ type: "setClipNotes", trackId: t.id, clipId: clip(), notes: notes([60, 60, 60, 60, 62, 62, 60, 60]) });
+    await T.st.act(T.backend.historyVariantNew("Refrain", base));
+    await T.st.run({ type: "setClipNotes", trackId: t.id, clipId: clip(), notes: notes([60, 60, 60, 60, 60, 67, 67, 67]) });
+    const inst = { ...T.st.snapshot.peek().project.tracks[0].instrument, preset: "dunkel" };
+    await T.st.run({ type: "setTrack", trackId: t.id, patch: { instrument: inst } });
+    await T.st.run({ type: "addTrack", track: { id: 0, name: "Pad", kind: "instrument", clips: [{ id: 0, name: "P", startBeats: 16, source: { type: "notes", lengthBeats: 16, notes: [{ pitch: 48, startBeats: 0, lengthBeats: 8, velocity: 80 }] } }] } });
+  });
+  await app.waitFor(() => T.$$(".hist-var").length === 2 && !T.$(".hist-combine").disabled, { what: "zwei Varianten" });
+}
+
+const cells = () => app.eval(() => T.$$(".mg-row[data-track] .mg-cell").map((c) => ({
+  track: c.dataset.track,
+  start: Number(c.dataset.start),
+  text: c.querySelector(".mg-cell-text").textContent,
+  conflict: c.classList.contains("conflict") && !c.classList.contains("resolved"),
+})));
+async function pick(selector, source) {
+  await app.clickOn(selector);
+  await app.waitFor(() => !!T.$(".mg-pop"), { what: "Auswahl" });
+  await app.clickOn(`.mg-pop .mg-opt[data-source="${source}"]`);
+}
+
+test("combine: changed bars per track from both variants, the conflict has to be decided", async () => {
+  await twoVariants();
+  await app.clickOn(".hist-combine");
+  await app.waitFor(() => T.$$(".mg-row[data-track]").length === 2, { what: "Kombinieren-Ansicht" });
+  // the base is the active variant (the refrain), the main version takes part
+  const ids = await app.eval(() => {
+    const id = (name) => Number([...T.$(".mg-target").options].find((o) => o.textContent === name).value);
+    return { main: id("Hauptversion"), refrain: id("Refrain"), base: Number(T.$(".mg-target").value), pad: T.$$(".mg-row[data-track]")[1].dataset.track };
+  });
+  assert.equal(ids.base, ids.refrain);
+  assert.equal(await app.eval(() => T.$(".mg-chip.on").textContent), "Hauptversion");
+  assert.match(await app.eval(() => T.$(".mg-origin").textContent), /Ursprung: Schritt 2 · Clip hinzufügen.*Rohfassung/);
+  assert.deepEqual(await app.eval(() => T.$$(".mg-row[data-track] .mg-name").map((n) => n.textContent)), ["Lead", "Pad"]);
+  assert.deepEqual(await cells(), [
+    { track: "1", start: 16, text: "Hauptversion", conflict: false },
+    { track: "1", start: 20, text: "Entscheiden", conflict: true },
+    { track: "1", start: 24, text: "Refrain", conflict: false },
+    { track: ids.pad, start: 16, text: "Refrain", conflict: false },
+  ]);
+  // the lead's sound comes from the refrain (only it changed it); the pad is new there
+  assert.match(await app.eval(() => T.$('.mg-track-chip[data-decision="track:1"]').textContent), /Refrain · Klang/);
+  assert.equal(await app.eval(() => T.$(".mg-apply").disabled), true);
+  assert.match(await app.eval(() => T.$(".mg-summary").textContent), /1 Konflikt offen/);
+  // lanes: the notes of every version; picking there works like the fields
+  await app.clickOn('.mg-row[data-track="1"] .mg-expand');
+  await app.waitFor(() => T.$$(".mg-sub").length === 3, { what: "Lanes" });
+  assert.deepEqual(await app.eval(() => T.$$(".mg-sub .mg-name").map((n) => n.textContent)), ["Ursprung", "Hauptversion", "Refrain"]);
+  await app.clickOn(`.mg-pick.can[data-start="20"][data-source="${ids.refrain}"]`);
+  await app.waitFor(() => !T.$(".mg-apply").disabled, { what: "Konflikt entschieden" });
+  assert.match(await app.eval(() => T.$(".mg-summary").textContent), /alles entschieden/);
+  // the ruler sets a section for all tracks: bars 5–6 from the origin (lead and pad)
+  await pick('.mg-rseg[data-start="16"]', 0);
+  assert.deepEqual((await cells()).map((c) => c.text), ["unverändert", "Refrain", "Refrain", "weggelassen"]);
+  await pick('.mg-row[data-track="1"] .mg-cell[data-start="16"]', ids.main);
+  await pick(`.mg-row[data-track="${ids.pad}"] .mg-cell`, ids.refrain);
+  assert.deepEqual((await cells()).map((c) => c.text), ["Hauptversion", "Refrain", "Refrain", "Refrain"]);
+  await app.shot("historie-kombinieren");
+  // listen: plays the combination, stopping returns to the project
+  await app.clickOn(".mg-play");
+  await app.waitFor(() => T.st.status.peek().playing, { what: "Probehören" });
+  await app.waitFor(() => !T.$(".mg-head").hidden, { what: "Laufbalken" });
+  await app.clickOn(".mg-play");
+  await app.waitFor(() => !T.st.status.peek().playing, { what: "Stopp" });
+  // combine: a new variant with one step, the table is back
+  await app.clickOn(".mg-apply");
+  await app.waitFor(() => T.$$(".hist-var").length === 3 && !!T.$(".hist-table"), { what: "kombinierte Variante" });
+  assert.deepEqual(await variants(), [{ name: "Hauptversion", on: false }, { name: "Refrain", on: false }, { name: "Refrain + Hauptversion", on: true }]);
+  assert.equal((await labels()).at(-1), "Kombiniert: Hauptversion");
+  const p = await app.eval(() => T.st.snapshot.peek().project);
+  assert.deepEqual(p.tracks.map((t) => t.name), ["Lead", "Pad"]);
+  assert.deepEqual(p.tracks[0].clips[0].source.notes.map((n) => n.pitch), [60, 60, 60, 60, 62, 67, 67, 67]);
+  assert.equal(p.tracks[0].instrument.preset, "dunkel");
+  assert.deepEqual(app.errors, []);
+});
+
+test("combine: another base, at least one more variant, cancel changes nothing", async () => {
+  await twoVariants();
+  const before = await app.eval(() => JSON.stringify(T.st.snapshot.peek().project));
+  await app.clickOn(".hist-combine");
+  await app.waitFor(() => T.$$(".mg-row[data-track]").length === 2, { what: "Kombinieren-Ansicht" });
+  // base: the main version – the refrain is the one added now
+  await app.eval(() => {
+    const s = T.$(".mg-target");
+    s.value = [...s.options].find((o) => o.textContent === "Hauptversion").value;
+    s.dispatchEvent(new Event("change"));
+  });
+  await app.waitFor(() => T.$(".mg-chip")?.textContent.includes("Refrain") && T.$$(".mg-row[data-track] .mg-cell").length === 4, { what: "Basis Hauptversion" });
+  assert.match(await app.eval(() => T.$(".mg-apply").title), /rot markierten Felder/);
+  assert.match(await app.eval(() => T.$(".mg-summary").textContent), /1 Konflikt offen/);
+  // the only other variant can't be left out
+  await app.clickOn(".mg-chip");
+  assert.equal(await app.eval(() => T.$$(".mg-chip.on").length), 1);
+  await app.clickOn(".mg-back");
+  await app.waitFor(() => !!T.$(".hist-table"), { what: "Tabelle" });
+  assert.equal(await app.eval(() => JSON.stringify(T.st.snapshot.peek().project)), before);
+  assert.equal(await app.eval(() => T.$$(".hist-var").length), 2);
+});

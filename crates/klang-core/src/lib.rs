@@ -11,6 +11,7 @@ mod command;
 pub mod diff;
 pub mod edit;
 pub mod history;
+pub mod merge;
 mod metrics;
 mod model;
 mod session;
@@ -21,4 +22,4 @@ pub use metrics::Metrics;
 pub use model::{
     Clip, ClipSource, Id, Instrument, InstrumentKind, Note, Project, Track, TrackKind, TrackView, TRACK_COLORS,
 };
-pub use session::{Session, UndoMark};
+pub use session::{MergeSources, Session, UndoMark};

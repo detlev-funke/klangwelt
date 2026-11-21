@@ -130,6 +130,18 @@ pub fn diff_track(a: Option<&Track>, b: Option<&Track>, bpm_a: f64, bpm_b: f64) 
     }
 }
 
+/// Do two versions of a track sound the same in `range` (notes and recordings
+/// starting there)? A missing track sounds like an empty one.
+pub fn same_content_in(a: Option<&Track>, b: Option<&Track>, bpm_a: f64, bpm_b: f64, range: Range) -> bool {
+    let (lo, hi) = (q(range.0), q(range.1));
+    let inside = |t: Option<&Track>, bpm: f64| -> Vec<Ev> {
+        let mut ev: Vec<Ev> = t.map(|t| events(t, bpm)).unwrap_or_default().into_iter().filter(|e| e.start >= lo && e.start < hi).collect();
+        ev.sort();
+        ev
+    };
+    inside(a, bpm_a) == inside(b, bpm_b)
+}
+
 /// Sorts ranges and joins the ones that overlap or touch.
 pub fn merge_ranges(mut r: Vec<Range>) -> Vec<Range> {
     r.retain(|(a, b)| a.is_finite() && b.is_finite());

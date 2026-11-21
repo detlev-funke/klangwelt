@@ -111,6 +111,7 @@ const panelTopics: Record<string, HelpTopic> = {
       t("A **click on a row** goes back to that state; the later rows stay and can be redone (Ctrl+Y or a click). The history is saved in the project file."),
       t("A **checkpoint** names the current state. A **variant** is a branch: start one with \"New variant\" or ⑂ in a row, and the following changes go into it while the other variants stay as they are. The chips above the table switch between them."),
       t("Editing after going back keeps the later steps too: they appear as a dashed ⑂ chip in the row and come back as a variant with a click."),
+      t("**Combine…** brings variants together: it compares them with their common origin and shows per track which bars each one changed. Choose per section (or on the ruler for all tracks) which version goes into the result; sections two variants changed differently are marked red and have to be decided. **Listen** plays the result first, **Combine** creates it as a new variant."),
     ],
     keys: [[t("Click on a row"), t("Go to that state")], [t("Ctrl+Z / Ctrl+Y"), t("One step back / forward")], [t("Double-click a variant"), t("Rename, delete")]],
   },

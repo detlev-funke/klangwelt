@@ -179,6 +179,10 @@ export function createMock(): Backend {
     historyVariantRename: () => Promise.reject(t("Only available in the desktop app")),
     historyVariantDelete: () => later(snap()),
     historyClear: () => later(snap()),
+    historyMergePlan: () => Promise.reject(t("Only available in the desktop app")),
+    historyMergePreview: () => Promise.reject(t("Only available in the desktop app")),
+    historyMergePreviewStop: () => later(null),
+    historyMergeApply: () => Promise.reject(t("Only available in the desktop app")),
     transport: (action) => {
       if (action === "play") playing = true;
       else if (action === "stop") playing = false;

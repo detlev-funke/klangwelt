@@ -69,6 +69,7 @@ const PATHS: Record<string, string> = {
   more: '<circle cx="5.5" cy="12" r="1.9" fill="currentColor"/><circle cx="12" cy="12" r="1.9" fill="currentColor"/><circle cx="18.5" cy="12" r="1.9" fill="currentColor"/>',
   history: '<path d="M4.5 12a7.5 7.5 0 107.5-7.5A7.4 7.4 0 006.6 7M4 3.5V8h4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 8v4.5l3 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
   flag: '<path d="M6 21V4M6 4.5h11l-2.5 4 2.5 4H6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
+  merge: '<circle cx="6" cy="5.5" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="18" cy="5.5" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="18.5" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M6 7.7c0 4.5 6 4 6 8.6M18 7.7c0 4.5-6 4-6 8.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
   branch: '<circle cx="7" cy="5.5" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="7" cy="18.5" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="17" cy="8" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M7 7.7v8.6M17 10.2c0 4-10 2.5-10 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
 };
 

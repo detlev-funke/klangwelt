@@ -394,6 +394,58 @@ export interface HistoryView {
   limit: number;
 }
 
+/** A section of a track that variants changed (beats, on bar lines). */
+export interface MergeSegment {
+  start: number;
+  end: number;
+  /** Variants that changed it. */
+  by: number[];
+  /** Changed differently by several – has to be decided. */
+  conflict: boolean;
+}
+
+/** One track in "Combine": what each variant changed. */
+export interface MergeTrack {
+  /** Key of the decisions ("12", or "12@3" for a new track whose ID another variant used too). */
+  key: string;
+  trackId: number;
+  name: string;
+  color: string;
+  inOrigin: boolean;
+  /** Variants that have the track. */
+  presentIn: number[];
+  /** Variants that changed the track itself (sound, mix, name, whether it exists). */
+  settingsBy: number[];
+  settingsConflict: boolean;
+  /** What each of them changed, in words. */
+  changes: { source: number; what: string }[];
+  segments: MergeSegment[];
+  /** Notes of each version for the lanes view: the origin (0) and the variants that changed the track. */
+  lanes: { source: number; present: boolean; notes: [number, number, number][]; audio: [number, number][] }[];
+}
+
+/** Everything "Combine" shows. Sources: a variant's ID, 0 = the common origin. */
+export interface MergeView {
+  origin: { node: number; index: number; label: string; time: number; checkpoints: string[] };
+  /** The variant the result builds on. */
+  target: number;
+  /** Taking part, the base first. */
+  variants: HistoryRef[];
+  beatsPerBar: number;
+  lengthBeats: number;
+  project: { by: number[]; conflict: boolean; options: { source: number; tempo: number; beatsPerBar: number; beatUnit: number }[] };
+  tracks: MergeTrack[];
+  /** Name of the combined variant. */
+  name: string;
+}
+
+/** Choices in "Combine" (missing ones take the obvious default). */
+export interface MergeChoices {
+  project: number | null;
+  tracks: Record<string, number>;
+  segments: { key: string; start: number; source: number }[];
+}
+
 export interface LibraryInfo {
   /** Active library (null while it is being loaded at start). */
   id: string | null;

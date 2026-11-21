@@ -39,6 +39,10 @@ pub const COMMANDS: &[&str] = &[
     "history_variant_rename",
     "history_variant_delete",
     "history_clear",
+    "history_merge_plan",
+    "history_merge_preview",
+    "history_merge_preview_stop",
+    "history_merge_apply",
     "transport",
     "seek",
     "set_metronome",
@@ -195,6 +199,21 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
             json(st.history_variant_delete(id)?)
         }
         "history_clear" => json(st.history_clear()?),
+        "history_merge_plan" => {
+            let (target, others) = args!(a; target: u32, others: Vec<u32>);
+            json(st.history_merge_plan(target, &others)?)
+        }
+        "history_merge_preview" => {
+            let (target, others, choices, start_beats) = args!(a; target: u32, others: Vec<u32>, choices: Option<klang_core::merge::Choices>, start_beats: Option<f64>);
+            let req = crate::history::MergeRequest { target, others, choices: choices.unwrap_or_default() };
+            json(st.history_merge_preview(&req, start_beats.unwrap_or(0.0))?)
+        }
+        "history_merge_preview_stop" => json(st.history_merge_preview_stop()?),
+        "history_merge_apply" => {
+            let (target, others, choices, name) = args!(a; target: u32, others: Vec<u32>, choices: Option<klang_core::merge::Choices>, name: Option<String>);
+            let req = crate::history::MergeRequest { target, others, choices: choices.unwrap_or_default() };
+            json(st.history_merge_apply(&req, name)?)
+        }
         "transport" => {
             let (action,) = args!(a; action: String);
             json(st.transport(&action)?)

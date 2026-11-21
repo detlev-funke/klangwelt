@@ -1602,7 +1602,8 @@ impl ExportSource {
     }
 }
 
-fn build_arrangement(project: &Project, pool: &mut AssetPool, out_sr: u32) -> Arrangement {
+/// The project as the engine plays it (also the preview of combined variants).
+pub(crate) fn build_arrangement(project: &Project, pool: &mut AssetPool, out_sr: u32) -> Arrangement {
     let (arrangement, used) = arrange(project, pool, out_sr);
     pool.renders.retain(|k, _| used.contains(k));
     pool.live.retain(|k, _| used.contains(k));

@@ -652,6 +652,30 @@ default layout.
   the key estimated with `klang_music::theory`, checkpoints and the branches that
   leave the line. The window fetches it only while it is visible, after every
   new snapshot.
+* **Combining variants** (`klang_core::merge`, `ui/src/components/historymerge.ts`)
+  is a three-way merge against the variants' common origin
+  (`Session::merge_sources`: the newest step all heads share):
+  * Per track (matched by ID; new tracks by ID, name and kind – the same new ID
+    for different tracks becomes `12@3`) the content ranges each variant changed
+    (`diff::diff_track`), rounded out to whole bars of the origin. Where the set
+    of variants that changed something is the same, that is one segment. Several
+    variants in a segment are a conflict only if their content there differs
+    (`diff::same_content_in`).
+  * The track itself (sound, mix, name, whether it exists) is a decision of its
+    own; removing a track is not a change of its bars. Removed in one variant
+    and edited in another is a conflict. Tempo and time signature: one more decision.
+  * Defaults: the only variant that changed something; conflicts need a choice
+    (`combine` refuses them, `preview` takes the base if it changed it).
+  * The result is put together from clip pieces: each segment from its chosen
+    version, the rest from the origin; pieces of the same clip that touch are
+    joined again (exact numbers when a clip stays whole), duplicate IDs get fresh
+    ones. Track order: the base's, other tracks after their neighbour.
+  * `commands_between` turns the base's project into the result (changed tracks
+    replaced, order set at the end); `Session::add_combined` starts a new variant
+    at the base's newest step with that one batch – undo goes back to the base.
+  * Listening plays the result through the engine (`build_arrangement` of the
+    combined project, stop point at its end) without touching the session; any
+    edit or "Stop" syncs the engine with the project again.
 
 ## The four areas
 

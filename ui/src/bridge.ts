@@ -9,7 +9,7 @@ import type {
   FuguePlan, HarmonyView, InstrumentKind, InstrumentSpec, SubjectView, TransformSpec, VNote,
   AddResult, ConvertResult, ConvertTarget, ImportResult, QuantizeResult, KeySpec, LibEntry, LibHit, LibraryInfo, ListenResult, OwnScore, PlacedChord, PlayInfo, PreviewPattern, ProjectFile, RecordResult, LiveCursor, LiveView, HarmonyLine, SongPlan, SongWritten, ClipGrid, RhythmGrid, RhythmInfo, RhythmWritten, SavedSound, ScoreView, Snapshot, SoundReport, SoundSaveResult, SuggestResult, TreeLevel, WaveView,
 } from "./types.js";
-import type { AudioDevices, AudioKind, HistoryView } from "./types.js";
+import type { AudioDevices, AudioKind, HistoryView, MergeChoices, MergeView } from "./types.js";
 import { createMock } from "./mock.js";
 import { createWebLink } from "./web/host.js";
 
@@ -63,6 +63,14 @@ export interface Backend {
   historyVariantDelete(id: number): Promise<Snapshot>;
   /** Forget all steps; the project stays as it is. */
   historyClear(): Promise<Snapshot>;
+  /** Combining variants: what each changed compared with their common origin. */
+  historyMergePlan(target: number, others: number[]): Promise<MergeView>;
+  /** Play the combination from `startBeats` without changing the project. */
+  historyMergePreview(target: number, others: number[], choices: MergeChoices, startBeats: number): Promise<{ endBeats: number; tempo: number }>;
+  /** End the preview: the project plays again. */
+  historyMergePreviewStop(): Promise<null>;
+  /** Combine into a new variant (one step) and switch to it. */
+  historyMergeApply(target: number, others: number[], choices: MergeChoices, name: string | null): Promise<Snapshot>;
   transport(action: TransportAction): Promise<void>;
   seek(seconds: number): Promise<void>;
   setMetronome(enabled: boolean): Promise<Snapshot>;
@@ -256,6 +264,10 @@ function coreBackend(link: CoreLink, platform: "desktop" | "web"): Backend {
     historyVariantRename: (id, name) => call("history_variant_rename", { id, name }),
     historyVariantDelete: (id) => call("history_variant_delete", { id }),
     historyClear: () => call("history_clear"),
+    historyMergePlan: (target, others) => call("history_merge_plan", { target, others }),
+    historyMergePreview: (target, others, choices, startBeats) => call("history_merge_preview", { target, others, choices, startBeats }),
+    historyMergePreviewStop: () => call("history_merge_preview_stop"),
+    historyMergeApply: (target, others, choices, name) => call("history_merge_apply", { target, others, choices, name }),
     transport: (action) => call("transport", { action }),
     seek: (seconds) => call("seek", { seconds }),
     setMetronome: (enabled) => call("set_metronome", { enabled }),

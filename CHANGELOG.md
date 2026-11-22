@@ -9,6 +9,32 @@ This file is generated from the JSON files in [changelog/](changelog/README.md),
 which also says how to add an entry. The app shows the same entries in its own
 language under the gear menu → What's new.
 
+## [2026.11.22+1316] - 2026-11-22 13:16
+
+### Added
+
+- **Agent brings scores from the library into the project:** ask the agent for a piece from the Library – your own scores included, in the browser too – and it finds it, reads its voices and bars and takes the voices you want over as tracks, in one step that Undo reverts. Several movements can go one after another onto the same tracks.
+  - Technical: New agent tools search_library, read_library_score and import_library_score (klang-app library.rs/agent.rs, same in both shells); analyze_score takes a doc; MusicXML bars are counted as printed (Score::bars).
+- **Sound for several tracks at once:** pick several tracks in the track list (Ctrl+click, Shift+click) and the Sound window changes all of them that have the same instrument: fields, controls, curves and the instrument itself. Each keeps what you didn’t touch, and it is one undo step. The controls in the track headers stay each track’s own.
+  - Technical: sound_field takes also: [ids] (klang-app state.rs sound_field_on); the window applies the difference with followChange (sound.ts); a batch of mergeable commands merges by its joined keys (klang-core command.rs).
+- **Track groups:** pick tracks with Ctrl+click or Shift+click and put them into a group with “+ Group” or Ctrl+G. The group’s row has a level that adds to each of its tracks, plus mute and solo for all of them, and folds its tracks away. Drag a track by its icon into or out of a group. Tracks and groups have a context menu: rename, color, group, fold, delete. The agent can group tracks too.<br>
+  <img src="changelog/images/track-groups.webp" alt="Track groups" width="640">
+  - Technical: Project.groups and Track.group in the core (klang-core model.rs, commands addGroup/setGroup/removeGroup, setTrack group); audibility and level through Project::is_audible / track_gain_db everywhere (mix, export, stems, previews, chat context); diff and variant merge carry groups. UI: layoutRows (pianoroll.ts) for track list and timeline, groups.ts.
+- **Track headers: pan and pitch can be hidden, the width adjusted:** the new button above the tracks (and the context menu of the track list) shows or hides pan and pitch in every track header. Drag the edge between the headers and the timeline to make the headers wider or narrower; a double-click brings back the default. The buttons above the tracks now sit on the left.
+  - Technical: trackview.ts (localStorage), --heads-w on .workspace; the head buttons drop their labels when they don't fit (kw-tracks.tight).
+
+### Changed
+
+- **Shaping a sound while the song plays:** while the song plays, a change in the Sound window no longer plays the test sound on top – you hear the playing track change. Stopped, the short test sound plays as before.
+  - Technical: sound.ts: autoPreview does nothing while the transport plays or records; the arrangement already follows the instrument (live voices, crossfade).
+
+### Fixed
+
+- **Right tempo for scores with a metronome mark:** a score marked, say, dotted half = 66 no longer plays three times too slowly in the Library: “Original” now means 198 quarters per minute, as written.
+  - Technical: MusicXML: the first <sound tempo> wins over a metronome mark; a mark alone is converted by beat unit and dots (klang-music score.rs).
+- **The change history stays with the project:** after switching a track to the piano roll or compact view, changing a row height or saving a project for the first time, its history, checkpoints and variants were dropped when it was opened again or the page reloaded. Now they come back. A checkpoint, a variant or an undo alone also counts as an unsaved change, so the autosave keeps it too.
+  - Technical: Session::restore compares the replayed project without presentation (views, row heights, folded groups, name); the app tracks a saved history fingerprint (Session::history_mark) for "unsaved" and the recovery copy (klang-core session.rs, klang-app state.rs/autosave.rs).
+
 ## [2026.11.21+2051] - 2026-11-21 20:51
 
 ### Fixed
@@ -145,6 +171,7 @@ language under the gear menu → What's new.
 - **English sources:** source code comments, agent texts and test titles are in English.
 - **README:** screenshots of the overview, piano roll, bass sound fields and circle of fifths.
 
+[2026.11.22+1316]: https://github.com/detlev-funke/klangwelt/releases/tag/v2026.11.22%2B1316
 [2026.11.21+2051]: https://github.com/detlev-funke/klangwelt/releases/tag/v2026.11.21%2B2051
 [2026.11.21+1959]: https://github.com/detlev-funke/klangwelt/releases/tag/v2026.11.21%2B1959
 [2026.11.21+1746]: https://github.com/detlev-funke/klangwelt/releases/tag/v2026.11.21%2B1746

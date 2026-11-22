@@ -1,0 +1,168 @@
+{
+  "version": "2026.11.22+1316",
+  "date": "2026-11-22T13:16+01:00",
+  "entries": [
+    {
+      "id": "agent-library-scores",
+      "type": "added",
+      "title": {
+        "en": "Agent brings scores from the library into the project",
+        "de": "Agent holt Partituren aus der Bibliothek ins Projekt",
+        "fr": "L'agent apporte des partitions de la bibliothèque dans le projet",
+        "it": "L'agente porta partiture dalla libreria nel progetto",
+        "es": "El agente trae partituras de la biblioteca al proyecto",
+        "nl": "Agent haalt partituren uit de bibliotheek in het project",
+        "pl": "Agent przenosi partytury z biblioteki do projektu"
+      },
+      "text": {
+        "en": "ask the agent for a piece from the Library – your own scores included, in the browser too – and it finds it, reads its voices and bars and takes the voices you want over as tracks, in one step that Undo reverts. Several movements can go one after another onto the same tracks.",
+        "de": "Bitte den Agenten um ein Stück aus der Bibliothek – auch deine eigenen Partituren und auch im Browser –, dann findet er es, liest Stimmen und Takte und übernimmt die gewünschten Stimmen als Spuren, in einem Schritt, den Rückgängig zurücknimmt. Mehrere Sätze können nacheinander auf dieselben Spuren.",
+        "fr": "demandez à l'agent un morceau de la Bibliothèque – vos propres partitions comprises, dans le navigateur aussi – : il le trouve, lit ses voix et ses mesures et reprend les voix voulues comme pistes, en une seule étape qu'Annuler défait. Plusieurs mouvements peuvent se suivre sur les mêmes pistes.",
+        "it": "chiedi all'agente un brano della Libreria – anche le tue partiture e anche nel browser –: lo trova, ne legge voci e battute e prende le voci che vuoi come tracce, in un solo passo che Annulla revoca. Più movimenti possono susseguirsi sulle stesse tracce.",
+        "es": "pide al agente una pieza de la Biblioteca – también tus propias partituras y también en el navegador –: la encuentra, lee sus voces y compases e incorpora las voces que quieras como pistas, en un solo paso que Deshacer revierte. Varios movimientos pueden ir uno tras otro en las mismas pistas.",
+        "nl": "vraag de agent om een stuk uit de Bibliotheek – ook je eigen partituren en ook in de browser –: hij vindt het, leest stemmen en maten en neemt de stemmen die je wilt over als sporen, in één stap die Ongedaan maken terugdraait. Meerdere delen kunnen na elkaar op dezelfde sporen.",
+        "pl": "poproś agenta o utwór z Biblioteki – także o własne partytury i także w przeglądarce – a znajdzie go, odczyta głosy i takty i przeniesie wybrane głosy jako ścieżki, w jednym kroku, który cofa Cofnij. Kilka części może trafić po kolei na te same ścieżki."
+      },
+      "dev": "New agent tools search_library, read_library_score and import_library_score (klang-app library.rs/agent.rs, same in both shells); analyze_score takes a doc; MusicXML bars are counted as printed (Score::bars)."
+    },
+    {
+      "id": "sound-several-tracks",
+      "type": "added",
+      "title": {
+        "en": "Sound for several tracks at once",
+        "de": "Klang für mehrere Spuren zugleich",
+        "fr": "Le son de plusieurs pistes à la fois",
+        "it": "Il suono di più tracce insieme",
+        "es": "Sonido para varias pistas a la vez",
+        "nl": "Klank voor meerdere sporen tegelijk",
+        "pl": "Brzmienie kilku ścieżek naraz"
+      },
+      "text": {
+        "en": "pick several tracks in the track list (Ctrl+click, Shift+click) and the Sound window changes all of them that have the same instrument: fields, controls, curves and the instrument itself. Each keeps what you didn’t touch, and it is one undo step. The controls in the track headers stay each track’s own.",
+        "de": "Mehrere Spuren in der Spurliste markieren (Strg+Klick, Umschalt+Klick), und das Klangfenster ändert alle mit demselben Instrument: Felder, Regler, Kurven und das Instrument selbst. Jede behält, was du nicht angefasst hast, und es ist ein Rückgängig-Schritt. Die Regler in den Spurköpfen bleiben bei jeder Spur einzeln.",
+        "fr": "choisissez plusieurs pistes dans la liste (Ctrl+clic, Maj+clic) et la fenêtre Son modifie toutes celles qui ont le même instrument : champs, réglages, courbes et l’instrument lui-même. Chacune garde ce que vous n’avez pas touché, en une seule étape d’annulation. Les réglages des en-têtes de piste restent propres à chaque piste.",
+        "it": "scegli più tracce nell’elenco (Ctrl+clic, Maiusc+clic) e la finestra Suono cambia tutte quelle con lo stesso strumento: campi, controlli, curve e lo strumento stesso. Ognuna tiene ciò che non hai toccato, ed è un solo passo da annullare. I controlli nelle intestazioni restano propri di ogni traccia.",
+        "es": "elige varias pistas en la lista (Ctrl+clic, Mayús+clic) y la ventana Sonido cambia todas las que tienen el mismo instrumento: campos, controles, curvas y el instrumento mismo. Cada una conserva lo que no tocaste, en un solo paso de deshacer. Los controles de las cabeceras siguen siendo de cada pista.",
+        "nl": "kies meerdere sporen in de lijst (Ctrl+klik, Shift+klik) en het venster Klank wijzigt alle sporen met hetzelfde instrument: velden, regelaars, curves en het instrument zelf. Elk spoor houdt wat je niet hebt aangeraakt, en het is één stap ongedaan maken. De regelaars in de spoorkoppen blijven per spoor.",
+        "pl": "wybierz kilka ścieżek na liście (Ctrl+klik, Shift+klik), a okno Brzmienie zmieni wszystkie z tym samym instrumentem: pola, suwaki, krzywe i sam instrument. Każda zachowuje to, czego nie ruszałeś, w jednym kroku cofania. Suwaki w nagłówkach ścieżek pozostają osobne dla każdej ścieżki."
+      },
+      "dev": "sound_field takes also: [ids] (klang-app state.rs sound_field_on); the window applies the difference with followChange (sound.ts); a batch of mergeable commands merges by its joined keys (klang-core command.rs)."
+    },
+    {
+      "id": "track-groups",
+      "type": "added",
+      "title": {
+        "en": "Track groups",
+        "de": "Spurgruppen",
+        "fr": "Groupes de pistes",
+        "it": "Gruppi di tracce",
+        "es": "Grupos de pistas",
+        "nl": "Spoorgroepen",
+        "pl": "Grupy ścieżek"
+      },
+      "text": {
+        "en": "pick tracks with Ctrl+click or Shift+click and put them into a group with “+ Group” or Ctrl+G. The group’s row has a level that adds to each of its tracks, plus mute and solo for all of them, and folds its tracks away. Drag a track by its icon into or out of a group. Tracks and groups have a context menu: rename, color, group, fold, delete. The agent can group tracks too.",
+        "de": "Spuren mit Strg+Klick oder Umschalt+Klick markieren und mit „+ Gruppe“ oder Strg+G in eine Gruppe legen. Die Gruppenzeile hat einen Pegel, der zu jeder ihrer Spuren dazukommt, dazu Stumm und Solo für alle, und klappt ihre Spuren weg. Eine Spur am Symbol in eine Gruppe hinein- oder herausziehen. Spuren und Gruppen haben ein Kontextmenü: umbenennen, Farbe, gruppieren, zuklappen, löschen. Auch der Agent kann Spuren gruppieren.",
+        "fr": "choisissez des pistes avec Ctrl+clic ou Maj+clic et mettez-les dans un groupe avec « + Groupe » ou Ctrl+G. La ligne du groupe a un niveau qui s’ajoute à chacune de ses pistes, ainsi que muet et solo pour toutes, et replie ses pistes. Glissez une piste par son icône dans un groupe ou hors d’un groupe. Pistes et groupes ont un menu contextuel : renommer, couleur, grouper, replier, supprimer. L’agent peut aussi grouper des pistes.",
+        "it": "scegli le tracce con Ctrl+clic o Maiusc+clic e mettile in un gruppo con «+ Gruppo» o Ctrl+G. La riga del gruppo ha un livello che si aggiunge a ciascuna sua traccia, più mute e solo per tutte, e comprime le sue tracce. Trascina una traccia per la sua icona dentro o fuori da un gruppo. Tracce e gruppi hanno un menu contestuale: rinomina, colore, raggruppa, comprimi, elimina. Anche l’agente può raggruppare tracce.",
+        "es": "elige pistas con Ctrl+clic o Mayús+clic y ponlas en un grupo con «+ Grupo» o Ctrl+G. La fila del grupo tiene un nivel que se suma a cada una de sus pistas, además de silencio y solo para todas, y pliega sus pistas. Arrastra una pista por su icono dentro o fuera de un grupo. Pistas y grupos tienen un menú contextual: renombrar, color, agrupar, plegar, eliminar. El agente también puede agrupar pistas.",
+        "nl": "kies sporen met Ctrl+klik of Shift+klik en zet ze in een groep met ‘+ Groep’ of Ctrl+G. De groepsrij heeft een niveau dat bij elk van zijn sporen komt, plus dempen en solo voor allemaal, en klapt zijn sporen in. Sleep een spoor aan zijn pictogram in of uit een groep. Sporen en groepen hebben een contextmenu: hernoemen, kleur, groeperen, inklappen, verwijderen. Ook de agent kan sporen groeperen.",
+        "pl": "wybierz ścieżki przez Ctrl+klik lub Shift+klik i umieść je w grupie przyciskiem „+ Grupa” lub Ctrl+G. Wiersz grupy ma poziom dodawany do każdej z jej ścieżek, a także wyciszenie i solo dla wszystkich, i zwija jej ścieżki. Przeciągnij ścieżkę za ikonę do grupy lub z grupy. Ścieżki i grupy mają menu kontekstowe: zmiana nazwy, kolor, grupowanie, zwijanie, usuwanie. Agent też potrafi grupować ścieżki."
+      },
+      "image": "track-groups.webp",
+      "dev": "Project.groups and Track.group in the core (klang-core model.rs, commands addGroup/setGroup/removeGroup, setTrack group); audibility and level through Project::is_audible / track_gain_db everywhere (mix, export, stems, previews, chat context); diff and variant merge carry groups. UI: layoutRows (pianoroll.ts) for track list and timeline, groups.ts."
+    },
+    {
+      "id": "track-headers-view",
+      "type": "added",
+      "title": {
+        "en": "Track headers: pan and pitch can be hidden, the width adjusted",
+        "de": "Spurköpfe: Pan und Tonhöhe ausblendbar, Breite einstellbar",
+        "fr": "En-têtes de piste : pan et hauteur masquables, largeur réglable",
+        "it": "Intestazioni delle tracce: pan e intonazione nascondibili, larghezza regolabile",
+        "es": "Cabeceras de pista: panorama y tono ocultables, ancho ajustable",
+        "nl": "Spoorkoppen: pan en toonhoogte te verbergen, breedte instelbaar",
+        "pl": "Nagłówki ścieżek: panorama i wysokość do ukrycia, regulowana szerokość"
+      },
+      "text": {
+        "en": "the new button above the tracks (and the context menu of the track list) shows or hides pan and pitch in every track header. Drag the edge between the headers and the timeline to make the headers wider or narrower; a double-click brings back the default. The buttons above the tracks now sit on the left.",
+        "de": "Der neue Knopf über den Spuren (und das Kontextmenü der Spurliste) blendet Pan und Tonhöhe in allen Spurköpfen ein oder aus. Die Kante zwischen Spurköpfen und Zeitleiste ziehen, um die Spurköpfe breiter oder schmaler zu machen; ein Doppelklick stellt die Standardbreite wieder her. Die Knöpfe über den Spuren stehen jetzt links.",
+        "fr": "le nouveau bouton au-dessus des pistes (et le menu contextuel de la liste des pistes) affiche ou masque le pan et la hauteur dans chaque en-tête de piste. Glissez le bord entre les en-têtes et la timeline pour les élargir ou les rétrécir ; un double-clic rétablit la largeur par défaut. Les boutons au-dessus des pistes sont désormais à gauche.",
+        "it": "il nuovo pulsante sopra le tracce (e il menu contestuale dell’elenco tracce) mostra o nasconde pan e intonazione in ogni intestazione. Trascina il bordo tra le intestazioni e la timeline per allargarle o restringerle; un doppio clic ripristina la larghezza predefinita. I pulsanti sopra le tracce ora stanno a sinistra.",
+        "es": "el nuevo botón sobre las pistas (y el menú contextual de la lista de pistas) muestra u oculta el panorama y el tono en cada cabecera. Arrastra el borde entre las cabeceras y la línea de tiempo para ensancharlas o estrecharlas; un doble clic recupera el ancho predeterminado. Los botones sobre las pistas ahora están a la izquierda.",
+        "nl": "de nieuwe knop boven de sporen (en het contextmenu van de sporenlijst) toont of verbergt pan en toonhoogte in elke spoorkop. Sleep de rand tussen de spoorkoppen en de tijdlijn om ze breder of smaller te maken; dubbelklikken zet de standaardbreedte terug. De knoppen boven de sporen staan nu links.",
+        "pl": "nowy przycisk nad ścieżkami (i menu kontekstowe listy ścieżek) pokazuje lub ukrywa panoramę i wysokość w każdym nagłówku ścieżki. Przeciągnij krawędź między nagłówkami a osią czasu, aby je poszerzyć lub zwęzić; dwuklik przywraca domyślną szerokość. Przyciski nad ścieżkami są teraz po lewej."
+      },
+      "dev": "trackview.ts (localStorage), --heads-w on .workspace; the head buttons drop their labels when they don't fit (kw-tracks.tight)."
+    },
+    {
+      "id": "sound-while-playing",
+      "type": "changed",
+      "title": {
+        "en": "Shaping a sound while the song plays",
+        "de": "Klang formen, während der Song läuft",
+        "fr": "Façonner un son pendant la lecture",
+        "it": "Modellare un suono mentre il brano suona",
+        "es": "Dar forma al sonido mientras suena la canción",
+        "nl": "Klank vormen terwijl het nummer speelt",
+        "pl": "Kształtowanie brzmienia podczas odtwarzania"
+      },
+      "text": {
+        "en": "while the song plays, a change in the Sound window no longer plays the test sound on top – you hear the playing track change. Stopped, the short test sound plays as before.",
+        "de": "Während der Song läuft, spielt eine Änderung im Klangfenster keinen Test-Sound mehr darüber – du hörst, wie sich die laufende Spur ändert. Im Stopp spielt wie bisher der kurze Test-Sound.",
+        "fr": "pendant la lecture, une modification dans la fenêtre Son ne joue plus le son de test par-dessus – on entend la piste en cours changer. À l’arrêt, le court son de test joue comme avant.",
+        "it": "mentre il brano suona, una modifica nella finestra Suono non riproduce più il suono di prova sopra – senti cambiare la traccia in riproduzione. Da fermo, il breve suono di prova suona come prima.",
+        "es": "mientras suena la canción, un cambio en la ventana Sonido ya no reproduce el sonido de prueba encima: oyes cómo cambia la pista que suena. Detenido, el breve sonido de prueba suena como antes.",
+        "nl": "terwijl het nummer speelt, speelt een wijziging in het venster Klank geen testgeluid meer eroverheen – je hoort het spelende spoor veranderen. Gestopt speelt het korte testgeluid zoals voorheen.",
+        "pl": "podczas odtwarzania zmiana w oknie Brzmienie nie odtwarza już dźwięku testowego na wierzchu – słychać, jak zmienia się grająca ścieżka. Po zatrzymaniu krótki dźwięk testowy gra jak dotąd."
+      },
+      "dev": "sound.ts: autoPreview does nothing while the transport plays or records; the arrangement already follows the instrument (live voices, crossfade)."
+    },
+    {
+      "id": "library-score-tempo",
+      "type": "fixed",
+      "title": {
+        "en": "Right tempo for scores with a metronome mark",
+        "de": "Richtiges Tempo bei Partituren mit Metronomangabe",
+        "fr": "Bon tempo pour les partitions avec indication métronomique",
+        "it": "Tempo giusto per le partiture con indicazione metronomica",
+        "es": "Tempo correcto en partituras con indicación metronómica",
+        "nl": "Juist tempo bij partituren met metronoomaanduiding",
+        "pl": "Właściwe tempo w partyturach z oznaczeniem metronomu"
+      },
+      "text": {
+        "en": "a score marked, say, dotted half = 66 no longer plays three times too slowly in the Library: “Original” now means 198 quarters per minute, as written.",
+        "de": "Eine Partitur mit z. B. punktierter Halber = 66 spielt in der Bibliothek nicht mehr dreimal zu langsam: „Original“ heißt jetzt 198 Viertel pro Minute, wie notiert.",
+        "fr": "une partition marquée par exemple blanche pointée = 66 ne joue plus trois fois trop lentement dans la Bibliothèque : « Original » signifie désormais 198 noires par minute, comme écrit.",
+        "it": "una partitura con, ad esempio, minima puntata = 66 non suona più tre volte troppo lenta nella Libreria: «Originale» ora significa 198 semiminime al minuto, come scritto.",
+        "es": "una partitura marcada, por ejemplo, con blanca con puntillo = 66 ya no suena tres veces demasiado lenta en la Biblioteca: «Original» significa ahora 198 negras por minuto, como está escrito.",
+        "nl": "een partituur met bijvoorbeeld gepunteerde halve = 66 speelt in de Bibliotheek niet meer drie keer te langzaam: ‘Origineel’ betekent nu 198 kwartnoten per minuut, zoals genoteerd.",
+        "pl": "partytura oznaczona np. półnuta z kropką = 66 nie gra już w Bibliotece trzy razy za wolno: „Oryginał” oznacza teraz 198 ćwierćnut na minutę, tak jak zapisano."
+      },
+      "dev": "MusicXML: the first <sound tempo> wins over a metronome mark; a mark alone is converted by beat unit and dots (klang-music score.rs)."
+    },
+    {
+      "id": "history-kept-on-reload",
+      "type": "fixed",
+      "title": {
+        "en": "The change history stays with the project",
+        "de": "Die Änderungshistorie bleibt beim Projekt",
+        "fr": "L’historique des modifications reste avec le projet",
+        "it": "La cronologia delle modifiche resta con il progetto",
+        "es": "El historial de cambios se queda con el proyecto",
+        "nl": "De wijzigingsgeschiedenis blijft bij het project",
+        "pl": "Historia zmian zostaje przy projekcie"
+      },
+      "text": {
+        "en": "after switching a track to the piano roll or compact view, changing a row height or saving a project for the first time, its history, checkpoints and variants were dropped when it was opened again or the page reloaded. Now they come back. A checkpoint, a variant or an undo alone also counts as an unsaved change, so the autosave keeps it too.",
+        "de": "Nachdem eine Spur in die Pianorolle oder die kompakte Ansicht gewechselt, eine Zeilenhöhe geändert oder ein Projekt zum ersten Mal gespeichert wurde, gingen beim erneuten Öffnen oder Neuladen der Seite Historie, Checkpoints und Varianten verloren. Jetzt kommen sie wieder. Auch ein Checkpoint, eine Variante oder ein Rückgängig allein zählt als ungespeicherte Änderung, sodass das automatische Speichern sie ebenfalls sichert.",
+        "fr": "après avoir passé une piste en piano roll ou en vue compacte, changé une hauteur de ligne ou enregistré un projet pour la première fois, son historique, ses points de contrôle et ses variantes disparaissaient à la réouverture ou au rechargement de la page. Désormais ils reviennent. Un point de contrôle, une variante ou une annulation seuls comptent aussi comme modification non enregistrée, l’enregistrement automatique les garde donc aussi.",
+        "it": "dopo aver passato una traccia al piano roll o alla vista compatta, cambiato l’altezza di una riga o salvato un progetto per la prima volta, la sua cronologia, i checkpoint e le varianti andavano persi riaprendolo o ricaricando la pagina. Ora tornano. Anche un checkpoint, una variante o un annullamento da soli contano come modifica non salvata, quindi il salvataggio automatico li conserva.",
+        "es": "después de cambiar una pista al piano roll o a la vista compacta, cambiar la altura de una fila o guardar un proyecto por primera vez, su historial, puntos de control y variantes se perdían al abrirlo de nuevo o recargar la página. Ahora vuelven. Un punto de control, una variante o un deshacer por sí solos también cuentan como cambio sin guardar, así que el guardado automático también los conserva.",
+        "nl": "nadat een spoor naar de pianorol of de compacte weergave was gezet, een rijhoogte was gewijzigd of een project voor het eerst was opgeslagen, verdwenen bij opnieuw openen of herladen van de pagina de geschiedenis, checkpoints en varianten. Nu komen ze terug. Ook een checkpoint, een variant of ongedaan maken op zich telt als niet-opgeslagen wijziging, zodat automatisch opslaan ze ook bewaart.",
+        "pl": "po przełączeniu ścieżki na piano roll lub widok kompaktowy, zmianie wysokości wiersza albo pierwszym zapisaniu projektu jego historia, punkty kontrolne i warianty znikały przy ponownym otwarciu lub przeładowaniu strony. Teraz wracają. Sam punkt kontrolny, wariant albo cofnięcie też liczy się jako niezapisana zmiana, więc autozapis również je zachowuje."
+      },
+      "dev": "Session::restore compares the replayed project without presentation (views, row heights, folded groups, name); the app tracks a saved history fingerprint (Session::history_mark) for \"unsaved\" and the recovery copy (klang-core session.rs, klang-app state.rs/autosave.rs)."
+    }
+  ]
+}

@@ -6,7 +6,7 @@
 import { backend } from "../bridge.js";
 import { fitCanvas, h, icon, noteName, setRange } from "../dom.js";
 import { language, plural, t } from "../i18n.js";
-import { act, errorText, findTrack, instrumentSpecs, notify, project, run, savedSounds, showPanel, snapshot, specFor } from "../store.js";
+import { act, errorText, findTrack, instrumentSpecs, notify, project, run, savedSounds, showPanel, snapshot, specFor, status } from "../store.js";
 import { KEYS_MODE, refitPitch } from "../pianoroll.js";
 import { picked, pickedTracks } from "../groups.js";
 import { effect } from "../signals.js";
@@ -536,9 +536,12 @@ export function soundPanel(trackId: number): SoundPanel {
   };
   const setParams = (params: Record<string, number>, preset: string, merge: boolean) => setInstrument({ ...base(), preset, params: { ...base().params, ...params } }, merge);
   const preview = (pattern: PreviewPattern) => backend.previewTrack(trackId, pattern).catch((e) => notify(errorText(e), "error"));
-  // Auditioning after a change: off · single note · pattern (remembered)
+  // Auditioning after a change: off · single note · pattern (remembered). While the song
+  // plays (or records) the track itself is heard with the new sound – no test sound on top.
   let playMode: PlayMode = prefs.anspielen;
   const autoPreview = (s: InstrumentSpec = spec) => {
+    const st = status.peek();
+    if (st.playing || st.recording) return;
     const p = playPattern(s, playMode);
     if (p) void preview(p);
   };

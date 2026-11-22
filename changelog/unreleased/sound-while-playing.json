@@ -1,0 +1,22 @@
+{
+  "type": "changed",
+  "title": {
+    "en": "Shaping a sound while the song plays",
+    "de": "Klang formen, während der Song läuft",
+    "fr": "Façonner un son pendant la lecture",
+    "it": "Modellare un suono mentre il brano suona",
+    "es": "Dar forma al sonido mientras suena la canción",
+    "nl": "Klank vormen terwijl het nummer speelt",
+    "pl": "Kształtowanie brzmienia podczas odtwarzania"
+  },
+  "text": {
+    "en": "while the song plays, a change in the Sound window no longer plays the test sound on top – you hear the playing track change. Stopped, the short test sound plays as before.",
+    "de": "Während der Song läuft, spielt eine Änderung im Klangfenster keinen Test-Sound mehr darüber – du hörst, wie sich die laufende Spur ändert. Im Stopp spielt wie bisher der kurze Test-Sound.",
+    "fr": "pendant la lecture, une modification dans la fenêtre Son ne joue plus le son de test par-dessus – on entend la piste en cours changer. À l’arrêt, le court son de test joue comme avant.",
+    "it": "mentre il brano suona, una modifica nella finestra Suono non riproduce più il suono di prova sopra – senti cambiare la traccia in riproduzione. Da fermo, il breve suono di prova suona come prima.",
+    "es": "mientras suena la canción, un cambio en la ventana Sonido ya no reproduce el sonido de prueba encima: oyes cómo cambia la pista que suena. Detenido, el breve sonido de prueba suena como antes.",
+    "nl": "terwijl het nummer speelt, speelt een wijziging in het venster Klank geen testgeluid meer eroverheen – je hoort het spelende spoor veranderen. Gestopt speelt het korte testgeluid zoals voorheen.",
+    "pl": "podczas odtwarzania zmiana w oknie Brzmienie nie odtwarza już dźwięku testowego na wierzchu – słychać, jak zmienia się grająca ścieżka. Po zatrzymaniu krótki dźwięk testowy gra jak dotąd."
+  },
+  "dev": "sound.ts: autoPreview does nothing while the transport plays or records; the arrangement already follows the instrument (live voices, crossfade)."
+}

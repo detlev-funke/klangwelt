@@ -56,6 +56,17 @@ export function historyPanel(): { el: HTMLElement; update(): void } {
 
   const fail = (e: unknown) => notify(errorText(e), "error");
   const goto = (node: number) => void act(backend.historyGoto(node));
+  // checkpoints and names are saved with the project: such a change is unsaved too –
+  // the dot (and the browser's "Leave page?") learn it from the core
+  const refreshDirty = () =>
+    void backend.getState().then((s) => {
+      const cur = snapshot.peek();
+      if (cur && s.dirty !== cur.dirty) snapshot.value = { ...cur, dirty: s.dirty };
+    }, () => {});
+  const adoptSaved = (v: HistoryView) => {
+    adopt(v);
+    refreshDirty();
+  };
   const adopt = (v: HistoryView) => {
     view = v;
     render();
@@ -67,7 +78,7 @@ export function historyPanel(): { el: HTMLElement; update(): void } {
   const addCheckpoint = async () => {
     try {
       const v = await backend.historyCheckpoint(null);
-      adopt(v);
+      adoptSaved(v);
       const cp = v.checkpoints[v.checkpoints.length - 1];
       if (cp) notify(t("Checkpoint \"{name}\" set – click its flag to rename it", { name: cp.name }));
     } catch (e) {
@@ -94,7 +105,7 @@ export function historyPanel(): { el: HTMLElement; update(): void } {
     const { choice, name } = await askName(t("Variant \"{name}\"", { name: v.name }), v.name, v.name, actions,
       plural(v.steps, "{n} own step since it branched off", "{n} own steps since it branched off"));
     if (choice === "rename" && name && name !== v.name) {
-      backend.historyVariantRename(v.id, name).then(adopt, fail);
+      backend.historyVariantRename(v.id, name).then(adoptSaved, fail);
     } else if (choice === "delete") {
       const sure = await modal(t("Delete variant \"{name}\"?", { name: v.name }), [
         h("div", { class: "modal-hint" }, plural(v.steps, "Its {n} own step is lost (can't be undone).", "Its {n} own steps are lost (can't be undone).")),
@@ -110,9 +121,9 @@ export function historyPanel(): { el: HTMLElement; update(): void } {
       { label: t("Remove"), value: "delete", kind: "danger" },
       { label: t("Cancel"), value: "cancel", kind: "ghost" },
     ], t("Removing the checkpoint keeps its steps."));
-    if (choice === "rename" && name && name !== current) backend.historyCheckpointRename(id, name).then(adopt, fail);
+    if (choice === "rename" && name && name !== current) backend.historyCheckpointRename(id, name).then(adoptSaved, fail);
     else if (choice === "goto") goto(node);
-    else if (choice === "delete") backend.historyCheckpointDelete(id).then(adopt, fail);
+    else if (choice === "delete") backend.historyCheckpointDelete(id).then(adoptSaved, fail);
   };
 
   const clearHistory = async () => {

@@ -182,6 +182,50 @@ test("the history is saved in the project file and comes back after a reload", a
   assert.deepEqual(app.errors, []);
 });
 
+test("the history survives a reload after view changes, and a checkpoint alone is saved too", async () => {
+  await fresh();
+  await someSteps();
+  const lead = await app.eval(() => T.st.snapshot.peek().project.tracks[0].id);
+  // no undo steps: compact view, a row height – the history used to be refused after these
+  await app.eval(async (id) => {
+    await T.st.run({ type: "setTrack", trackId: id, patch: { view: "compact" } });
+    await T.st.run({ type: "setTrack", trackId: id, patch: { compactHeight: 110 } });
+  }, lead);
+  await app.clickOn(".hist-checkpoint");
+  // without a file: the recovery copy, as the autosave writes it – then reloaded like a crash
+  await app.eval(async () => {
+    await (await import("./autosave.js")).autosaveNow();
+    await T.web.sync();
+  });
+  const before = await rows();
+  await app.reload();
+  await app.eval(() => T.st.showPanel("historie"));
+  await app.waitFor(() => T.$$(".hist-row").length === 4, { what: "history after the reload" });
+  assert.deepEqual((await rows()).map((r) => r.cells), before.map((r) => r.cells));
+  assert.equal(await app.eval(() => T.$(".hist-row.current .hist-flag")?.textContent.trim()), "Checkpoint 1");
+  assert.equal(await app.eval((id) => T.st.snapshot.peek().project.tracks.find((t) => t.id === id).compactHeight, lead), 110, "the view came along");
+
+  // saved under a name, then only a checkpoint: that is unsaved, and the autosave keeps it
+  await app.eval(async () => {
+    await T.st.act(T.backend.projectSave("Historie Checkpoint"));
+    await T.backend.historyCheckpoint("Nach dem Speichern");
+  });
+  assert.equal(await app.eval(async () => (await T.backend.getState()).dirty), true, "a checkpoint is an unsaved change");
+  await app.eval(async () => {
+    await (await import("./autosave.js")).autosaveNow();
+    await T.web.sync();
+  });
+  assert.equal(await app.eval(() => T.st.snapshot.peek().dirty), false, "saved into the file");
+  await app.reload();
+  await app.eval(async () => {
+    await T.st.act(T.backend.projectOpen("Historie Checkpoint"));
+    T.st.showPanel("historie");
+  });
+  await app.waitFor(() => T.$$(".hist-row .hist-flag").length === 2, { what: "both checkpoints after the reload" });
+  assert.deepEqual(await app.eval(() => T.$$(".hist-row .hist-flag").map((f) => f.textContent.trim())), ["Checkpoint 1", "Nach dem Speichern"]);
+  assert.deepEqual(app.errors, []);
+});
+
 // ---------------------------------------------------------------- Combining variants
 
 /** Lead with one note per bar (8 bars) and a checkpoint; the main version

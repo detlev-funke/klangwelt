@@ -440,6 +440,23 @@ impl Session {
 
     // ------------------------------------------------------------ File
 
+    /// Fingerprint of the history as it is saved: its steps, the current one, checkpoints
+    /// and variants. It changes with every step, undo/redo, checkpoint and variant – also
+    /// when the project itself ends up as it was (then it still needs saving).
+    pub fn history_mark(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let h = &self.history;
+        let mut s = std::collections::hash_map::DefaultHasher::new();
+        (h.root, h.current, h.next_node, h.nodes.len(), h.active).hash(&mut s);
+        for c in &h.checkpoints {
+            (c.id, &c.name, c.node).hash(&mut s);
+        }
+        for v in &h.variants {
+            (v.id, &v.name, v.head).hash(&mut s);
+        }
+        s.finish()
+    }
+
     /// The history for saving with the project.
     pub fn history_file(&self) -> Result<HistoryFile, CoreError> {
         let h = &self.history;
@@ -551,17 +568,34 @@ impl Session {
             next_mark: next_mark + 1,
             limit: crate::history::HISTORY_LIMIT,
         };
-        // to the saved state – it has to be exactly the saved project
+        // to the saved state – it has to be the saved project, apart from what changes
+        // without an undo step (views, row heights, folded groups, the name the first save gives)
         let (_, down) = history.path(root, file.current);
         walk(&mut p, &history, &[], &down).map_err(|e| bad(&e.to_string()))?;
         history.current = file.current;
         p.next_id = project.next_id;
-        if p != project {
+        if p != project && without_presentation(&p) != without_presentation(&project) {
             return Err(bad("doesn't lead to the saved project"));
         }
         history.prune();
         Ok(Session { project, history, revision: next_revision(), gesture: None })
     }
+}
+
+/// The project without what changes outside the history: how tracks are shown (view,
+/// row heights), folded groups and the project's name (the first save names it after its file).
+fn without_presentation(p: &Project) -> Project {
+    let mut p = p.clone();
+    p.name.clear();
+    for t in &mut p.tracks {
+        t.view = crate::TrackView::Compact;
+        t.compact_height = 0.0;
+        t.notes_height = 0.0;
+    }
+    for g in &mut p.groups {
+        g.collapsed = false;
+    }
+    p
 }
 
 /// The versions for combining variants (see [`Session::merge_sources`]).
@@ -1070,6 +1104,56 @@ mod history_tests {
         let mut other = s.project.clone();
         other.tempo_bpm = 99.0;
         assert!(Session::restore(other, file).is_err());
+    }
+
+    #[test]
+    fn history_survives_view_changes_and_the_name_given_when_saving() {
+        let mut s = Session::with_label(Project::default(), "Geöffnet".into());
+        s.execute(add("Lead"), false).unwrap();
+        let tid = s.project.tracks[0].id;
+        s.add_checkpoint(Some("Thema".into())).unwrap();
+        s.execute(gain(tid, -3.0), false).unwrap();
+        // no undo steps: the piano roll, a row height – and the name the first save gives
+        let view = |patch: TrackPatch| Command::SetTrack { track_id: tid, patch };
+        s.execute(view(TrackPatch { view: Some(crate::TrackView::Compact), ..Default::default() }), false).unwrap();
+        s.execute(view(TrackPatch { compact_height: Some(120.0), ..Default::default() }), false).unwrap();
+        s.project.name = "Mein Stück".into();
+        let file = s.history_file().unwrap();
+        let back = Session::restore(s.project.clone(), file).expect("the history comes back");
+        assert_eq!(back.project, s.project);
+        assert_eq!(back.history().len(), s.history().len());
+        assert_eq!(back.history().checkpoints(), s.history().checkpoints());
+        // undo still works on the restored one, the view stays
+        let mut back = back;
+        back.undo().unwrap();
+        assert_eq!(back.project.tracks[0].gain_db, 0.0);
+        assert_eq!(back.project.tracks[0].compact_height, 120.0);
+    }
+
+    #[test]
+    fn history_mark_changes_with_checkpoints_undo_and_variants_not_with_views() {
+        let mut s = Session::default();
+        s.execute(add("Lead"), false).unwrap();
+        let tid = s.project.tracks[0].id;
+        let mut seen = vec![s.history_mark()];
+        let mut fresh = |s: &Session, what: &str| {
+            let m = s.history_mark();
+            assert!(!seen.contains(&m), "{what}: a new fingerprint");
+            seen.push(m);
+        };
+        let c = s.add_checkpoint(Some("Thema".into())).unwrap();
+        fresh(&s, "checkpoint");
+        s.rename_checkpoint(c, "Thema A").unwrap();
+        fresh(&s, "renamed checkpoint");
+        s.execute(gain(tid, -3.0), false).unwrap();
+        fresh(&s, "step");
+        s.undo().unwrap();
+        fresh(&s, "undo – the project is as before, the history isn't");
+        s.create_variant(Some("B".into()), None).unwrap();
+        fresh(&s, "variant");
+        let before = s.history_mark();
+        s.execute(Command::SetTrack { track_id: tid, patch: TrackPatch { compact_height: Some(90.0), ..Default::default() } }, false).unwrap();
+        assert_eq!(s.history_mark(), before, "a view change is no step");
     }
 
     #[test]

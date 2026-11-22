@@ -48,6 +48,12 @@ struct RecoveryInfo {
     saved_hash: u64,
     /// Checksum of the copy: an unchanged project isn't written again.
     hash: u64,
+    /// History fingerprint as in that file (see `saved_hash`).
+    #[serde(default)]
+    saved_history: u64,
+    /// History fingerprint of the copy: a new checkpoint, an undo … is written too.
+    #[serde(default)]
+    history: u64,
 }
 
 /// Answer of `project_autosave`.
@@ -97,8 +103,11 @@ pub fn autosave(st: &AppState, recovery_only: bool) -> CmdResult<AutosaveResult>
 /// False: no place for it.
 fn write_recovery(st: &AppState, file: Option<&Path>) -> CmdResult<bool> {
     let Some((copy, info_path)) = recovery_paths(st)? else { return Ok(false) };
-    let hash = project_hash(&lock(&st.session)?.project);
-    let mut info = RecoveryInfo { file: file.map(|p| p.display().to_string()), saved_hash: *lock(&st.saved_hash)?, hash };
+    let (hash, history) = {
+        let s = lock(&st.session)?;
+        (project_hash(&s.project), s.history_mark())
+    };
+    let mut info = RecoveryInfo { file: file.map(|p| p.display().to_string()), saved_hash: *lock(&st.saved_hash)?, hash, saved_history: *lock(&st.saved_history)?, history };
     if vfs::exists(&copy) && read_info(&info_path).as_ref() == Some(&info) {
         return Ok(true);
     }
@@ -121,6 +130,7 @@ pub fn recover(st: &AppState) -> CmdResult<bool> {
     let file = info.file.map(PathBuf::from).filter(|f| vfs::exists(f));
     let saved = if file.is_some() { info.saved_hash } else { project_hash(&Project::default()) };
     *lock(&st.saved_hash)? = saved;
+    *lock(&st.saved_history)? = if file.is_some() { info.saved_history } else { crate::state::fresh_history_mark() };
     *lock(&st.project_file)? = file;
     Ok(true)
 }
@@ -167,6 +177,44 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn checkpoints_and_view_changes_are_saved_and_the_history_comes_back() {
+        let dir = temp("history");
+        let st = app(&dir);
+        let file = dir.join("Stück.klangwelt");
+        add_track(&st, "Lead");
+        let tid = lock(&st.session).unwrap().project.tracks[0].id;
+        // no undo step: another view – the history used to be refused when opening
+        let view: Command = serde_json::from_value(serde_json::json!({ "type": "setTrack", "trackId": tid, "patch": { "view": "compact", "compactHeight": 120 } })).unwrap();
+        st.execute(view, false).unwrap();
+        st.save_project(&file).unwrap();
+        assert!(!st.is_dirty());
+        // only a checkpoint: unsaved, and the autosave puts it into the file
+        lock(&st.session).unwrap().add_checkpoint(Some("Thema".into())).unwrap();
+        assert!(st.is_dirty(), "a checkpoint is an unsaved change");
+        assert_eq!(autosave(&st, false).unwrap().saved, Some("file"));
+        assert!(!st.is_dirty());
+        let other = app(&dir);
+        other.open_project(&file).unwrap();
+        let s = lock(&other.session).unwrap();
+        assert_eq!(s.history().checkpoints().iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["Thema"]);
+        assert!(s.undo_label().is_some(), "the steps came along");
+        assert_eq!(s.project.name, "Stück", "named after its file");
+        drop(s);
+        assert!(!other.is_dirty(), "opened: nothing unsaved");
+
+        // without a file: a checkpoint alone rewrites the recovery copy
+        other.new_project().unwrap();
+        add_track(&other, "Skizze");
+        assert_eq!(autosave(&other, false).unwrap().saved, Some("recovery"));
+        lock(&other.session).unwrap().add_checkpoint(Some("Skizze fertig".into())).unwrap();
+        autosave(&other, false).unwrap();
+        let fresh = app(&dir);
+        assert!(recover(&fresh).unwrap());
+        assert_eq!(lock(&fresh.session).unwrap().history().checkpoints().iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["Skizze fertig"]);
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

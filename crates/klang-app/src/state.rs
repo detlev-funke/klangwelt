@@ -282,6 +282,8 @@ pub struct AppState {
     pub project_file: Mutex<Option<std::path::PathBuf>>,
     /// Checksum of the project at the last save/open (for "unsaved").
     pub(crate) saved_hash: Mutex<u64>,
+    /// Fingerprint of the history at the last save/open: a checkpoint, an undo … is unsaved too.
+    pub(crate) saved_history: Mutex<u64>,
     /// Close the window despite unsaved changes (after asking).
     pub force_close: AtomicBool,
     /// Tracks last created by the song builder (creating again replaces them); applies only to the open project.
@@ -298,6 +300,11 @@ pub struct AppState {
     test_load: AtomicU32,
     /// Agent indicator: next check (Unix ms) and the state reported last.
     agent_watch: Mutex<(u64, Option<AgentKey>)>,
+}
+
+/// History fingerprint of a new, empty project (nothing to save yet).
+pub(crate) fn fresh_history_mark() -> u64 {
+    Session::with_label(Project::default(), String::new()).history_mark()
 }
 
 /// Checksum for "unsaved": the content without the internal counter for new
@@ -464,6 +471,7 @@ impl AppState {
             live_take: AtomicU32::new(0),
             project_file: Mutex::new(None),
             saved_hash: Mutex::new(project_hash(&Project::default())),
+            saved_history: Mutex::new(fresh_history_mark()),
             force_close: AtomicBool::new(false),
             song_tracks: Mutex::new(Vec::new()),
             settings_file: Mutex::new(None),
@@ -533,13 +541,14 @@ impl AppState {
         };
         let file = lock(&self.project_file)?.as_ref().map(|p| p.display().to_string());
         let saved = *lock(&self.saved_hash)?;
+        let saved_history = *lock(&self.saved_history)?;
         let looping = *lock(&self.looping)?;
         let info = self.engine.as_ref().map(|e| e.info());
         let notice = lock(&self.audio_notice)?.clone();
         let s = lock(&self.session)?;
         Ok(Snapshot {
             file,
-            dirty: project_hash(&s.project) != saved,
+            dirty: project_hash(&s.project) != saved || s.history_mark() != saved_history,
             project: s.project.clone(),
             can_undo: s.undo_label().is_some(),
             can_redo: s.redo_label().is_some(),
@@ -567,7 +576,8 @@ impl AppState {
     /// Unsaved changes?
     pub fn is_dirty(&self) -> bool {
         let saved = self.saved_hash.lock().map(|h| *h).unwrap_or(0);
-        self.session.lock().map(|s| project_hash(&s.project) != saved).unwrap_or(false)
+        let saved_history = self.saved_history.lock().map(|h| *h).unwrap_or(0);
+        self.session.lock().map(|s| project_hash(&s.project) != saved || s.history_mark() != saved_history).unwrap_or(false)
     }
 
     /// Saves the project together with the recordings it uses and its
@@ -584,6 +594,7 @@ impl AppState {
         }
         let hash = self.write_project(path)?;
         *lock(&self.saved_hash)? = hash;
+        *lock(&self.saved_history)? = lock(&self.session)?.history_mark();
         *lock(&self.project_file)? = Some(path.to_path_buf());
         Ok(())
     }
@@ -631,6 +642,7 @@ impl AppState {
                 Session::with_label(project, klang_i18n::tk!("Project opened").into())
             }
         };
+        *lock(&self.saved_history)? = session.history_mark();
         *lock(&self.session)? = session;
         *lock(&self.project_file)? = Some(path.to_path_buf());
         lock(&self.song_tracks)?.clear();
@@ -642,6 +654,7 @@ impl AppState {
         lock(&self.pool)?.replace_all(Vec::new());
         *lock(&self.session)? = Session::with_label(Project::default(), klang_i18n::tk!("New project").into());
         *lock(&self.saved_hash)? = project_hash(&Project::default());
+        *lock(&self.saved_history)? = fresh_history_mark();
         *lock(&self.project_file)? = None;
         lock(&self.song_tracks)?.clear();
         self.sync_engine()

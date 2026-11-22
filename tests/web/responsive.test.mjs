@@ -104,7 +104,7 @@ test("toolbar at desktop width: File and Windows with labels, Save as a disk wit
   assert.equal((await toolbar()).fit, 0);
 });
 
-test("track header bar: the harmony switch, + Audio and + Instrument fit inside the header column", async () => {
+test("track header bar: the harmony switch, + Audio, + Instrument, + Group and the view button fit inside the header column", async () => {
   await viewport(1600, 1000);
   const r = await app.eval(() => {
     const head = T.$(".tracks-head").getBoundingClientRect();
@@ -114,7 +114,7 @@ test("track header bar: the harmony switch, + Audio and + Instrument fit inside 
     });
   });
   assert.deepEqual(r.filter((b) => !b.inside), [], "nothing cut off");
-  assert.deepEqual(r.map((b) => b.what), ["Harmonie", "Audio", "Instrument ▾"]);
+  assert.deepEqual(r.map((b) => b.what), ["Harmonie", "Audio", "Instrument ▾", "Gruppe", "Was die Spurköpfe zeigen"]);
 });
 
 test("toolbar on a phone: Save and Export are in the File menu and work there", async () => {

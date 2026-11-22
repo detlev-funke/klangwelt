@@ -354,9 +354,10 @@ pub fn call(st: &AppState, cmd: &str, args: &Value) -> CmdResult<String> {
         }
         // Set a point, or the starting point, in a field of the sound window
         "sound_field" => {
-            let (track_id, field, x, y, preset, merge) =
-                args!(a; track_id: u64, field: String, x: Option<f32>, y: Option<f32>, preset: Option<String>, merge: Option<bool>);
-            json(st.sound_field(Id(track_id), &field, x.zip(y), preset.as_deref(), merge.unwrap_or(false))?)
+            let (track_id, field, x, y, preset, merge, also) =
+                args!(a; track_id: u64, field: String, x: Option<f32>, y: Option<f32>, preset: Option<String>, merge: Option<bool>, also: Option<Vec<u64>>);
+            let also: Vec<Id> = also.unwrap_or_default().into_iter().map(Id).collect();
+            json(st.sound_field_on(Id(track_id), &also, &field, x.zip(y), preset.as_deref(), merge.unwrap_or(false))?)
         }
         "sounds_list" => json(sound_library::list(&sound_library::file(st))?),
         "sound_save" => {

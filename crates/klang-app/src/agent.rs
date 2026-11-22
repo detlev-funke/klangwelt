@@ -118,6 +118,9 @@ For several voices at once (a choir, a piano, guitar with bass) use mode 'poly' 
 (voices 'auto', or a number) and makes one instrument track per voice.\n\
 Editing notes: read `get_project` with includeNotes, then `setClipNotes` with the complete new note list (start/length in beats relative to the clip start). \
 `setTrack` with patch {view:'notes'} shows a track as a piano roll, {view:'compact'} flat again.\n\
+Track groups (e.g. all violins): `addGroup` {group:{ref:\"$strings\", name:\"Strings\"}}, then `setTrack` {patch:{group:\"$strings\"}} for each track (group 0 = none) and `moveTrack` so they follow each other. \
+A group's `gainDb` adds to its tracks' levels, its `mute`/`solo` act on all of them (each track keeps its own); `setGroup` changes it, `collapsed` folds it (no undo step), \
+`removeGroup` ungroups – the tracks stay. get_project lists `groups` and each track's `group`.\n\
 Expression of individual notes (in `setClipNotes`): `velocity` 1–127 (pp≈32, p≈48, mp≈64, mf≈80, f≈100, ff≈120; crescendo = rising values), \
 `vibrato` 0–1 semitone depth (0.3 = vocal), `brightness` −1…+1, `bend` −12…+12 semitones slide-in (−2 = glide in from below). \
 Staccato = roughly halve the note length, legato = extend to the next note, accent = velocity +25. \
@@ -272,7 +275,11 @@ fn command_schema() -> Value {
         "pitchSemitones": { "type": "number", "minimum": -24, "maximum": 24 }, "instrument": instrument,
         "view": { "enum": ["compact", "notes"], "description": "Display: compact or note view (piano roll); no undo step" },
         "compactHeight": { "type": "number", "description": "Row height in compact view in pixels (0 = default, otherwise 40–1200); no undo step" },
-        "notesHeight": { "type": "number", "description": "Row height in note view in pixels (0 = default, otherwise 40–1200); no undo step" } } });
+        "notesHeight": { "type": "number", "description": "Row height in note view in pixels (0 = default, otherwise 40–1200); no undo step" },
+        "group": { "type": ["integer", "string"], "description": "Group of the track: its id or placeholder, 0 = no group" } } });
+    let group_patch = json!({ "type": "object", "properties": {
+        "name": { "type": "string" }, "color": { "type": "string" }, "gainDb": { "type": "number", "minimum": -60, "maximum": 12, "description": "Added to the level of every track in the group" },
+        "mute": { "type": "boolean" }, "solo": { "type": "boolean" }, "collapsed": { "type": "boolean", "description": "Folded in the track list; no undo step" } } });
     let variant = |t: &str, props: Value, req: &[&str]| {
         let mut p = props;
         p["type"] = json!({ "const": t });
@@ -297,7 +304,12 @@ fn command_schema() -> Value {
             "sourceBpm": { "type": "number", "minimum": 20, "maximum": 400 }, "warp": { "type": "boolean" } } } }), &["trackId", "clipId", "patch"]),
         variant("setClipNotes", json!({ "trackId": id, "clipId": id,
             "notes": notes.clone(),
-            "lengthBeats": { "type": "number", "exclusiveMinimum": 0, "description": "Optional new clip length" } }), &["trackId", "clipId", "notes"])
+            "lengthBeats": { "type": "number", "exclusiveMinimum": 0, "description": "Optional new clip length" } }), &["trackId", "clipId", "notes"]),
+        variant("addGroup", json!({ "group": { "type": "object", "description": "id 0 (or omitted) = new; tracks join it with setTrack {group}",
+            "properties": { "id": id, "ref": reference, "name": { "type": "string" }, "color": { "type": "string" }, "gainDb": { "type": "number", "minimum": -60, "maximum": 12 },
+                "mute": { "type": "boolean" }, "solo": { "type": "boolean" }, "collapsed": { "type": "boolean" } } } }), &["group"]),
+        variant("setGroup", json!({ "groupId": id, "patch": group_patch }), &["groupId", "patch"]),
+        variant("removeGroup", json!({ "groupId": id }), &["groupId"])
     ] })
 }
 
@@ -798,9 +810,9 @@ fn resolve_ids(v: &mut Value, refs: &BTreeMap<String, u64>) -> Result<(), String
         Value::Object(o) => {
             for (k, x) in o.iter_mut() {
                 match x {
-                    Value::String(s) if matches!(k.as_str(), "id" | "trackId" | "clipId") => {
+                    Value::String(s) if matches!(k.as_str(), "id" | "trackId" | "clipId" | "groupId" | "group") => {
                         let id = refs.get(s.as_str()).ok_or_else(|| {
-                            if s.starts_with('$') { format!("Unknown placeholder {s} – declare it first with \"ref\": \"{s}\" in an addTrack/addClip") } else { format!("{k} must be a number or a placeholder like \"$bass\"") }
+                            if s.starts_with('$') { format!("Unknown placeholder {s} – declare it first with \"ref\": \"{s}\" in an addTrack/addClip/addGroup") } else { format!("{k} must be a number or a placeholder like \"$bass\"") }
                         })?;
                         *x = json!(id);
                     }
@@ -1004,6 +1016,11 @@ impl<S: AgentShell> Agent<S> {
                     if let Some(c) = o.get_mut("clip").and_then(Value::as_object_mut) {
                         new_object(c);
                         c.entry("name").or_insert(json!("Clip"));
+                    }
+                }
+                Some("addGroup") => {
+                    if let Some(g) = o.get_mut("group").and_then(Value::as_object_mut) {
+                        new_object(g);
                     }
                 }
                 _ => {}
@@ -2729,6 +2746,32 @@ mod tests {
         assert!(e.contains("changed in the meantime"), "{e}");
         // read-only tools don't report a revision of their own
         assert!(call(&a, "list_song_templates", json!({})).get("revision").is_none());
+    }
+
+    #[test]
+    fn execute_groups_tracks_with_placeholders_and_mutes_the_group() {
+        let a = agent();
+        let r = call(&a, "execute", json!({ "commands": [
+            { "type": "addTrack", "track": { "ref": "$v1", "name": "Violin 1", "kind": "instrument" } },
+            { "type": "addTrack", "track": { "ref": "$v2", "name": "Violin 2", "kind": "instrument" } },
+            { "type": "addTrack", "track": { "ref": "$va", "name": "Viola", "kind": "instrument" } },
+            { "type": "addGroup", "group": { "ref": "$violins", "name": "Violins", "gainDb": -3 } },
+            { "type": "setTrack", "trackId": "$v1", "patch": { "group": "$violins" } },
+            { "type": "setTrack", "trackId": "$v2", "patch": { "group": "$violins" } }
+        ] }));
+        let g = r["ids"]["$violins"].as_u64().unwrap();
+        call(&a, "execute", json!({ "commands": [{ "type": "setGroup", "groupId": g, "patch": { "mute": true } }] }));
+        let project = call(&a, "get_project", json!({}));
+        assert_eq!(project["groups"][0]["name"], "Violins");
+        let s = lock(&a.st().session).unwrap();
+        let p = &s.project;
+        assert_eq!(p.audible_tracks().map(|t| t.name.as_str()).collect::<Vec<_>>(), ["Viola"]);
+        assert_eq!(p.track_gain_db(p.tracks.iter().find(|t| t.name == "Violin 1").unwrap()), -3.0);
+        drop(s);
+        // ungroup: the tracks stay
+        call(&a, "execute", json!({ "commands": [{ "type": "removeGroup", "groupId": g }] }));
+        assert_eq!(tracks(&a), 3);
+        assert!(lock(&a.st().session).unwrap().project.groups.is_empty());
     }
 
     #[test]

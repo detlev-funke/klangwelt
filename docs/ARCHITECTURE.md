@@ -47,6 +47,12 @@ command belongs in `crates/klang-app/src/commands.rs`, a new agent tool in
   and sends commands. Every command (`klang_core::Command`) is JSON, e.g.
   `{"type":"setTrack","trackId":3,"patch":{"gainDb":-6}}`. The agent gets
   exactly this interface via MCP.
+* **Track groups** (`project.groups`, `track.group`): a group's level adds to
+  its tracks', its mute and solo act on all of them. Whatever plays, exports or
+  describes the mix asks the project – `Project::is_audible`, `audible_tracks`,
+  `track_gain_db` – never `track.mute`/`solo`/`gain_db` alone. The track list
+  and the timeline lay out their rows with `layoutRows` (ui/src/pianoroll.ts):
+  a group's row before its tracks, folded groups without them.
 * **Undo/redo** comes about automatically: for every command, `apply` returns
   the inverse command. Control gestures merge into a single step (`merge`).
   The steps form a tree with checkpoints and variants – see "Change history".

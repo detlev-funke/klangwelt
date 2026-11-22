@@ -8,7 +8,7 @@
 
 use crate::flac;
 use crate::state::{AppState, CmdResult};
-use klang_core::{ClipSource, InstrumentKind, Project, Track};
+use klang_core::{ClipSource, Id, InstrumentKind, Project, Track};
 use klang_i18n::tr;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -164,8 +164,7 @@ fn default_name(project: &Project, file: Option<&Path>) -> String {
 }
 
 fn audible(project: &Project) -> impl Iterator<Item = &Track> {
-    let any_solo = project.tracks.iter().any(|t| t.solo);
-    project.tracks.iter().filter(move |t| !t.mute && (!any_solo || t.solo))
+    project.audible_tracks()
 }
 
 fn song_end_beats(project: &Project) -> f64 {
@@ -475,7 +474,10 @@ pub fn run(dir: &Path, st: &AppState, opts: &ExportOptions) -> CmdResult<ExportR
                 let mut solo = t.clone();
                 solo.mute = false;
                 solo.solo = false;
-                let single = Project { tracks: vec![solo], ..project.clone() };
+                // the group's level stays in the stem, its mute and solo don't apply alone
+                solo.gain_db = project.track_gain_db(t);
+                solo.group = Id::NEW;
+                let single = Project { tracks: vec![solo], groups: Vec::new(), ..project.clone() };
                 let arr = src.arrangement(&single, SAMPLE_RATE);
                 let (mut l, mut r) = klang_engine::render_offline(arr, SAMPLE_RATE, (start + len) as u64);
                 l.drain(..start.min(l.len()));

@@ -643,7 +643,7 @@ impl AppState {
         let (inst, gain_db, notes, len) = match (track_id, clip_id, grid) {
             (Some(tid), Some(cid), None) => {
                 let (t, _, notes, len) = drum_clip(self, tid, cid)?;
-                (t.instrument.clone(), t.gain_db, notes, len)
+                (t.instrument.clone(), self.heard_gain_db(&t), notes, len)
             }
             (tid, _, Some(grid)) => {
                 let grid = grid.checked()?;
@@ -658,7 +658,7 @@ impl AppState {
                         Some(inst)
                     }
                 };
-                (inst, track.map(|t| t.gain_db).unwrap_or(0.0), grid_notes(&grid, swing), grid.steps as f64 * STEP_BEATS)
+                (inst, track.map(|t| self.heard_gain_db(&t)).unwrap_or(0.0), grid_notes(&grid, swing), grid.steps as f64 * STEP_BEATS)
             }
             _ => return Err(tr!("Specify a grid or a clip")),
         };

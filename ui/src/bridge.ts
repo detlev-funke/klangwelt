@@ -114,7 +114,8 @@ export interface Backend {
   /** Waveform of the track's test sound (sound window). */
   soundWave(trackId: number): Promise<WaveView>;
   /** Set a point (x, y each 0…1) or start point in a field; `merge` = part of a drag. */
-  soundField(trackId: number, field: string, x: number | null, y: number | null, preset: string | null, merge: boolean): Promise<Snapshot>;
+  /** `also`: further picked tracks with the same instrument get the same point (one undo step). */
+  soundField(trackId: number, field: string, x: number | null, y: number | null, preset: string | null, merge: boolean, also?: number[]): Promise<Snapshot>;
   /** Song templates (whole pieces made of sections and roles). */
   songTemplates(): Promise<SongPlan[]>;
   /** Create a song; `replace` replaces the song tracks created last. */
@@ -315,7 +316,7 @@ function coreBackend(link: CoreLink, platform: "desktop" | "web"): Backend {
     previewNote: (trackId, midi) => call("preview_note", { trackId, midi }),
     describeSound: (trackId) => call("describe_sound", { trackId }),
     soundWave: (trackId) => call("sound_wave", { trackId }),
-    soundField: (trackId, field, x, y, preset, merge) => call("sound_field", { trackId, field, x, y, preset, merge }),
+    soundField: (trackId, field, x, y, preset, merge, also) => call("sound_field", { trackId, field, x, y, preset, merge, also: also ?? [] }),
     songTemplates: () => call("song_templates"),
     songWrite: (plan, replace) => call("song_write", { plan, replace }),
     rhythmInfo: () => call("rhythm_info"),

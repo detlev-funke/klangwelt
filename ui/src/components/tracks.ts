@@ -3,17 +3,19 @@ import { audioDrag } from "../filedrop.js";
 import { backend } from "../bridge.js";
 import { fitCanvas, h, icon, noteName, setRange } from "../dom.js";
 import {
-  EXPR_H, NOTES_TOP, RHYTHM_H, type NoteGeo, geoFor, heightDraft, highOnTop, isBlack, maxScrollY, pitchAt, pitchOfLane, pitchViews,
+  EXPR_H, NOTES_TOP, RHYTHM_H, type NoteGeo, type Row, geoFor, heightDraft, highOnTop, isBlack, layoutRows, maxScrollY, pitchAt, pitchOfLane, pitchViews,
   refitPitch, rowHeight, scrollPitch, viewFor, wheelPitchStep, zoomPitch, drumMode,
 } from "../pianoroll.js";
 import { EXPRS, type ExprKey, exprKeysFor, exprLanes, exprShown, laneKeyFor, setLaneKey, toggleExprLane } from "../expression.js";
-import { t } from "../i18n.js";
+import { plural, t } from "../i18n.js";
 import { effect } from "../signals.js";
 import { act, instrumentSpecs, run, selection, snapshot, specFor, viewport } from "../store.js";
 import { NOTE_VALUES, entryLetters, entryTrack, keyLabelsVersion, noteValue, pianoKey, setNoteValue, toggleEntry, toggleValueMod, valueLabel } from "../noteinput.js";
 import { openContextMenu } from "../ctxmenu.js";
 import { harmonyLaneOn, setHarmonyLane } from "../harmonyline.js";
-import type { InstrumentKind, Track } from "../types.js";
+import { type DropPlace, groupMenu, groupTracks, listMenu, moveTrackTo, pickTrack, picked, setGroup, trackMenu } from "../groups.js";
+import { HEADS_MAX, HEADS_MIN, headsWidth, setHeadsWidth, showPan, showPitch, toggleShowPan, toggleShowPitch } from "../trackview.js";
+import type { InstrumentKind, Track, TrackGroup } from "../types.js";
 
 /** "Harmony" button: show/hide the chord progression in the timeline. */
 function harmonyToggle(): HTMLElement {
@@ -292,7 +294,7 @@ class TrackRow {
     };
     const stepper = h(
       "div",
-      { class: "stepper", title: t("Pitch (semitones) – tempo stays the same") },
+      { class: "stepper pitch", title: t("Pitch (semitones) – tempo stays the same") },
       h("button", { title: t("One semitone down"), onclick: () => pitch(-1) }, "−"),
       this.#pitchVal,
       h("button", { title: t("One semitone up"), onclick: () => pitch(1) }, "+"),
@@ -425,7 +427,7 @@ class TrackRow {
           "div",
           { class: "track-controls" },
           h("div", { class: "knob" }, h("span", {}, t("Level"), this.#gainVal), this.#gain),
-          h("div", { class: "knob" }, h("span", {}, t("Pan"), this.#panVal), this.#pan),
+          h("div", { class: "knob pan" }, h("span", {}, t("Pan"), this.#panVal), this.#pan),
           stepper,
         ),
         h("div", { class: "track-entry" }, this.#entryBtn, this.#values.el, this.#values.compact),
@@ -436,18 +438,40 @@ class TrackRow {
       splitter,
     );
     this.el.dataset.trackId = String(id);
-    this.el.addEventListener("pointerdown", () => {
+    this.el.addEventListener("pointerdown", (e) => {
+      // right-click on a picked track keeps the pick (the menu acts on all of them),
+      // and so does a control of it (its own M, S, level … stay individual)
+      const mine = picked.peek().includes(this.id);
+      if (e.button === 2 && mine) return;
+      const control = (e.target as Element).closest("button, input, select, canvas.keys, .splitter");
+      if (!(control && mine && !e.ctrlKey && !e.metaKey && !e.shiftKey)) pickTrack(this.id, e);
+      if (e.ctrlKey || e.metaKey) return;
       const sel = selection.peek();
       if (sel?.trackId !== this.id) selection.value = { trackId: this.id, clipId: null };
     });
+    this.el.addEventListener("contextmenu", (e) => {
+      if ((e.target as Element).closest("input.text")) return; // (the name field keeps the browser's menu)
+      e.preventDefault();
+      e.stopPropagation();
+      trackMenu(e.clientX, e.clientY, this.#track, () => this.rename());
+    });
   }
 
-  update(track: Track, selected: boolean): void {
+  rename(): void {
+    this.#name.focus();
+    this.#name.select();
+  }
+
+  update(track: Track, selected: boolean, group: TrackGroup | null = null, pick = false): void {
     const kindChanged = !this.#track || this.#track.kind !== track.kind;
     this.#track = track;
     this.el.style.setProperty("--c", track.color);
     this.el.style.height = `${rowHeight(track)}px`;
     this.el.classList.toggle("selected", selected);
+    this.el.classList.toggle("picked", pick);
+    this.el.classList.toggle("in-group", !!group);
+    this.el.classList.toggle("group-muted", !!group?.mute);
+    if (group) this.el.style.setProperty("--gc", group.color);
     const notes = track.view === "notes";
     this.el.classList.toggle("notes", notes);
     // Swap the icon only on change: a redraw on press (track gets
@@ -493,7 +517,8 @@ class TrackRow {
     }
     if (kindChanged) {
       this.#kind.replaceChildren(icon(track.kind === "audio" ? "wave" : "keys"));
-      this.#kind.title = track.kind === "audio" ? t("Audio track") : t("Instrument track");
+      const kind = track.kind === "audio" ? t("Audio track") : t("Instrument track");
+      this.#kind.title = `${kind} – ${t("drag to move it, also into or out of a group")}`;
     }
     if (document.activeElement !== this.#name) this.#name.value = track.name;
     this.#mute.classList.toggle("on", track.mute);
@@ -507,8 +532,83 @@ class TrackRow {
   }
 }
 
+/** A group's row: fold, name, number of tracks, level, mute and solo for all its tracks. */
+class GroupRow {
+  readonly el: HTMLDivElement;
+  #group!: TrackGroup;
+  #fold: HTMLButtonElement;
+  #name: HTMLInputElement;
+  #count: HTMLElement;
+  #mute: HTMLButtonElement;
+  #solo: HTMLButtonElement;
+  #gain: HTMLInputElement;
+  #gainVal: HTMLElement;
+
+  constructor(readonly id: number) {
+    const set = (patch: Partial<Omit<TrackGroup, "id">>, merge = false) => void setGroup(this.#group, patch, merge);
+    this.#fold = h("button", { class: "btn ghost small icon group-fold", onclick: () => set({ collapsed: !this.#group.collapsed }) }, icon("chevron"));
+    this.#name = h("input", { class: "text", spellcheck: false, title: t("Group name – click and type to rename") });
+    this.#name.addEventListener("change", () => {
+      const v = this.#name.value.trim();
+      if (v) set({ name: v });
+      else this.#name.value = this.#group.name;
+    });
+    this.#name.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter" || e.key === "Escape") this.#name.blur();
+    });
+    this.#count = h("span", { class: "group-count" });
+    this.#mute = h("button", { class: "toggle m", title: t("Mute the group"), onclick: () => set({ mute: !this.#group.mute }) }, "M");
+    this.#solo = h("button", { class: "toggle s", title: t("Solo the group"), onclick: () => set({ solo: !this.#group.solo }) }, "S");
+    this.#gain = gestureRange(-60, 6, 0.5, (v, m) => set({ gainDb: v }, m), 0);
+    this.#gain.title = t("Group level in dB – added to the level of each of its tracks · double-click: 0 dB");
+    this.#gainVal = h("b", { class: "group-db" });
+    this.el = h(
+      "div",
+      { class: "group-row" },
+      h("div", { class: "stripe" }),
+      h("div", { class: "inner" }, this.#fold, h("span", { class: "kind" }, icon("folder")), this.#name, this.#count, this.#gain, this.#gainVal, this.#mute, this.#solo),
+    );
+    this.el.dataset.groupId = String(id);
+    this.el.addEventListener("contextmenu", (e) => {
+      if ((e.target as Element).closest("input.text")) return;
+      e.preventDefault();
+      e.stopPropagation();
+      groupMenu(e.clientX, e.clientY, this.#group, () => this.rename());
+    });
+    // double-click beside the controls: fold or unfold
+    this.el.addEventListener("dblclick", (e) => {
+      if ((e.target as Element).closest("input, button")) return;
+      set({ collapsed: !this.#group.collapsed });
+    });
+  }
+
+  rename(): void {
+    this.#name.focus();
+    this.#name.select();
+  }
+
+  update(g: TrackGroup, count: number, height: number): void {
+    this.#group = g;
+    this.el.style.setProperty("--c", g.color);
+    this.el.style.height = `${height}px`;
+    this.el.classList.toggle("collapsed", g.collapsed);
+    this.el.classList.toggle("muted", g.mute);
+    this.#fold.title = g.collapsed ? t("Unfold the group") : t("Fold the group");
+    this.#fold.setAttribute("aria-expanded", String(!g.collapsed));
+    if (document.activeElement !== this.#name) this.#name.value = g.name;
+    this.#count.textContent = String(count);
+    this.#count.title = plural(count, "{n} track", "{n} tracks");
+    this.#mute.classList.toggle("on", g.mute);
+    this.#solo.classList.toggle("on", g.solo);
+    setRange(this.#gain, g.gainDb);
+    this.#gainVal.textContent = `${g.gainDb > 0 ? "+" : ""}${g.gainDb.toFixed(1)} dB`;
+  }
+}
+
 class KwTracks extends HTMLElement {
   #rows = new Map<number, TrackRow>();
+  #groups = new Map<number, GroupRow>();
   #body = h("div", { class: "tracks-body" });
   #menu!: HTMLDivElement;
 
@@ -518,6 +618,14 @@ class KwTracks extends HTMLElement {
     const unfold = h("button", { class: "btn small icon heads-toggle", onclick: () => this.#unfold(!this.classList.contains("open")) }, icon("chevron"));
     this.#unfoldBtn = unfold;
     this.#unfold(false);
+    // "+ label"; headers too narrow for the labels: an icon of its own instead (class "tight")
+    const plusLabel = (alt: string, label: string) => {
+      const plus = icon("plus");
+      plus.classList.add("ic-plus");
+      const other = icon(alt);
+      other.classList.add("ic-alt");
+      return [plus, other, h("span", { class: "lbl" }, label)];
+    };
     const head = h(
       "div",
       { class: "tracks-head" },
@@ -527,7 +635,7 @@ class KwTracks extends HTMLElement {
         "div",
         { class: "group" },
         harmonyToggle(),
-        h("button", { class: "btn small", "data-help": "neue-audiospur", title: t("Add audio track"), onclick: () => addTrack("audio") }, icon("plus"), t("Audio")),
+        h("button", { class: "btn small", "data-help": "neue-audiospur", title: t("Add audio track"), onclick: () => addTrack("audio") }, ...plusLabel("wave", t("Audio"))),
         h("button", {
           class: "btn small",
           "data-help": "neue-instrumentspur",
@@ -538,9 +646,36 @@ class KwTracks extends HTMLElement {
             if (unfold.getClientRects().length) this.#unfold(true);
             this.#menu.classList.toggle("open");
           },
-        }, icon("plus"), `${t("Instrument")} ▾`),
+        }, ...plusLabel("keys", t("Instrument")), " ▾"),
+        h("button", {
+          class: "btn small",
+          "data-help": "neue-gruppe",
+          title: t("Group: puts the picked tracks (Ctrl+click, Shift+click) into a new group – without any, an empty one · Ctrl+G"),
+          onclick: () => void groupTracks(),
+        }, ...plusLabel("folder", t("Group"))),
+        h("button", {
+          class: "btn small icon view-toggle",
+          "aria-label": t("What the track headers show"),
+          title: t("What the track headers show: pan, pitch"),
+          onclick: (e: MouseEvent) => {
+            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            openContextMenu(r.left, r.bottom + 4, [
+              { heading: t("Show in the track headers") },
+              { label: t("Pan"), act: "zeige-pan", checked: showPan.peek(), action: toggleShowPan },
+              { label: t("Pitch"), act: "zeige-pitch", checked: showPitch.peek(), action: toggleShowPitch },
+            ]);
+          },
+        }, icon("layout")),
       ),
     );
+    // labels only while they fit (width measured once with them)
+    const buttons = head.querySelector<HTMLElement>(".group")!;
+    let full = 0;
+    new ResizeObserver(() => {
+      if (!this.classList.contains("tight")) full = buttons.scrollWidth;
+      const room = head.clientWidth - 18;
+      this.classList.toggle("tight", full > 0 && full > room);
+    }).observe(head);
     this.#menu = h("div", { class: "menu" });
     effect(() => {
       const specs = instrumentSpecs.value;
@@ -571,7 +706,69 @@ class KwTracks extends HTMLElement {
       entryTrack.value; // keyboard entry: switch and letters on the piano
       noteValue.value; // length of new notes next to the piano
       keyLabelsVersion.value;
-      this.#render(snapshot.value?.project.tracks ?? [], selection.value?.trackId);
+      picked.value; // tracks picked for a group
+      const p = snapshot.value?.project;
+      this.#render(p ? layoutRows(p) : [], selection.value?.trackId);
+    });
+    // a track selected elsewhere (timeline) is the pick
+    effect(() => {
+      const s = selection.value?.trackId;
+      if (s && !picked.peek().includes(s)) picked.value = [s];
+    });
+    effect(() => {
+      this.classList.toggle("no-pan", !showPan.value);
+      this.classList.toggle("no-pitch", !showPitch.value);
+    });
+    // width of the headers: a splitter at their right edge
+    const splitter = h("div", { class: "heads-splitter", title: t("Drag: width of the track headers · Double-click: default width") });
+    splitter.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      const x0 = e.clientX;
+      const w0 = this.getBoundingClientRect().width;
+      const move = (ev: PointerEvent) => setHeadsWidth(w0 + ev.clientX - x0);
+      const up = () => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        document.body.classList.remove("col-resizing");
+      };
+      document.body.classList.add("col-resizing");
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+    });
+    splitter.addEventListener("dblclick", () => setHeadsWidth(null));
+    this.append(splitter);
+    effect(() => {
+      const w = headsWidth.value;
+      const ws = this.closest<HTMLElement>(".workspace");
+      if (!ws) return;
+      if (w) ws.style.setProperty("--heads-w", `${Math.max(HEADS_MIN, Math.min(HEADS_MAX, w))}px`);
+      else ws.style.removeProperty("--heads-w");
+    });
+    // drag a track by its icon (a finger swipes the list instead – the context menu moves it)
+    this.#body.addEventListener("pointerdown", (e) => {
+      const grip = (e.target as Element).closest(".track-row .kind");
+      if (!grip || e.button !== 0 || e.pointerType === "touch") return;
+      const id = Number((grip.closest(".track-row") as HTMLElement).dataset.trackId);
+      e.preventDefault();
+      this.#startDrag(id, e);
+    });
+    // right-click beside the tracks: add tracks, group, what the headers show
+    this.addEventListener("contextmenu", (e) => {
+      if ((e.target as Element).closest(".track-row, .group-row, .menu, input, select")) return;
+      e.preventDefault();
+      listMenu(e.clientX, e.clientY);
+    });
+    // Ctrl+G: group the picked tracks · Ctrl+Shift+G: dissolve the selected track's group
+    window.addEventListener("keydown", (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.key.toLowerCase() !== "g") return;
+      if ((e.target as Element | null)?.closest?.("input, textarea, select, [contenteditable]")) return;
+      e.preventDefault();
+      if (!e.shiftKey) return void groupTracks();
+      const p = snapshot.peek()?.project;
+      const tr = p?.tracks.find((x) => x.id === selection.peek()?.trackId);
+      const g = tr?.group ? p?.groups?.find((x) => x.id === tr.group) : undefined;
+      if (g) void run({ type: "removeGroup", groupId: g.id });
     });
     effect(() => {
       this.#body.style.transform = `translateY(${-viewport.value.scrollY}px)`;
@@ -586,7 +783,7 @@ class KwTracks extends HTMLElement {
       "wheel",
       (e) => {
         e.preventDefault();
-        const max = maxScrollY(snapshot.peek()?.project.tracks ?? []);
+        const max = maxScrollY(snapshot.peek()?.project);
         viewport.update((v) => ({ ...v, scrollY: Math.max(0, Math.min(max, v.scrollY + e.deltaY)) }));
       },
       { passive: false },
@@ -596,7 +793,7 @@ class KwTracks extends HTMLElement {
     this.addEventListener("pointerdown", (e) => {
       if (e.pointerType !== "touch" || swipe) return;
       // (sliders, menus and the keys keep the finger; a swipe may start on a name or a button)
-      if ((e.target as Element).closest('input[type="range"], select, .splitter, canvas.keys, .menu')) return;
+      if ((e.target as Element).closest('input[type="range"], select, .splitter, .heads-splitter, canvas.keys, .menu')) return;
       swipe = { id: e.pointerId, y0: e.clientY, scrollY0: viewport.peek().scrollY, moved: false };
     }, true); // (capture: also from buttons that keep their press to themselves, like the keyboard switch)
     this.addEventListener("pointermove", (e) => {
@@ -604,7 +801,7 @@ class KwTracks extends HTMLElement {
       const dy = e.clientY - swipe.y0;
       if (Math.abs(dy) > 8) swipe.moved = true;
       if (!swipe.moved) return;
-      const max = maxScrollY(snapshot.peek()?.project.tracks ?? []);
+      const max = maxScrollY(snapshot.peek()?.project);
       const y = Math.max(0, Math.min(max, swipe.scrollY0 - dy));
       viewport.update((v) => ({ ...v, scrollY: y }));
     });
@@ -632,24 +829,107 @@ class KwTracks extends HTMLElement {
     if (this.#unfoldBtn) this.#unfoldBtn.title = open ? t("Fold the track headers") : t("Unfold the track headers: level, pan and all buttons");
   }
 
-  #render(tracks: Track[], selectedId: number | undefined): void {
-    const seen = new Set<number>();
-    tracks.forEach((t, i) => {
-      let row = this.#rows.get(t.id);
-      if (!row) {
-        row = new TrackRow(t.id);
-        this.#rows.set(t.id, row);
+  #render(rows: Row[], selectedId: number | undefined): void {
+    const pick = new Set(picked.peek());
+    const seenTracks = new Set<number>();
+    const seenGroups = new Set<number>();
+    rows.forEach((r, i) => {
+      let el: HTMLElement;
+      if (r.kind === "group") {
+        let row = this.#groups.get(r.group.id);
+        if (!row) {
+          row = new GroupRow(r.group.id);
+          this.#groups.set(r.group.id, row);
+        }
+        row.update(r.group, r.tracks.length, r.h);
+        seenGroups.add(r.group.id);
+        el = row.el;
+      } else {
+        let row = this.#rows.get(r.track.id);
+        if (!row) {
+          row = new TrackRow(r.track.id);
+          this.#rows.set(r.track.id, row);
+        }
+        row.update(r.track, r.track.id === selectedId, r.group, pick.has(r.track.id));
+        seenTracks.add(r.track.id);
+        el = row.el;
       }
-      row.update(t, t.id === selectedId);
-      if (this.#body.children[i] !== row.el) this.#body.insertBefore(row.el, this.#body.children[i] ?? null);
-      seen.add(t.id);
+      if (this.#body.children[i] !== el) this.#body.insertBefore(el, this.#body.children[i] ?? null);
     });
+    // (tracks of a folded group are taken out too – they come back when it unfolds)
     for (const [id, row] of this.#rows) {
-      if (!seen.has(id)) {
+      if (!seenTracks.has(id)) {
         row.el.remove();
-        this.#rows.delete(id);
+        if (!snapshot.peek()?.project.tracks.some((tr) => tr.id === id)) this.#rows.delete(id);
       }
     }
+    for (const [id, row] of this.#groups) {
+      if (!seenGroups.has(id)) {
+        row.el.remove();
+        this.#groups.delete(id);
+      }
+    }
+  }
+
+  /** Where a track dragged to `clientY` would land, and where the drop line goes (body coordinates). */
+  #dropAt(clientY: number): { place: DropPlace; y: number; inside: boolean } | null {
+    const p = snapshot.peek()?.project;
+    if (!p) return null;
+    const y = clientY - this.#body.getBoundingClientRect().top;
+    const rows = layoutRows(p);
+    const r = rows.find((row) => y >= row.top && y < row.top + row.h);
+    if (!r) {
+      const end = rows.reduce((s, row) => s + row.h, 0);
+      return { place: { before: null, after: null, group: 0 }, y: y < 0 ? 0 : end, inside: false };
+    }
+    const lower = y >= r.top + r.h / 2;
+    if (r.kind === "track") {
+      const group = r.group?.id ?? 0;
+      return lower
+        ? { place: { before: null, after: r.track.id, group }, y: r.top + r.h, inside: !!group }
+        : { place: { before: r.track.id, after: null, group }, y: r.top, inside: !!group };
+    }
+    const first = r.tracks[0];
+    if (!lower) return { place: { before: first?.id ?? null, after: null, group: 0 }, y: r.top, inside: false };
+    // lower half of a group's row: into the group (at the top; folded: at the end)
+    return r.group.collapsed || !first
+      ? { place: { before: null, after: r.tracks.at(-1)?.id ?? null, group: r.group.id }, y: r.top + r.h, inside: true }
+      : { place: { before: first.id, after: null, group: r.group.id }, y: r.top + r.h, inside: true };
+  }
+
+  /** Dragging a track by its icon: a line shows where it goes; dropping moves it (into or out of groups). */
+  #startDrag(trackId: number, e: PointerEvent): void {
+    const y0 = e.clientY;
+    let moving = false;
+    let place: DropPlace | null = null;
+    const line = h("div", { class: "drop-line" });
+    const move = (ev: PointerEvent) => {
+      if (!moving && Math.abs(ev.clientY - y0) < 4) return;
+      if (!moving) {
+        moving = true;
+        this.#body.append(line);
+        this.classList.add("dragging");
+      }
+      const d = this.#dropAt(ev.clientY);
+      place = d?.place ?? null;
+      if (d) {
+        line.style.top = `${d.y}px`;
+        line.classList.toggle("inside", d.inside);
+      }
+    };
+    const end = (drop: boolean) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      line.remove();
+      this.classList.remove("dragging");
+      if (drop && moving && place) void moveTrackTo(trackId, place);
+    };
+    const onUp = () => end(true);
+    const onCancel = () => end(false);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
   }
 }
 

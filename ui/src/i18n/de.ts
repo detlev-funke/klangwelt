@@ -2902,6 +2902,51 @@ const dict: Dict = {
 
   // klangwelt-desktop/app/src/lib.rs – opening the project page
   "Not a web address: {url}": "Keine Webadresse: {url}",
+
+  // track groups (ui/src/groups.ts, components/tracks.ts, crates/klang-core/src/command.rs)
+  "drag to move it, also into or out of a group": "ziehen zum Verschieben, auch in eine Gruppe hinein oder heraus",
+  "Group name – click and type to rename": "Gruppenname – anklicken und tippen zum Umbenennen",
+  "Mute the group": "Gruppe stumm schalten",
+  "Solo the group": "Gruppe solo",
+  "Group level in dB – added to the level of each of its tracks · double-click: 0 dB": "Gruppenpegel in dB – kommt zum Pegel jeder ihrer Spuren dazu · Doppelklick: 0 dB",
+  "Unfold the group": "Gruppe aufklappen",
+  "Fold the group": "Gruppe zuklappen",
+  "Group: puts the picked tracks (Ctrl+click, Shift+click) into a new group – without any, an empty one · Ctrl+G": "Gruppe: legt die markierten Spuren (Strg+Klick, Umschalt+Klick) in eine neue Gruppe – ohne Auswahl eine leere · Strg+G",
+  "Group": "Gruppe",
+  "What the track headers show": "Was die Spurköpfe zeigen",
+  "What the track headers show: pan, pitch": "Was die Spurköpfe zeigen: Pan, Tonhöhe",
+  "Show in the track headers": "In den Spurköpfen zeigen",
+  "Drag: width of the track headers · Double-click: default width": "Ziehen: Breite der Spurköpfe · Doppelklick: Standardbreite",
+  "Group {n}": "Gruppe {n}",
+  "Group tracks": "Spuren gruppieren",
+  "Add group": "Gruppe hinzufügen",
+  "Delete group": "Gruppe löschen",
+  "Group {n} tracks": { one: "{n} Spur gruppieren", other: "{n} Spuren gruppieren" },
+  "Put in a new group": "In eine neue Gruppe",
+  "Move to “{name}”": "In „{name}“ verschieben",
+  "Take out of the group": "Aus der Gruppe nehmen",
+  "Unmute": "Stumm aus",
+  "Solo off": "Solo aus",
+  "Delete {n} tracks": { one: "{n} Spur löschen", other: "{n} Spuren löschen" },
+  "Delete tracks": "Spuren löschen",
+  "Unfold": "Aufklappen",
+  "Fold": "Zuklappen",
+  "Volume to 0 dB": "Lautstärke auf 0 dB",
+  "Ungroup": "Gruppe auflösen",
+  "The tracks stay, without the group": "Die Spuren bleiben, ohne Gruppe",
+  "Delete group with its tracks": "Gruppe samt Spuren löschen",
+  "Add instrument track": "Instrumentspur hinzufügen",
+  "The group name can't be empty": "Der Gruppenname darf nicht leer sein",
+  "Group {id} not found": "Gruppe {id} nicht gefunden",
+  "Change group": "Gruppe ändern",
+  "Change group volume": "Gruppenlautstärke ändern",
+  "Mute group": "Gruppe stumm",
+  "Solo group": "Gruppe solo",
+  "Rename group": "Gruppe umbenennen",
+  "Group ID {id} is already taken": "Gruppen-ID {id} ist schon vergeben",
+
+  // picked tracks follow changes in the sound window (ui/src/components/sound.ts)
+  "Changes apply to {n} tracks: {names}": { one: "Änderungen gelten für {n} Spur: {names}", other: "Änderungen gelten für {n} Spuren: {names}" },
 };
 
 export default dict;

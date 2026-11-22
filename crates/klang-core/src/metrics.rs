@@ -38,7 +38,7 @@ impl Metrics {
         for t in &p.tracks {
             let melodic = t.kind == TrackKind::Instrument
                 && t.instrument.as_ref().map(|i| i.kind) != Some(InstrumentKind::Drums)
-                && !t.mute;
+                && !p.is_muted(t);
             for c in &t.clips {
                 m.clips += 1;
                 m.length_beats = m.length_beats.max(c.start_beats + c.length_beats(p.tempo_bpm));

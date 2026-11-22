@@ -716,10 +716,9 @@ impl AppState {
         let s = lock(&self.session)?;
         let p = &s.project;
         let list = |ts: Vec<&Track>| ts.iter().map(|t| format!("„{}“ ({})", t.name, t.id)).collect::<Vec<_>>().join(", ");
-        let any_solo = p.tracks.iter().any(|t| t.solo);
-        let audible: Vec<&Track> = p.tracks.iter().filter(|t| !t.mute && (!any_solo || t.solo)).collect();
-        let muted: Vec<&Track> = p.tracks.iter().filter(|t| t.mute).collect();
-        let solo: Vec<&Track> = p.tracks.iter().filter(|t| t.solo).collect();
+        let audible: Vec<&Track> = p.audible_tracks().collect();
+        let muted: Vec<&Track> = p.tracks.iter().filter(|t| p.is_muted(t)).collect();
+        let solo: Vec<&Track> = p.tracks.iter().filter(|t| p.is_solo(t)).collect();
         let mut parts = Vec::new();
         if p.tracks.is_empty() {
             parts.push(tr!("Tracks: none"));
@@ -1104,10 +1103,9 @@ impl AppState {
         let bpm = project.tempo_bpm;
         let spb = 60.0 / bpm;
         let (from, to) = (pos_secs / spb, (pos_secs + PRERENDER_AHEAD_SECS) / spb);
-        let any_solo = project.tracks.iter().any(|t| t.solo);
         let mut pool = lock(&self.pool).ok()?;
         let mut best: Option<(f64, String, String, &Track, &Clip)> = None;
-        for track in project.tracks.iter().filter(|t| !t.mute && (!any_solo || t.solo)) {
+        for track in project.audible_tracks() {
             let tail = sound::patch(track.instrument.as_ref()).release_secs() as f64 / spb + 1.0;
             for clip in &track.clips {
                 let ClipSource::Notes { length_beats, notes } = &clip.source else { continue };
@@ -1205,6 +1203,11 @@ impl AppState {
         Ok(t.clone())
     }
 
+    /// Level of a track in dB as it sounds in the project: its own plus its group's.
+    pub fn heard_gain_db(&self, track: &Track) -> f32 {
+        lock(&self.session).map(|s| s.project.track_gain_db(track)).unwrap_or(track.gain_db)
+    }
+
     /// Plays a preview pattern with the track's sound (transport keeps running independently).
     pub fn preview_track(&self, track_id: Id, pattern: &str) -> CmdResult<f32> {
         let track = self.instrument_track(track_id)?;
@@ -1215,7 +1218,7 @@ impl AppState {
         let (notes, secs) = sound::preview_notes(inst, pattern, self.tempo(), shift);
         let r = sound::render_track(inst, &notes, secs, sr, (60.0 / self.tempo()) as f32);
         let secs = r.mid.len() as f32 / sr;
-        engine.preview_stereo(r.mid.into(), r.side.map(Into::into), util::db_to_gain(track.gain_db), sound::reverb_send(inst));
+        engine.preview_stereo(r.mid.into(), r.side.map(Into::into), util::db_to_gain(self.heard_gain_db(&track)), sound::reverb_send(inst));
         Ok(secs)
     }
 
@@ -1228,7 +1231,7 @@ impl AppState {
         let shift = if sound::transposes(inst) { track.pitch_semitones } else { 0.0 };
         let note = NoteSpec::new(0.0, 0.45, midi as f32 + shift, 0.85);
         let r = sound::render_track(inst, &[note], 0.6, sr, (60.0 / self.tempo()) as f32);
-        engine.preview_stereo(r.mid.into(), r.side.map(Into::into), util::db_to_gain(track.gain_db), sound::reverb_send(inst));
+        engine.preview_stereo(r.mid.into(), r.side.map(Into::into), util::db_to_gain(self.heard_gain_db(&track)), sound::reverb_send(inst));
         Ok(())
     }
 
@@ -1243,6 +1246,13 @@ impl AppState {
     /// its starting point. Only the controls of this field change.
     /// `merge`: part of a drag gesture (one undo step).
     pub fn sound_field(&self, track_id: Id, field: &str, xy: Option<(f32, f32)>, preset: Option<&str>, merge: bool) -> CmdResult<Snapshot> {
+        self.sound_field_on(track_id, &[], field, xy, preset, merge)
+    }
+
+    /// [`sound_field`](Self::sound_field) on several tracks at once (`also`: further picked
+    /// tracks): each one with the same instrument gets the same point in the field and keeps
+    /// its other settings – one undo step.
+    pub fn sound_field_on(&self, track_id: Id, also: &[Id], field: &str, xy: Option<(f32, f32)>, preset: Option<&str>, merge: bool) -> CmdResult<Snapshot> {
         let track = self.instrument_track(track_id)?;
         let mut inst = track.instrument.clone().unwrap_or_else(|| sound::default_instrument(InstrumentKind::Pluck));
         let (x, y) = match (preset, xy) {
@@ -1261,10 +1271,17 @@ impl AppState {
             "klangfarbe" => tr!("Sound \"{name}\": Timbre", name = track.name),
             _ => tr!("Sound \"{name}\": Space", name = track.name),
         };
-        self.execute(
-            Command::Batch { label, commands: vec![Command::SetTrack { track_id, patch: TrackPatch { instrument: Some(inst), ..Default::default() } }] },
-            merge,
-        )
+        let mut commands = vec![Command::SetTrack { track_id, patch: TrackPatch { instrument: Some(inst.clone()), ..Default::default() } }];
+        for &id in also.iter().filter(|id| **id != track_id) {
+            let Ok(other) = self.instrument_track(id) else { continue };
+            let Some(mut oi) = other.instrument.filter(|i| i.kind == inst.kind) else { continue };
+            sound::apply_field(&mut oi, field, x, y)?;
+            if field == "charakter" {
+                oi.preset = inst.preset.clone();
+            }
+            commands.push(Command::SetTrack { track_id: id, patch: TrackPatch { instrument: Some(oi), ..Default::default() } });
+        }
+        self.execute(Command::Batch { label, commands }, merge)
     }
 
     pub fn describe_track(&self, track_id: Id) -> CmdResult<SoundReport> {
@@ -1518,10 +1535,9 @@ fn prerender(project: &Project, pool: &mut AssetPool, out_sr: u32) {
         pitch: f64,
     }
     let bpm = project.tempo_bpm;
-    let any_solo = project.tracks.iter().any(|t| t.solo);
     let mut jobs: Vec<(String, Job)> = Vec::new();
     let mut seen = HashSet::new();
-    for track in project.tracks.iter().filter(|t| !t.mute && (!any_solo || t.solo)) {
+    for track in project.audible_tracks() {
         for clip in &track.clips {
             let ClipSource::Audio { asset_id, source_bpm, warp, .. } = &clip.source else { continue };
             let Some(asset) = pool.assets.get(asset_id) else { continue };
@@ -1637,16 +1653,12 @@ fn arrange(project: &Project, pool: &mut AssetPool, out_sr: u32) -> (Arrangement
     prerender(project, pool, out_sr);
     let bpm = project.tempo_bpm;
     let spb = 60.0 / bpm;
-    let any_solo = project.tracks.iter().any(|t| t.solo);
     let mut used = HashSet::new();
     let mut clips = Vec::new();
     let mut notes = Vec::new();
 
-    for track in &project.tracks {
-        if track.mute || (any_solo && !track.solo) {
-            continue;
-        }
-        let gain = util::db_to_gain(track.gain_db);
+    for track in project.audible_tracks() {
+        let gain = util::db_to_gain(project.track_gain_db(track));
         let angle = (track.pan.clamp(-1.0, 1.0) + 1.0) * std::f32::consts::FRAC_PI_4;
         let (gain_l, gain_r) = (
             gain * angle.cos() * std::f32::consts::SQRT_2,

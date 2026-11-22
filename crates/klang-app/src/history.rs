@@ -436,7 +436,7 @@ fn settings_text(o: Option<&Track>, t: Option<&Track>) -> String {
             if o.instrument != t.instrument || o.pitch_semitones != t.pitch_semitones || o.kind != t.kind {
                 w.push(tr!("sound"));
             }
-            if o.gain_db != t.gain_db || o.pan != t.pan || o.mute != t.mute || o.solo != t.solo {
+            if o.gain_db != t.gain_db || o.pan != t.pan || o.mute != t.mute || o.solo != t.solo || o.group != t.group {
                 w.push(tr!("mix"));
             }
             if o.name != t.name || o.color != t.color {

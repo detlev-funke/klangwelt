@@ -3035,6 +3035,51 @@ const dict: Dict = {
 
   // klangwelt-desktop/app/src/lib.rs – opening the project page
   "Not a web address: {url}": "To nie jest adres internetowy: {url}",
+
+  // track groups (ui/src/groups.ts, components/tracks.ts, crates/klang-core/src/command.rs)
+  "drag to move it, also into or out of a group": "przeciągnij, aby przenieść, także do grupy lub z grupy",
+  "Group name – click and type to rename": "Nazwa grupy – kliknij i pisz, aby zmienić nazwę",
+  "Mute the group": "Wycisz grupę",
+  "Solo the group": "Grupa solo",
+  "Group level in dB – added to the level of each of its tracks · double-click: 0 dB": "Poziom grupy w dB – dodaje się do poziomu każdej z jej ścieżek · dwuklik: 0 dB",
+  "Unfold the group": "Rozwiń grupę",
+  "Fold the group": "Zwiń grupę",
+  "Group: puts the picked tracks (Ctrl+click, Shift+click) into a new group – without any, an empty one · Ctrl+G": "Grupa: umieszcza wybrane ścieżki (Ctrl+klik, Shift+klik) w nowej grupie – bez wyboru pustą · Ctrl+G",
+  "Group": "Grupa",
+  "What the track headers show": "Co pokazują nagłówki ścieżek",
+  "What the track headers show: pan, pitch": "Co pokazują nagłówki ścieżek: panorama, wysokość",
+  "Show in the track headers": "Pokazuj w nagłówkach ścieżek",
+  "Drag: width of the track headers · Double-click: default width": "Przeciągnij: szerokość nagłówków ścieżek · Dwuklik: domyślna szerokość",
+  "Group {n}": "Grupa {n}",
+  "Group tracks": "Grupuj ścieżki",
+  "Add group": "Dodaj grupę",
+  "Delete group": "Usuń grupę",
+  "Group {n} tracks": { one: "Grupuj {n} ścieżkę", few: "Grupuj {n} ścieżki", many: "Grupuj {n} ścieżek", other: "Grupuj {n} ścieżki" },
+  "Put in a new group": "Umieść w nowej grupie",
+  "Move to “{name}”": "Przenieś do „{name}”",
+  "Take out of the group": "Wyjmij z grupy",
+  "Unmute": "Wyłącz wyciszenie",
+  "Solo off": "Wyłącz solo",
+  "Delete {n} tracks": { one: "Usuń {n} ścieżkę", few: "Usuń {n} ścieżki", many: "Usuń {n} ścieżek", other: "Usuń {n} ścieżki" },
+  "Delete tracks": "Usuń ścieżki",
+  "Unfold": "Rozwiń",
+  "Fold": "Zwiń",
+  "Volume to 0 dB": "Głośność na 0 dB",
+  "Ungroup": "Rozgrupuj",
+  "The tracks stay, without the group": "Ścieżki zostają, bez grupy",
+  "Delete group with its tracks": "Usuń grupę razem ze ścieżkami",
+  "Add instrument track": "Dodaj ścieżkę instrumentu",
+  "The group name can't be empty": "Nazwa grupy nie może być pusta",
+  "Group {id} not found": "Nie znaleziono grupy {id}",
+  "Change group": "Zmień grupę",
+  "Change group volume": "Zmień głośność grupy",
+  "Mute group": "Wycisz grupę",
+  "Solo group": "Grupa solo",
+  "Rename group": "Zmień nazwę grupy",
+  "Group ID {id} is already taken": "ID grupy {id} jest już zajęte",
+
+  // picked tracks follow changes in the sound window (ui/src/components/sound.ts)
+  "Changes apply to {n} tracks: {names}": { one: "Zmiany dotyczą {n} ścieżki: {names}", few: "Zmiany dotyczą {n} ścieżek: {names}", many: "Zmiany dotyczą {n} ścieżek: {names}", other: "Zmiany dotyczą {n} ścieżki: {names}" },
 };
 
 export default dict;

@@ -252,7 +252,7 @@ pub fn check_tracks(st: &AppState, only: Option<&[Id]>) -> CmdResult<CheckView> 
     let bpb = p.beats_per_bar.max(1);
     let mut refs = Vec::new();
     let mut voices = Vec::new();
-    for t in p.tracks.iter().filter(|t| melodic(t) && !t.mute && only.is_none_or(|o| o.contains(&t.id))) {
+    for t in p.tracks.iter().filter(|t| melodic(t) && !p.is_muted(t) && only.is_none_or(|o| o.contains(&t.id))) {
         let notes: Vec<VNote> = t.clips.iter().flat_map(|c| clip_vnotes(t, c)).collect();
         if notes.is_empty() {
             continue;

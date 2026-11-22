@@ -29,6 +29,10 @@ pub struct Project {
     pub beats_per_bar: u32,
     pub beat_unit: u32,
     pub tracks: Vec<Track>,
+    /// Track groups: a level, mute and solo for several tracks together. A group
+    /// shows where its first track is; its tracks follow each other.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub groups: Vec<TrackGroup>,
     pub next_id: u64,
 }
 
@@ -40,6 +44,7 @@ impl Default for Project {
             beats_per_bar: 4,
             beat_unit: 4,
             tracks: Vec::new(),
+            groups: Vec::new(),
             next_id: 1,
         }
     }
@@ -70,6 +75,51 @@ impl Project {
 
     pub fn track_index(&self, id: Id) -> Option<usize> {
         self.tracks.iter().position(|t| t.id == id)
+    }
+
+    pub fn group(&self, id: Id) -> Option<&TrackGroup> {
+        self.groups.iter().find(|g| g.id == id)
+    }
+
+    pub fn group_mut(&mut self, id: Id) -> Option<&mut TrackGroup> {
+        self.groups.iter_mut().find(|g| g.id == id)
+    }
+
+    /// The group a track belongs to (none, or one that doesn't exist: none).
+    pub fn group_of(&self, track: &Track) -> Option<&TrackGroup> {
+        if track.group == Id::NEW { None } else { self.group(track.group) }
+    }
+
+    /// Tracks of a group in project order.
+    pub fn group_tracks(&self, id: Id) -> impl Iterator<Item = &Track> {
+        self.tracks.iter().filter(move |t| t.group == id && id != Id::NEW)
+    }
+
+    /// Level of a track in dB as it sounds: its own plus its group's.
+    pub fn track_gain_db(&self, track: &Track) -> f32 {
+        track.gain_db + self.group_of(track).map_or(0.0, |g| g.gain_db)
+    }
+
+    /// Muted itself or by its group.
+    pub fn is_muted(&self, track: &Track) -> bool {
+        track.mute || self.group_of(track).is_some_and(|g| g.mute)
+    }
+
+    /// Solo itself or by its group.
+    pub fn is_solo(&self, track: &Track) -> bool {
+        track.solo || self.group_of(track).is_some_and(|g| g.solo)
+    }
+
+    /// Does the track sound? Mute wins; once anything is solo, only solo tracks sound.
+    pub fn is_audible(&self, track: &Track) -> bool {
+        let any_solo = self.tracks.iter().any(|t| self.is_solo(t));
+        !self.is_muted(track) && (!any_solo || self.is_solo(track))
+    }
+
+    /// The tracks that sound (mute and solo of tracks and groups).
+    pub fn audible_tracks(&self) -> impl Iterator<Item = &Track> {
+        let any_solo = self.tracks.iter().any(|t| self.is_solo(t));
+        self.tracks.iter().filter(move |t| !self.is_muted(t) && (!any_solo || self.is_solo(t)))
     }
 
     pub fn clip(&self, track_id: Id, clip_id: Id) -> Option<&Clip> {
@@ -172,7 +222,35 @@ pub struct Track {
     pub compact_height: f32,
     /// Row height in the score view (pixels, 0 = default).
     pub notes_height: f32,
+    /// Group of the track (`Id(0)` = none).
+    #[serde(skip_serializing_if = "is_none_id")]
+    pub group: Id,
     pub clips: Vec<Clip>,
+}
+
+fn is_none_id(id: &Id) -> bool {
+    *id == Id::NEW
+}
+
+/// Several tracks together: their level is raised or lowered by the group's,
+/// muting or soloing the group does it for all of them (each track keeps its own).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TrackGroup {
+    pub id: Id,
+    pub name: String,
+    pub color: String,
+    pub gain_db: f32,
+    pub mute: bool,
+    pub solo: bool,
+    /// Folded: the tracks are hidden behind the group's row (presentation only).
+    pub collapsed: bool,
+}
+
+impl Default for TrackGroup {
+    fn default() -> Self {
+        Self { id: Id::NEW, name: String::new(), color: String::new(), gain_db: 0.0, mute: false, solo: false, collapsed: false }
+    }
 }
 
 impl Default for Track {
@@ -191,6 +269,7 @@ impl Default for Track {
             view: TrackView::Compact,
             compact_height: 0.0,
             notes_height: 0.0,
+            group: Id::NEW,
             clips: Vec::new(),
         }
     }

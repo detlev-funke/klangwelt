@@ -2,7 +2,7 @@
 //! which time ranges, and whether their sound or mix changed. The history uses
 //! it for the "where" of every step and to find what a variant changed.
 
-use crate::model::{ClipSource, Id, Project, Track};
+use crate::model::{ClipSource, Id, Project, Track, TrackGroup};
 use serde::{Deserialize, Serialize};
 
 /// Time range in beats, `[start, end)`.
@@ -16,6 +16,9 @@ pub struct ProjectDiff {
     /// Time signature (beats per bar, beat unit).
     pub signature: bool,
     pub name: bool,
+    /// Track groups added, removed or changed (level, mute, solo, name, color).
+    #[serde(default)]
+    pub groups: bool,
     /// Changed tracks: in the order of the newer version, removed ones last.
     pub tracks: Vec<TrackDiff>,
 }
@@ -36,7 +39,7 @@ pub struct TrackDiff {
     pub change: TrackChange,
     /// The sound changed (instrument, pitch).
     pub sound: bool,
-    /// The mix changed (volume, pan, mute, solo).
+    /// The mix changed (volume, pan, mute, solo, group).
     pub mix: bool,
     /// Name or color changed.
     pub meta: bool,
@@ -68,12 +71,13 @@ impl ProjectDiff {
             tempo: a.tempo_bpm != b.tempo_bpm,
             signature: a.beats_per_bar != b.beats_per_bar || a.beat_unit != b.beat_unit,
             name: a.name != b.name,
+            groups: !same_groups(a, b),
             tracks,
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        !self.tempo && !self.signature && !self.name && self.tracks.is_empty()
+        !self.tempo && !self.signature && !self.name && !self.groups && self.tracks.is_empty()
     }
 
     /// All changed time ranges of all tracks together.
@@ -84,6 +88,12 @@ impl ProjectDiff {
     pub fn track(&self, id: Id) -> Option<&TrackDiff> {
         self.tracks.iter().find(|t| t.track_id == id)
     }
+}
+
+/// The same groups with the same settings (folding them changes nothing).
+fn same_groups(a: &Project, b: &Project) -> bool {
+    let strip = |p: &Project| p.groups.iter().map(|g| TrackGroup { collapsed: false, ..g.clone() }).collect::<Vec<_>>();
+    strip(a) == strip(b)
 }
 
 /// From the first start to the last end.
@@ -119,7 +129,7 @@ pub fn diff_track(a: Option<&Track>, b: Option<&Track>, bpm_a: f64, bpm_b: f64) 
                 track_id: b.id,
                 change: TrackChange::Changed,
                 sound: a.instrument != b.instrument || a.pitch_semitones != b.pitch_semitones || a.kind != b.kind,
-                mix: a.gain_db != b.gain_db || a.pan != b.pan || a.mute != b.mute || a.solo != b.solo,
+                mix: a.gain_db != b.gain_db || a.pan != b.pan || a.mute != b.mute || a.solo != b.solo || a.group != b.group,
                 meta: a.name != b.name || a.color != b.color,
                 ranges: merge_ranges(only_a.iter().chain(&only_b).map(Ev::range).collect()),
                 notes_added: only_b.iter().filter(|e| e.audio.is_none()).count() as u32,

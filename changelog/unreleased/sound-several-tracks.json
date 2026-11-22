@@ -1,0 +1,22 @@
+{
+  "type": "added",
+  "title": {
+    "en": "Sound for several tracks at once",
+    "de": "Klang für mehrere Spuren zugleich",
+    "fr": "Le son de plusieurs pistes à la fois",
+    "it": "Il suono di più tracce insieme",
+    "es": "Sonido para varias pistas a la vez",
+    "nl": "Klank voor meerdere sporen tegelijk",
+    "pl": "Brzmienie kilku ścieżek naraz"
+  },
+  "text": {
+    "en": "pick several tracks in the track list (Ctrl+click, Shift+click) and the Sound window changes all of them that have the same instrument: fields, controls, curves and the instrument itself. Each keeps what you didn’t touch, and it is one undo step. The controls in the track headers stay each track’s own.",
+    "de": "Mehrere Spuren in der Spurliste markieren (Strg+Klick, Umschalt+Klick), und das Klangfenster ändert alle mit demselben Instrument: Felder, Regler, Kurven und das Instrument selbst. Jede behält, was du nicht angefasst hast, und es ist ein Rückgängig-Schritt. Die Regler in den Spurköpfen bleiben bei jeder Spur einzeln.",
+    "fr": "choisissez plusieurs pistes dans la liste (Ctrl+clic, Maj+clic) et la fenêtre Son modifie toutes celles qui ont le même instrument : champs, réglages, courbes et l’instrument lui-même. Chacune garde ce que vous n’avez pas touché, en une seule étape d’annulation. Les réglages des en-têtes de piste restent propres à chaque piste.",
+    "it": "scegli più tracce nell’elenco (Ctrl+clic, Maiusc+clic) e la finestra Suono cambia tutte quelle con lo stesso strumento: campi, controlli, curve e lo strumento stesso. Ognuna tiene ciò che non hai toccato, ed è un solo passo da annullare. I controlli nelle intestazioni restano propri di ogni traccia.",
+    "es": "elige varias pistas en la lista (Ctrl+clic, Mayús+clic) y la ventana Sonido cambia todas las que tienen el mismo instrumento: campos, controles, curvas y el instrumento mismo. Cada una conserva lo que no tocaste, en un solo paso de deshacer. Los controles de las cabeceras siguen siendo de cada pista.",
+    "nl": "kies meerdere sporen in de lijst (Ctrl+klik, Shift+klik) en het venster Klank wijzigt alle sporen met hetzelfde instrument: velden, regelaars, curves en het instrument zelf. Elk spoor houdt wat je niet hebt aangeraakt, en het is één stap ongedaan maken. De regelaars in de spoorkoppen blijven per spoor.",
+    "pl": "wybierz kilka ścieżek na liście (Ctrl+klik, Shift+klik), a okno Brzmienie zmieni wszystkie z tym samym instrumentem: pola, suwaki, krzywe i sam instrument. Każda zachowuje to, czego nie ruszałeś, w jednym kroku cofania. Suwaki w nagłówkach ścieżek pozostają osobne dla każdej ścieżki."
+  },
+  "dev": "sound_field takes also: [ids] (klang-app state.rs sound_field_on); the window applies the difference with followChange (sound.ts); a batch of mergeable commands merges by its joined keys (klang-core command.rs)."
+}

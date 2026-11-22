@@ -1,0 +1,22 @@
+{
+  "type": "added",
+  "title": {
+    "en": "Track headers: pan and pitch can be hidden, the width adjusted",
+    "de": "Spurköpfe: Pan und Tonhöhe ausblendbar, Breite einstellbar",
+    "fr": "En-têtes de piste : pan et hauteur masquables, largeur réglable",
+    "it": "Intestazioni delle tracce: pan e intonazione nascondibili, larghezza regolabile",
+    "es": "Cabeceras de pista: panorama y tono ocultables, ancho ajustable",
+    "nl": "Spoorkoppen: pan en toonhoogte te verbergen, breedte instelbaar",
+    "pl": "Nagłówki ścieżek: panorama i wysokość do ukrycia, regulowana szerokość"
+  },
+  "text": {
+    "en": "the new button above the tracks (and the context menu of the track list) shows or hides pan and pitch in every track header. Drag the edge between the headers and the timeline to make the headers wider or narrower; a double-click brings back the default. The buttons above the tracks now sit on the left.",
+    "de": "Der neue Knopf über den Spuren (und das Kontextmenü der Spurliste) blendet Pan und Tonhöhe in allen Spurköpfen ein oder aus. Die Kante zwischen Spurköpfen und Zeitleiste ziehen, um die Spurköpfe breiter oder schmaler zu machen; ein Doppelklick stellt die Standardbreite wieder her. Die Knöpfe über den Spuren stehen jetzt links.",
+    "fr": "le nouveau bouton au-dessus des pistes (et le menu contextuel de la liste des pistes) affiche ou masque le pan et la hauteur dans chaque en-tête de piste. Glissez le bord entre les en-têtes et la timeline pour les élargir ou les rétrécir ; un double-clic rétablit la largeur par défaut. Les boutons au-dessus des pistes sont désormais à gauche.",
+    "it": "il nuovo pulsante sopra le tracce (e il menu contestuale dell’elenco tracce) mostra o nasconde pan e intonazione in ogni intestazione. Trascina il bordo tra le intestazioni e la timeline per allargarle o restringerle; un doppio clic ripristina la larghezza predefinita. I pulsanti sopra le tracce ora stanno a sinistra.",
+    "es": "el nuevo botón sobre las pistas (y el menú contextual de la lista de pistas) muestra u oculta el panorama y el tono en cada cabecera. Arrastra el borde entre las cabeceras y la línea de tiempo para ensancharlas o estrecharlas; un doble clic recupera el ancho predeterminado. Los botones sobre las pistas ahora están a la izquierda.",
+    "nl": "de nieuwe knop boven de sporen (en het contextmenu van de sporenlijst) toont of verbergt pan en toonhoogte in elke spoorkop. Sleep de rand tussen de spoorkoppen en de tijdlijn om ze breder of smaller te maken; dubbelklikken zet de standaardbreedte terug. De knoppen boven de sporen staan nu links.",
+    "pl": "nowy przycisk nad ścieżkami (i menu kontekstowe listy ścieżek) pokazuje lub ukrywa panoramę i wysokość w każdym nagłówku ścieżki. Przeciągnij krawędź między nagłówkami a osią czasu, aby je poszerzyć lub zwęzić; dwuklik przywraca domyślną szerokość. Przyciski nad ścieżkami są teraz po lewej."
+  },
+  "dev": "trackview.ts (localStorage), --heads-w on .workspace; the head buttons drop their labels when they don't fit (kw-tracks.tight)."
+}

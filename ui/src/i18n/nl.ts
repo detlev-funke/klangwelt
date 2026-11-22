@@ -3035,6 +3035,51 @@ const dict: Dict = {
 
   // klangwelt-desktop/app/src/lib.rs – opening the project page
   "Not a web address: {url}": "Geen webadres: {url}",
+
+  // track groups (ui/src/groups.ts, components/tracks.ts, crates/klang-core/src/command.rs)
+  "drag to move it, also into or out of a group": "slepen om het te verplaatsen, ook in of uit een groep",
+  "Group name – click and type to rename": "Groepsnaam – klik en typ om te hernoemen",
+  "Mute the group": "Groep dempen",
+  "Solo the group": "Groep solo",
+  "Group level in dB – added to the level of each of its tracks · double-click: 0 dB": "Groepsniveau in dB – komt bij het niveau van elk van zijn sporen · dubbelklik: 0 dB",
+  "Unfold the group": "Groep uitklappen",
+  "Fold the group": "Groep inklappen",
+  "Group: puts the picked tracks (Ctrl+click, Shift+click) into a new group – without any, an empty one · Ctrl+G": "Groep: zet de gekozen sporen (Ctrl+klik, Shift+klik) in een nieuwe groep – zonder keuze een lege · Ctrl+G",
+  "Group": "Groep",
+  "What the track headers show": "Wat de spoorkoppen tonen",
+  "What the track headers show: pan, pitch": "Wat de spoorkoppen tonen: pan, toonhoogte",
+  "Show in the track headers": "Tonen in de spoorkoppen",
+  "Drag: width of the track headers · Double-click: default width": "Slepen: breedte van de spoorkoppen · Dubbelklik: standaardbreedte",
+  "Group {n}": "Groep {n}",
+  "Group tracks": "Sporen groeperen",
+  "Add group": "Groep toevoegen",
+  "Delete group": "Groep verwijderen",
+  "Group {n} tracks": { one: "{n} spoor groeperen", other: "{n} sporen groeperen" },
+  "Put in a new group": "In een nieuwe groep zetten",
+  "Move to “{name}”": "Verplaatsen naar ‘{name}’",
+  "Take out of the group": "Uit de groep halen",
+  "Unmute": "Dempen uit",
+  "Solo off": "Solo uit",
+  "Delete {n} tracks": { one: "{n} spoor verwijderen", other: "{n} sporen verwijderen" },
+  "Delete tracks": "Sporen verwijderen",
+  "Unfold": "Uitklappen",
+  "Fold": "Inklappen",
+  "Volume to 0 dB": "Volume naar 0 dB",
+  "Ungroup": "Groep opheffen",
+  "The tracks stay, without the group": "De sporen blijven, zonder de groep",
+  "Delete group with its tracks": "Groep met zijn sporen verwijderen",
+  "Add instrument track": "Instrumentspoor toevoegen",
+  "The group name can't be empty": "De groepsnaam mag niet leeg zijn",
+  "Group {id} not found": "Groep {id} niet gevonden",
+  "Change group": "Groep wijzigen",
+  "Change group volume": "Groepsvolume wijzigen",
+  "Mute group": "Groep dempen",
+  "Solo group": "Groep solo",
+  "Rename group": "Groep hernoemen",
+  "Group ID {id} is already taken": "Groeps-ID {id} is al in gebruik",
+
+  // picked tracks follow changes in the sound window (ui/src/components/sound.ts)
+  "Changes apply to {n} tracks: {names}": { one: "Wijzigingen gelden voor {n} spoor: {names}", other: "Wijzigingen gelden voor {n} sporen: {names}" },
 };
 
 export default dict;

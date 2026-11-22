@@ -3035,6 +3035,51 @@ const dict: Dict = {
 
   // klangwelt-desktop/app/src/lib.rs – opening the project page
   "Not a web address: {url}": "No es una dirección web: {url}",
+
+  // track groups (ui/src/groups.ts, components/tracks.ts, crates/klang-core/src/command.rs)
+  "drag to move it, also into or out of a group": "arrastra para moverla, también dentro o fuera de un grupo",
+  "Group name – click and type to rename": "Nombre del grupo – haz clic y escribe para renombrar",
+  "Mute the group": "Silenciar el grupo",
+  "Solo the group": "Grupo en solo",
+  "Group level in dB – added to the level of each of its tracks · double-click: 0 dB": "Nivel del grupo en dB – se suma al nivel de cada una de sus pistas · doble clic: 0 dB",
+  "Unfold the group": "Desplegar el grupo",
+  "Fold the group": "Plegar el grupo",
+  "Group: puts the picked tracks (Ctrl+click, Shift+click) into a new group – without any, an empty one · Ctrl+G": "Grupo: pone las pistas elegidas (Ctrl+clic, Mayús+clic) en un grupo nuevo – sin elegir, uno vacío · Ctrl+G",
+  "Group": "Grupo",
+  "What the track headers show": "Qué muestran las cabeceras de pista",
+  "What the track headers show: pan, pitch": "Qué muestran las cabeceras de pista: panorama, tono",
+  "Show in the track headers": "Mostrar en las cabeceras de pista",
+  "Drag: width of the track headers · Double-click: default width": "Arrastrar: ancho de las cabeceras · Doble clic: ancho predeterminado",
+  "Group {n}": "Grupo {n}",
+  "Group tracks": "Agrupar pistas",
+  "Add group": "Añadir grupo",
+  "Delete group": "Eliminar grupo",
+  "Group {n} tracks": { one: "Agrupar {n} pista", other: "Agrupar {n} pistas" },
+  "Put in a new group": "Poner en un grupo nuevo",
+  "Move to “{name}”": "Mover a «{name}»",
+  "Take out of the group": "Sacar del grupo",
+  "Unmute": "Activar sonido",
+  "Solo off": "Solo desactivado",
+  "Delete {n} tracks": { one: "Eliminar {n} pista", other: "Eliminar {n} pistas" },
+  "Delete tracks": "Eliminar pistas",
+  "Unfold": "Desplegar",
+  "Fold": "Plegar",
+  "Volume to 0 dB": "Volumen a 0 dB",
+  "Ungroup": "Deshacer grupo",
+  "The tracks stay, without the group": "Las pistas se quedan, sin el grupo",
+  "Delete group with its tracks": "Eliminar el grupo con sus pistas",
+  "Add instrument track": "Añadir pista de instrumento",
+  "The group name can't be empty": "El nombre del grupo no puede estar vacío",
+  "Group {id} not found": "No se encontró el grupo {id}",
+  "Change group": "Cambiar grupo",
+  "Change group volume": "Cambiar volumen del grupo",
+  "Mute group": "Silenciar grupo",
+  "Solo group": "Grupo en solo",
+  "Rename group": "Renombrar grupo",
+  "Group ID {id} is already taken": "El ID de grupo {id} ya está en uso",
+
+  // picked tracks follow changes in the sound window (ui/src/components/sound.ts)
+  "Changes apply to {n} tracks: {names}": { one: "Los cambios se aplican a {n} pista: {names}", other: "Los cambios se aplican a {n} pistas: {names}" },
 };
 
 export default dict;

@@ -9,7 +9,7 @@
 //! else has an obvious default. [`combine`] builds the combined project from one
 //! choice per decision, [`commands_between`] turns it into one undoable step.
 
-use crate::command::{Command, ProjectPatch};
+use crate::command::{Command, GroupPatch, ProjectPatch};
 use crate::diff::{diff_track, merge_ranges, same_content_in, Range};
 use crate::model::{Clip, ClipSource, Id, Note, Project, Track};
 use serde::{Deserialize, Serialize};
@@ -162,6 +162,7 @@ fn same_settings(a: Option<&Track>, b: Option<&Track>) -> bool {
                 && a.pan == b.pan
                 && a.mute == b.mute
                 && a.solo == b.solo
+                && a.group == b.group
                 && a.pitch_semitones == b.pitch_semitones
                 && a.instrument == b.instrument
         }
@@ -423,11 +424,21 @@ fn build(v: &Versions, plan: &MergePlan, choices: &Choices) -> Project {
     // IDs: variants hand out the same new IDs independently – later duplicates get fresh ones
     let max_id = std::iter::once(v.origin)
         .chain(v.variants.iter().map(|(_, p)| *p))
-        .flat_map(|p| std::iter::once(p.next_id.saturating_sub(1)).chain(p.tracks.iter().flat_map(|t| std::iter::once(t.id.0).chain(t.clips.iter().map(|c| c.id.0)))))
+        .flat_map(|p| {
+            let tracks = p.tracks.iter().flat_map(|t| std::iter::once(t.id.0).chain(t.clips.iter().map(|c| c.id.0)));
+            std::iter::once(p.next_id.saturating_sub(1)).chain(p.groups.iter().map(|g| g.id.0)).chain(tracks)
+        })
         .max()
         .unwrap_or(0);
     let mut next = max_id + 1;
-    let mut seen = BTreeSet::new();
+    // groups: the target's, plus those of other versions that a chosen track belongs to
+    for t in &tracks {
+        if t.group != Id::NEW && out.group(t.group).is_none() {
+            let found = std::iter::once(v.origin).chain(v.variants.iter().map(|(_, p)| *p)).find_map(|p| p.group(t.group));
+            out.groups.extend(found.cloned());
+        }
+    }
+    let mut seen: BTreeSet<Id> = out.groups.iter().map(|g| g.id).collect();
     let mut fresh = |id: &mut Id| {
         if !seen.insert(*id) {
             *id = Id(next);
@@ -465,6 +476,20 @@ pub fn commands_between(from: &Project, to: &Project) -> Vec<Command> {
     }
     if patch != ProjectPatch::default() {
         cmds.push(Command::SetProject { patch });
+    }
+    // groups before the tracks that join them
+    for g in from.groups.iter().filter(|g| to.group(g.id).is_none()) {
+        cmds.push(Command::RemoveGroup { group_id: g.id });
+    }
+    for (i, g) in to.groups.iter().enumerate() {
+        match from.group(g.id) {
+            None => cmds.push(Command::AddGroup { group: g.clone(), index: Some(i) }),
+            Some(old) if old != g => cmds.push(Command::SetGroup { group_id: g.id, patch: GroupPatch {
+                name: Some(g.name.clone()), color: Some(g.color.clone()), gain_db: Some(g.gain_db),
+                mute: Some(g.mute), solo: Some(g.solo), collapsed: Some(g.collapsed),
+            } }),
+            Some(_) => {}
+        }
     }
     let same = |t: &Track| to.track(t.id) == Some(t);
     for t in from.tracks.iter().filter(|t| !same(t)) {

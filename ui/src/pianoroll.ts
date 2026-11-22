@@ -4,7 +4,7 @@ import { backend } from "./bridge.js";
 import { type ExprDef, clampExpr, exprShown } from "./expression.js";
 import { signal } from "./signals.js";
 import { ROW_H } from "./store.js";
-import type { Analysis, Note, Track } from "./types.js";
+import type { Analysis, Note, Project, Track, TrackGroup } from "./types.js";
 
 export const NOTES_ROW_H = 236;
 /** Height of the expression lane below the rhythm strip (instrument tracks). */
@@ -39,22 +39,74 @@ export function rowHeight(t: Track): number {
   return stored > 0 ? stored : defaultHeight(t);
 }
 
-export function rowTops(tracks: Track[]): number[] {
-  const tops: number[] = [];
+// ---------- Rows: tracks and track groups ----------
+
+/** Height of a group's row in the track list and the timeline. */
+export const GROUP_H = 36;
+
+export type Row =
+  | { kind: "track"; track: Track; group: TrackGroup | null; top: number; h: number }
+  | { kind: "group"; group: TrackGroup; tracks: Track[]; top: number; h: number };
+
+type Layout = Pick<Project, "tracks" | "groups">;
+
+/** The group a track belongs to, if it exists. */
+export function groupOf(p: Layout, t: Track): TrackGroup | null {
+  return t.group ? (p.groups ?? []).find((g) => g.id === t.group) ?? null : null;
+}
+
+/** Muted itself or by its group. */
+export function isMuted(p: Layout, t: Track): boolean {
+  return t.mute || !!groupOf(p, t)?.mute;
+}
+
+/**
+ * Rows from top to bottom: a group's row comes before its first track, its other tracks
+ * follow right after (even if the project order scattered them); the tracks of a folded
+ * group are hidden. Groups without tracks come last.
+ */
+export function layoutRows(p: Layout): Row[] {
+  const rows: Row[] = [];
+  const groups = p.groups ?? [];
+  const done = new Set<number>();
   let y = 0;
-  for (const t of tracks) {
-    tops.push(y);
-    y += rowHeight(t);
+  const push = (r: Row) => {
+    rows.push(r);
+    y += r.h;
+  };
+  const pushGroup = (g: TrackGroup) => {
+    done.add(g.id);
+    const tracks = p.tracks.filter((t) => t.group === g.id);
+    push({ kind: "group", group: g, tracks, top: y, h: GROUP_H });
+    if (!g.collapsed) for (const t of tracks) push({ kind: "track", track: t, group: g, top: y, h: rowHeight(t) });
+  };
+  for (const t of p.tracks) {
+    const g = groupOf(p, t);
+    if (!g) push({ kind: "track", track: t, group: null, top: y, h: rowHeight(t) });
+    else if (!done.has(g.id)) pushGroup(g);
   }
-  return tops;
+  for (const g of groups) if (!done.has(g.id)) pushGroup(g);
+  return rows;
 }
 
-export function contentHeight(tracks: Track[]): number {
-  return tracks.reduce((s, t) => s + rowHeight(t), 0);
+/** A project – or just tracks (without groups). */
+function asLayout(src: Track[] | Layout): Layout {
+  return Array.isArray(src) ? { tracks: src } : src;
 }
 
-export function maxScrollY(tracks: Track[]): number {
-  return Math.max(0, contentHeight(tracks) - 120);
+/** Top of every track's row, in project order (a track hidden in a folded group: -1). */
+export function rowTops(src: Track[] | Layout): number[] {
+  const p = asLayout(src);
+  const tops = new Map(layoutRows(p).flatMap((r) => (r.kind === "track" ? [[r.track.id, r.top] as const] : [])));
+  return p.tracks.map((t) => tops.get(t.id) ?? -1);
+}
+
+export function contentHeight(src: Track[] | Layout): number {
+  return layoutRows(asLayout(src)).reduce((s, r) => s + r.h, 0);
+}
+
+export function maxScrollY(p: Layout | null | undefined): number {
+  return p ? Math.max(0, contentHeight(p) - 120) : 0;
 }
 
 export const isBlack = (pitch: number) => [1, 3, 6, 8, 10].includes(((pitch % 12) + 12) % 12);

@@ -8,7 +8,9 @@ import { fitCanvas, h, icon, noteName, setRange } from "../dom.js";
 import { language, plural, t } from "../i18n.js";
 import { act, errorText, findTrack, instrumentSpecs, notify, project, run, savedSounds, showPanel, snapshot, specFor } from "../store.js";
 import { KEYS_MODE, refitPitch } from "../pianoroll.js";
-import type { CurvePoint, FieldSpec, Instrument, InstrumentSpec, ParamSpec, PreviewPattern, SavedSound, VerlaufSpec, WaveView } from "../types.js";
+import { picked, pickedTracks } from "../groups.js";
+import { effect } from "../signals.js";
+import type { Command, CurvePoint, FieldSpec, Instrument, InstrumentSpec, ParamSpec, PreviewPattern, SavedSound, VerlaufSpec, WaveView } from "../types.js";
 
 export interface SoundPanel {
   el: HTMLElement;
@@ -495,13 +497,39 @@ function soundLibrary(spec: InstrumentSpec, trackId: number, loaded: (s: SavedSo
 
 // ---------------------------------------------------------------- Window
 
+/**
+ * What changed from `old` to `next` (another instrument, parameters, curves, starting point),
+ * applied to `other`: a picked track follows the change and keeps everything else.
+ */
+export function followChange(old: Instrument, next: Instrument, other: Instrument): Instrument {
+  if (next.kind !== old.kind) return next;
+  const params = { ...other.params };
+  for (const [k, v] of Object.entries(next.params)) if (old.params[k] !== v) params[k] = v;
+  const curves = { ...(other.curves ?? {}) };
+  for (const [k, v] of Object.entries(next.curves ?? {})) if (JSON.stringify(old.curves?.[k]) !== JSON.stringify(v)) curves[k] = v;
+  return { ...other, preset: next.preset !== old.preset ? next.preset : other.preset, params, ...(Object.keys(curves).length ? { curves } : {}) };
+}
+
 export function soundPanel(trackId: number): SoundPanel {
   const spec = specFor(findTrack(project(), trackId)?.instrument);
   if (!spec) return { el: h("div", { class: "placeholder" }, t("Loading instruments… (sound design is only available in the desktop app)")), update() {} };
   const isSynth = spec.kind === "synth";
   const prefs = viewPrefs();
   const current = (): Instrument | null => findTrack(project(), trackId)?.instrument ?? null;
-  const setInstrument = (inst: Instrument, merge = false) => run({ type: "setTrack", trackId, patch: { instrument: inst } }, merge);
+  // Several tracks picked (Ctrl/Shift+click in the track list): those with the same instrument
+  // follow every change – each keeps what wasn't changed. One undo step.
+  const others = (): number[] => pickedTracks().filter((tr) => tr.id !== trackId && tr.instrument?.kind === spec.kind).map((tr) => tr.id);
+  const setInstrument = (inst: Instrument, merge = false) => {
+    const old = current();
+    const more = old ? others() : [];
+    if (!more.length) return run({ type: "setTrack", trackId, patch: { instrument: inst } }, merge);
+    const commands: Command[] = [{ type: "setTrack", trackId, patch: { instrument: inst } }];
+    for (const id of more) {
+      const o = findTrack(project(), id)?.instrument;
+      if (o) commands.push({ type: "setTrack", trackId: id, patch: { instrument: followChange(old!, inst, o) } });
+    }
+    return run({ type: "batch", label: t("Change sound"), commands }, merge);
+  };
   const base = (): Instrument => {
     const cur = current();
     return { kind: spec.kind, preset: cur?.preset ?? "standard", params: { ...defaultParams(spec), ...(cur?.params ?? {}) }, ...(cur?.curves ? { curves: cur.curves } : {}) };
@@ -549,7 +577,7 @@ export function soundPanel(trackId: number): SoundPanel {
     const merge = !fresh;
     fresh = false;
     inflight = true;
-    await act(backend.soundField(trackId, p.field, p.x, p.y, null, merge));
+    await act(backend.soundField(trackId, p.field, p.x, p.y, null, merge, others()));
     inflight = false;
     if (pending) void pump();
     else if (playAfter) {
@@ -561,7 +589,7 @@ export function soundPanel(trackId: number): SoundPanel {
     const view = fieldView(
       f,
       (name) => {
-        void act(backend.soundField(trackId, f.key, null, null, name, false)).then((ok) => {
+        void act(backend.soundField(trackId, f.key, null, null, name, false, others())).then((ok) => {
           if (ok) autoPreview();
         });
       },
@@ -795,6 +823,16 @@ export function soundPanel(trackId: number): SoundPanel {
   });
 
   const agentNote = h("div", { class: "agent-note" });
+  // several tracks picked: which ones follow the changes
+  const multiNote = h("div", { class: "snd-multi" });
+  const refreshMulti = () => {
+    const names = others().map((id) => findTrack(project(), id)?.name ?? "");
+    multiNote.hidden = !names.length;
+    const self = findTrack(project(), trackId)?.name ?? "";
+    multiNote.textContent = names.length
+      ? plural(names.length + 1, "Changes apply to {n} track: {names}", "Changes apply to {n} tracks: {names}", { names: [self, ...names].join(", ") })
+      : "";
+  };
   const el = h(
     "div",
     { class: "sound snd" },
@@ -804,6 +842,7 @@ export function soundPanel(trackId: number): SoundPanel {
         h("div", { class: "snd-head-right" },
           h("span", { class: "muted" }, t("Fields:")), ...toggles,
           h("span", { class: "muted snd-play-label", title: t("What plays briefly after a change") }, t("play:")), playSwitch)),
+      multiNote,
       fieldBox,
       timeBox,
       fine),
@@ -832,10 +871,18 @@ export function soundPanel(trackId: number): SoundPanel {
     fitPads();
   });
   padObserver.observe(fieldBox);
+  // (the pick changes without the project changing; the effect ends with the panel)
+  const stopMulti = effect(() => {
+    picked.value;
+    if (!el.isConnected && multiNote.dataset.seen) return stopMulti?.();
+    if (el.isConnected) multiNote.dataset.seen = "1";
+    refreshMulti();
+  });
 
   return {
     el,
     update() {
+      refreshMulti();
       const inst = current();
       if (!inst) return;
       const color = findTrack(project(), trackId)?.color ?? "#ffb454";

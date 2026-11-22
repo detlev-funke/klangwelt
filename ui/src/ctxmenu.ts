@@ -25,6 +25,8 @@ export interface MenuItem {
   act?: string;
   action?: () => void;
   disabled?: boolean;
+  /** A switch: shown with a check mark when on. */
+  checked?: boolean;
   /** Option buttons in the row instead of an action of its own. */
   chips?: MenuChip[];
 }
@@ -65,7 +67,9 @@ export function openContextMenu(x: number, y: number, entries: MenuEntry[]): HTM
       if (e.act) row.dataset.act = e.act;
       el.append(row);
     } else {
-      const b = h("button", { class: "menu-item", role: "menuitem", title: e.title ?? "" }, h("b", {}, e.label), e.hint ? h("span", {}, e.hint) : "");
+      const check = e.checked === undefined ? "" : h("i", { class: "ctx-check" }, e.checked ? "✓" : "");
+      const b = h("button", { class: "menu-item", role: e.checked === undefined ? "menuitem" : "menuitemcheckbox", title: e.title ?? "" }, check, h("b", {}, e.label), e.hint ? h("span", {}, e.hint) : "");
+      if (e.checked !== undefined) b.setAttribute("aria-checked", String(e.checked));
       if (e.act) b.dataset.act = e.act;
       if (e.disabled) b.disabled = true;
       const action = e.action;

@@ -666,6 +666,33 @@ const SHOTS = {
     },
   },
 
+  /** A string sextet in groups: violins unfolded (−3 dB), violas folded, celli folded and muted. */
+  "track-groups": {
+    async run(app) {
+      await viewport(app, 1250, 760);
+      await app.eval(async () => {
+        await T.st.act(T.backend.projectNew());
+        const parts = [["Violin 1", 76, "#f472b6"], ["Violin 2", 69, "#a78bfa"], ["Viola 1", 62, "#4ade80"], ["Viola 2", 57, "#facc15"], ["Cello 1", 50, "#60a5fa"], ["Cello 2", 43, "#6ee7d8"]];
+        for (const [name, base, color] of parts) {
+          const notes = Array.from({ length: 14 }, (_, i) => ({ pitch: base + [0, 2, 4, 5, 7, 5, 4][i % 7], startBeats: i * 1.5, lengthBeats: 1.3, velocity: 92 }));
+          const clip = { id: 0, name: "Allegro con spirito", startBeats: 0, source: { type: "notes", lengthBeats: 22, notes } };
+          await T.st.run({ type: "addTrack", track: { id: 0, name, kind: "instrument", color, view: "compact", clips: [clip] } });
+        }
+        const g = await import("./groups.js");
+        const tracks = () => T.st.snapshot.peek().project.tracks;
+        for (const prefix of ["Violin", "Viola", "Cello"]) await g.groupTracks(tracks().filter((t) => t.name.startsWith(prefix)));
+        const [violins, violas, celli] = T.st.snapshot.peek().project.groups;
+        await T.st.run({ type: "setGroup", groupId: violins.id, patch: { name: "Violins", gainDb: -3 } });
+        await T.st.run({ type: "setGroup", groupId: violas.id, patch: { name: "Violas", collapsed: true } });
+        await T.st.run({ type: "setGroup", groupId: celli.id, patch: { name: "Celli", mute: true, collapsed: true } });
+        T.st.selection.value = { trackId: tracks()[0].id, clipId: null };
+        T.st.viewport.value = { pxPerBeat: 34, scrollX: 0, scrollY: 0 };
+      });
+      await sleep(800);
+      await shoot(app, "track-groups", await box(app, [".dk-stack:has(kw-timeline)"]));
+    },
+  },
+
   /** What's new (gear menu → What's new), at the top. */
   "whats-new": {
     async run(app) {

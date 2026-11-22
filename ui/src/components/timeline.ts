@@ -24,13 +24,13 @@ import { fillSongMenu } from "./song.js";
 import { MOOD_COLORS, MOOD_LABELS, chordIndexAt, harmonyFocus, harmonyLaneOn, harmonyLine, watchHarmonyLine } from "../harmonyline.js";
 import {
   NOTES_TOP, RHYTHM_H, type NoteGeo, analysisFor, analysisState, contentHeight, geoFor, heightDraft, highOnTop, inView, isBlack, laneY,
-  maxScrollY, noteGrid, noteKey, noteSel, offViewAtTop, pitchAt, pitchDelta, pitchOfLane, pitchViews, rowHeight, rowTops,
+  maxScrollY, noteGrid, noteKey, noteSel, offViewAtTop, pitchAt, pitchDelta, pitchOfLane, pitchViews, rowHeight, layoutRows, isMuted,
   scrollPitch, viewFor, wheelPitchStep, exprAt, exprY, drumMode, TUNED_TOM_FROM, TUNED_SNARE_FROM, type PitchView,
 } from "../pianoroll.js";
 import { plural, t } from "../i18n.js";
 import { effect } from "../signals.js";
 import { RULER_H, act, clipLengthBeats, counterpointMarks, rangeFocus, run, selection, snapshot, specFor, status, viewport } from "../store.js";
-import type { Clip, Command, Note, Project, Track } from "../types.js";
+import type { Clip, Command, Note, Project, Track, TrackGroup } from "../types.js";
 import { EXPRS, type ExprKey, exprKeysFor, exprLanes, exprValue, laneKeyFor, withExpr } from "../expression.js";
 import { addNoteAt, entry, entryGrid, entryStep, entryTrack, keyLabel, keyLabelsVersion, newNoteLength, noteValue, setEntryPosition, valueLabel } from "../noteinput.js";
 import { clipSpan, fmtShift, gridLabel, gridOf, rangeGrid, rangeLabel, snapTo } from "../editmath.js";
@@ -365,10 +365,16 @@ class KwTimeline extends HTMLElement {
     return (x + viewport.peek().scrollX) / this.#ppb();
   }
 
+  /** The visible track rows (tracks of a folded group are hidden). */
   #rows(p: Project): Array<{ track: Track; y: number; h: number }> {
-    const tops = rowTops(p.tracks);
     const sy = viewport.peek().scrollY;
-    return p.tracks.map((track, i) => ({ track, y: RULER_H + tops[i]! - sy, h: rowHeight(track) }));
+    return layoutRows(p).flatMap((r) => (r.kind === "track" ? [{ track: r.track, y: RULER_H + r.top - sy, h: r.h }] : []));
+  }
+
+  /** The rows of the track groups. */
+  #groupRows(p: Project): Array<{ group: TrackGroup; tracks: Track[]; y: number; h: number }> {
+    const sy = viewport.peek().scrollY;
+    return layoutRows(p).flatMap((r) => (r.kind === "group" ? [{ group: r.group, tracks: r.tracks, y: RULER_H + r.top - sy, h: r.h }] : []));
   }
 
   #clipNotes(c: Clip): Note[] {
@@ -555,7 +561,7 @@ class KwTimeline extends HTMLElement {
       const dist = Math.max(1, Math.hypot(a!.x - b!.x, a!.y - b!.y));
       const cx = (a!.x + b!.x) / 2;
       const cy = (a!.y + b!.y) / 2;
-      const max = maxScrollY(snapshot.peek()?.project.tracks ?? []);
+      const max = maxScrollY(snapshot.peek()?.project);
       viewport.update((v) => {
         const ppb = Math.min(400, Math.max(1.5, p.ppb * (dist / p.dist)));
         // the beat under the fingers stays under the fingers
@@ -908,7 +914,7 @@ class KwTimeline extends HTMLElement {
       const dy = e.offsetY - d.y0;
       if (Math.hypot(dx, dy) > TOUCH_SLOP) d.moved = true;
       if (!d.moved) return;
-      const max = maxScrollY(snapshot.peek()?.project.tracks ?? []);
+      const max = maxScrollY(snapshot.peek()?.project);
       viewport.update((v) => ({ ...v, scrollX: Math.max(0, d.scrollX0 - dx), scrollY: Math.max(0, Math.min(max, d.scrollY0 - dy)) }));
       return;
     }
@@ -1290,7 +1296,7 @@ class KwTimeline extends HTMLElement {
         return;
       }
     }
-    const max = maxScrollY(p?.tracks ?? []);
+    const max = maxScrollY(p);
     viewport.update((v) => {
       if (e.ctrlKey || e.metaKey) {
         const ppb = Math.min(400, Math.max(1.5, v.pxPerBeat * Math.exp(-e.deltaY * 0.0015)));
@@ -1397,7 +1403,7 @@ class KwTimeline extends HTMLElement {
     const rows = this.#rows(p);
 
     // shortcut line right below the last track – at the bottom edge when the tracks go further
-    const below = RULER_H + contentHeight(p.tracks) - viewport.peek().scrollY + 8;
+    const below = RULER_H + contentHeight(p) - viewport.peek().scrollY + 8;
     const hintTop = `${Math.round(Math.max(RULER_H + 4, Math.min(below, hh - this.#keysHint.offsetHeight - 6)))}px`;
     if (this.#keysHint.style.top !== hintTop) this.#keysHint.style.top = hintTop;
 
@@ -1413,6 +1419,10 @@ class KwTimeline extends HTMLElement {
       ctx.fillStyle = "#1a202b";
       ctx.fillRect(0, y + rh - 1, w, 1);
     });
+    for (const gr of this.#groupRows(p)) {
+      if (gr.y > hh || gr.y + gr.h < RULER_H) continue;
+      this.#drawGroupLane(ctx, p, gr, w);
+    }
 
     // Grid
     const first = Math.max(0, Math.floor(this.#xToBeat(0)));
@@ -1762,6 +1772,61 @@ class KwTimeline extends HTMLElement {
       + `\n${t("Key {key}", { key: line.key.name })}`;
   }
 
+  /**
+   * A group's row: a band in its color; folded, an overview of its tracks' clips
+   * (one thin line per track). A muted group is hatched.
+   */
+  #drawGroupLane(ctx: CanvasRenderingContext2D, p: Project, gr: { group: TrackGroup; tracks: Track[]; y: number; h: number }, w: number): void {
+    const { group: g, tracks, y, h: gh } = gr;
+    ctx.fillStyle = "#10131a";
+    ctx.fillRect(0, y, w, gh);
+    ctx.fillStyle = rgba(g.color, 0.07);
+    ctx.fillRect(0, y, w, gh);
+    if (g.mute) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, y, w, gh);
+      ctx.clip();
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.035)";
+      ctx.lineWidth = 6;
+      for (let x = -gh; x < w + gh; x += 14) {
+        ctx.beginPath();
+        ctx.moveTo(x, y + gh);
+        ctx.lineTo(x + gh, y);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    const spans = tracks.flatMap((t) => t.clips.map((c) => ({ t, a: c.startBeats, b: c.startBeats + clipLengthBeats(c, p.tempoBpm) })));
+    ctx.save();
+    ctx.globalAlpha = g.mute ? 0.4 : 1;
+    if (g.collapsed && tracks.length) {
+      // one thin line per track, in its color
+      const pad = 6;
+      const lane = Math.max(2, Math.min(6, (gh - 2 * pad) / tracks.length));
+      const top = y + (gh - lane * tracks.length) / 2;
+      for (const s of spans) {
+        const i = tracks.indexOf(s.t);
+        const x0 = this.#beatToX(s.a);
+        const x1 = this.#beatToX(s.b);
+        if (x1 < 0 || x0 > w) continue;
+        ctx.fillStyle = rgba(s.t.color, s.t.mute ? 0.25 : 0.75);
+        ctx.fillRect(x0, top + i * lane + 0.5, Math.max(2, x1 - x0), Math.max(1, lane - 1));
+      }
+    } else if (spans.length) {
+      // unfolded: where the group has something, as a soft bar
+      const x0 = this.#beatToX(Math.min(...spans.map((s) => s.a)));
+      const x1 = this.#beatToX(Math.max(...spans.map((s) => s.b)));
+      ctx.fillStyle = rgba(g.color, 0.22);
+      ctx.beginPath();
+      ctx.roundRect(x0, y + gh / 2 - 4, Math.max(4, x1 - x0), 8, 4);
+      ctx.fill();
+    }
+    ctx.restore();
+    ctx.fillStyle = "#1a202b";
+    ctx.fillRect(0, y + gh - 1, w, 1);
+  }
+
   #drawLanes(ctx: CanvasRenderingContext2D, t: Track, y: number, w: number): void {
     const g = geoFor(t);
     const LANE_SPAN = g.view.span;
@@ -1901,7 +1966,7 @@ class KwTimeline extends HTMLElement {
 
     const bottom = g.exprH ? g.exprTop + g.exprH : RHYTHM_TOP + RHYTHM_H;
     ctx.save();
-    ctx.globalAlpha = track.mute ? 0.45 : 1;
+    ctx.globalAlpha = isMuted(p, track) ? 0.45 : 1;
     ctx.fillStyle = rgba(track.color, 0.06);
     ctx.fillRect(wx0, lanesTop, wx1 - wx0, lanesH);
     ctx.strokeStyle = selected ? "rgba(255,255,255,0.85)" : rgba(track.color, 0.45);
@@ -2172,7 +2237,7 @@ class KwTimeline extends HTMLElement {
     const header = 17;
 
     ctx.save();
-    ctx.globalAlpha = track.mute ? 0.45 : 1;
+    ctx.globalAlpha = isMuted(p, track) ? 0.45 : 1;
     ctx.beginPath();
     ctx.roundRect(x0 + 0.5, y0 + 0.5, Math.max(4, x1 - x0 - 1), ch, 6);
     ctx.fillStyle = rgba(track.color, 0.13);

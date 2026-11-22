@@ -56,7 +56,7 @@ fn clip_pitches(t: &Track, c: &Clip) -> Vec<TimedPitch> {
 /// Key from all instrument tracks with pitch (duration-weighted).
 pub fn project_key(p: &Project) -> Option<Key> {
     let mut hist = [0.0f64; 12];
-    for t in p.tracks.iter().filter(|t| melodic(t) && !t.mute) {
+    for t in p.tracks.iter().filter(|t| melodic(t) && !p.is_muted(t)) {
         for c in &t.clips {
             for n in clip_pitches(t, c) {
                 hist[(n.pitch % 12) as usize] += n.length;
@@ -121,7 +121,7 @@ pub fn chords_in(st: &AppState, track_id: Option<Id>, clip_id: Option<Id>, key: 
             }
         }
         None => {
-            for t in p.tracks.iter().filter(|t| melodic(t) && !t.mute) {
+            for t in p.tracks.iter().filter(|t| melodic(t) && !p.is_muted(t)) {
                 for c in &t.clips {
                     notes.extend(clip_pitches(t, c));
                 }
@@ -172,7 +172,7 @@ pub fn preview(st: &AppState, track_id: Option<Id>, chords: &[Chord], key: &Key,
     };
     let inst = track.as_ref().and_then(|t| t.instrument.clone()).unwrap_or_else(|| sound::default_instrument(InstrumentKind::Pluck));
     let shift = track.as_ref().map(|t| t.pitch_semitones).unwrap_or(0.0);
-    let gain = track.as_ref().map(|t| util::db_to_gain(t.gain_db)).unwrap_or(1.0);
+    let gain = track.as_ref().map(|t| util::db_to_gain(st.heard_gain_db(t))).unwrap_or(1.0);
     let engine = st.engine()?;
     let sr = engine.info().sample_rate as f32;
     let secs_per_chord = (bpc * 60.0 / st.tempo()) as f32;

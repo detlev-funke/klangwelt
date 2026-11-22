@@ -1,0 +1,23 @@
+{
+  "type": "added",
+  "title": {
+    "en": "Track groups",
+    "de": "Spurgruppen",
+    "fr": "Groupes de pistes",
+    "it": "Gruppi di tracce",
+    "es": "Grupos de pistas",
+    "nl": "Spoorgroepen",
+    "pl": "Grupy ścieżek"
+  },
+  "text": {
+    "en": "pick tracks with Ctrl+click or Shift+click and put them into a group with “+ Group” or Ctrl+G. The group’s row has a level that adds to each of its tracks, plus mute and solo for all of them, and folds its tracks away. Drag a track by its icon into or out of a group. Tracks and groups have a context menu: rename, color, group, fold, delete. The agent can group tracks too.",
+    "de": "Spuren mit Strg+Klick oder Umschalt+Klick markieren und mit „+ Gruppe“ oder Strg+G in eine Gruppe legen. Die Gruppenzeile hat einen Pegel, der zu jeder ihrer Spuren dazukommt, dazu Stumm und Solo für alle, und klappt ihre Spuren weg. Eine Spur am Symbol in eine Gruppe hinein- oder herausziehen. Spuren und Gruppen haben ein Kontextmenü: umbenennen, Farbe, gruppieren, zuklappen, löschen. Auch der Agent kann Spuren gruppieren.",
+    "fr": "choisissez des pistes avec Ctrl+clic ou Maj+clic et mettez-les dans un groupe avec « + Groupe » ou Ctrl+G. La ligne du groupe a un niveau qui s’ajoute à chacune de ses pistes, ainsi que muet et solo pour toutes, et replie ses pistes. Glissez une piste par son icône dans un groupe ou hors d’un groupe. Pistes et groupes ont un menu contextuel : renommer, couleur, grouper, replier, supprimer. L’agent peut aussi grouper des pistes.",
+    "it": "scegli le tracce con Ctrl+clic o Maiusc+clic e mettile in un gruppo con «+ Gruppo» o Ctrl+G. La riga del gruppo ha un livello che si aggiunge a ciascuna sua traccia, più mute e solo per tutte, e comprime le sue tracce. Trascina una traccia per la sua icona dentro o fuori da un gruppo. Tracce e gruppi hanno un menu contestuale: rinomina, colore, raggruppa, comprimi, elimina. Anche l’agente può raggruppare tracce.",
+    "es": "elige pistas con Ctrl+clic o Mayús+clic y ponlas en un grupo con «+ Grupo» o Ctrl+G. La fila del grupo tiene un nivel que se suma a cada una de sus pistas, además de silencio y solo para todas, y pliega sus pistas. Arrastra una pista por su icono dentro o fuera de un grupo. Pistas y grupos tienen un menú contextual: renombrar, color, agrupar, plegar, eliminar. El agente también puede agrupar pistas.",
+    "nl": "kies sporen met Ctrl+klik of Shift+klik en zet ze in een groep met ‘+ Groep’ of Ctrl+G. De groepsrij heeft een niveau dat bij elk van zijn sporen komt, plus dempen en solo voor allemaal, en klapt zijn sporen in. Sleep een spoor aan zijn pictogram in of uit een groep. Sporen en groepen hebben een contextmenu: hernoemen, kleur, groeperen, inklappen, verwijderen. Ook de agent kan sporen groeperen.",
+    "pl": "wybierz ścieżki przez Ctrl+klik lub Shift+klik i umieść je w grupie przyciskiem „+ Grupa” lub Ctrl+G. Wiersz grupy ma poziom dodawany do każdej z jej ścieżek, a także wyciszenie i solo dla wszystkich, i zwija jej ścieżki. Przeciągnij ścieżkę za ikonę do grupy lub z grupy. Ścieżki i grupy mają menu kontekstowe: zmiana nazwy, kolor, grupowanie, zwijanie, usuwanie. Agent też potrafi grupować ścieżki."
+  },
+  "image": "track-groups.webp",
+  "dev": "Project.groups and Track.group in the core (klang-core model.rs, commands addGroup/setGroup/removeGroup, setTrack group); audibility and level through Project::is_audible / track_gain_db everywhere (mix, export, stems, previews, chat context); diff and variant merge carry groups. UI: layoutRows (pianoroll.ts) for track list and timeline, groups.ts."
+}

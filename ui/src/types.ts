@@ -234,7 +234,21 @@ export interface Track {
   solo: boolean;
   pitchSemitones: number;
   instrument: Instrument | null;
+  /** Group of the track (missing or 0 = none). */
+  group?: Id;
   clips: Clip[];
+}
+
+/** Several tracks together: a level added to theirs, mute and solo for all of them. */
+export interface TrackGroup {
+  id: Id;
+  name: string;
+  color: string;
+  gainDb: number;
+  mute: boolean;
+  solo: boolean;
+  /** Folded: the tracks hide behind the group's row. */
+  collapsed: boolean;
 }
 
 export interface Project {
@@ -243,6 +257,8 @@ export interface Project {
   beatsPerBar: number;
   beatUnit: number;
   tracks: Track[];
+  /** Missing when the project has none. */
+  groups?: TrackGroup[];
   nextId: number;
 }
 
@@ -1210,7 +1226,10 @@ export interface ProjectPatch { name?: string; tempoBpm?: number; beatsPerBar?: 
 export interface TrackPatch {
   name?: string; color?: string; gainDb?: number; pan?: number; mute?: boolean; solo?: boolean;
   pitchSemitones?: number; instrument?: Instrument; view?: TrackView; compactHeight?: number; notesHeight?: number;
+  /** 0 = no group. */
+  group?: Id;
 }
+export interface GroupPatch { name?: string; color?: string; gainDb?: number; mute?: boolean; solo?: boolean; collapsed?: boolean }
 export interface ClipPatch { name?: string; startBeats?: number; sourceBpm?: number; warp?: boolean }
 
 export type Command =
@@ -1223,6 +1242,9 @@ export type Command =
   | { type: "removeClip"; trackId: Id; clipId: Id }
   | { type: "setClip"; trackId: Id; clipId: Id; patch: ClipPatch }
   | { type: "setClipNotes"; trackId: Id; clipId: Id; notes: Note[]; lengthBeats?: number }
+  | { type: "addGroup"; group: Partial<TrackGroup> & { id: Id }; index?: number | null }
+  | { type: "removeGroup"; groupId: Id }
+  | { type: "setGroup"; groupId: Id; patch: GroupPatch }
   | { type: "batch"; label: string; commands: Command[] };
 
 export interface Selection {
